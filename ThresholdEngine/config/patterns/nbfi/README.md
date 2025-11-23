@@ -6,11 +6,11 @@ Patterns monitoring Non-Bank Financial Institution stress and systemic risk esca
 
 | Pattern ID | Name | Trigger | Signal Range | Status |
 |------------|------|---------|--------------|--------|
-| shadow-banking-hy-spreads | HY Spread Stress | HY >350bps | -1 to -2 | Enabled |
+| nbfi-hy-spreads | HY Spread Stress | HY >350bps | -1 to -2 | Enabled |
 | standing-repo-stress | Repo Facility Stress | Repo >$50B | -1 to -2 | Enabled |
 | kre-underperformance | Regional Bank Underperformance | KRE -10% vs SPX | -1 to -2 | Disabled |
 | bankruptcy-clusters | Large Bankruptcy Clusters | 2+ >$500M | -1 to -2 | Disabled |
-| shadow-banking-escalation | Multi-Indicator Escalation | 2+ triggers | -1.5 to -2 | Enabled |
+| nbfi-escalation | Multi-Indicator Escalation | 2+ triggers | -1.5 to -2 | Enabled |
 
 ## Escalation Framework
 

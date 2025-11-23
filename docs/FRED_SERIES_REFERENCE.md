@@ -69,7 +69,7 @@ These 7 indicators form the minimum viable product for recession monitoring:
 - **Units**: Percent per annum
 - **Alert Threshold**: Day-over-day change >0.10% (10 bps spike)
 - **Alert Direction**: Either (unusual moves)
-- **Category**: Recession / Shadow Banking
+- **Category**: Recession / NBFI
 - **Cron**: `0 0 18 * * MON-FRI` (6 PM ET daily)
 
 ### 5. 10-Year Treasury Yield (Daily)
