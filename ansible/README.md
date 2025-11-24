@@ -17,7 +17,7 @@ This directory contains the **HOW** (deployment automation), while `../infrastru
 ansible/
 ├── ansible.cfg           # Ansible configuration
 ├── inventory/
-│   └── hosts.yml        # mercury host (local connection)
+│   └── hosts.yml        # local connection
 ├── group_vars/
 │   └── all.yml          # Common variables (currently not loaded - needs fix)
 ├── playbooks/
@@ -53,12 +53,12 @@ Shows what would change without making changes.
 ### Test Connection
 
 ```bash
-ansible mercury -m ping
+ansible yourserver -m ping
 ```
 
 ## Current Deployment
 
-**Host**: mercury (local connection)
+**Host**: local connection
 **Runtime**: nerdctl + containerd
 **Deployment base**: `/opt/ai-inference`
 
@@ -99,34 +99,10 @@ Current C# MCP server deployment is handled by `infrastructure.yml`.
 
 ## Deployment Flow
 
-```
-┌──────────────────────────────────────────┐
-│ Edit files in ~/ATLAS/                   │
-│  - infrastructure/compose.yaml           │
-│  - infrastructure/atlas.service          │
-│  - OllamaMCP/Program.cs                  │
-└──────────────┬───────────────────────────┘
-               │
-               │ git commit
-               │ ansible-playbook playbooks/site.yml
-               ▼
-┌──────────────────────────────────────────┐
-│ Ansible copies to /opt/ai-inference/     │
-│  - compose.yaml                          │
-│  - atlas.service                         │
-│  - Builds MCP container                  │
-└──────────────┬───────────────────────────┘
-               │
-               │ systemctl start atlas.service
-               ▼
-┌──────────────────────────────────────────┐
-│ Services running via nerdctl compose     │
-│  - ollama-gpu, ollama-cpu                │
-│  - timescaledb                           │
-│  - mcp-server (C#)                       │
-│  - prometheus, grafana, loki             │
-│  - fred-collector, fred-api              │
-└──────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A[Edit files in ~/ATLAS/<br/>compose.yaml, atlas.service] -->|git commit<br/>ansible-playbook site.yml| B[Ansible copies to /opt/ai-inference/<br/>Builds containers]
+    B -->|systemctl start atlas.service| C[Services running<br/>via nerdctl compose]
 ```
 
 ## Common Workflows

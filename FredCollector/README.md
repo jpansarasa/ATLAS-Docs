@@ -10,17 +10,12 @@ FredCollector retrieves economic indicators from the Federal Reserve Economic Da
 
 ## Architecture
 
-```
-┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│   FRED API      │────▶│ FredCollector│────▶│  TimescaleDB    │
-│ (120 req/min)   │     │   Worker     │     │  (hypertables)  │
-└─────────────────┘     └──────────────┘     └─────────────────┘
-                               │
-                               ▼
-                        ┌──────────────┐
-                        │  gRPC Stream │────▶ ThresholdEngine
-                        │   :5001      │
-                        └──────────────┘
+```mermaid
+flowchart LR
+    FRED[FRED API<br/>120 req/min] --> FC[FredCollector<br/>Worker]
+    FC --> DB[(TimescaleDB<br/>hypertables)]
+    FC --> gRPC[gRPC Stream<br/>:5001]
+    gRPC --> TE[ThresholdEngine]
 ```
 
 ## Quick Start

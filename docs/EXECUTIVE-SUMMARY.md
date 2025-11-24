@@ -1,141 +1,89 @@
 # ATLAS Platform - Executive Summary
 
-**Date:** 2025-11-21
-**Status:** Production-Ready Core, Active Development
+**Status:** Production Ready
+**Last Updated:** 2025-11-24
 
-## System Overview
+## Overview
 
-ATLAS is a real-time macroeconomic monitoring platform that ingests Federal Reserve Economic Data (FRED), evaluates pattern-based signals, and provides actionable insights for portfolio allocation decisions.
+ATLAS is a real-time macroeconomic monitoring platform that ingests Federal Reserve Economic Data (FRED), evaluates pattern-based signals, and delivers actionable alerts for portfolio allocation decisions.
 
-## Current Architecture
+## Architecture
 
 ```mermaid
-flowchart TB
-    subgraph Collection["Data Collection"]
-        FC[FredCollector<br/>Data Ingest]
-    end
-
-    subgraph Evaluation["Pattern Evaluation"]
-        TE[ThresholdEngine<br/>Pattern Eval]
-    end
-
-    subgraph Storage["Storage Layer"]
-        DB[(TimescaleDB<br/>Time-Series)]
-        Events[(Threshold Events<br/>Signals)]
-    end
-
-    subgraph Visualization["Visualization"]
-        G[Grafana Dashboards]
-        G1[FRED Series Monitor]
-        G2[ThresholdEngine Signals]
-        G3[System Metrics]
-        G4[Pattern Evaluation]
-    end
-
-    FC -->|gRPC Stream| TE
-    FC --> DB
-    TE --> Events
-    Events --> DB
-    DB --> G
-    G --- G1
-    G --- G2
-    G --- G3
-    G --- G4
+flowchart LR
+    FRED[FRED API] --> FC[FredCollector]
+    FC --> DB[(TimescaleDB)]
+    FC -->|gRPC| TE[ThresholdEngine]
+    TE -->|HTTP| AS[AlertService]
+    AS --> N[ntfy.sh]
+    AS --> E[Email]
+    DB --> G[Grafana]
 ```
 
-## What's Working
+## Services
 
-### Data Collection (FredCollector)
-- **12 FRED series** actively collected (expandable via API)
-- REST API for series management and observation queries
-- gRPC streaming for real-time event propagation
-- Scheduled collection with configurable intervals
-- Full observability (Prometheus metrics, structured logging)
+| Service | Status | Key Metrics |
+|---------|--------|-------------|
+| FredCollector | ✅ Production | 39 series, 287 tests |
+| ThresholdEngine | ✅ Production | 31 patterns, 153 tests |
+| AlertService | ✅ Production | ntfy + email channels |
+| Observability | ✅ Production | 8 Grafana dashboards |
 
-### Pattern Engine (ThresholdEngine)
-- **18 patterns** loaded and enabled across 4 categories:
-  - **Growth** (5): Retail sales surge, industrial production expansion, etc.
-  - **Recession** (4): Yield curve inversion, freight decline, industrial contraction
-  - **NBFI** (6): Shadow banking stress, repo stress, HY spread blowout
-  - **Volatility** (3): VIX spikes, term structure inversion
-- Hot-reload capability (edit JSON, patterns reload automatically)
-- Dynamic enable/disable via REST API
-- Expression-based evaluation with C# scripting
+## Data Coverage
 
-### Infrastructure
-- Containerized deployment (nerdctl/Docker compatible)
-- Ansible-automated provisioning
-- OpenTelemetry integration (traces, metrics, logs)
-- Grafana dashboards for visualization
+**39 FRED Series** across categories:
+- **Recession**: ICSA, CCSA, UNRATE, UMCSENT, T10Y2Y
+- **Liquidity**: VIXCLS, BAMLH0A0HYM2, DTWEXBGS, WALCL
+- **Growth**: GDP, INDPRO, RSAFS, HOUST, PAYEMS
+- **NBFI**: NFCI, STLFSI4, RRPONTSYD, RPONTSYD
 
-## Recent Accomplishments (This Session)
+## Pattern Categories
 
-1. **Fixed port conflicts** - Separated HTTP/1.1 (REST) and HTTP/2 (gRPC) services
-2. **Enabled dynamic series management** - Can add new FRED series via API
-3. **Fixed pattern hot-reload bug** - Patterns now properly reload on file changes
-4. **Added 4 new series**: RSAFS, WLRRAL, DCPN3M, TSIFRGHT
-5. **Enabled 6 previously disabled patterns** requiring the new series
-6. **Converted ISM patterns** to use INDPRO (Industrial Production) as proxy
-7. **Created Pattern Signals dashboard** in Grafana
+| Category | Patterns | Examples |
+|----------|----------|----------|
+| Recession | 8 | Sahm Rule, yield curve inversion, initial claims spike |
+| Liquidity | 5 | VIX deployment L1/L2, credit spread widening |
+| Growth | 5 | GDP acceleration, industrial production expansion |
+| NBFI | 8 | Chicago NFCI, St. Louis stress, repo facility usage |
+| Valuation | 5 | Buffett indicator, equal weight index |
 
-## Pattern Coverage
+## Endpoints
 
-| Category | Patterns | Key Indicators |
-|----------|----------|----------------|
-| Growth | 5 | Retail sales, industrial production, employment |
-| Recession | 4 | Yield curve, freight, industrial contraction |
-| NBFI | 6 | HY spreads, repo stress, commercial paper |
-| Volatility | 3 | VIX levels, term structure |
+| Service | Port | Purpose |
+|---------|------|---------|
+| FredCollector REST | 5000 | Series queries, observations |
+| FredCollector gRPC | 5001 | Event streaming to ThresholdEngine |
+| ThresholdEngine | 5003 | Pattern management API |
+| AlertService | 8081 | Alert sink (POST /alerts) |
+| Grafana | 3000 | Dashboards |
+| Prometheus | 9090 | Metrics |
 
-## Key Endpoints
+## Key Features
 
-| Service | Port | Protocol | Purpose |
-|---------|------|----------|---------|
-| FredCollector REST | 5001 | HTTP/1.1 | Series/observation queries |
-| FredCollector gRPC | 5002 | HTTP/2 | Event streaming |
-| ThresholdEngine REST | 5003 | HTTP/1.1 | Pattern management |
-| FredCollector Admin | 5004 | HTTP/1.1 | Series management |
-| Grafana | 3000 | HTTP/1.1 | Dashboards |
-| Prometheus | 9090 | HTTP/1.1 | Metrics |
+- **Hot Reload**: Pattern JSON changes apply without restart
+- **Roslyn Expressions**: Full C# in pattern definitions
+- **Context API**: GetLatest, GetYoY, GetMA, GetSpread, IsSustained
+- **Regime Detection**: Six regimes from Crisis to Growth
+- **Signal Scoring**: -2 to +2 scale with context-dependent logic
 
-## Current Limitations
+## Infrastructure
 
-1. **No alerting** - Threshold events stored but no notification system
-2. **Manual series addition** - Must know FRED series IDs to add
-3. **Pattern validation errors** - 2 NBFI patterns need series definitions
-4. **No backtesting** - Patterns evaluated on live data only
+Deployed via Ansible to Linux server running nerdctl compose:
+- 17 containerized services
+- TimescaleDB for time-series storage
+- Full OpenTelemetry observability (Prometheus, Loki, Tempo)
+- Automated via systemd (atlas.service)
 
-## Suggested Next Steps
-
-### High Priority
-1. **Alert Integration** - Connect threshold events to notification system (email/Slack/webhook)
-2. **Fix remaining patterns** - Add requiredSeries to kre-underperformance, bankruptcy-clusters
-3. **Backfill historical data** - Load 2+ years of data for YoY calculations
-
-### Medium Priority
-4. **Backtesting framework** - Evaluate patterns against historical data
-5. **Macro Score dashboard** - Visualize aggregate score over time
-6. **Pattern performance tracking** - Measure signal accuracy
-
-### Lower Priority
-7. **Auto-discovery of required series** - Parse expressions for series IDs
-8. **Pattern templates** - Simplify creating new patterns
-9. **Multi-region support** - Add non-US economic indicators
-
-## Test Coverage
-
-- FredCollector: Unit + Integration tests passing
-- ThresholdEngine: Unit tests passing
-- Pattern evaluation: Verified working (7 events processed)
-
-## Access Points
+## Access
 
 - **Grafana**: http://yourserver:3000
-  - FRED Series Monitor dashboard
-  - ThresholdEngine Pattern Signals dashboard
-- **APIs**: See endpoints table above
 - **Logs**: Loki via Grafana Explore
+- **Traces**: Tempo via Grafana Explore
 
----
+## See Also
 
-*Generated 2025-11-21 | ATLAS Platform v1.0*
+- [Architecture](ARCHITECTURE.md) - Design decisions
+- [gRPC Architecture](GRPC-ARCHITECTURE.md) - Event streaming
+- [FredCollector](../FredCollector/) - Data collection
+- [ThresholdEngine](../ThresholdEngine/) - Pattern evaluation
+- [AlertService](../AlertService/) - Notifications

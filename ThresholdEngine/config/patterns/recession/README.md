@@ -6,48 +6,36 @@ Patterns detecting economic contraction and recession signals.
 
 | Pattern ID | Name | Trigger | Signal Range |
 |------------|------|---------|--------------|
-| sahm-rule | Sahm Rule Recession Indicator | Unemployment MA rises 0.5pp above 12mo low | -2 |
-| ism-contraction | ISM Manufacturing Contraction | ISM <48 sustained 60 days | -1 to -2 |
-| initial-claims-spike | Initial Jobless Claims Spike | Claims >300K sustained 30 days | -1 to -2 |
-| freight-recession | Freight Transportation Decline | Freight <-3% YoY | -1 to -2 |
 | consumer-confidence-collapse | Consumer Sentiment Collapse | UMCSENT <70 | -1 to -2 |
+| continuing-claims-warning | Continuing Claims Escalation | CCSA >2M | -1.5 to -2 |
+| freight-recession | Freight Transportation Decline | TSIFRGHT <-3% YoY | -1.5 to -2 |
+| industrial-production-contraction | Industrial Production Contraction | INDPRO <-1% YoY | -1 to -2 |
+| initial-claims-spike | Initial Jobless Claims Spike | ICSA >300K sustained | -1 to -2 |
+| jobs-contraction | Nonfarm Payrolls Contraction | PAYEMS MoM <0 | -2 |
+| sahm-rule | Sahm Rule Recession Indicator | Unemployment +0.5pp above 12mo low | -2 |
+| yield-curve-inversion | Yield Curve Inversion | T10Y2Y <0 | -1.5 to -2 |
 
-## Pattern Details
+## Key Patterns
 
 ### Sahm Rule (High Confidence)
-- **Source**: Claudia Sahm, 2019
 - **Historical Accuracy**: 100% recession prediction since 1970
 - **Trigger**: 3-month unemployment MA exceeds 12-month low by 0.5+ percentage points
-- **Signal**: Strong defensive (-2)
 
-### ISM Contraction
-- **Source**: Institute for Supply Management
-- **Trigger**: ISM Manufacturing <48 for 60+ days
-- **Levels**: <48 contraction, <45 severe contraction
-
-### Initial Claims Spike
-- **Source**: Department of Labor
-- **Trigger**: Weekly claims >300K sustained
-- **Levels**: >300K concern, >400K crisis
-
-### Freight Recession
-- **Source**: Bureau of Transportation Statistics
-- **Leading Indicator**: Freight declines often precede broader recession
-- **Trigger**: Transportation Services Index <-3% YoY
-
-### Consumer Confidence
-- **Source**: University of Michigan
-- **Historical Median**: ~85
-- **Trigger**: Sentiment <70
+### Yield Curve Inversion
+- **Leading Indicator**: Typically precedes recession by 12-18 months
+- **Trigger**: 10Y-2Y Treasury spread turns negative
 
 ## FRED Series Used
 
-- `UNRATE` - Unemployment Rate
-- `NAPM` - ISM Manufacturing PMI
+- `CCSA` - Continuing Claims
 - `ICSA` - Initial Claims
+- `INDPRO` - Industrial Production Index
+- `PAYEMS` - Nonfarm Payrolls
+- `T10Y2Y` - 10Y-2Y Treasury Spread
 - `TSIFRGHT` - Freight Transportation Index
 - `UMCSENT` - Consumer Sentiment Index
+- `UNRATE` - Unemployment Rate
 
 ## Applicable Regimes
 
-All recession patterns apply to: LateCycle, Recession, Crisis
+Recession patterns apply to: Neutral, LateCycle, Recession, Crisis

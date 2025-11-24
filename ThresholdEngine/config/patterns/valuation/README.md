@@ -1,52 +1,42 @@
 # Valuation Patterns
 
-Patterns detecting attractive market valuations for deployment opportunities.
-
-**Status**: All patterns DISABLED - data not available in FRED. Scheduled for Phase 2 with calculated indicators.
+Patterns detecting market valuation levels for deployment opportunities.
 
 ## Patterns
 
 | Pattern ID | Name | Trigger | Signal Range | Status |
 |------------|------|---------|--------------|--------|
+| buffett-indicator | Broad Market Valuation | NASDAQNQUSBLM >20% above MA | -2 to +2 | Enabled |
 | cape-attractive | CAPE Below Historical Median | CAPE <20 | +1 to +2 | Disabled |
-| buffett-indicator | Buffett Indicator Attractive | MC/GDP <120% | +1 to +2 | Disabled |
+| equal-weight-indicator | Equal Weight Valuation | NASDAQNDXSE >15% above MA | -2 to +2 | Enabled |
 | equity-risk-premium | High Equity Risk Premium | ERP >5% | +1 to +2 | Disabled |
 | forward-pe-value | Forward P/E Value | Fwd P/E <15x | +1 to +2 | Disabled |
 
-## Pattern Details
+## Active Patterns
 
-### CAPE Ratio (Shiller P/E)
-- **Source**: Robert Shiller, Yale University
-- **Historical Median**: ~16.8
-- **Trigger**: CAPE <20 (below median)
-- **Strong Signal**: CAPE <15
+### Buffett Indicator (Market Cap Proxy)
+- **Series**: NASDAQNQUSBLM (Large Mid Cap Index)
+- **Logic**: Compares current level to 252-day MA
+- **Overvalued**: >20% above MA → -1 to -2
+- **Undervalued**: <20% below MA → +1 to +2
 
-### Buffett Indicator
-- **Formula**: Total Market Cap / GDP
-- **Historical Median**: ~100%
-- **Trigger**: Ratio <120%
-- **Strong Signal**: Ratio <80%
+### Equal Weight Indicator
+- **Series**: NASDAQNDXSE (Nasdaq-100 Equal Weight)
+- **Purpose**: Less MAG7 concentration than cap-weighted
+- **Logic**: Compares current level to 60-day MA
 
-### Equity Risk Premium
-- **Formula**: Earnings Yield - 10Y Treasury Yield
-- **Historical Average**: ~4%
-- **Trigger**: ERP >5%
-- **Strong Signal**: ERP >7%
+## Disabled Patterns (Data Not in FRED)
 
-### Forward P/E
-- **Description**: S&P 500 Forward Price-to-Earnings
-- **Historical Average**: ~16x
-- **Trigger**: Fwd P/E <15x
-- **Strong Signal**: Fwd P/E <12x
-
-## Data Sources (Phase 2)
-
-These patterns require data not available in FRED:
-- **CAPE**: Shiller data from Yale website or calculated
-- **Market Cap/GDP**: Wilshire 5000 / GDP calculation
+These patterns require external data sources:
+- **CAPE**: Shiller data from Yale
 - **ERP**: Earnings estimates from external providers
-- **Forward P/E**: Analyst estimates from external providers
+- **Forward P/E**: Analyst estimates
+
+## FRED Series Used
+
+- `NASDAQNQUSBLM` - NASDAQ US Large Mid Cap Index
+- `NASDAQNDXSE` - Nasdaq-100 Equal Weighted Index
 
 ## Applicable Regimes
 
-All valuation patterns apply to: Crisis, Recession (buy signals)
+Valuation patterns apply to: Neutral, LateCycle, Growth, Recession
