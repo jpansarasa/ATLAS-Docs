@@ -25,7 +25,7 @@ mcp-server:
   "mcpServers": {
     "ollama-local": {
       "command": "uvx",
-      "args": ["mcp-proxy", "http://mercury:3100/sse"]
+      "args": ["mcp-proxy", "http://yourserver:3100/sse"]
     }
   }
 }

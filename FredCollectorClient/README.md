@@ -51,5 +51,4 @@ await foreach (var evt in client.SubscribeToEvents(request).ResponseStream.ReadA
 
 ## See Also
 
-- [FredCollector E11 Documentation](../FredCollector/docs/E11-GRPC-EVENT-STREAMING.md)
-- [gRPC Architecture](../GRPC-ARCHITECTURE.md)
+- [gRPC Architecture](../docs/GRPC-ARCHITECTURE.md)

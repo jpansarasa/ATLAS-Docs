@@ -130,7 +130,7 @@ flowchart TB
 
 ## Access Points
 
-- **Grafana**: http://mercury:3000
+- **Grafana**: http://yourserver:3000
   - FRED Series Monitor dashboard
   - ThresholdEngine Pattern Signals dashboard
 - **APIs**: See endpoints table above
