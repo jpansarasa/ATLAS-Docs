@@ -146,9 +146,8 @@ D9: observability → OTEL(tempo+prom+loki) deferred_post_mvp
 
 ## NEXT_ACTIONS [priority_order]
 
-1. **Pattern Enablement**: Add remaining required series to enable all 24 ThresholdEngine patterns
-2. **Alert Rule Refinement**: Continue monitoring production alerts, adjust thresholds as patterns emerge
-3. **Phase 2 Planning**: PMI series + additional valuation metrics
+1. **Alert Rule Refinement**: Continue monitoring production alerts, adjust thresholds as patterns emerge
+2. **Phase 2 Planning**: Calculated indicators (CAPE, ERP, Forward P/E) for valuation patterns
 
 ## METRICS
 
@@ -162,7 +161,7 @@ files_created: 45+
 docs_created: 10(impl) + 3(arch)
 tech_debt: minimal
 blocker_count: 0
-total_series: 29(7_recession + 6_liquidity + 12_growth + 4_additional)
+total_series: 39(7_recession + 6_liquidity + 12_growth + 14_nbfi/valuation)
 
 ## CONSTRAINTS
 
@@ -182,4 +181,4 @@ ARCHITECTURE.md → ADR(epic4_extraction)
 docs/*.md → implementation_details_per_US
 
 ---
-UPDATED: 2025-11-23 | STATUS: production_complete | FORMAT: CLAUDE.md_v1.0
+UPDATED: 2025-11-24 | STATUS: production_complete | FORMAT: CLAUDE.md_v1.0

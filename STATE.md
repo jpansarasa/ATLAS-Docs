@@ -30,7 +30,7 @@
 | E11 | ✅ 100% | gRPC Event Streaming - deployed, production ready |
 | E12 | ✅ 100% | Series Discovery - search API with filtering/sorting |
 
-**Tests**: 378/378 passing | **Series**: 29 configured
+**Tests**: 378/378 passing | **Series**: 39 configured
 
 ### ThresholdEngine [integration_ready]
 | Epic | Status | Description |
@@ -45,7 +45,7 @@
 | E8 | ✅ 100% | Production Deployment - containerized, deployed, running |
 | E9 | ✅ 100% | Observability - 17 metrics, 5 dashboards (PR #29 merged) |
 
-**Tests**: 153/153 passing | **Patterns**: 24 configured
+**Tests**: 153/153 passing | **Patterns**: 31 configured
 
 ### AlertService [production_ready]
 | Feature | Status | Description |
@@ -71,7 +71,7 @@
 - fred-api:5001 → REST API
 - threshold-engine:5003 → pattern evaluation worker
 - alert-service:8081 → notification sink (ntfy, email)
-- timescaledb:5432 → TimescaleDB (29 series, hypertables)
+- timescaledb:5432 → TimescaleDB (39 series, hypertables)
 
 ### AI/Inference
 - ollama-gpu:11434 → RTX 5090 (32GB VRAM)
@@ -106,8 +106,8 @@ All services deployed and operational. Full observability stack live (traces, me
 
 ## NEXT_ACTIONS
 
-1. **Pattern Enablement**: Add remaining required series to enable all 24 patterns
-2. **Alert Rule Refinement**: Continue monitoring production alerts, adjust thresholds as patterns emerge
+1. **Alert Rule Refinement**: Continue monitoring production alerts, adjust thresholds as patterns emerge
+2. **Phase 2 Planning**: Calculated indicators (CAPE, ERP, Forward P/E) for valuation patterns
 
 ## DEPLOYMENT
 
@@ -122,4 +122,4 @@ sudo nerdctl compose ps
 ```
 
 ---
-**UPDATED**: 2025-11-23 | **STATUS**: production_ready | **DOCS_SYNC**: v3
+**UPDATED**: 2025-11-24 | **STATUS**: production_ready | **DOCS_SYNC**: v4
