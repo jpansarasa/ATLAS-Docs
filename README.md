@@ -60,10 +60,8 @@ ATLAS is a systematic macro regime identification framework designed to optimize
 - **[CLAUDE.md](./CLAUDE.md)** - Core code generation rules and standards
 - **[STATE.md](./STATE.md)** - Project-wide state tracking
 - **Service-specific documentation** (each service directory):
-  - `.cursorrules` - Cursor/Claude Code instructions
+  - `.cursorrules` - Cursor/Claude Code instructions (FredCollector)
   - `progress.md` - Epic tracking and status (compact format)
-  - `activeContext.md` - Current focus (compact format)
-  - `systemPatterns.md` - Architecture patterns (FredCollector only)
 
 The AI-facing documentation follows the compact syntax from CLAUDE.md (85% token reduction) for efficient context loading by Cursor and Claude Code.
 
@@ -447,11 +445,11 @@ See [docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md) for detailed FRED
 - ✅ E4: Pattern Evaluation Engine (100% - context API, evaluation service)
 - ✅ E5: Event Integration (100% - event bus, subscribers, publishers)
 - ✅ E6: Regime Transition Detection (100% - macro score, hysteresis)
-- ✅ E7: Pattern Library (100% - 24 patterns across 5 categories)
+- ✅ E7: Pattern Library (100% - 31 patterns across 5 categories)
 - ✅ E8: Production Deployment (100% - containerized, deployed, running)
 - ✅ E9: Observability & Metrics (100% - 17 metrics, 5 Grafana dashboards)
 
-**Tests**: 153/153 passing | **Patterns**: 24 configured
+**Tests**: 153/153 passing | **Patterns**: 31 configured
 
 **Core Capabilities**:
 - **Pattern Evaluation**: Roslyn-based compilation of C# expressions from JSON configuration
@@ -469,12 +467,12 @@ See [docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md) for detailed FRED
 - Container-first: dev environment === production environment
 - VS Code Dev Containers for zero environment drift
 
-**Pattern Categories** (24 patterns total):
-- **NBFI Stress** (6): HY spreads, KRE underperformance, bankruptcy clusters, standing repo stress
-- **Recession** (5): Sahm Rule, ISM contraction, consumer confidence, initial claims, freight
-- **Growth** (5): GDP acceleration, ISM expansion, retail sales, housing starts, industrial production
-- **Liquidity** (5): VIX deployment L1/L2, DXY risk-off, credit spreads, Fed liquidity
-- **Valuation** (4): CAPE, Buffett indicator, forward P/E, equity risk premium
+**Pattern Categories** (31 patterns total):
+- **NBFI Stress** (8): HY spreads, KRE underperformance, bankruptcy clusters, standing repo stress, reverse repo liquidity, Chicago conditions, St. Louis stress index
+- **Recession** (8): Sahm Rule, consumer confidence collapse, freight recession, initial claims spike, jobs contraction, industrial contraction, continuing claims, yield curve inversion
+- **Growth** (5): GDP acceleration, industrial production expansion, retail sales surge, housing starts, industrial production
+- **Liquidity** (5): VIX deployment L1/L2, DXY risk-off, credit spread widening, Fed liquidity contraction
+- **Valuation** (5): CAPE attractive, Buffett indicator, forward P/E value, equity risk premium, equal weight indicator
 
 [Technical documentation](./ThresholdEngine/README.md)
 
@@ -573,7 +571,7 @@ Info (P3):      Ntfy, repeat every 12h
 - Tempo for distributed tracing backend
 - Prometheus for metrics storage and querying
 - Loki for log aggregation with trace correlation
-- Grafana for unified dashboards (8 dashboards: FredCollector, ThresholdEngine x5, system x2)
+- Grafana for unified dashboards (9 dashboards: FredCollector, ThresholdEngine x4, system x2, infrastructure, GPU)
 - Serilog for structured logging (correlated with traces)
 
 **Deployment**:
@@ -734,8 +732,6 @@ ATLAS/
 ├── FredCollector/          # FRED API data collection service
 │   ├── .cursorrules        # 🤖 AI assistant instructions (compact)
 │   ├── progress.md         # 🤖 Epic tracking (compact: ~1.5K tokens)
-│   ├── activeContext.md    # 🤖 Current focus (compact: ~800 tokens)
-│   ├── systemPatterns.md   # 🤖 Architecture patterns (compact: ~3K tokens)
 │   ├── src/                # C# source code (.NET 9)
 │   │   ├── Core/           # Domain models, entities, enums, interfaces
 │   │   │   ├── Entities/   # SeriesConfig, FredObservation, ThresholdAlert
@@ -751,7 +747,6 @@ ATLAS/
 │   ├── scripts/            # Development scripts
 │   └── .devcontainer/      # VS Code Dev Container config
 ├── ThresholdEngine/        # Pattern evaluation & regime detection service
-│   ├── .cursorrules        # 🤖 AI assistant instructions (compact)
 │   ├── progress.md         # 🤖 Epic tracking (compact format)
 │   ├── src/                # C# source code (.NET 9)
 │   │   ├── Core/           # Domain models, interfaces, entities
@@ -759,34 +754,34 @@ ATLAS/
 │   │   ├── Application/    # Business logic (evaluation services)
 │   │   └── Service/        # Worker service entry point
 │   ├── tests/              # Unit and integration tests (153 tests passing)
-│   ├── config/             # Pattern configurations (24 JSON files)
+│   ├── config/             # Pattern configurations (31 JSON files)
 │   ├── docs/               # Documentation (EXPRESSION_API.md, etc.)
 │   └── .devcontainer/      # VS Code Dev Container config
 ├── OllamaMCP/              # MCP server for Claude Desktop
-│   ├── src/                # Python source code
-│   ├── requirements.txt    # Python dependencies
+│   ├── Program.cs          # C# source code (.NET 9)
+│   ├── OllamaMcp.csproj    # Project file
 │   ├── Containerfile       # Container build definition
 │   └── README.md           # MCP server documentation
 ├── infrastructure/         # Infrastructure-as-code definitions
-│   ├── compose.yaml        # Service orchestration (16 services)
-│   ├── monitoring/         # Prometheus configs, 8 Grafana dashboards
+│   ├── compose.yaml.j2     # Service orchestration template (18 services, Ansible/Jinja2)
+│   ├── monitoring/         # Prometheus configs, 9 Grafana dashboards
 │   ├── dashboard/          # Dashboard API
 │   └── README.md           # Infrastructure documentation
 ├── ansible/                # Deployment automation (HOW to deploy)
 │   ├── playbooks/          # Ansible playbooks
 │   ├── inventory/          # Host definitions
 │   └── README.md           # Ansible documentation
-├── AnalysisEngine/         # Portfolio analysis tools (planned)
-├── BacktestingEngine/      # Historical simulation (Rust, planned)
-├── Dashboard/              # Visualization UI (planned)
+├── FredCollectorClient/    # gRPC client library for FredCollector
+├── markitdownMCP/          # MarkItDown MCP server
+├── scripts/                # Utility scripts (ZFS tuning, etc.)
 ├── CLAUDE.md               # 🤖 Core code generation rules and standards
 └── STATE.md                # Project-wide state tracking
 ```
 
 **Documentation Organization**:
 - **📚 docs/** - Human-facing: detailed, comprehensive, can be verbose
-- **🤖 FredCollector/*.md** - AI-facing: compact syntax, token-efficient (~6.5K total vs 42.5K before)
-- **🤖 ThresholdEngine/*.md** - AI-facing: compact syntax, token-efficient
+- **🤖 FredCollector/progress.md** - AI-facing: compact syntax, token-efficient
+- **🤖 ThresholdEngine/progress.md** - AI-facing: compact syntax, token-efficient
 - **🤖 CLAUDE.md** - Code generation rules for all AI assistants
 - **📊 STATE.md** - Current project state and infrastructure status
 
@@ -902,7 +897,7 @@ The system follows a phased development approach with clear milestones:
 - ✅ Comprehensive testing (319 tests passing)
 - ✅ Production deployment (Epic 9 - complete)
 - ✅ REST API (Epic 8 - complete)
-- 🚧 gRPC Event Streaming (Epic 11 - 98%, perf tests pending)
+- ✅ gRPC Event Streaming (Epic 11 - 100%, production deployed)
 
 **Phase 2.1: Comprehensive Indicator Coverage** ✅ Complete
 - ✅ Liquidity Indicators (6 series: VIX, DXY, credit spreads, Fed balance sheet, M2)
@@ -1000,10 +995,10 @@ Proprietary - Personal use only
 
 ---
 
-**Last Updated**: 2025-11-23
-**Framework Version**: 4.3
+**Last Updated**: 2025-11-24
+**Framework Version**: 4.4
 **Project Status**: Production Ready
 - **FredCollector**: ✅ 100% complete (12 epics, 378 tests, production deployed)
 - **ThresholdEngine**: ✅ 100% complete (9 epics, 153 tests, production deployed)
 - **AlertService**: ✅ 100% complete (notifications working, production deployed)
-- **Infrastructure**: 18 services running, 8 Grafana dashboards, full observability stack
+- **Infrastructure**: 18 services running, 9 Grafana dashboards, full observability stack
