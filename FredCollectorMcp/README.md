@@ -284,13 +284,14 @@ FREDCOLLECTOR_MCP_TIMEOUT_SECONDS=30
 {
   "mcpServers": {
     "fred-collector": {
-      "url": "http://mercury:3103/sse"
+      "command": "uvx",
+      "args": ["mcp-proxy", "http://mercury:3103/sse"]
     }
   }
 }
 ```
 
-The MCP server runs as a persistent service on mercury:3103, not locally.
+Claude Desktop doesn't natively support SSE transport, so `mcp-proxy` bridges stdio↔SSE.
 
 ---
 

@@ -22,7 +22,8 @@ ansible/
 │   └── all.yml          # Common variables (currently not loaded - needs fix)
 ├── playbooks/
 │   ├── site.yml         # Deploy everything
-│   └── ollama-mcp.yml   # Deploy OllamaMCP server
+│   ├── deploy.yml       # Full infrastructure deployment
+│   └── zfs-*.yml        # ZFS snapshot management
 └── README.md            # This file
 ```
 
@@ -38,7 +39,7 @@ ansible-playbook playbooks/site.yml
 **This is the primary command** - deploys everything:
 - Creates `/opt/ai-inference/` directory structure
 - Deploys `compose.yaml` from `../infrastructure/`
-- Builds C# MCP server container
+- Builds all containers (OllamaMcp, FredCollector, FredCollectorMcp, ThresholdEngine, ThresholdEngineMcp, AlertService)
 - Deploys and enables `atlas.service` for auto-start
 - Starts/restarts infrastructure stack
 
@@ -79,7 +80,13 @@ ansible-playbook playbooks/site.yml
 **What it deploys:**
 1. Creates deployment directories (`/opt/ai-inference/models`, `/logs`, `/timeseries`, etc.)
 2. Deploys `compose.yaml` → `/opt/ai-inference/compose.yaml`
-3. Builds OllamaMcp container (`ollama-mcp:latest`)
+3. Builds containers:
+   - `ollama-mcp:latest` - Ollama MCP server (port 3100)
+   - `fred-collector:latest`, `fred-api:latest` - FRED data collection
+   - `fredcollector-mcp:latest` - FredCollector MCP server (port 3103)
+   - `threshold-engine:latest` - Pattern evaluation service
+   - `thresholdengine-mcp:latest` - ThresholdEngine MCP server (port 3104)
+   - `alert-service:latest` - Notification service
 4. Deploys `atlas.service` → `/opt/ai-inference/atlas.service`
 5. Creates systemd symlink in `/etc/systemd/system/`
 6. Enables and starts `atlas.service`
@@ -134,15 +141,21 @@ ansible-playbook playbooks/site.yml
 
 # 3. Verify
 sudo nerdctl logs ollama-mcp
+sudo nerdctl logs fredcollector-mcp
+sudo nerdctl logs thresholdengine-mcp
+```
+
+## ZFS Snapshots
+
+Pre-deployment snapshots are automatically created. To rollback:
+
+```bash
+ansible-playbook playbooks/zfs-rollback.yml -e snapshot_tag=<tag>
 ```
 
 ## Future Enhancements
 
-- [ ] Add health checks after deployment
-- [ ] Add rollback playbook
-- [ ] Add ZFS snapshot automation before deployment
 - [ ] Add tags for selective deployment (mcp, compose, systemd)
-- [ ] Add monitoring config deployment (when created)
 
 ## Migration from Bash Scripts
 

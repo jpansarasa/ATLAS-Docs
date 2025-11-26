@@ -43,5 +43,5 @@ FREDCOLLECTOR_MCP_TIMEOUT_SECONDS=30
 
 ## REFS [external]
 MCP_SPEC: https://modelcontextprotocol.io/docs
-API_LIVE: http://mercury:5001/swagger/v1/swagger.json
+API_LIVE: http://mercury:5001/swagger/v1/swagger.json (fred-api:8080 internally)
 ATLAS_CONVENTIONS: ../CLAUDE.md

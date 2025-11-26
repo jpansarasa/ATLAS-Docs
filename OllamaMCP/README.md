@@ -23,9 +23,9 @@ ollama-mcp:
 ```json
 {
   "mcpServers": {
-    "ollama-local": {
+    "ollama": {
       "command": "uvx",
-      "args": ["mcp-proxy", "http://yourserver:3100/sse"]
+      "args": ["mcp-proxy", "http://mercury:3100/sse"]
     }
   }
 }
@@ -34,7 +34,9 @@ ollama-mcp:
 ## Test
 
 ```bash
-curl -X POST http://localhost:3100/messages/ \
-  -H "Content-Type: application/json" \
-  -d '{"method":"tools/call","params":{"name":"ollama_list_models"}}'
+# Health check
+curl http://localhost:3100/health
+
+# SSE connection test
+curl -N http://localhost:3100/sse
 ```
