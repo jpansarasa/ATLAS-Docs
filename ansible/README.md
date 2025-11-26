@@ -79,7 +79,7 @@ ansible-playbook playbooks/site.yml
 **What it deploys:**
 1. Creates deployment directories (`/opt/ai-inference/models`, `/logs`, `/timeseries`, etc.)
 2. Deploys `compose.yaml` → `/opt/ai-inference/compose.yaml`
-3. Builds C# MCP server container (`ollama-mcp-server:latest`)
+3. Builds OllamaMcp container (`ollama-mcp:latest`)
 4. Deploys `atlas.service` → `/opt/ai-inference/atlas.service`
 5. Creates systemd symlink in `/etc/systemd/system/`
 6. Enables and starts `atlas.service`
@@ -133,7 +133,7 @@ cd ~/ATLAS/ansible
 ansible-playbook playbooks/site.yml
 
 # 3. Verify
-sudo nerdctl logs ollama-mcp-server
+sudo nerdctl logs ollama-mcp
 ```
 
 ## Future Enhancements

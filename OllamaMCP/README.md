@@ -9,8 +9,8 @@ MCP server exposing Ollama (GPU/CPU) as tools for Claude Desktop.
 
 Via `infrastructure/compose.yaml`:
 ```yaml
-mcp-server:
-  image: ollama-mcp-server:latest
+ollama-mcp:
+  image: ollama-mcp:latest
   ports: ["3100:3100"]
   environment:
     OLLAMA_GPU_URL: http://ollama-gpu:11434

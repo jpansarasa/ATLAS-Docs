@@ -1,137 +1,88 @@
-# ThresholdEngine MCP - Progress Tracker
+# ThresholdEngineMcp Implementation
 
-## Project Status: 📋 SPECIFICATION COMPLETE
+## Status: NOT STARTED
 
-**Created:** 2025-11-26  
-**Last Updated:** 2025-11-26
+## API Endpoints (ThresholdEngine.Service :5003)
 
----
-
-## API Verification
-
-| Endpoint | Exists | MCP Tool |
+| Endpoint | Method | MCP Tool |
 |----------|--------|----------|
-| `GET /api/patterns` | ✅ | `threshold_list_patterns`, `threshold_categories` |
-| `GET /api/patterns/{id}` | ✅ | `threshold_get_pattern` |
-| `POST /api/patterns/evaluate` | ✅ | **`threshold_evaluate`** ⭐ |
-| `POST /api/patterns/{id}/evaluate` | ✅ | `threshold_evaluate_pattern` |
-| `POST /api/patterns/reload` | ✅ | `threshold_reload` |
-| `PUT /api/patterns/{id}/toggle` | ✅ | (not exposed - admin) |
-| `GET /health` | ✅ | `threshold_health` |
-| `GET /swagger/v1/swagger.json` | ✅ (dev only) | `threshold_api_schema` |
-| Regime history | ❓ Needs endpoint | `threshold_regime_history` |
+| `/api/patterns` | GET | `list_patterns`, `categories` |
+| `/api/patterns/{id}` | GET | `get_pattern` |
+| `/api/patterns/evaluate` | POST | `evaluate` |
+| `/api/patterns/{id}/evaluate` | POST | `evaluate_pattern` |
+| `/api/patterns/reload` | POST | `reload` |
+| `/health` | GET | `health` |
+| `/swagger/v1/swagger.json` | GET | `api_schema` |
 
-**Note:** Need to enable swagger.json in production (see task 2025-11-26-enable-openapi-export.md)
+**Blocked:** `regime_history` needs new API endpoint or audit log query.
 
----
+## Implementation Order
 
-## Tool Inventory (9 Tools)
+### 1. Project Scaffold
+```
+ThresholdEngineMcp/
+├── src/ThresholdEngineMcp/
+│   ├── Program.cs              # stdio loop
+│   ├── McpServer.cs            # JSON-RPC dispatch
+│   ├── IMcpTool.cs
+│   ├── ToolResult.cs
+│   ├── Client/
+│   │   ├── IThresholdEngineClient.cs
+│   │   └── ThresholdEngineClient.cs
+│   ├── Models/                 # API response DTOs
+│   └── Tools/                  # One file per tool
+└── .devcontainer/
+```
 
-### Evaluation Tools (2)
-| Tool | Priority | API Status |
-|------|----------|------------|
-| **`threshold_evaluate`** | ⭐ Primary | ✅ Ready |
-| `threshold_evaluate_pattern` | High | ✅ Ready |
+### 2. HTTP Client
+- `IThresholdEngineClient` interface
+- `ThresholdEngineClient` implementation with HttpClient
+- Base URL from `THRESHOLDENGINE_API_URL` env var
+- Methods: `ListPatternsAsync`, `GetPatternAsync`, `EvaluateAsync`, `EvaluatePatternAsync`, `ReloadAsync`, `GetHealthAsync`
 
-### Pattern Discovery (3)
-| Tool | Priority | API Status |
-|------|----------|------------|
-| `threshold_list_patterns` | Medium | ✅ Ready |
-| `threshold_get_pattern` | Medium | ✅ Ready (needs enrichment) |
-| `threshold_categories` | Medium | Aggregation (no new endpoint) |
+### 3. Tools (priority order)
 
-### Regime & History (1)
-| Tool | Priority | API Status |
-|------|----------|------------|
-| `threshold_regime_history` | Medium | ❓ Needs endpoint or audit log |
+| Order | Tool | Wraps |
+|-------|------|-------|
+| 1 | `evaluate` | POST /api/patterns/evaluate |
+| 2 | `list_patterns` | GET /api/patterns |
+| 3 | `get_pattern` | GET /api/patterns/{id} |
+| 4 | `evaluate_pattern` | POST /api/patterns/{id}/evaluate |
+| 5 | `categories` | Aggregation from list_patterns |
+| 6 | `health` | GET /health |
+| 7 | `api_schema` | GET /swagger/v1/swagger.json |
+| 8 | `reload` | POST /api/patterns/reload |
 
-### Administrative (1)
-| Tool | Priority | API Status |
-|------|----------|------------|
-| `threshold_reload` | Low | ✅ Ready |
+### 4. Container & Deployment
+- `Containerfile` (copy FredCollectorMcp pattern)
+- Add to `infrastructure/compose.yaml.j2`
+- Deploy via ansible
 
-### Discovery & Diagnostics (2)
-| Tool | Priority | API Status |
-|------|----------|------------|
-| `threshold_health` | Low | ✅ Ready |
-| `threshold_api_schema` | Low | ✅ Ready (needs prod enable) |
+## Tool Naming
 
----
+Use short names without prefix (like FredCollectorMcp):
+- `evaluate` not `threshold_evaluate`
+- `list_patterns` not `threshold_list_patterns`
 
-## Implementation Phases
+Tools are already namespaced within the `threshold-engine` MCP server context.
 
-### Phase 1: Core Framework
-- [ ] Create solution structure
-- [ ] Implement MCP stdio transport
-- [ ] JSON-RPC message handling
-- [ ] ThresholdEngine HTTP client
-- [ ] Error handling
+## Transport
 
-**Estimate:** 2-3 hours
+**stdio** - Claude Desktop launches process directly:
+```json
+{
+  "mcpServers": {
+    "threshold-engine": {
+      "command": "dotnet",
+      "args": ["run", "--project", "/path/to/ThresholdEngineMcp"]
+    }
+  }
+}
+```
 
-### Phase 2: Primary Tool
-- [ ] `threshold_evaluate` - wraps evaluate endpoint
-- [ ] Response formatting (triggered patterns, category summaries)
-- [ ] Signal/regime interpretation helpers
+## Reference
 
-**Estimate:** 2-3 hours
-
-### Phase 3: Pattern Tools
-- [ ] `threshold_list_patterns`
-- [ ] `threshold_get_pattern` (with threshold interpretation)
-- [ ] `threshold_evaluate_pattern`
-- [ ] `threshold_categories` (aggregation)
-
-**Estimate:** 3-4 hours
-
-### Phase 4: Supporting Tools
-- [ ] `threshold_reload`
-- [ ] `threshold_health`
-- [ ] `threshold_api_schema`
-- [ ] `threshold_regime_history` (if endpoint available)
-
-**Estimate:** 2-3 hours
-
-### Phase 5: Polish
-- [ ] MCP Resources
-- [ ] Claude Desktop testing
-- [ ] Documentation
-- [ ] Container deployment
-
-**Estimate:** 1-2 hours
-
-**Total Estimate:** 10-15 hours
-
----
-
-## Dependencies
-
-### API Changes Needed
-1. **Enable swagger.json in production** - Task exists
-2. **Add regime history endpoint** - For `threshold_regime_history` tool
-   - Option A: New endpoint on ThresholdEngine
-   - Option B: Query ConfigurationAuditLog for regime transitions
-   - Option C: Compute from macro score history in FredCollector
-
----
-
-## Key Insight
-
-The `POST /api/patterns/evaluate` endpoint returns everything needed in one call:
-- Current regime
-- Macro score
-- All 37 pattern evaluations with signals
-
-This is the **primary tool** for conversations. One call gives Claude complete system awareness.
-
----
-
-## Notes
-
-### 2025-11-26 - Initial Specification
-- Created README.md with 9 tools
-- Created CLAUDE.md with coding guidelines
-- All core ThresholdEngine API endpoints verified
-- Added self-documentation tools (schema, health, categories)
-- Added regime history tool (needs API endpoint)
-- Primary tool `threshold_evaluate` gives complete state in one call
+Copy patterns from FredCollectorMcp:
+- `McpServer.cs` - JSON-RPC handling
+- `IMcpTool.cs` / `ToolResult.cs` - Tool interface
+- Tool implementations

@@ -8,7 +8,6 @@ Wraps the FredCollector REST API, providing:
 - **Local FRED Data**: Sub-second responses from TimescaleDB
 - **Series Discovery**: Search and filter FRED series
 - **Historical Data**: Observations with date filtering
-- **Threshold Alerts**: Series-level alert history
 - **Self-Documentation**: OpenAPI schema access
 - **No API Keys**: Data already collected locally
 
@@ -21,15 +20,15 @@ flowchart LR
     end
     
     subgraph MCP Server
-        MCP[FredCollector MCP\nstdio]
+        MCP[FredCollector MCP\n:3103/sse]
     end
     
     subgraph ATLAS Platform
-        API[FredCollector API\n:5001]
-        DB[(TimescaleDB\n:5432)]
+        API[fred-api\n:8080]
+        DB[(TimescaleDB)]
     end
-    
-    CD -->|MCP Protocol| MCP
+
+    CD -->|SSE + JSON-RPC| MCP
     MCP -->|HTTP| API
     API --> DB
 ```
@@ -37,16 +36,16 @@ flowchart LR
 ## Technology Stack
 
 - **.NET 9 / C# 13** - Consistent with ATLAS platform
-- **MCP Transport**: stdio (stdin/stdout JSON-RPC)
-- **HTTP Client**: `HttpClient` with Polly resilience
+- **MCP Transport**: SSE (Server-Sent Events over HTTP)
+- **HTTP Client**: `HttpClient`
 
 ---
 
-## MCP Tools (10 Tools)
+## MCP Tools (7 Tools)
 
 ### Data Tools
 
-#### `fred_list_series`
+#### `list_series`
 List all configured FRED series in ATLAS.
 
 **Parameters:**
@@ -71,44 +70,11 @@ List all configured FRED series in ATLAS.
 }
 ```
 
-**Wraps:** `GET http://mercury:5001/api/series`
+**Wraps:** `GET http://fred-api:8080/api/series`
 
 ---
 
-#### `fred_get_series`
-Get detailed metadata for a specific series.
-
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `series_id` | string | Yes | FRED series ID |
-
-**Returns:**
-```json
-{
-  "seriesId": "VIXCLS",
-  "title": "CBOE Volatility Index: VIX",
-  "description": "VIX measures market expectation of near term volatility...",
-  "category": "Liquidity",
-  "frequency": "Daily",
-  "units": "Index",
-  "seasonalAdjustment": "Not Seasonally Adjusted",
-  "cronExpression": "0 0 18 * * ?",
-  "isActive": true,
-  "lastCollectedAt": "2025-11-25T23:00:00Z",
-  "alertThreshold": 22.0,
-  "thresholdDirection": "Above",
-  "observationCount": 8547,
-  "earliestObservation": "1990-01-02",
-  "latestObservation": "2025-11-25"
-}
-```
-
-**Wraps:** `GET http://mercury:5001/api/series/{id}` (needs endpoint addition)
-
----
-
-#### `fred_get_latest`
+#### `get_latest`
 Get the most recent observation for a series.
 
 **Parameters:**
@@ -127,11 +93,11 @@ Get the most recent observation for a series.
 }
 ```
 
-**Wraps:** `GET http://mercury:5001/api/series/{id}/latest`
+**Wraps:** `GET http://fred-api:8080/api/series/{id}/latest`
 
 ---
 
-#### `fred_get_observations`
+#### `get_observations`
 Get historical observations for a series.
 
 **Parameters:**
@@ -155,11 +121,11 @@ Get historical observations for a series.
 }
 ```
 
-**Wraps:** `GET http://mercury:5001/api/series/{id}/observations`
+**Wraps:** `GET http://fred-api:8080/api/series/{id}/observations`
 
 ---
 
-#### `fred_search`
+#### `search`
 Search FRED for series by keyword.
 
 **Parameters:**
@@ -187,64 +153,13 @@ Search FRED for series by keyword.
 }
 ```
 
-**Wraps:** `GET http://mercury:5001/api/series/search`
-
----
-
-#### `fred_recent_alerts`
-Get recent threshold alerts.
-
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `days` | integer | No | Lookback period (default: 7) |
-| `series_id` | string | No | Filter by series |
-
-**Returns:**
-```json
-{
-  "alerts": [
-    {
-      "seriesId": "VIXCLS",
-      "observedValue": 25.5,
-      "threshold": 22.0,
-      "direction": "Above",
-      "alertedAt": "2025-11-20T18:05:00Z"
-    }
-  ],
-  "count": 3
-}
-```
-
-**Wraps:** `GET http://mercury:5001/api/alerts/recent`
-
----
-
-#### `fred_macro_score`
-Get the FredCollector macro score calculation.
-
-**Parameters:** None
-
-**Returns:**
-```json
-{
-  "score": -4.4,
-  "indicatorValues": {
-    "ICSA": { "value": 215.0, "contribution": -0.5 },
-    "UMCSENT": { "value": 68.2, "contribution": -1.0 },
-    "VIXCLS": { "value": 14.2, "contribution": 0.0 }
-  },
-  "calculatedAt": "2025-11-26T12:00:00Z"
-}
-```
-
-**Wraps:** `GET http://mercury:5001/api/macro-score`
+**Wraps:** `GET http://fred-api:8080/api/series/search`
 
 ---
 
 ### Discovery & Diagnostics Tools
 
-#### `fred_categories`
+#### `categories`
 List all available data categories and series counts.
 
 **Parameters:** None
@@ -264,11 +179,11 @@ List all available data categories and series counts.
 }
 ```
 
-**Wraps:** Aggregation of `GET http://mercury:5001/api/series`
+**Wraps:** Aggregation of `GET http://fred-api:8080/api/series`
 
 ---
 
-#### `fred_health`
+#### `health`
 Get FredCollector service health and data freshness.
 
 **Parameters:** None
@@ -301,11 +216,11 @@ Get FredCollector service health and data freshness.
 }
 ```
 
-**Wraps:** `GET http://mercury:5001/health` + aggregations
+**Wraps:** `GET http://fred-api:8080/health` + aggregations
 
 ---
 
-#### `fred_api_schema`
+#### `api_schema`
 Get the OpenAPI specification for FredCollector API.
 
 **Parameters:**
@@ -322,15 +237,13 @@ Get the OpenAPI specification for FredCollector API.
     { "path": "/api/series", "method": "GET", "summary": "List all configured series" },
     { "path": "/api/series/{id}/latest", "method": "GET", "summary": "Get latest observation" },
     { "path": "/api/series/{id}/observations", "method": "GET", "summary": "Get historical data" },
-    { "path": "/api/series/search", "method": "GET", "summary": "Search FRED series" },
-    { "path": "/api/alerts/recent", "method": "GET", "summary": "Get recent alerts" },
-    { "path": "/api/macro-score", "method": "GET", "summary": "Calculate macro score" }
+    { "path": "/api/series/search", "method": "GET", "summary": "Search FRED series" }
   ],
   "authentication": "X-API-Key header"
 }
 ```
 
-**Wraps:** `GET http://mercury:5001/swagger/v1/swagger.json`
+**Wraps:** `GET http://fred-api:8080/swagger/v1/swagger.json`
 
 ---
 
@@ -344,14 +257,14 @@ Get the OpenAPI specification for FredCollector API.
 | Vintage/revision data | ✅ | ❌ |
 | Series discovery | ❌ | ✅ |
 | Configured series list | ❌ | ✅ |
-| Threshold alerts | ❌ | ✅ |
-| Macro score | ❌ | ✅ |
 | Data freshness check | ❌ | ✅ |
 | API schema access | ❌ | ✅ |
 | Response latency | 500-2000ms | <100ms |
 | Requires API key | ✅ | ❌ |
 
 **Trade-off:** Lose FRED's transformation features, gain local speed + ATLAS-specific features.
+
+> **See also:** ThresholdEngineMcp for macro score and pattern-based signals.
 
 ---
 
@@ -360,8 +273,8 @@ Get the OpenAPI specification for FredCollector API.
 ### Environment Variables
 
 ```bash
-FREDCOLLECTOR_API_URL=http://mercury:5001
-FREDCOLLECTOR_MCP_LOG_LEVEL=Information
+FREDCOLLECTOR_API_URL=http://fred-api:8080  # Container name, not host
+FREDCOLLECTOR_MCP_LOG_LEVEL=Warning
 FREDCOLLECTOR_MCP_TIMEOUT_SECONDS=30
 ```
 
@@ -371,15 +284,13 @@ FREDCOLLECTOR_MCP_TIMEOUT_SECONDS=30
 {
   "mcpServers": {
     "fred-collector": {
-      "command": "dotnet",
-      "args": ["run", "--project", "/path/to/FredCollectorMcp"],
-      "env": {
-        "FREDCOLLECTOR_API_URL": "http://mercury:5001"
-      }
+      "url": "http://mercury:3103/sse"
     }
   }
 }
 ```
+
+The MCP server runs as a persistent service on mercury:3103, not locally.
 
 ---
 
@@ -451,8 +362,7 @@ In addition to tools, expose static resources for context:
 | Resource URI | Description |
 |--------------|-------------|
 | `fred://series/all` | Complete series inventory with metadata |
-| `fred://categories` | Category definitions and weights |
-| `fred://thresholds` | All configured alert thresholds |
+| `fred://categories` | Category definitions and series counts |
 
 ---
 
