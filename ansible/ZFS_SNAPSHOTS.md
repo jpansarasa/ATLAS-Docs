@@ -36,7 +36,7 @@ System uses `zfs-auto-snapshot` with optimized retention:
 - Weekly: 4 (1 month)
 - Monthly: 6 (6 months)
 
-Tune retention: `sudo ./scripts/zfs-tune-snapshots.sh`
+Tune retention: `sudo ./ansible/scripts/zfs-tune-snapshots.sh`
 
 ## Best Practices
 

@@ -176,10 +176,6 @@ Benefits:
 ### Validate Templating
 
 ```bash
-# Quick pre-flight check
-./test-templating.sh
-
-# Full templating test
 ansible-playbook playbooks/test-templating.yml
 ```
 

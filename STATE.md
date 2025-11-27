@@ -64,7 +64,7 @@
 - Pluggable INotificationChannel implementations
 - Severity-based routing (critical→all, warning→ntfy, info→email)
 
-## SERVICES [20_running]
+## SERVICES [19_running]
 
 ### Core Data Services
 - fred-collector:5002 → data collection worker + gRPC streaming
@@ -94,7 +94,6 @@
 ### System Monitoring
 - node-exporter:9100 → system metrics
 - gpu-exporter:9835 → NVIDIA metrics
-- dashboard-api:8080 → dashboard API
 
 ## PIPELINE [end_to_end_operational]
 

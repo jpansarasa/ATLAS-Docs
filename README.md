@@ -763,17 +763,16 @@ ATLAS/
 │   ├── Containerfile       # Container build definition
 │   └── README.md           # MCP server documentation
 ├── infrastructure/         # Infrastructure-as-code definitions
-│   ├── compose.yaml.j2     # Service orchestration template (18 services, Ansible/Jinja2)
+│   ├── compose.yaml.j2     # Service orchestration template (19 services, Ansible/Jinja2)
 │   ├── monitoring/         # Prometheus configs, 9 Grafana dashboards
-│   ├── dashboard/          # Dashboard API
 │   └── README.md           # Infrastructure documentation
 ├── ansible/                # Deployment automation (HOW to deploy)
 │   ├── playbooks/          # Ansible playbooks
 │   ├── inventory/          # Host definitions
+│   ├── scripts/            # Utility scripts (ZFS tuning, template validation)
 │   └── README.md           # Ansible documentation
 ├── FredCollectorClient/    # gRPC client library for FredCollector
 ├── markitdownMCP/          # MarkItDown MCP server
-├── scripts/                # Utility scripts (ZFS tuning, etc.)
 ├── CLAUDE.md               # 🤖 Core code generation rules and standards
 └── STATE.md                # Project-wide state tracking
 ```
@@ -1001,4 +1000,4 @@ Proprietary - Personal use only
 - **FredCollector**: ✅ 100% complete (12 epics, 378 tests, production deployed)
 - **ThresholdEngine**: ✅ 100% complete (9 epics, 153 tests, production deployed)
 - **AlertService**: ✅ 100% complete (notifications working, production deployed)
-- **Infrastructure**: 18 services running, 9 Grafana dashboards, full observability stack
+- **Infrastructure**: 19 services running, 9 Grafana dashboards, full observability stack

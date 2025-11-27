@@ -20,7 +20,7 @@ Infrastructure-as-code definitions for the ATLAS AI inference platform. This dir
 ### AI Inference
 - **ollama-gpu** (port 11434): GPU-accelerated inference for large models
 - **ollama-cpu** (port 11435): CPU inference for smaller models
-- **dashboard-api** (port 8080): REST API for Claude MCP integration
+- **ollama-mcp** (port 3100): MCP server for Claude Desktop integration
 
 ### Data & Analytics
 - **timescaledb** (port 5432): PostgreSQL + TimescaleDB for time-series financial data (FRED Collector)
@@ -123,12 +123,6 @@ curl http://localhost:11434/api/generate -d '{
   "prompt": "Explain compound interest briefly.",
   "stream": false
 }'
-```
-
-### Test Dashboard API:
-```bash
-curl http://localhost:8080/health
-curl http://localhost:8080/ollama/gpu/models
 ```
 
 ## Monitoring
@@ -247,8 +241,6 @@ sudo zpool scrub sata-bulk
 - `compose.yaml.j2`: Ansible template (source of truth) - uses variables from `ansible/group_vars/`
 - `compose.yaml`: Generated during deployment (do not edit directly)
 - `monitoring/prometheus.yml`: Prometheus scrape configs
-- `dashboard/app.py`: Dashboard API application
-- `dashboard/Dockerfile`: Dashboard container build
 
 ### Compose Template Variables
 
@@ -275,8 +267,7 @@ sudo zpool scrub sata-bulk
 ├── atlas.service         # Systemd unit file for auto-start
 ├── models/               # Ollama model storage (ZFS: nvme-fast/models)
 ├── logs/                 # Application logs
-├── timeseries/           # TimescaleDB data (ZFS: nvme-fast/timeseries)
-└── dashboard/            # Dashboard data
+└── timeseries/           # TimescaleDB data (ZFS: nvme-fast/timeseries)
 ```
 
 ### Deployment Workflow
