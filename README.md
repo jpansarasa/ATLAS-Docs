@@ -361,7 +361,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 **Purpose**: Automated collection system for Federal Reserve Economic Data (FRED) API
 **Status**: ✅ 100% complete (12 epics)
 **Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
-**Coverage**: 29 series configured, 800,000+ searchable FRED series
+**Coverage**: 39 series configured, 800,000+ searchable FRED series
 
 **Completed Epics**:
 - ✅ E1: Project Foundation (100%)
@@ -395,7 +395,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 - **Rate Limiting**: Token bucket implementation (120 req/min FRED compliance)
 - **Resilience Patterns**: Polly retry, circuit breaker, timeout for robust collection
 - **Time-Series Optimization**: TimescaleDB hypertables for efficient storage and queries
-- **REST API**: Downstream consumption of collected data (Epic 8 - planned)
+- **REST API**: Downstream consumption of collected data
 
 **Architecture Highlights**:
 - Event-driven with System.Threading.Channels (no MediatR dependency)
@@ -415,10 +415,10 @@ The system tracks multiple dimensions to assess where the economy is within the 
 - UNRATE: Unemployment Rate (monthly, Sahm Rule)
 - FEDFUNDS: Federal Funds Rate (daily)
 
-*Liquidity Metrics* (planned - Epic 6):
+*Liquidity Metrics* (Epic 6 - complete):
 - VIX, DXY, credit spreads, Fed balance sheet, M2, commodities
 
-*Growth Indicators* (planned - Epic 7):
+*Growth Indicators* (Epic 7 - complete):
 - GDP, industrial production, retail sales, housing
 
 **Not Limited To Current Set**:
@@ -730,7 +730,6 @@ ATLAS/
 │   └── src/
 │       └── Events/            # ObservationCollectedEvent, ThresholdCrossedEvent, etc.
 ├── FredCollector/          # FRED API data collection service
-│   ├── .cursorrules        # 🤖 AI assistant instructions (compact)
 │   ├── progress.md         # 🤖 Epic tracking (compact: ~1.5K tokens)
 │   ├── src/                # C# source code (.NET 9)
 │   │   ├── Core/           # Domain models, entities, enums, interfaces
@@ -744,7 +743,6 @@ ATLAS/
 │   │   ├── Service/        # Long-running collection service
 │   │   └── Api/            # REST API for data queries
 │   ├── tests/              # Unit and integration tests
-│   ├── scripts/            # Development scripts
 │   └── .devcontainer/      # VS Code Dev Container config
 ├── ThresholdEngine/        # Pattern evaluation & regime detection service
 │   ├── progress.md         # 🤖 Epic tracking (compact format)
@@ -755,7 +753,6 @@ ATLAS/
 │   │   └── Service/        # Worker service entry point
 │   ├── tests/              # Unit and integration tests (153 tests passing)
 │   ├── config/             # Pattern configurations (31 JSON files)
-│   ├── docs/               # Documentation (EXPRESSION_API.md, etc.)
 │   └── .devcontainer/      # VS Code Dev Container config
 ├── OllamaMCP/              # MCP server for Claude Desktop
 │   ├── Program.cs          # C# source code (.NET 9)
@@ -994,7 +991,7 @@ Proprietary - Personal use only
 
 ---
 
-**Last Updated**: 2025-11-24
+**Last Updated**: 2025-11-27
 **Framework Version**: 4.4
 **Project Status**: Production Ready
 - **FredCollector**: ✅ 100% complete (12 epics, 378 tests, production deployed)

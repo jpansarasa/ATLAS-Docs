@@ -173,12 +173,7 @@ deployment: Ubuntu24(threadripper:24c/128GB)
 ## FILES [memory_bank]
 
 progress.md → this_file (status_tracking)
-activeContext.md → current_focus + session_state
-systemPatterns.md → arch_patterns + tech_contracts
-techContext.md → tech_stack + dependencies
-projectbrief.md → goals + requirements
-ARCHITECTURE.md → ADR(epic4_extraction)
-docs/*.md → implementation_details_per_US
+README.md → architecture_overview
 
 ---
-UPDATED: 2025-11-24 | STATUS: production_complete | FORMAT: CLAUDE.md_v1.0
+UPDATED: 2025-11-27 | STATUS: production_complete | FORMAT: CLAUDE.md_v1.0

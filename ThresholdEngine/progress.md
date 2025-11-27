@@ -73,7 +73,7 @@ recent: E8 Production Deployment (container + ansible + database schema)
 ## METRICS
 
 tests_passing: 153/153 (100%) ✅
-patterns_defined: 20+
+patterns_defined: 31
 metrics_exposed: 17
 dashboards: 4
 
@@ -109,9 +109,7 @@ D6: observability → OTEL(prometheus+grafana) ✓
 
 progress.md → this_file (status_tracking)
 README.md → architecture_overview
-docs/EXPRESSION_API.md → context_API_reference
-docs/STATISTICAL_LIBRARIES.md → statistical_functions_guide
 config/patterns/*.json → pattern_definitions
 
 ---
-UPDATED: 2025-11-21 | NEXT: E8 Production Deployment | FORMAT: CLAUDE.md_v1.0
+UPDATED: 2025-11-27 | STATUS: production_complete | FORMAT: CLAUDE.md_v1.0

@@ -13,7 +13,7 @@ This library provides the `EventStreamClient` for subscribing to real-time econo
 <ProjectReference Include="..\..\FredCollectorClient\FredCollectorClient.csproj" />
 
 // Create client
-var channel = GrpcChannel.ForAddress("http://fred-collector:5001");
+var channel = GrpcChannel.ForAddress("http://fred-collector:5002");
 var client = new EventStream.EventStreamClient(channel);
 
 // Subscribe to events

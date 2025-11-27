@@ -173,13 +173,11 @@ Benefits:
 
 ## Testing
 
-### Validate Templating
+Template validation is performed automatically during deployment. Run with `--check` mode for dry runs:
 
 ```bash
-ansible-playbook playbooks/test-templating.yml
+ansible-playbook playbooks/site.yml --check --diff
 ```
-
-Validates that `compose.yaml.j2` correctly substitutes all Ansible variables.
 
 ## Container Runtime
 

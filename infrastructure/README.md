@@ -197,13 +197,13 @@ nvidia-smi --query-gpu=temperature.gpu,power.draw --format=csv
 ### TimescaleDB:
 ```bash
 # Connect to database
-sudo nerdctl exec -it timescaledb psql -U ai_inference -d financial_news
+sudo nerdctl exec -it timescaledb psql -U ai_inference -d atlas
 
 # Backup database
-sudo nerdctl exec timescaledb pg_dump -U ai_inference financial_news > backup.sql
+sudo nerdctl exec timescaledb pg_dump -U ai_inference atlas > backup.sql
 
 # Restore database
-cat backup.sql | sudo nerdctl exec -i timescaledb psql -U ai_inference financial_news
+cat backup.sql | sudo nerdctl exec -i timescaledb psql -U ai_inference atlas
 ```
 
 ## Troubleshooting
@@ -277,9 +277,7 @@ sudo zpool scrub sata-bulk
 3. **Deploy** with ansible: `cd ~/ATLAS/ansible && ansible-playbook playbooks/site.yml`
 4. Ansible copies files from repo → `/opt/ai-inference/` and restarts services
 
-## Next Steps
+## See Also
 
-1. Set up automated ZFS snapshots
-2. Configure Grafana dashboards
-3. Set up model management and versioning
-4. Configure backup strategy
+- [Ansible](../ansible/) - Deployment automation
+- [ZFS Snapshots](../ansible/ZFS_SNAPSHOTS.md) - Automated snapshot management

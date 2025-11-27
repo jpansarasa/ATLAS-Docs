@@ -9,7 +9,7 @@ This project provides a single source of truth for all event definitions used ac
 ## Events
 
 ### ObservationCollectedEvent
-- **Published by**: FredCollector, RssCollector, AlternativeDataCollector
+- **Published by**: FredCollector
 - **Consumed by**: ThresholdEngine
 - **Purpose**: Notifies when new observation data is collected
 
@@ -20,7 +20,7 @@ This project provides a single source of truth for all event definitions used ac
 
 ### RegimeTransitionEvent
 - **Published by**: ThresholdEngine
-- **Consumed by**: AlertService, AnalysisEngine
+- **Consumed by**: AlertService
 - **Purpose**: Notifies when macro economic regime transitions
 
 ## Usage

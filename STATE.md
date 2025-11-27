@@ -126,4 +126,4 @@ sudo nerdctl compose ps
 ```
 
 ---
-**UPDATED**: 2025-11-24 | **STATUS**: production_ready | **DOCS_SYNC**: v4
+**UPDATED**: 2025-11-27 | **STATUS**: production_ready | **DOCS_SYNC**: v5

@@ -1,7 +1,7 @@
 # ATLAS Platform - Executive Summary
 
 **Status:** Production Ready
-**Last Updated:** 2025-11-24
+**Last Updated:** 2025-11-27
 
 ## Overview
 
@@ -24,7 +24,7 @@ flowchart LR
 
 | Service | Status | Key Metrics |
 |---------|--------|-------------|
-| FredCollector | ✅ Production | 39 series, 287 tests |
+| FredCollector | ✅ Production | 39 series, 378 tests |
 | ThresholdEngine | ✅ Production | 31 patterns, 153 tests |
 | AlertService | ✅ Production | ntfy + email channels |
 | Observability | ✅ Production | 8 Grafana dashboards |
@@ -51,8 +51,8 @@ flowchart LR
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| FredCollector REST | 5000 | Series queries, observations |
-| FredCollector gRPC | 5001 | Event streaming to ThresholdEngine |
+| FredCollector REST | 5001 | Series queries, observations |
+| FredCollector gRPC | 5002 | Event streaming to ThresholdEngine |
 | ThresholdEngine | 5003 | Pattern management API |
 | AlertService | 8081 | Alert sink (POST /alerts) |
 | Grafana | 3000 | Dashboards |
@@ -69,7 +69,7 @@ flowchart LR
 ## Infrastructure
 
 Deployed via Ansible to Linux server running nerdctl compose:
-- 17 containerized services
+- 19 containerized services
 - TimescaleDB for time-series storage
 - Full OpenTelemetry observability (Prometheus, Loki, Tempo)
 - Automated via systemd (atlas.service)

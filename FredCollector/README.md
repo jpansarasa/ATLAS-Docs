@@ -14,7 +14,7 @@ FredCollector retrieves economic indicators from the Federal Reserve Economic Da
 flowchart LR
     FRED[FRED API<br/>120 req/min] --> FC[FredCollector<br/>Worker]
     FC --> DB[(TimescaleDB<br/>hypertables)]
-    FC --> gRPC[gRPC Stream<br/>:5001]
+    FC --> gRPC[gRPC Stream<br/>:5002]
     gRPC --> TE[ThresholdEngine]
 ```
 
@@ -44,7 +44,7 @@ DB_PASSWORD=your_db_password
 
 ## API Endpoints
 
-### REST API (port 5000)
+### REST API (port 5001)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -55,7 +55,7 @@ DB_PASSWORD=your_db_password
 | `/api/admin/series/{id}/toggle` | PUT | Enable/disable series |
 | `/health` | GET | Health check |
 
-### gRPC (port 5001)
+### gRPC (port 5002)
 
 - `SubscribeToEvents` - Real-time event stream
 - `GetEventsSince` - Historical events from timestamp
@@ -75,7 +75,7 @@ FredCollector/
 │   ├── FredCollector.Core/       # Domain models
 │   └── FredCollector.Grpc/       # gRPC server
 ├── tests/
-│   └── FredCollector.UnitTests/  # 287 tests
+│   └── FredCollector.UnitTests/  # 378 tests (287 unit + 91 integration)
 ├── protos/
 │   └── events.proto              # gRPC contract
 └── .devcontainer/                # Development environment
