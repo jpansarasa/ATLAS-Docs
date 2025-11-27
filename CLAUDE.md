@@ -99,6 +99,16 @@ IF generate_code THEN
   check(ANTI) →
   apply(LOG_RULES, DOC[type], TEST[if_needed], OBS_STACK[if_sensible])
 
+## VERIFY [before_commit]
+IF code_change THEN verify(compiles) BEFORE commit
+METHODS:
+  dotnet: cd {project}/.devcontainer && docker compose exec dev dotnet build
+  container: sudo nerdctl build -f Containerfile .
+  fallback: ASK_USER("Can't verify build - should I use devcontainer or skip?")
+¬PATTERN: "changes are straightforward" → commit_anyway
+  this_is_how_bugs_ship
+rationale: unverified_code = production_incidents
+
 ## ETHOS
 pragmatic > dogmatic
 working > perfect
