@@ -64,7 +64,7 @@
 - Pluggable INotificationChannel implementations
 - Severity-based routing (critical→all, warning→ntfy, info→email)
 
-## SERVICES [17_running]
+## SERVICES [20_running]
 
 ### Core Data Services
 - fred-collector:5002 → data collection worker + gRPC streaming
@@ -76,7 +76,12 @@
 ### AI/Inference
 - ollama-gpu:11434 → RTX 5090 (32GB VRAM)
 - ollama-cpu:11435 → CPU fallback
-- ollama-mcp:3100 → MCP server (Claude Desktop)
+
+### MCP Servers
+- ollama-mcp:3100 → Ollama inference (Claude Desktop)
+- markitdown-mcp:3102 → document conversion
+- fredcollector-mcp:3103 → FRED data access
+- thresholdengine-mcp:3104 → pattern evaluation
 
 ### Observability Stack
 - prometheus:9090 → metrics collection
