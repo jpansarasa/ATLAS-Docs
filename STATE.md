@@ -1,5 +1,56 @@
 # STATE.md [ATLAS Infrastructure]
 
+## ACTIVE_TASK: Holiday-Aware Calendar
+
+**Branch**: `feature/holiday-aware-alerts`
+**Goal**: Prevent false positive alerts during US Federal Reserve holidays
+
+### Accept Criteria
+- Collection jobs skip execution on Fed holidays (saves API calls)
+- Alerts don't fire on holidays (no 5am ntfy noise)
+- Holiday calendar auto-computes yearly (no manual maintenance)
+
+### Architecture Decision
+
+**Approach**: Quartz Calendar + Metric + Alert Condition
+
+```
+IHolidayCalendarService          DataCollectionScheduler
+  - IsHoliday(date)       ───▶     - Attaches Quartz HolidayCalendar
+  - GetHolidays(year)              - Triggers skip holidays
+
+FredCollectorMeter
+  - fredcollector_market_open gauge (1=open, 0=holiday)
+
+Prometheus Alerts
+  - FredCollectorCollectionEmpty: ... AND fredcollector_market_open == 1
+```
+
+### US Federal Reserve Holidays
+| Holiday | Rule |
+|---------|------|
+| New Year's Day | Jan 1 (observed) |
+| MLK Day | 3rd Monday, January |
+| Presidents' Day | 3rd Monday, February |
+| Memorial Day | Last Monday, May |
+| Juneteenth | June 19 (observed) |
+| Independence Day | July 4 (observed) |
+| Labor Day | 1st Monday, September |
+| Columbus Day | 2nd Monday, October |
+| Veterans Day | Nov 11 (observed) |
+| Thanksgiving | 4th Thursday, November |
+| Christmas | Dec 25 (observed) |
+
+### Status
+- ✓ Create IHolidayCalendarService
+- ✓ Register Quartz HolidayCalendar
+- ✓ Add fredcollector_market_open gauge
+- ✓ Update Prometheus alerts
+- ✓ Unit tests (36 new tests, 299 total passing)
+- ◯ Dashboard indicator (optional)
+
+---
+
 ## CURRENT_STATUS [2025-11-23]
 
 ### FredCollector: 100% Complete
