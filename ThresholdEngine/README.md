@@ -96,6 +96,6 @@ ctx.CurrentRegime                 // MacroRegime enum
 ## See Also
 
 - [FredCollector](../FredCollector/) - Data collection service
-- [FredCollectorClient](../FredCollectorClient/) - gRPC client library
+- [Events.Client](../Events/src/Events.Client/) - gRPC client library
 - [AlertService](../AlertService/) - Notification delivery
 - [gRPC Architecture](../docs/GRPC-ARCHITECTURE.md)
