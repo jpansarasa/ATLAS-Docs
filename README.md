@@ -20,6 +20,8 @@ ATLAS is a systematic macro regime identification framework designed to optimize
   - [Rebalancing Framework](#rebalancing-framework)
 - [Project Components](#project-components)
   - [FredCollector - Economic Data Collection](#1-fredcollector---economic-data-collection)
+  - [AlphaVantageCollector - Commodity Data](#1b-alphavantgecollector---commodity-data-collection)
+  - [NasdaqCollector - LBMA Gold Prices](#1c-nasdaqcollector---lbma-gold-price-collection)
   - [ThresholdEngine - Pattern Evaluation & Regime Detection](#2-thresholdengine---pattern-evaluation--regime-detection)
   - [AlertService - Notification Delivery](#3-alertservice---notification-delivery)
   - [Analysis Tools](#4-analysis-tools-planned---q1-q2-2026)
@@ -431,6 +433,44 @@ See [docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md) for detailed FRED
 
 [Technical documentation](./FredCollector/README.md)
 
+### 1b. AlphaVantageCollector - Commodity Data Collection
+
+**Purpose**: Automated collection of commodity prices from Alpha Vantage API
+**Status**: ✅ Complete
+**Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
+
+**Data Coverage**:
+- WTI Crude Oil (daily prices)
+- Brent Crude Oil (daily prices)
+- Natural Gas (daily prices)
+
+**Core Capabilities**:
+- Daily commodity price collection via Alpha Vantage API
+- gRPC event streaming (shared `ObservationEventStream` contract)
+- Full OpenTelemetry observability (traces, metrics, logs)
+- Rate limiting for API compliance
+
+[Technical documentation](./AlphaVantageCollector/README.md)
+
+### 1c. NasdaqCollector - LBMA Gold Price Collection
+
+**Purpose**: Automated collection of LBMA gold prices from Nasdaq Data Link
+**Status**: ✅ Complete
+**Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
+
+**Data Coverage**:
+- LBMA Gold Price AM (London AM fixing)
+- LBMA Gold Price PM (London PM fixing)
+
+**Core Capabilities**:
+- Daily LBMA gold price collection
+- gRPC event streaming (shared `ObservationEventStream` contract)
+- REST API for data queries
+- Full OpenTelemetry observability (traces, metrics, logs)
+- Revision detection for price corrections
+
+[Technical documentation](./NasdaqCollector/README.md)
+
 ### 2. ThresholdEngine - Pattern Evaluation & Regime Detection
 
 **Purpose**: Evaluate configurable C# expressions against economic data to detect regime transitions and generate allocation signals
@@ -679,7 +719,8 @@ User: "Should I deploy cash now?"
 flowchart TB
     subgraph Data Collection
         FC[FredCollector]
-        VC[VixCollector]
+        AV[AlphaVantageCollector]
+        NC[NasdaqCollector]
     end
 
     subgraph Processing
@@ -700,21 +741,22 @@ flowchart TB
     end
 
     FC -->|gRPC events| TE
-    VC -->|gRPC events| TE
+    AV -->|gRPC events| TE
+    NC -->|gRPC events| TE
     TE -->|threshold breaches| PROM
     PROM -->|alerts| AM[Alertmanager]
     AM -->|POST /alerts| AS
     AS --> NTFY
     AS --> EMAIL
 
-    FC & TE & AS -.->|traces| TEMPO
-    FC & TE & AS -.->|logs| LOKI
-    FC & TE & AS -.->|metrics| PROM
+    FC & AV & NC & TE & AS -.->|traces| TEMPO
+    FC & AV & NC & TE & AS -.->|logs| LOKI
+    FC & AV & NC & TE & AS -.->|metrics| PROM
     PROM & TEMPO & LOKI --> GRAF
 ```
 
 **Key Architectural Principles**:
-- **Data Collectors** (FredCollector, VixCollector, etc.): Poll sources, publish events
+- **Data Collectors** (FredCollector, AlphaVantageCollector, NasdaqCollector): Poll sources, publish events
 - **ThresholdEngine**: Subscribes to all events, evaluates rules, publishes breaches
 - **AlertService**: Delivers notifications (email, push, etc.)
 - **Event-Driven**: System.Threading.Channels (MVP) or message queue (production scale)
@@ -725,24 +767,20 @@ flowchart TB
 ATLAS/
 ├── docs/                   # 📚 Human-facing documentation (verbose)
 │   ├── ARCHITECTURE.md     # Microservices separation decision record
+│   ├── OBSERVABILITY.md    # Metrics, tracing, logging patterns
 │   └── FRED_DATA_RESEARCH.md # FRED API research and indicator mapping
-├── Events/                  # Shared event contracts
+├── Events/                  # Shared event contracts (gRPC proto + C# types)
 │   └── src/
 │       └── Events/            # ObservationCollectedEvent, ThresholdCrossedEvent, etc.
 ├── FredCollector/          # FRED API data collection service
-│   ├── progress.md         # 🤖 Epic tracking (compact: ~1.5K tokens)
 │   ├── src/                # C# source code (.NET 9)
-│   │   ├── Core/           # Domain models, entities, enums, interfaces
-│   │   │   ├── Entities/   # SeriesConfig, FredObservation, ThresholdAlert
-│   │   │   ├── Enums/      # CollectionFrequency, ThresholdDirection
-│   │   │   └── Interfaces/ # Repository and service interfaces
-│   │   ├── Infrastructure/ # Data access, external APIs, repositories
-│   │   │   ├── Data/       # FredCollectorDbContext, configurations, migrations
-│   │   │   └── ExternalApis/ # FRED API client
-│   │   ├── Application/    # Business logic and orchestration
-│   │   ├── Service/        # Long-running collection service
-│   │   └── Api/            # REST API for data queries
 │   ├── tests/              # Unit and integration tests
+│   └── .devcontainer/      # VS Code Dev Container config
+├── AlphaVantageCollector/  # Commodity prices (WTI, Brent, Natural Gas)
+│   ├── src/                # C# source code (.NET 9)
+│   └── .devcontainer/      # VS Code Dev Container config
+├── NasdaqCollector/        # LBMA gold price collection
+│   ├── src/                # C# source code (.NET 9)
 │   └── .devcontainer/      # VS Code Dev Container config
 ├── ThresholdEngine/        # Pattern evaluation & regime detection service
 │   ├── progress.md         # 🤖 Epic tracking (compact format)
@@ -760,7 +798,7 @@ ATLAS/
 │   ├── Containerfile       # Container build definition
 │   └── README.md           # MCP server documentation
 ├── infrastructure/         # Infrastructure-as-code definitions
-│   ├── compose.yaml.j2     # Service orchestration template (19 services, Ansible/Jinja2)
+│   ├── compose.yaml.j2     # Service orchestration template (21 services, Ansible/Jinja2)
 │   ├── monitoring/         # Prometheus configs, 9 Grafana dashboards
 │   └── README.md           # Infrastructure documentation
 ├── ansible/                # Deployment automation (HOW to deploy)
@@ -991,10 +1029,12 @@ Proprietary - Personal use only
 
 ---
 
-**Last Updated**: 2025-11-27
-**Framework Version**: 4.4
+**Last Updated**: 2025-11-29
+**Framework Version**: 4.5
 **Project Status**: Production Ready
 - **FredCollector**: ✅ 100% complete (12 epics, 378 tests, production deployed)
+- **AlphaVantageCollector**: ✅ Complete (commodity prices, production deployed)
+- **NasdaqCollector**: ✅ Complete (LBMA gold, production deployed)
 - **ThresholdEngine**: ✅ 100% complete (9 epics, 153 tests, production deployed)
 - **AlertService**: ✅ 100% complete (notifications working, production deployed)
-- **Infrastructure**: 19 services running, 9 Grafana dashboards, full observability stack
+- **Infrastructure**: 21 services running, 9 Grafana dashboards, full observability stack

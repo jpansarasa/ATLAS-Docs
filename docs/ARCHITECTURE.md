@@ -7,7 +7,9 @@ ATLAS uses event-driven microservices with clear separation between data collect
 ```mermaid
 flowchart LR
     subgraph Collection
-        FC[FredCollector<br/>39 series]
+        FC[FredCollector<br/>FRED API]
+        AV[AlphaVantageCollector<br/>Commodities]
+        NC[NasdaqCollector<br/>LBMA Gold]
     end
 
     subgraph Evaluation
@@ -19,6 +21,8 @@ flowchart LR
     end
 
     FC -->|gRPC stream| TE
+    AV -->|gRPC stream| TE
+    NC -->|gRPC stream| TE
     TE -->|HTTP POST| AS
     AS --> N[ntfy.sh]
     AS --> E[Email]
@@ -28,19 +32,21 @@ flowchart LR
 
 | Service | Port | Responsibility |
 |---------|------|----------------|
-| FredCollector | 5001 (gRPC), 5000 (REST) | Collect FRED data, publish observation events |
+| FredCollector | 5001 (gRPC), 5000 (REST) | Collect FRED economic data |
+| AlphaVantageCollector | 5002 (gRPC) | Collect commodity prices (WTI, Brent, Natural Gas) |
+| NasdaqCollector | 5004 (gRPC), 5005 (REST) | Collect LBMA gold prices |
 | ThresholdEngine | 5003 | Evaluate patterns, detect regime transitions |
 | AlertService | 8081 | Deliver notifications (ntfy, email) |
 
 ## Design Principles
 
 ### Single Responsibility
-- **FredCollector**: Data collection only. No threshold evaluation.
+- **Collectors** (FredCollector, AlphaVantageCollector, NasdaqCollector): Data collection only. No threshold evaluation.
 - **ThresholdEngine**: Pattern evaluation only. No data collection or alerting.
 - **AlertService**: Notification delivery only. No business logic.
 
 ### Event-Driven Communication
-- FredCollector → ThresholdEngine: gRPC server streaming
+- Collectors → ThresholdEngine: gRPC server streaming (shared proto contract)
 - ThresholdEngine → AlertService: HTTP POST to `/alerts` endpoint
 
 ### Configuration Over Code
@@ -52,20 +58,22 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-    participant FRED as FRED API
-    participant FC as FredCollector
+    participant APIs as Data APIs
+    participant COL as Collectors
     participant TE as ThresholdEngine
     participant AS as AlertService
 
-    FRED->>FC: Economic data
-    FC->>FC: Store in TimescaleDB
-    FC->>TE: ObservationCollectedEvent (gRPC)
+    APIs->>COL: Economic/Market data
+    COL->>COL: Store in TimescaleDB
+    COL->>TE: SeriesCollectedEvent (gRPC)
     TE->>TE: Evaluate patterns
     TE->>AS: POST /alerts (if triggered)
     AS->>AS: Route by severity
     AS-->>ntfy: Push notification
     AS-->>Email: SMTP
 ```
+
+All collectors implement the same `ObservationEventStream` gRPC service, allowing ThresholdEngine to consume events uniformly regardless of data source.
 
 ## Event Contracts
 
@@ -114,15 +122,15 @@ All services deployed via `infrastructure/compose.yaml`:
 
 | Category | Services |
 |----------|----------|
-| Core | fred-collector, fred-api, threshold-engine, alert-service |
-| Data | timescaledb |
+| Core | fred-collector, fred-api, alphavantage-collector, nasdaq-collector, threshold-engine, alert-service |
+| Data | timescaledb (shared), nasdaq-timescaledb |
 | Observability | prometheus, alertmanager, grafana, loki, tempo, otel-collector |
 | AI | ollama-gpu, ollama-cpu |
 
 ## Why This Architecture?
 
 ### Composability
-Patterns can combine data from multiple sources. Adding a new collector (RSS, prices) requires zero changes to ThresholdEngine.
+Patterns can combine data from multiple sources. Adding a new collector requires zero changes to ThresholdEngine - just implement the shared gRPC contract. This is proven: AlphaVantageCollector and NasdaqCollector were added without modifying ThresholdEngine.
 
 ### Testability
 Each service can be tested in isolation with mock events.
@@ -135,7 +143,10 @@ Services can be scaled independently based on load.
 
 ## See Also
 
-- [FredCollector](../FredCollector/) - Data collection
+- [FredCollector](../FredCollector/) - FRED economic data collection
+- [AlphaVantageCollector](../AlphaVantageCollector/) - Commodity price collection
+- [NasdaqCollector](../NasdaqCollector/) - LBMA gold price collection
 - [ThresholdEngine](../ThresholdEngine/) - Pattern evaluation
 - [AlertService](../AlertService/) - Notifications
 - [gRPC Architecture](GRPC-ARCHITECTURE.md) - Event streaming details
+- [Observability](OBSERVABILITY.md) - Metrics, tracing, logging patterns

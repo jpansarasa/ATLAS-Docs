@@ -50,6 +50,11 @@ template_good: "Null at items[{idx}] user={uid} state={s}"
 template_bad: "Error occurred"
 chain: log_good + err_good → test_less
 purpose: runtime_debug ¬ noise
+LEVELS:
+  LogInformation: routine_ops | expected_retries | client_disconnect
+    rationale: filtered_in_prod, visible_in_dev
+  LogWarning: unexpected_but_recoverable | degraded_state
+  LogError: failures | exceptions | requires_attention
 
 ## DOC [selective]
 CLI → help(required)
@@ -70,6 +75,17 @@ OTEL → Loki(logs) + Prom(metrics) + Grafana(viz)
 metric_purpose: {perf_tune, bottleneck_diagnosis}
 config: lightweight(tunables+ext_connections) ¬ framework
 when: sensible_value ¬ dogmatic
+METRICS:
+  location: service_boundary_only ¬ internal_layers
+    rationale: repository+service = double_count
+  tags: bounded_cardinality_only
+    ✓ method_name | status_code | service_name
+    ✗ event_type.ToString() | user_id | unbounded_enum
+  streaming: per_event_at_boundary for long_running_visibility
+TRACING:
+  catch_blocks: activity?.SetStatus(ActivityStatusCode.Error, ex.Message)
+    rationale: exceptions_must_appear_in_traces
+  spans: service_operations ¬ internal_methods
 
 ## IDIOM_MAP [lang_specific]
 Rust: Result<T,E> | pattern_match | ownership
@@ -108,7 +124,6 @@ METHODS:
 DOTNET_MODERN:
   ¬sln_files # modern .NET auto-discovers .csproj
   `dotnet build` in project_root = sufficient
-  rationale: SDK-style_projects_self_describe
 DEPLOYMENTS:
   use: ansible # infrastructure/ansible/
   ¬manual: container_start | service_restart | config_edit

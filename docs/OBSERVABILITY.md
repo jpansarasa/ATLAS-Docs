@@ -199,3 +199,104 @@ All Alertmanager receivers POST to AlertService (`http://alert-service:8080/aler
 - `Channels__Ntfy__Topic`: ntfy.sh topic name
 - `Channels__Email__Enabled`: Enable/disable email
 - `Channels__Email__SmtpHost`: SMTP server
+
+## Implementation Patterns
+
+### Metrics Location: Service Boundary Only
+
+Metrics belong at the service boundary (gRPC service, API controller), not in internal layers like repositories. Recording in both causes double-counting.
+
+**Correct** - gRPC service counts when events leave the service:
+```csharp
+// EventStreamService.cs (service boundary)
+await responseStream.WriteAsync(evt, context.CancellationToken);
+eventsStreamed++;
+_eventsStreamedCounter.Add(1, new KeyValuePair<string, object?>("method", "SubscribeToEvents"));
+```
+
+**Wrong** - repository also counting:
+```csharp
+// EventRepository.cs (internal layer) - DON'T DO THIS
+yield return evt;
+SomeMeter.EventsStreamed.Add(1);  // EventStreamService already counts this
+```
+
+### Metric Tag Cardinality
+
+Tags must have bounded cardinality. Unbounded values explode metric storage and query performance.
+
+**Bounded (good)**:
+- `method`: "SubscribeToEvents", "GetEventsSince" (finite set)
+- `status_code`: "200", "500" (finite set)
+- `success`: "true", "false" (2 values)
+- `service_name`: "FredCollector", "NasdaqCollector" (known services)
+
+**Unbounded (bad)**:
+- `event_type`: `evt.PayloadCase.ToString()` (grows with schema)
+- `user_id`: unique per user
+- `series_id`: grows with data
+- `event_id`: unique per event
+
+### Tracing: Error Status in Catch Blocks
+
+Every catch block that handles an exception must record it in the trace. Otherwise exceptions disappear from observability.
+
+```csharp
+public async Task<HealthResponse> GetHealth(Empty request, ServerCallContext context)
+{
+    using var activity = ActivitySource.StartActivity("GetHealth");
+
+    try
+    {
+        // ... operation
+        return response;
+    }
+    catch (Exception ex)
+    {
+        activity?.SetStatus(ActivityStatusCode.Error, ex.Message);  // Required
+        _logger.LogError(ex, "Health check failed");
+        return new HealthResponse { Healthy = false };
+    }
+}
+```
+
+### Logging Levels
+
+Production default is WARN. Use levels correctly:
+
+| Level | Use For | Example |
+|-------|---------|---------|
+| `LogInformation` | Routine operations, expected retries, client disconnects | "FredCollector unavailable, retrying in 5s" |
+| `LogWarning` | Unexpected but recoverable, degraded state | "Cache miss, falling back to database" |
+| `LogError` | Failures requiring attention, exceptions | "Failed to process event {EventId}" |
+
+**Correct** - routine retry is Information (filtered in prod):
+```csharp
+catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
+{
+    _logger.LogInformation("FredCollector unavailable, retrying in {Delay}s", delay);
+}
+```
+
+**Wrong** - routine operation logged as Warning (noise in prod):
+```csharp
+catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
+{
+    _logger.LogWarning("FredCollector unavailable, retrying...");  // Too noisy
+}
+```
+
+### Streaming Metrics for Long-Running Operations
+
+For gRPC streams that run for hours, batch metrics at the end provide no visibility. Use per-event metrics at the service boundary:
+
+```csharp
+// EventStreamService.cs - per-event visibility during streaming
+await foreach (var evt in _eventRepository.StreamEventsSinceAsync(...))
+{
+    await responseStream.WriteAsync(evt, context.CancellationToken);
+    _eventsStreamedCounter.Add(1, new KeyValuePair<string, object?>("method", "SubscribeToEvents"));
+}
+```
+
+Counter increments are immediate in memory; Prometheus scrapes on interval (typically 15-60s).
