@@ -105,6 +105,14 @@ METHODS:
   dotnet: cd {project}/.devcontainer && docker compose exec dev dotnet build
   container: sudo nerdctl build -f Containerfile .
   fallback: ASK_USER("Can't verify build - should I use devcontainer or skip?")
+DOTNET_MODERN:
+  ¬sln_files # modern .NET auto-discovers .csproj
+  `dotnet build` in project_root = sufficient
+  rationale: SDK-style_projects_self_describe
+DEPLOYMENTS:
+  use: ansible # infrastructure/ansible/
+  ¬manual: container_start | service_restart | config_edit
+  rationale: reproducible + auditable + idempotent
 ¬PATTERN: "changes are straightforward" → commit_anyway
   this_is_how_bugs_ship
 rationale: unverified_code = production_incidents
