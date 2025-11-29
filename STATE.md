@@ -1,53 +1,61 @@
 # STATE.md [ATLAS Infrastructure]
 
-## ACTIVE_TASK: Holiday-Aware Calendar
+## COMPLETED_TASKS
 
-**Branch**: `feature/holiday-aware-alerts`
-**Goal**: Prevent false positive alerts during US Federal Reserve holidays
+### E2 NasdaqCollector (COMPLETE)
 
-### Accept Criteria
-- Collection jobs skip execution on Fed holidays (saves API calls)
-- Alerts don't fire on holidays (no 5am ntfy noise)
-- Holiday calendar auto-computes yearly (no manual maintenance)
-
-### Architecture Decision
-
-**Approach**: Quartz Calendar + Metric + Alert Condition
+**Goal**: Ingest LBMA gold prices from Nasdaq Data Link into ATLAS
+**Status**: ✓ Implementation Complete
 
 ```
-IHolidayCalendarService          DataCollectionScheduler
-  - IsHoliday(date)       ───▶     - Attaches Quartz HolidayCalendar
-  - GetHolidays(year)              - Triggers skip holidays
-
-FredCollectorMeter
-  - fredcollector_market_open gauge (1=open, 0=holiday)
-
-Prometheus Alerts
-  - FredCollectorCollectionEmpty: ... AND fredcollector_market_open == 1
+NasdaqCollector/
+├── Core/           Domain models (NasdaqSeries, NasdaqObservation)
+├── Application/    Services (NasdaqCollectionService)
+├── Infrastructure/ NasdaqApiClient, NasdaqRepository (Dapper)
+├── Grpc/          ObservationEventStreamService
+└── Service/       Worker host, DI, Kestrel config
 ```
 
-### US Federal Reserve Holidays
-| Holiday | Rule |
-|---------|------|
-| New Year's Day | Jan 1 (observed) |
-| MLK Day | 3rd Monday, January |
-| Presidents' Day | 3rd Monday, February |
-| Memorial Day | Last Monday, May |
-| Juneteenth | June 19 (observed) |
-| Independence Day | July 4 (observed) |
-| Labor Day | 1st Monday, September |
-| Columbus Day | 2nd Monday, October |
-| Veterans Day | Nov 11 (observed) |
-| Thanksgiving | 4th Thursday, November |
-| Christmas | Dec 25 (observed) |
+**API**: Nasdaq Data Link v3 (https://data.nasdaq.com/api/v3)
+**Ports**: 5004 (HTTP), 5005 (gRPC)
+**Interval**: 6 hours (gold fixes twice daily)
+**Tests**: 3 passing
 
-### Status
-- ✓ Create IHolidayCalendarService
-- ✓ Register Quartz HolidayCalendar
-- ✓ Add fredcollector_market_open gauge
-- ✓ Update Prometheus alerts
+### E3 AlphaVantageCollector (COMPLETE)
+
+**Goal**: Ingest copper and WTI oil prices from Alpha Vantage into ATLAS
+**Status**: ✓ Implementation Complete
+
+```
+AlphaVantageCollector/
+├── Core/           Domain models, SeriesType enum (Copper, WTI)
+├── Application/    CollectionScheduler with rate limiting (25/day)
+├── Infrastructure/ AlphaVantageApiClient, AlphaVantageRepository
+├── Grpc/          ObservationEventStreamService
+└── Service/       Worker host, DI, Kestrel config
+```
+
+**API**: Alpha Vantage v1 (https://www.alphavantage.co)
+**Ports**: 5006 (HTTP), 5007 (gRPC)
+**Rate Limit**: 25 requests/day (free tier)
+**Tests**: 9 passing
+
+### Next Steps for Both
+- ◯ Run database migrations
+- ◯ Deploy services via Ansible
+- ◯ Configure API keys (NASDAQ_API_KEY, ALPHAVANTAGE_API_KEY)
+- ◯ Integration test with ThresholdEngine
+- ◯ Add Cu/Au ratio pattern to ThresholdEngine
+
+---
+
+## PREVIOUS_TASK: Holiday-Aware Calendar (COMPLETE)
+
+**Branch**: `feature/holiday-aware-alerts` ✓
+- ✓ IHolidayCalendarService + Quartz HolidayCalendar
+- ✓ fredcollector_market_open gauge
+- ✓ Updated Prometheus alerts
 - ✓ Unit tests (36 new tests, 299 total passing)
-- ◯ Dashboard indicator (optional)
 
 ---
 
