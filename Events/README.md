@@ -1,54 +1,82 @@
 # Events
 
-Shared event contracts for ATLAS microservices.
+Shared event contracts and gRPC definitions for ATLAS microservices.
 
-## Purpose
+## Overview
 
-This project provides a single source of truth for all event definitions used across ATLAS services, preventing drift and ensuring type safety.
+This library serves as the "Schema Registry" for the ATLAS system. It ensures that all services speak the same language when exchanging data, whether in-process or over the network.
 
-## Events
+## Structure
 
-### ObservationCollectedEvent
-- **Published by**: FredCollector
-- **Consumed by**: ThresholdEngine
-- **Purpose**: Notifies when new observation data is collected
-
-### ThresholdCrossedEvent
-- **Published by**: ThresholdEngine
-- **Consumed by**: AlertService
-- **Purpose**: Notifies when a pattern threshold is crossed
-
-### RegimeTransitionEvent
-- **Published by**: ThresholdEngine
-- **Consumed by**: AlertService
-- **Purpose**: Notifies when macro economic regime transitions
-
-## Usage
-
-Reference this project in your service:
-
-```xml
-<ProjectReference Include="..\..\..\Events\src\Events\Events.csproj" />
+```
+Events/
+├── src/
+│   ├── Events/                 # Core definitions
+│   │   ├── Protos/             # gRPC Protobuf contracts (.proto)
+│   │   └── *.cs                # In-memory C# event records
+│   └── Events.Client/          # gRPC Client Library
 ```
 
-Then use events:
+## Protobuf Contracts
+
+The source of truth for inter-service communication.
+
+### `events.proto`
+
+Defines the data exchange format between Collectors and ThresholdEngine.
+
+```protobuf
+message Event {
+    string event_id = 1;
+    google.protobuf.Timestamp occurred_at = 2;
+    string source_service = 3;
+    
+    oneof payload {
+        SeriesCollectedEvent series_collected = 10;
+        CollectionFailedEvent collection_failed = 11;
+        // ...
+    }
+}
+
+message SeriesCollectedEvent {
+    string series_id = 1;
+    google.protobuf.Timestamp collected_at = 2;
+    repeated DataPoint data_points = 3;
+}
+```
+
+## C# Event Records
+
+Used for internal event buses (e.g., `ChannelEventBus` inside a service).
 
 ```csharp
-using ATLAS.Events;
-
-var evt = ObservationCollectedEvent.FromObservation(
-    seriesId, date, value, collectedAt);
+public record ObservationCollectedEvent(
+    string SeriesId,
+    DateTimeOffset Date,
+    decimal Value,
+    DateTimeOffset CollectedAt
+) : IEvent;
 ```
 
-## Versioning
+## Events.Client
 
-Events are immutable records. Breaking changes require:
-1. Create new event version (e.g., `ObservationCollectedEventV2`)
-2. Update all publishers and consumers
-3. Deprecate old event
-4. Remove old event in next major version
+A standard gRPC client wrapper that simplifies consuming events from any Collector service.
 
-## Future: NuGet Package
+### Usage
 
-For Phase 2+, this can be packaged as a NuGet package for easier distribution across services. The PackageId in the .csproj is already configured.
+```csharp
+// In Consumer Service (e.g., ThresholdEngine)
+services.AddCollectorClient("FredCollector", "http://fred-collector:5001");
 
+// In Code
+await foreach (var evt in client.SubscribeToEventsAsync(cancellationToken))
+{
+    // Handle event
+}
+```
+
+## Versioning Strategy
+
+1. **Forward Compatibility**: New fields in Protobuf are always optional.
+2. **Backward Compatibility**: Never remove or renumber existing fields.
+3. **Breaking Changes**: Require a new message type (e.g., `SeriesCollectedEventV2`).

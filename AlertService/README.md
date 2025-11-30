@@ -1,285 +1,178 @@
 # AlertService
 
-Receives alert webhooks, queues them, and dispatches notifications to configured channels based on severity routing rules.
+Centralized alert routing and notification dispatch service for ATLAS.
+
+## Overview
+
+AlertService receives alert webhooks from internal services (ThresholdEngine) and external monitoring (Alertmanager), queues them, and dispatches notifications to configured channels (Ntfy, Email) based on severity routing rules.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    subgraph Inputs
+        TE[ThresholdEngine]
+        AM[Alertmanager]
+        API[Webhook API]
+    end
+
+    subgraph Core [AlertService]
+        Queue[In-Memory Queue]
+        Dispatcher[Background Dispatcher]
+        Router[Severity Router]
+    end
+
+    subgraph Channels
+        Ntfy[Ntfy Channel]
+        Email[Email Channel]
+    end
+
+    TE & AM --> API
+    API --> Queue
+    Queue --> Dispatcher
+    Dispatcher --> Router
+    Router -- Critical/Warning --> Ntfy
+    Router -- Critical --> Email
 ```
-Webhook → Queue → Dispatcher → [Ntfy, Email] Channels
-```
 
-1. **Webhook endpoint** accepts alerts (direct or Alertmanager format)
-2. **In-memory queue** buffers alerts for processing
-3. **Background dispatcher** routes alerts to channels by severity
-4. **Notification channels** send alerts to external services
+## Key Features
 
-Full OpenTelemetry instrumentation for traces, metrics, and logs.
+- **Unified Ingestion**: Accepts alerts in direct JSON format or Prometheus Alertmanager webhook format.
+- **Async Processing**: Decouples ingestion from delivery using an in-memory background queue.
+- **Severity Routing**: Configurable routing rules map alert severities (Critical, Warning, Info) to specific channels.
+- **Multi-Channel**: Supports Ntfy (push notifications) and Email (SMTP) out of the box.
+- **Observability**: Extensive metrics (queue depth, delivery latency) and tracing.
 
-## Endpoints
+## Configuration
 
-### POST /alerts
+Configure via `appsettings.json` or Environment Variables (`__` separator).
 
-Accepts alerts in two formats:
+### Channels
 
-**Direct format:**
+**Ntfy** (Push Notifications)
 ```json
-{
-  "source": "my-service",
-  "severity": "critical",
-  "title": "Service down",
-  "message": "Service X is unresponsive",
-  "metadata": {
-    "host": "prod-server-01"
+"Channels": {
+  "Ntfy": {
+    "Enabled": true,
+    "Endpoint": "https://ntfy.sh",
+    "Topic": "atlas-alerts"
   }
 }
 ```
 
-**Alertmanager webhook format:**
+**Email** (SMTP)
+```json
+"Channels": {
+  "Email": {
+    "Enabled": true,
+    "SmtpHost": "smtp.example.com",
+    "ToAddresses": ["oncall@example.com"]
+  }
+}
+```
+
+### Routing Rules
+
+Define which severities go to which channels:
+
+```json
+"Routing": {
+  "SeverityRoutes": {
+    "critical": ["ntfy", "email"],
+    "warning": ["ntfy"],
+    "info": ["ntfy"]
+  }
+}
+```
+
+## Getting Started
+
+**Note**: This service is designed to run as part of the larger ATLAS microservices architecture. It relies on upstream services (ThresholdEngine) to generate alerts.
+
+### Development (Dev Containers)
+
+The most robust way to develop is using the provided Dev Container, which includes the .NET SDK and tooling.
+
+1. **Open in VS Code**: Open this folder and select "Reopen in Container".
+2. **Configuration**: Update `appsettings.json` or set environment variables for your desired channels.
+3. **Run Service**:
+   ```bash
+   cd src/AlertService
+   dotnet run
+   ```
+
+### Running with Docker (Standalone)
+
+If you just want to run the service image without a dev environment:
+
+```bash
+docker compose up -d alert-service
+```
+
+### Running the Full Stack
+
+To run the entire ATLAS system:
+
+```bash
+cd ../ansible
+ansible-playbook playbooks/site.yml
+```
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/alerts` | POST | Ingests alerts from ThresholdEngine or Alertmanager |
+| `/health` | GET | Liveness probe (returns 200 OK) |
+
+### Alert Payloads
+
+The `/alerts` endpoint accepts two formats:
+
+**1. Direct Format** (ATLAS Standard)
+Used by ThresholdEngine for internal alerts.
+
+```json
+{
+  "source": "ThresholdEngine",
+  "severity": "critical",
+  "title": "VIX Deployment Signal",
+  "message": "VIX exceeded 30.0, triggering defensive allocation.",
+  "metadata": { "patternId": "vix-l1", "value": "31.2" }
+}
+```
+
+**2. Alertmanager Format** (Prometheus Standard)
+Used by infrastructure monitoring.
+
 ```json
 {
   "alerts": [
     {
       "status": "firing",
-      "labels": {
-        "alertname": "HighMemoryUsage",
-        "severity": "warning",
-        "instance": "server-02"
-      },
-      "annotations": {
-        "summary": "Memory usage above 90%",
-        "description": "Memory usage has exceeded threshold"
-      },
-      "startsAt": "2025-11-23T10:00:00Z"
+      "labels": { "alertname": "HighCpu", "severity": "warning" },
+      "annotations": { "description": "CPU > 90%" }
     }
   ]
 }
 ```
 
-Alertmanager alerts are automatically transformed:
-- `labels.alertname` → Title
-- `labels.severity` → Severity
-- `annotations.description` or `annotations.summary` → Message
-- All labels → Metadata
+## Project Structure
 
-**Response:** `202 Accepted` with `{"queued": N}`
-
-### GET /health
-
-Health check endpoint. Returns `200 OK` with `{"status": "healthy"}`.
-
-## Configuration
-
-All configuration via `appsettings.json` or environment variables (format: `Section__Key`).
-
-### Notification Channels
-
-#### Ntfy (Push Notifications)
-
-```json
-{
-  "Channels": {
-    "Ntfy": {
-      "Enabled": true,
-      "Endpoint": "https://ntfy.sh",
-      "Topic": "atlas-alerts",
-      "Username": "",
-      "Password": ""
-    }
-  }
-}
+```
+AlertService/
+├── src/
+│   └── AlertService/           # Minimal API Service
+│       ├── Channels/           # INotificationChannel implementations
+│       ├── Endpoints/          # API Route handlers
+│       ├── Models/             # Domain models (Alert, Severity)
+│       └── Services/           # Queue, Dispatcher, Router
+├── tests/
+│   └── AlertService.Tests/     # Unit tests
+└── Containerfile               # Production container
 ```
 
-Maps severity to ntfy priority and tags:
-- `critical` → `urgent` priority, 🚨 tags
-- `warning` → `high` priority, ⚠️ tags
-- `info` → `default` priority, ℹ️ tags
+## See Also
 
-#### Email (SMTP)
-
-```json
-{
-  "Channels": {
-    "Email": {
-      "Enabled": false,
-      "SmtpHost": "smtp.example.com",
-      "SmtpPort": 587,
-      "UseSsl": true,
-      "Username": "alerts@example.com",
-      "Password": "your-password",
-      "FromAddress": "alerts@atlas.local",
-      "FromName": "ATLAS Alerts",
-      "ToAddresses": ["oncall@example.com"]
-    }
-  }
-}
-```
-
-### Routing
-
-Routes alerts to channels by severity:
-
-```json
-{
-  "Routing": {
-    "SeverityRoutes": {
-      "critical": ["ntfy", "email"],
-      "warning": ["ntfy"],
-      "info": ["ntfy"]
-    }
-  }
-}
-```
-
-Unknown severities fall back to `info` routing.
-
-### OpenTelemetry
-
-```json
-{
-  "OpenTelemetry": {
-    "OtlpEndpoint": "http://otel-collector:4317",
-    "ServiceName": "alert-service",
-    "ServiceVersion": "1.0.0"
-  }
-}
-```
-
-Exports traces and metrics to OTLP endpoint. Logs go to console and OTLP.
-
-## Development
-
-Uses devcontainer for consistent development environment.
-
-**Start development:**
-```bash
-# Open in devcontainer (VSCode will prompt)
-# Or manually:
-cd .devcontainer
-docker compose up -d
-```
-
-**Run service:**
-```bash
-cd src/AlertService
-dotnet run
-```
-
-Service listens on http://localhost:8080
-
-**Test webhook:**
-```bash
-curl -X POST http://localhost:8080/alerts \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source": "test",
-    "severity": "warning",
-    "title": "Test alert",
-    "message": "This is a test"
-  }'
-```
-
-## Deployment
-
-**Build container:**
-```bash
-cd src/AlertService
-docker build -f Containerfile -t alert-service:latest .
-```
-
-**Run container:**
-```bash
-docker run -p 8080:8080 \
-  -e Channels__Ntfy__Topic=my-alerts \
-  -e Channels__Email__Enabled=true \
-  -e Channels__Email__ToAddresses__0=oncall@example.com \
-  alert-service:latest
-```
-
-## Observability
-
-### Metrics (Prometheus)
-
-- `alert_service_alerts_received_total{source, severity}` - Alerts received
-- `alert_service_alerts_queued_total{severity}` - Alerts queued
-- `alert_service_alerts_dispatched_total{severity, channel_count}` - Alerts dispatched
-- `alert_service_alerts_sent_total{channel, severity}` - Successful sends
-- `alert_service_alerts_failed_total{channel, severity, reason}` - Failed sends
-- `alert_service_channel_send_duration_ms{channel}` - Channel send duration histogram
-- `alert_service_processing_duration_ms{severity}` - Alert processing duration
-- `alert_service_queue_depth` - Current queue size
-
-### Traces (Tempo/Jaeger)
-
-Traces for:
-- `AlertEndpoints.HandleAlert` - Webhook request handling
-- `NotificationDispatcher.DispatchAlert` - Routing and dispatch
-- `NotificationDispatcher.SendToChannel` - Individual channel sends
-- `NtfyChannel.Send` / `EmailChannel.Send` - Channel implementations
-
-### Logs (Loki)
-
-Structured logs with OpenTelemetry trace correlation:
-- Alert received, queued, sent
-- Channel failures with context
-- Dispatcher startup with enabled channels
-
-Logs include `SpanId` and `TraceId` for correlation with distributed traces. Serilog's native span support automatically enriches log entries with trace context from OpenTelemetry Activity.
-
-Log level defaults to `Warning` for production.
-
-## Integration Examples
-
-### Prometheus Alertmanager
-
-Add to Alertmanager `alertmanager.yml`:
-
-```yaml
-receivers:
-  - name: 'atlas'
-    webhook_configs:
-      - url: 'http://alert-service:8080/alerts'
-        send_resolved: false
-
-route:
-  receiver: 'atlas'
-  group_wait: 10s
-  group_interval: 10s
-  repeat_interval: 1h
-```
-
-### Direct Webhook
-
-From any service:
-
-```python
-import requests
-
-requests.post('http://alert-service:8080/alerts', json={
-    'source': 'my-app',
-    'severity': 'critical',
-    'title': 'Database connection failed',
-    'message': 'Unable to connect to primary database',
-    'metadata': {'db': 'postgres-prod', 'retry_count': 3}
-})
-```
-
-## Channel Implementation
-
-To add a new channel, implement `INotificationChannel`:
-
-```csharp
-public interface INotificationChannel
-{
-    string Name { get; }
-    bool IsEnabled { get; }
-    Task<bool> SendAsync(Alert alert, CancellationToken cancellationToken = default);
-}
-```
-
-Register in `Program.cs`:
-```csharp
-builder.Services.AddSingleton<INotificationChannel, MyChannel>();
-```
-
-Add to routing configuration to use.
-
+- [ThresholdEngine](../ThresholdEngine/README.md) - Main alert source
+- [Observability](../docs/OBSERVABILITY.md) - Metrics documentation
