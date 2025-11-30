@@ -51,10 +51,12 @@ graph LR
 - **Debugging**: Direct RPC calls easier to trace than broker hops
 
 **Trade-offs**:
-- ✅ Perfect for 2-10 services with tight coupling
-- ❌ Would not scale to 50+ services (would need broker then)
-- ✅ Supports 100+ concurrent clients per server
-- ❌ No built-in partitioning (not needed at our scale)
+- ✅ Perfect for small service count with coordinated deployments
+- ✅ Supports 100+ concurrent clients per server (HTTP/2 multiplexing)
+- ✅ Idempotent events mean connections *could* scale further
+- ❌ Operational complexity at scale: no unified consumer group dashboard, no built-in lag monitoring across all streams, service discovery becomes manual
+- ❌ Schema changes require coordinated deployments (tight coupling)
+- ❌ No built-in partitioning for parallel consumption (not needed at our throughput)
 
 ### 2. Events as Queryable Stream
 
