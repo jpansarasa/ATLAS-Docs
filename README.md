@@ -55,19 +55,11 @@ ATLAS is a systematic macro regime identification framework designed to optimize
 
 ## Documentation Structure
 
-**For Humans** (detailed, comprehensive):
-- **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - Microservices separation decision record, system architecture
-- **[docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md)** - FRED API data source research and indicator mapping
-- **[README.md](./README.md)** (this file) - Project overview, framework methodology, getting started
-
-**For AI Coding Assistants** (compact, token-efficient):
-- **[CLAUDE.md](./CLAUDE.md)** - Core code generation rules and standards
-- **[STATE.md](./STATE.md)** - Project-wide state tracking
-- **Service-specific documentation** (each service directory):
-  - `.cursorrules` - Cursor/Claude Code instructions (FredCollector)
-  - `progress.md` - Epic tracking and status (compact format)
-
-The AI-facing documentation follows the compact syntax from CLAUDE.md (85% token reduction) for efficient context loading by Cursor and Claude Code.
+- **[docs/EXECUTIVE-SUMMARY.md](./docs/EXECUTIVE-SUMMARY.md)** - Quick reference for services, ports, patterns
+- **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - Microservices design decisions
+- **[STATE.md](./STATE.md)** - Current system status and epic tracking
+- **[CLAUDE.md](./CLAUDE.md)** - AI assistant code generation rules
+- **Service READMEs** - Each service has detailed documentation in its directory
 
 ## Core Objectives
 
@@ -363,34 +355,9 @@ The system tracks multiple dimensions to assess where the economy is within the 
 ### 1. FredCollector - Economic Data Collection
 
 **Purpose**: Automated collection system for Federal Reserve Economic Data (FRED) API
-**Status**: ✅ 100% complete (12 epics)
+**Status**: ✅ Production Ready | **Tests**: 378 passing
 **Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
 **Coverage**: 25 series configured, 800,000+ searchable FRED series
-
-**Completed Epics**:
-- ✅ E1: Project Foundation (100%)
-- ✅ E2: FRED API Integration (100% - 55 tests passing)
-- ✅ E3: Recession Indicators MVP (100% - 7 series automated)
-- ✅ E5: Historical Backfill (100% - automated startup backfill)
-- ✅ E6: Liquidity Indicators (100% - VIX, DXY, credit spreads, 6 series)
-- ✅ E7: Growth/Valuation Indicators (100% - 12 series)
-- ✅ E8: REST API (100% - endpoints for series, observations, alerts)
-- ✅ E9: Production Deployment (100% - containers, monitoring)
-- ✅ E10: Observability (100% - 20+ metrics, distributed tracing, Grafana dashboards)
-- ✅ E11: gRPC Event Streaming (100% - deployed, production ready)
-- ✅ E12: Series Discovery (100% - search API with filtering/sorting)
-
-**Note**: E4 (Threshold Alerting) was extracted to ThresholdEngine microservice per architectural decision.
-
-**New in E12 - Series Discovery API**:
-- `GET /api/series/search` - Search 800,000+ FRED series
-- Filtering by frequency, popularity, active status
-- Sorting by popularity, title, last updated, relevance
-- `isAlreadyCollected` enrichment for existing series
-
-**Tests**: Comprehensive unit and integration tests passing
-
-**Architecture Highlight**: Epic 4 (Threshold Alerting) has been extracted into a separate ThresholdEngine microservice per the architectural decision record in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md). This maintains clean separation of concerns: FredCollector handles data collection only, while ThresholdEngine evaluates rules and AlertService delivers notifications.
 
 **Core Capabilities**:
 - **Multi-Series Collection**: Parallel collection with configurable concurrency
@@ -401,37 +368,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 - **Time-Series Optimization**: TimescaleDB hypertables for efficient storage and queries
 - **REST API**: Downstream consumption of collected data
 
-**Architecture Highlights**:
-- Event-driven with System.Threading.Channels (no MediatR dependency)
-- Repository pattern with EF Core for data access
-- OpenTelemetry observability with Loki integration
-- Container-first: dev environment === production environment
-- VS Code Dev Containers for zero environment drift
-
-**Indicator Coverage Examples**:
-
-*Recession Indicators* (automated):
-- ICSA: Initial Claims (weekly, >400K threshold)
-- IPMAN: Industrial Production - Manufacturing (monthly, <100 threshold)
-- UMCSENT: Consumer Sentiment (monthly, <80 threshold)
-- SOFR: Secured Overnight Financing Rate (daily)
-- DGS10: 10-Year Treasury (daily, yield curve calculation)
-- UNRATE: Unemployment Rate (monthly, Sahm Rule)
-- FEDFUNDS: Federal Funds Rate (daily)
-
-*Liquidity Metrics* (Epic 6 - complete):
-- VIX, DXY, credit spreads, Fed balance sheet, M2, commodities
-
-*Growth Indicators* (Epic 7 - complete):
-- GDP, industrial production, retail sales, housing
-
-**Not Limited To Current Set**:
-- Can collect any of 12,000+ FRED series
-- Supports calculated indicators (ratios, spreads, transformations)
-- Extensible to non-FRED data sources
-- Designed for long-term expansion
-
-See [docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md) for detailed FRED series research and indicator mapping.
+**Indicator Coverage**: Recession (7 series), Liquidity (6 series), Growth/Valuation (12 series)
 
 [Technical documentation](./FredCollector/README.md)
 
@@ -505,84 +442,38 @@ See [docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md) for detailed FRED
 ### 2. ThresholdEngine - Pattern Evaluation & Regime Detection
 
 **Purpose**: Evaluate configurable C# expressions against economic data to detect regime transitions and generate allocation signals
-**Status**: ✅ Complete (100% - all 9 epics done)
+**Status**: ✅ Production Ready | **Tests**: 153 passing | **Patterns**: 40 configured
 **Technology**: .NET 9, C# 13, Roslyn, TimescaleDB, Linux containers
-**Architecture**: Event-driven microservice consuming ObservationCollectedEvent, publishing ThresholdCrossedEvent
-
-**Completed Epics**:
-- ✅ E1: Foundation (100% - project structure, dependencies, dev container)
-- ✅ E2: Pattern Configuration System (100% - JSON loading, hot reload, 40 tests)
-- ✅ E3: Expression Compilation (100% - Roslyn compiler, caching, 75 tests)
-- ✅ E4: Pattern Evaluation Engine (100% - context API, evaluation service)
-- ✅ E5: Event Integration (100% - event bus, subscribers, publishers)
-- ✅ E6: Regime Transition Detection (100% - macro score, hysteresis)
-- ✅ E7: Pattern Library (100% - 37 patterns across 5 categories)
-- ✅ E8: Production Deployment (100% - containerized, deployed, running)
-- ✅ E9: Observability & Metrics (100% - 17 metrics, 5 Grafana dashboards)
-
-**Tests**: Comprehensive unit and integration tests passing | **Patterns**: 37 configured
 
 **Core Capabilities**:
 - **Pattern Evaluation**: Roslyn-based compilation of C# expressions from JSON configuration
-- **Rich Context API**: `PatternEvaluationContext` provides 10 data access helpers (GetLatest, GetYoY, GetMA, GetSpread, GetRatio, GetLowest, GetHighest, IsSustained, etc.)
-- **Signal Generation**: -2 to +2 signal strength matching ATLAS framework
-- **Confidence Scoring**: Data freshness, completeness, and regime applicability factors
+- **Context API**: GetLatest, GetYoY, GetMA, GetSpread, GetRatio, GetLowest, GetHighest, IsSustained
+- **Signal Generation**: -2 to +2 signal strength with confidence scoring
+- **Regime Detection**: Six-state machine (Crisis → Growth) with hysteresis
 - **Hot Reload**: Configuration changes without service restart
-- **Type Safety**: Compile-time validation of expressions
-- **Production Ready**: Deployed with full observability stack integration
 
-**Architecture Highlights**:
-- Event-driven with System.Threading.Channels (no MediatR dependency)
-- Repository pattern for data access (shared ObservationRepository with FredCollector)
-- OpenTelemetry observability with distributed tracing
-- Container-first: dev environment === production environment
-- VS Code Dev Containers for zero environment drift
-
-**Pattern Categories** (37 patterns total):
-- **NBFI Stress** (8): HY spreads, KRE underperformance, bankruptcy clusters, standing repo stress, reverse repo liquidity, Chicago conditions, St. Louis stress index
-- **Recession** (8): Sahm Rule, consumer confidence collapse, freight recession, initial claims spike, jobs contraction, industrial contraction, continuing claims, yield curve inversion
-- **Growth** (5): GDP acceleration, industrial production expansion, retail sales surge, housing starts, industrial production
-- **Liquidity** (5): VIX deployment L1/L2, DXY risk-off, credit spread widening, Fed liquidity contraction
-- **Valuation** (5): CAPE attractive, Buffett indicator, forward P/E value, equity risk premium, equal weight indicator
+**Pattern Categories** (40 patterns):
+- **Recession** (12): Sahm Rule, yield curve, claims, sentiment, freight
+- **NBFI Stress** (9): HY spreads, KRE, bankruptcy, repo facilities, stress indices
+- **Liquidity** (8): VIX L1/L2, DXY, credit spreads, Fed liquidity, M2
+- **Growth** (5): GDP, industrial production, retail, housing
+- **Valuation** (5): CAPE, Buffett indicator, forward P/E, equity risk premium
+- **Commodity** (1): Copper/Gold ratio
 
 [Technical documentation](./ThresholdEngine/README.md)
 
 ### 3. AlertService - Notification Delivery
 
-**Purpose**: Receives alerts from Prometheus/Alertmanager and dispatches notifications to configured channels (ntfy, email, Slack, PagerDuty, etc.)
-**Status**: ✅ Complete (100%)
+**Purpose**: Receives alerts from Prometheus/Alertmanager and dispatches notifications
+**Status**: ✅ Production Ready | **Tests**: 15 passing
 **Technology**: .NET 9, ASP.NET Core, MailKit, OpenTelemetry
 
-```mermaid
-flowchart LR
-    WH[Webhook Receiver] --> Q[In-Memory Queue]
-    Q --> D[Background Dispatcher]
-    D --> NC[Notification Channels]
-```
-
-**Key Features**:
-- **Flexible Routing**: Configure severity-based routing (critical → email+ntfy, warning → ntfy only, etc.)
-- **Multiple Channels**: Ntfy push notifications, email (SMTP), easily extensible for Slack/PagerDuty
-- **Alertmanager Integration**: Accepts standard Prometheus webhook format
-- **Direct Webhooks**: Simple JSON API for any service to send alerts
-- **Full Observability**: OpenTelemetry traces, metrics, structured logs with span enrichment
-- **Weekday-Aware Alerting**: Prevents weekend spam for business-hours-only alerts
-- **State-Based Suppression**: 24-hour repeat intervals for persistent conditions (macro scores)
-
-**Alert Routing**:
-```yaml
-Critical (P1):  Email + Ntfy, repeat every 1h
-Warning (P2):   Ntfy, repeat every 2h  
-Macro Alerts:   Ntfy, repeat every 24h (state-based)
-Info (P3):      Ntfy, repeat every 12h
-```
-
-**Channel Configuration**:
-- **Ntfy**: Self-hosted or ntfy.sh, with priority mapping and emoji tags
-- **Email**: SMTP with TLS, customizable templates
-- **Extensible**: Implement `INotificationChannel` interface for new channels
-
-**Architecture Separation**: Extracted from ThresholdEngine to maintain clean boundaries - ThresholdEngine evaluates rules, AlertService delivers notifications. This allows independent scaling and prevents coupling notification logic with rule evaluation.
+**Core Capabilities**:
+- **Channels**: Ntfy push notifications, email (SMTP)
+- **Alertmanager Integration**: Standard Prometheus webhook format
+- **Severity Routing**: Critical → email+ntfy, Warning → ntfy only
+- **State Suppression**: 24-hour repeat intervals for persistent conditions
+- **Weekday-Aware**: Prevents weekend spam for business-hours alerts
 
 [Technical documentation](./AlertService/README.md)
 
@@ -796,59 +687,26 @@ flowchart TB
 
 ```
 ATLAS/
-├── docs/                   # 📚 Human-facing documentation (verbose)
-│   ├── ARCHITECTURE.md     # Microservices separation decision record
-│   ├── OBSERVABILITY.md    # Metrics, tracing, logging patterns
-│   └── FRED_DATA_RESEARCH.md # FRED API research and indicator mapping
-├── Events/                  # Shared event contracts (gRPC proto + C# types)
-│   └── src/
-│       └── Events/            # ObservationCollectedEvent, ThresholdCrossedEvent, etc.
-├── FredCollector/          # FRED API data collection service
-│   ├── src/                # C# source code (.NET 9)
-│   ├── tests/              # Unit and integration tests
-│   └── .devcontainer/      # VS Code Dev Container config
-├── AlphaVantageCollector/  # Commodity prices (WTI, Brent, Natural Gas)
-│   ├── src/                # C# source code (.NET 9)
-│   └── .devcontainer/      # VS Code Dev Container config
-├── NasdaqCollector/        # LBMA gold price collection
-│   ├── src/                # C# source code (.NET 9)
-│   └── .devcontainer/      # VS Code Dev Container config
-├── ThresholdEngine/        # Pattern evaluation & regime detection service
-│   ├── progress.md         # 🤖 Epic tracking (compact format)
-│   ├── src/                # C# source code (.NET 9)
-│   │   ├── Core/           # Domain models, interfaces, entities
-│   │   ├── Infrastructure/ # Compilation, configuration, data access
-│   │   ├── Application/    # Business logic (evaluation services)
-│   │   └── Service/        # Worker service entry point
-│   ├── tests/              # Unit and integration tests (153 tests passing)
-│   ├── config/             # Pattern configurations (31 JSON files)
-│   └── .devcontainer/      # VS Code Dev Container config
-├── OllamaMCP/              # MCP server for Claude Desktop
-│   ├── Program.cs          # C# source code (.NET 9)
-│   ├── OllamaMcp.csproj    # Project file
-│   ├── Containerfile       # Container build definition
-│   └── README.md           # MCP server documentation
-├── infrastructure/         # Infrastructure-as-code definitions
-│   ├── compose.yaml.j2     # Service orchestration template (21 services, Ansible/Jinja2)
-│   ├── monitoring/         # Prometheus configs, 9 Grafana dashboards
-│   └── README.md           # Infrastructure documentation
-├── ansible/                # Deployment automation (HOW to deploy)
-│   ├── playbooks/          # Ansible playbooks
-│   ├── inventory/          # Host definitions
-│   ├── scripts/            # Utility scripts (ZFS tuning, template validation)
-│   └── README.md           # Ansible documentation
-├── FredCollectorClient/    # gRPC client library for FredCollector
-├── markitdownMCP/          # MarkItDown MCP server
-├── CLAUDE.md               # 🤖 Core code generation rules and standards
-└── STATE.md                # Project-wide state tracking
+├── docs/                   # Documentation
+│   ├── EXECUTIVE-SUMMARY.md
+│   ├── ARCHITECTURE.md
+│   └── GRPC-ARCHITECTURE.md
+├── FredCollector/          # FRED API data collection
+├── AlphaVantageCollector/  # Commodity prices (WTI, Brent, NatGas)
+├── NasdaqCollector/        # LBMA gold prices
+├── FinnhubCollector/       # Stock quotes, sentiment
+├── CalendarService/        # Market status, trading days
+├── ThresholdEngine/        # Pattern evaluation & regime detection
+├── AlertService/           # Notification dispatch
+├── Events/                 # Shared gRPC event contracts
+├── OllamaMCP/              # Ollama MCP server (Claude Desktop)
+├── FredCollectorMcp/       # FRED data MCP server
+├── ThresholdEngineMcp/     # Pattern evaluation MCP server
+├── infrastructure/         # compose.yaml.j2, monitoring configs
+├── ansible/                # Deployment playbooks
+├── CLAUDE.md               # AI assistant rules
+└── STATE.md                # Current system status
 ```
-
-**Documentation Organization**:
-- **📚 docs/** - Human-facing: detailed, comprehensive, can be verbose
-- **🤖 FredCollector/progress.md** - AI-facing: compact syntax, token-efficient
-- **🤖 ThresholdEngine/progress.md** - AI-facing: compact syntax, token-efficient
-- **🤖 CLAUDE.md** - Code generation rules for all AI assistants
-- **📊 STATE.md** - Current project state and infrastructure status
 
 ## Getting Started
 
@@ -937,75 +795,30 @@ See service-specific README files for detailed setup:
 
 ## Project Timeline
 
-### Historical Evolution
+### Current Status (2025-11-30)
 
-- **2018-2022**: Manual monitoring, spreadsheet-based tracking, learning phase
-- **2023**: Framework formalization, systematic indicator selection
-- **2024**: Expansion to comprehensive coverage (40+ indicators)
-- **2025**: Architecture design, technology selection, automation initiative begins
+**Phase 1-3: Complete** - All core services production-ready
+- 4 data collectors (FRED, Alpha Vantage, Nasdaq, Finnhub)
+- ThresholdEngine with 40 patterns and regime detection
+- AlertService with ntfy + email notifications
+- Full observability stack (Prometheus, Loki, Tempo, Grafana)
 
-### Development Roadmap
-
-The system follows a phased development approach with clear milestones:
-
-**Phase 1: Data Foundation** ✅ Complete
-- ✅ FredCollector architecture established
-- ✅ TimescaleDB integration and optimization
-- ✅ Event-driven data collection with resilience patterns
-- ✅ Container-first development workflow
-- ✅ OpenTelemetry observability baseline
-
-**Phase 2: Core Indicator Automation** ✅ Complete
-- ✅ FRED data collection for 29 configured series
-- ✅ Event system with System.Threading.Channels
-- ✅ Historical backfill infrastructure (BackfillService)
-- ✅ Comprehensive testing (319 tests passing)
-- ✅ Production deployment (Epic 9 - complete)
-- ✅ REST API (Epic 8 - complete)
-- ✅ gRPC Event Streaming (Epic 11 - 100%, production deployed)
-
-**Phase 2.1: Comprehensive Indicator Coverage** ✅ Complete
-- ✅ Liquidity Indicators (6 series: VIX, DXY, credit spreads, Fed balance sheet, M2)
-- ✅ Growth/Valuation Indicators (12 series: GDP, industrial production, retail sales, housing)
-- ✅ Observability framework (20+ metrics, distributed tracing, Grafana dashboards)
-
-**Phase 2.5: Pattern Evaluation System** ✅ Complete
-- ✅ ThresholdEngine architecture established
-- ✅ Pattern configuration system with hot reload
-- ✅ Roslyn-based expression compilation
-- ✅ Pattern evaluation engine with data access context
-- ✅ Event integration (E5 - complete)
-- ✅ Regime transition detection (E6 - complete)
-- ✅ Pattern library with 24 patterns (E7 - complete)
-- ✅ Production deployment (E8 - complete)
-- ✅ Observability with 5 Grafana dashboards (E9 - complete)
-- ✅ Comprehensive testing (153 tests passing)
-
-**Phase 3: Integration & Expansion** (Current)
-- End-to-end FredCollector → ThresholdEngine event flow validation
-- Pattern enablement by adding required series (currently 29 of 40+ target)
-- gRPC streaming performance benchmarks
-- Notification system integration (ntfy.sh, email)
+### Future Phases
 
 **Phase 4: Analysis Tools**
-- C# Analysis Engine: allocation calculator, risk metrics, tax-optimized rebalancing
-- Alternative data integration: Truflation, Indeed, Mastercard SpendingPulse
-- Web scraping infrastructure: RSS feeds, structured data extraction
-- Enhanced visualization: indicator dashboard prototype
+- Portfolio allocation calculator
+- Tax-optimized rebalancing
+- Alternative data integration (Truflation, Indeed, Mastercard SpendingPulse)
 
 **Phase 5: Advanced Analytics**
-- Rust Backtesting Engine: historical validation across multiple cycles
-- Monte Carlo simulation for scenario analysis
-- Machine learning components: correlation decay detection, regime prediction
-- Full dashboard: real-time monitoring, historical comparison, alert management
-- Performance optimization: sub-second indicator updates
+- Rust backtesting engine
+- Monte Carlo simulation
+- ML components: correlation decay, regime prediction
 
 **Phase 6: Production Hardening**
-- High availability and disaster recovery implementation
-- Expanded data sources: private credit metrics, NBFI stress indicators
-- Advanced analytics: comprehensive scenario analysis, stress testing
-- Framework validation: multi-year backtest results across regimes
-- Documentation: user guide, API reference, operations runbook
+- High availability
+- Expanded data sources
+- Multi-year backtest validation
 
 ## Quantitative Thresholds Reference
 
@@ -1060,13 +873,4 @@ Proprietary - Personal use only
 
 ---
 
-**Last Updated**: 2025-11-29
-**Framework Version**: 4.5
-**Status**: ✅ Production Ready
-**FredCollector**: ✅ 100% complete (12 epics, 25 series configured)
-**AlphaVantageCollector**: ✅ Complete
-**NasdaqCollector**: ✅ Complete
-**FinnhubCollector**: ✅ Complete
-**CalendarService**: ✅ Complete
-**ThresholdEngine**: ✅ 100% complete (9 epics, 37 patterns)
-**AlertService**: ✅ 100% complete
+**Last Updated**: 2025-11-30 | **Status**: ✅ Production Ready | **Tests**: 550+ passing | **Patterns**: 40 configured
