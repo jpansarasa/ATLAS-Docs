@@ -1,89 +1,122 @@
 # ATLAS Platform - Executive Summary
 
 **Status:** Production Ready
-**Last Updated:** 2025-11-27
+**Updated:** 2025-11-30
 
 ## Overview
 
-ATLAS is a real-time macroeconomic monitoring platform that ingests Federal Reserve Economic Data (FRED), evaluates pattern-based signals, and delivers actionable alerts for portfolio allocation decisions.
+ATLAS is a real-time macroeconomic monitoring platform that ingests data from multiple sources (FRED, Alpha Vantage, Nasdaq, Finnhub), evaluates 40 pattern-based signals, detects regime transitions, and delivers actionable alerts for portfolio allocation decisions.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    FRED[FRED API] --> FC[FredCollector]
-    FC --> DB[(TimescaleDB)]
-    FC -->|gRPC| TE[ThresholdEngine]
-    TE -->|HTTP| AS[AlertService]
-    AS --> N[ntfy.sh]
-    AS --> E[Email]
-    DB --> G[Grafana]
+    subgraph Collectors
+        FC[FredCollector]
+        AV[AlphaVantage]
+        NC[Nasdaq]
+        FH[Finnhub]
+    end
+
+    subgraph Processing
+        TE[ThresholdEngine]
+        AS[AlertService]
+    end
+
+    subgraph Storage
+        DB[(TimescaleDB)]
+    end
+
+    subgraph Observability
+        P[Prometheus]
+        G[Grafana]
+    end
+
+    FC & AV & NC & FH -->|gRPC| TE
+    FC & AV & NC & FH --> DB
+    TE --> P
+    P --> AS
+    AS --> N[ntfy.sh / Email]
+    DB & P --> G
 ```
 
 ## Services
 
-| Service | Status | Key Metrics |
+| Service | Status | Description |
 |---------|--------|-------------|
-| FredCollector | ✅ Production | 39 series, 378 tests |
-| ThresholdEngine | ✅ Production | 31 patterns, 153 tests |
-| AlertService | ✅ Production | ntfy + email channels |
-| Observability | ✅ Production | 8 Grafana dashboards |
+| FredCollector | ✅ | 25 FRED economic series, 378 tests |
+| AlphaVantageCollector | ✅ | Commodities (WTI, Brent, Natural Gas, Copper) |
+| NasdaqCollector | ✅ | LBMA gold prices (AM/PM fixings) |
+| FinnhubCollector | ✅ | Stock quotes, sentiment, analyst ratings |
+| CalendarService | ✅ | Market status, trading day validation |
+| ThresholdEngine | ✅ | 40 patterns, regime detection, 153 tests |
+| AlertService | ✅ | ntfy.sh + email notification channels |
 
-## Data Coverage
+**Total:** 22 containers, 550+ tests passing
 
-**39 FRED Series** across categories:
-- **Recession**: ICSA, CCSA, UNRATE, UMCSENT, T10Y2Y
-- **Liquidity**: VIXCLS, BAMLH0A0HYM2, DTWEXBGS, WALCL
-- **Growth**: GDP, INDPRO, RSAFS, HOUST, PAYEMS
-- **NBFI**: NFCI, STLFSI4, RRPONTSYD, RPONTSYD
+## Pattern Library
 
-## Pattern Categories
+| Category | Count | Examples |
+|----------|-------|----------|
+| Recession | 12 | Sahm Rule, yield curve inversion, initial claims |
+| Liquidity | 8 | VIX L1/L2, credit spreads, Fed liquidity |
+| NBFI Stress | 9 | HY spreads, KRE, repo facility, Chicago NFCI |
+| Growth | 5 | GDP acceleration, industrial production |
+| Valuation | 5 | CAPE, Buffett indicator, forward P/E |
+| Commodity | 1 | Copper/Gold ratio |
 
-| Category | Patterns | Examples |
-|----------|----------|----------|
-| Recession | 8 | Sahm Rule, yield curve inversion, initial claims spike |
-| Liquidity | 5 | VIX deployment L1/L2, credit spread widening |
-| Growth | 5 | GDP acceleration, industrial production expansion |
-| NBFI | 8 | Chicago NFCI, St. Louis stress, repo facility usage |
-| Valuation | 5 | Buffett indicator, equal weight index |
+## Regime Detection
 
-## Endpoints
+Six-state machine with hysteresis:
+
+| Regime | Macro Score | Equity | Defensive |
+|--------|-------------|--------|-----------|
+| Growth | > 10 | 80-90% | 10-20% |
+| Recovery | 0 to 10 | 70-80% | 20-30% |
+| Neutral | -10 to 0 | 60-70% | 30-40% |
+| Late Cycle | -10 to 0 | 55-70% | 30-45% |
+| Recession | -20 to -10 | 70-80% | 20-30% |
+| Crisis | < -20 | 80-90% | 10-20% |
+
+## Key Endpoints
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| FredCollector REST | 5001 | Series queries, observations |
-| FredCollector gRPC | 5002 | Event streaming to ThresholdEngine |
-| ThresholdEngine | 5003 | Pattern management API |
-| AlertService | 8081 | Alert sink (POST /alerts) |
-| Grafana | 3000 | Dashboards |
-| Prometheus | 9090 | Metrics |
+| fred-collector | 5001/5002 | REST API / gRPC streaming |
+| alphavantage-collector | 5003/5004 | HTTP / gRPC |
+| nasdaq-collector | 5005/5006 | HTTP / gRPC |
+| finnhub-collector | 5007/5008 | HTTP / gRPC |
+| threshold-engine | 8080 | Pattern management API |
+| alert-service | 8081 | Alertmanager webhook sink |
+| grafana | 3000 | 9 dashboards |
+| prometheus | 9090 | Metrics |
 
-## Key Features
+## MCP Servers (Claude Desktop)
 
-- **Hot Reload**: Pattern JSON changes apply without restart
-- **Roslyn Expressions**: Full C# in pattern definitions
-- **Context API**: GetLatest, GetYoY, GetMA, GetSpread, IsSustained
-- **Regime Detection**: Six regimes from Crisis to Growth
-- **Signal Scoring**: -2 to +2 scale with context-dependent logic
+| Server | Port | Purpose |
+|--------|------|---------|
+| ollama-mcp | 3100 | Local LLM inference (GPU/CPU) |
+| fredcollector-mcp | 3103 | FRED data access |
+| thresholdengine-mcp | 3104 | Pattern evaluation |
 
 ## Infrastructure
 
-Deployed via Ansible to Linux server running nerdctl compose:
-- 19 containerized services
-- TimescaleDB for time-series storage
-- Full OpenTelemetry observability (Prometheus, Loki, Tempo)
-- Automated via systemd (atlas.service)
+- **Runtime:** nerdctl + containerd
+- **Database:** TimescaleDB (PostgreSQL + hypertables)
+- **Observability:** OpenTelemetry → Prometheus, Loki, Tempo, Grafana
+- **Deployment:** Ansible playbooks, systemd auto-start
+- **Hardware:** AMD Threadripper 9960X, RTX 5090 (32GB), 128GB RAM
 
-## Access
+## Deployment
 
-- **Grafana**: http://yourserver:3000
-- **Logs**: Loki via Grafana Explore
-- **Traces**: Tempo via Grafana Explore
+```bash
+cd ~/ATLAS/ansible
+ansible-playbook playbooks/site.yml
+```
 
 ## See Also
 
+- [STATE.md](../STATE.md) - Current system status
 - [Architecture](ARCHITECTURE.md) - Design decisions
 - [gRPC Architecture](GRPC-ARCHITECTURE.md) - Event streaming
-- [FredCollector](../FredCollector/) - Data collection
-- [ThresholdEngine](../ThresholdEngine/) - Pattern evaluation
-- [AlertService](../AlertService/) - Notifications
+- [Infrastructure](../infrastructure/README.md) - Compose and configs
