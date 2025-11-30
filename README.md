@@ -22,6 +22,8 @@ ATLAS is a systematic macro regime identification framework designed to optimize
   - [FredCollector - Economic Data Collection](#1-fredcollector---economic-data-collection)
   - [AlphaVantageCollector - Commodity Data](#1b-alphavantgecollector---commodity-data-collection)
   - [NasdaqCollector - LBMA Gold Prices](#1c-nasdaqcollector---lbma-gold-price-collection)
+  - [FinnhubCollector - Equity & Sentiment](#1d-finnhubcollector---equity--sentiment-collection)
+  - [CalendarService - Market & Economic Schedules](#1e-calendarservice---market--economic-schedules)
   - [ThresholdEngine - Pattern Evaluation & Regime Detection](#2-thresholdengine---pattern-evaluation--regime-detection)
   - [AlertService - Notification Delivery](#3-alertservice---notification-delivery)
   - [Analysis Tools](#4-analysis-tools-planned---q1-q2-2026)
@@ -363,7 +365,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 **Purpose**: Automated collection system for Federal Reserve Economic Data (FRED) API
 **Status**: ✅ 100% complete (12 epics)
 **Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
-**Coverage**: 39 series configured, 800,000+ searchable FRED series
+**Coverage**: 25 series configured, 800,000+ searchable FRED series
 
 **Completed Epics**:
 - ✅ E1: Project Foundation (100%)
@@ -386,7 +388,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 - Sorting by popularity, title, last updated, relevance
 - `isAlreadyCollected` enrichment for existing series
 
-**Tests**: 378/378 passing (287 unit + 91 integration)
+**Tests**: Comprehensive unit and integration tests passing
 
 **Architecture Highlight**: Epic 4 (Threshold Alerting) has been extracted into a separate ThresholdEngine microservice per the architectural decision record in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md). This maintains clean separation of concerns: FredCollector handles data collection only, while ThresholdEngine evaluates rules and AlertService delivers notifications.
 
@@ -471,6 +473,35 @@ See [docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md) for detailed FRED
 
 [Technical documentation](./NasdaqCollector/README.md)
 
+### 1d. FinnhubCollector - Equity & Sentiment Collection
+
+**Purpose**: Automated collection of equity prices, news sentiment, and economic events from Finnhub API
+**Status**: ✅ Complete
+**Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
+
+**Core Capabilities**:
+- Real-time stock quote collection
+- News sentiment scoring
+- Analyst ratings and recommendations
+- Economic calendar event tracking
+- Rate limiting (60 req/min)
+
+[Technical documentation](./FinnhubCollector/README.md)
+
+### 1e. CalendarService - Market & Economic Schedules
+
+**Purpose**: Unified source of truth for market holidays, trading hours, and economic events
+**Status**: ✅ Complete
+**Technology**: .NET 9, C# 13, PostgreSQL, Linux containers
+
+**Core Capabilities**:
+- Trading day validation (is market open?)
+- Holiday schedule management
+- Economic event aggregation and impact rating
+- Shared core library for low-latency checks
+
+[Technical documentation](./CalendarService/README.md)
+
 ### 2. ThresholdEngine - Pattern Evaluation & Regime Detection
 
 **Purpose**: Evaluate configurable C# expressions against economic data to detect regime transitions and generate allocation signals
@@ -485,11 +516,11 @@ See [docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md) for detailed FRED
 - ✅ E4: Pattern Evaluation Engine (100% - context API, evaluation service)
 - ✅ E5: Event Integration (100% - event bus, subscribers, publishers)
 - ✅ E6: Regime Transition Detection (100% - macro score, hysteresis)
-- ✅ E7: Pattern Library (100% - 31 patterns across 5 categories)
+- ✅ E7: Pattern Library (100% - 37 patterns across 5 categories)
 - ✅ E8: Production Deployment (100% - containerized, deployed, running)
 - ✅ E9: Observability & Metrics (100% - 17 metrics, 5 Grafana dashboards)
 
-**Tests**: 153/153 passing | **Patterns**: 31 configured
+**Tests**: Comprehensive unit and integration tests passing | **Patterns**: 37 configured
 
 **Core Capabilities**:
 - **Pattern Evaluation**: Roslyn-based compilation of C# expressions from JSON configuration
@@ -507,7 +538,7 @@ See [docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md) for detailed FRED
 - Container-first: dev environment === production environment
 - VS Code Dev Containers for zero environment drift
 
-**Pattern Categories** (31 patterns total):
+**Pattern Categories** (37 patterns total):
 - **NBFI Stress** (8): HY spreads, KRE underperformance, bankruptcy clusters, standing repo stress, reverse repo liquidity, Chicago conditions, St. Louis stress index
 - **Recession** (8): Sahm Rule, consumer confidence collapse, freight recession, initial claims spike, jobs contraction, industrial contraction, continuing claims, yield curve inversion
 - **Growth** (5): GDP acceleration, industrial production expansion, retail sales surge, housing starts, industrial production
@@ -1031,10 +1062,11 @@ Proprietary - Personal use only
 
 **Last Updated**: 2025-11-29
 **Framework Version**: 4.5
-**Project Status**: Production Ready
-- **FredCollector**: ✅ 100% complete (12 epics, 378 tests, production deployed)
-- **AlphaVantageCollector**: ✅ Complete (commodity prices, production deployed)
-- **NasdaqCollector**: ✅ Complete (LBMA gold, production deployed)
-- **ThresholdEngine**: ✅ 100% complete (9 epics, 153 tests, production deployed)
-- **AlertService**: ✅ 100% complete (notifications working, production deployed)
-- **Infrastructure**: 21 services running, 9 Grafana dashboards, full observability stack
+**Status**: ✅ Production Ready
+**FredCollector**: ✅ 100% complete (12 epics, 25 series configured)
+**AlphaVantageCollector**: ✅ Complete
+**NasdaqCollector**: ✅ Complete
+**FinnhubCollector**: ✅ Complete
+**CalendarService**: ✅ Complete
+**ThresholdEngine**: ✅ 100% complete (9 epics, 37 patterns)
+**AlertService**: ✅ 100% complete
