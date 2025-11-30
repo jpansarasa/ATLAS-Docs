@@ -268,16 +268,16 @@ flowchart TD
 Deploy idle cash into equity when volatility spikes create tactical opportunities:
 
 **Level 1: VIX > 22** (3+ day sustained)
-- Deploy: $25,000 - $100,000 (based on macro score context)
+- Deploy: 5-15% of available cash (based on macro score context)
 - Target: Quality companies, minimum volatility funds, defensive equity
-- If macro score > -5: Lean toward larger deployment ($75K-$100K)
-- If macro score < -15: Conservative deployment ($25K-$50K)
+- If macro score > -5: Lean toward larger deployment (10-15%)
+- If macro score < -15: Conservative deployment (5-8%)
 
 **Level 2: VIX > 30** (2+ day sustained)
-- Deploy: $150,000 - $500,000 (systematic scale-in)
+- Deploy: 20-40% of available cash (systematic scale-in)
 - Target: Broad market index funds, quality growth, oversold names
-- If macro score > 0: Maximum deployment ($400K-$500K)
-- If macro score < -10: Moderate deployment ($150K-$250K)
+- If macro score > 0: Maximum deployment (35-40%)
+- If macro score < -10: Moderate deployment (20-25%)
 
 **Deployment Constraints**:
 - Maximum per event: 50% of available cash
@@ -731,14 +731,14 @@ User: "Should I deploy cash now?"
 1. VERIFY: Check VIX (tool), check macro score (tools), check recent indicators (tools)
 2. CROSS-VALIDATE: Multiple sources for VIX, credit spreads, market conditions
 3. CALCULATE CONFIDENCE: All sources agree? 95%. Sources conflict? 60-70%.
-4. APPLY RULES: 
-   - IF VIX >22 AND macro score >-5 AND confidence >85% → Deploy $75K-$100K (Level 1)
-   - IF VIX >30 AND macro score >0 AND confidence >85% → Deploy $400K-$500K (Level 2)
+4. APPLY RULES:
+   - IF VIX >22 AND macro score >-5 AND confidence >85% → Deploy 10-15% of cash (Level 1)
+   - IF VIX >30 AND macro score >0 AND confidence >85% → Deploy 35-40% of cash (Level 2)
    - IF confidence <75% → Abstain, gather more data
-5. RESPOND (example): 
-   "VIX at 24.3 [Source: Yahoo Finance, 2025-XX-XX, 95% confidence]. 
+5. RESPOND (example):
+   "VIX at 24.3 [Source: Yahoo Finance, 2025-XX-XX, 95% confidence].
     Macro score -4.4 [Last verified: recent]. Level 1 trigger activated.
-    Recommendation: Deploy $75K-$85K given late cycle macro context.
+    Recommendation: Deploy 10-12% of available cash given late cycle macro context.
     Allocation suggestion: 60% minimum volatility, 40% quality dividend."
 ```
 

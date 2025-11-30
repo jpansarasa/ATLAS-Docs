@@ -4,9 +4,9 @@ Pattern evaluation and regime detection service for ATLAS.
 
 ## Overview
 
-ThresholdEngine is the "brain" of the ATLAS system. It evaluates configurable C# expressions against real-time economic and market data to detect regime transitions and generate allocation signals. It consumes observation events from multiple data collectors via gRPC streams and publishes threshold alerts when conditions are met.
+ThresholdEngine evaluates configurable C# expressions against real-time economic data to detect regime transitions and generate signals. It consumes observation events from collectors via gRPC and publishes alerts when thresholds are crossed.
 
-**Scope**: Pattern evaluation only. Data collection is handled by collector services (FredCollector, etc.), and notifications are delivered by AlertService.
+**Scope**: Pattern evaluation only. Data collection is handled by collector services, notifications by AlertService.
 
 ## Architecture
 
@@ -20,39 +20,43 @@ flowchart TD
     end
 
     subgraph Core [ThresholdEngine]
-        MZW[Multi-Collector<br/>Consumer]
+        Consumer[gRPC Consumer]
         Roslyn[Roslyn Compiler]
         Context[Evaluation Context]
         Regime[Regime Detector]
     end
 
     subgraph Downstream
-        AS[AlertService]
+        Prom[Prometheus]
         DB[(TimescaleDB)]
-        Bus[Event Bus]
     end
 
-    FC & AVC & FHC & NC -- gRPC Stream --> MZW
-    MZW --> Context
+    FC & AVC & FHC & NC -- gRPC Stream --> Consumer
+    Consumer --> Context
     Roslyn --> Context
     Context --> Regime
     Regime --> DB
-    Regime --> Bus
-    Bus --> AS
+    Regime --> Prom
 ```
 
-## Core Features
+## Technology Stack
 
-- **Roslyn Compilation**: C# expressions compiled at runtime from JSON configuration, allowing complex logic without recompilation.
-- **Context API**: Rich DSL for financial analysis (`GetLatest`, `GetYoY`, `GetMA`, `GetSpread`, `IsSustained`).
-- **Hot Reload**: Pattern configuration changes are applied immediately without service restart.
-- **Regime Detection**: sophisticated state machine tracking six economic regimes (Crisis → Recession → LateCycle → Neutral → Recovery → Growth).
-- **Signal Scoring**: Quantitative scoring (-2 to +2) with hysteresis and confidence intervals.
-- **Multi-Source Data**: Unifies data from diverse sources (FRED, AlphaVantage, Finnhub, Nasdaq) into a single evaluation context.
+- **.NET 9 / C# 13** - Consistent with ATLAS platform
+- **Roslyn** - Runtime C# expression compilation
+- **TimescaleDB** - Event persistence with hypertables
+- **OpenTelemetry** - Traces, metrics, logs to observability stack
+
+## Key Features
+
+- **Roslyn Compilation**: C# expressions compiled at runtime from JSON configuration
+- **Context API**: DSL for financial analysis (`GetLatest`, `GetYoY`, `GetMA`, `GetSpread`)
+- **Hot Reload**: Pattern changes applied immediately without restart
+- **Regime Detection**: State machine tracking six regimes (Crisis → Recession → LateCycle → Neutral → Recovery → Growth)
+- **Signal Scoring**: Quantitative scoring (-2 to +2) with hysteresis
 
 ## Pattern Configuration
 
-Patterns are defined in JSON files located in `config/patterns/`. They contain embedded C# expressions that are compiled at runtime.
+Patterns are defined in JSON files in `config/patterns/`:
 
 ```json
 {
@@ -66,26 +70,28 @@ Patterns are defined in JSON files located in `config/patterns/`. They contain e
 }
 ```
 
+**40 patterns** across 6 categories: Recession, Liquidity, NBFI Stress, Growth, Valuation, Commodity
+
 ## Context API
 
-The `ctx` object available in pattern expressions provides powerful time-series analysis methods:
+The `ctx` object provides time-series analysis methods:
 
 ```csharp
 // Basic Retrieval
 ctx.GetLatest("VIXCLS")           // Most recent value
-ctx.GetValues("SP500", 30)        // Last 30 days of data
+ctx.GetValues("SP500", 30)        // Last 30 days
 
 // Transformations
 ctx.GetYoY("GDP")                 // Year-over-year % change
 ctx.GetMoM("PAYEMS")              // Month-over-month % change
 ctx.GetMA("UNRATE", 90)           // 90-day moving average
-ctx.GetSpread("DGS10", "DGS2")    // Yield curve spread (10Y - 2Y)
+ctx.GetSpread("DGS10", "DGS2")    // Yield curve spread
 ctx.GetLowest("UNRATE", 365)      // 12-month low
 ctx.GetHighest("SP500", 365)      // 52-week high
 
 // Logic
-ctx.IsSustained("ICSA", v => v > 300000m, 30)  // Condition held true for 30 days
-ctx.MacroScore                    // Current composite regime score
+ctx.IsSustained("ICSA", v => v > 300000m, 30)  // Condition held for 30 days
+ctx.MacroScore                    // Current composite score
 ctx.CurrentRegime                 // Current MacroRegime enum
 ```
 
@@ -95,22 +101,19 @@ Environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | `Host=postgres;...` |
-| `Collectors__FredCollector` | gRPC URL for FredCollector | `http://fred-collector:5001` |
-| `Collectors__AlphaVantageCollector` | gRPC URL for AlphaVantage | `http://alphavantage-collector:5004` |
-| `Collectors__FinnhubCollector` | gRPC URL for Finnhub | `http://finnhub-collector:5005` |
-| `Collectors__NasdaqCollector` | gRPC URL for Nasdaq | `http://nasdaq-collector:5006` |
+| `ConnectionStrings__AtlasDb` | PostgreSQL connection | Required |
+| `FredCollector__ServiceUrl` | gRPC URL for FredCollector | `http://fredcollector-grpc:5001` |
+| `PatternConfig__Path` | Pattern config directory | `./config` |
+| `PatternConfig__HotReload` | Enable hot reload | `true` |
 
 ## Getting Started
 
-**Note**: This service is designed to run as part of the larger ATLAS microservices architecture. It relies on shared infrastructure (TimescaleDB) and upstream collectors to function correctly.
+**Note**: This service runs as part of the ATLAS microservices architecture.
 
 ### Development (Dev Containers)
 
-The most robust way to develop is using the provided Dev Container, which includes the .NET SDK and tooling.
-
-1. **Open in VS Code**: Open this folder and select "Reopen in Container".
-2. **Start Infrastructure**: Ensure the shared infrastructure (PostgreSQL/TimescaleDB) and collectors are running:
+1. **Open in VS Code**: Select "Reopen in Container"
+2. **Start Infrastructure**:
    ```bash
    docker compose up -d postgres fred-collector
    ```
@@ -120,33 +123,23 @@ The most robust way to develop is using the provided Dev Container, which includ
    dotnet run
    ```
 
-### Running with Docker (Standalone)
-
-If you just want to run the service image without a dev environment:
-
-```bash
-docker compose up -d threshold-engine
-```
-
 ### Running the Full Stack
 
-To run the entire ATLAS system:
-
 ```bash
-cd ../ansible
+cd ~/ATLAS/ansible
 ansible-playbook playbooks/site.yml
 ```
 
 ## API Endpoints
 
-### REST API (Port 5003)
+### REST API (Port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/patterns` | GET | List all configured patterns and their current state |
-| `/api/patterns/{id}` | GET | Get detailed configuration for a specific pattern |
-| `/api/patterns/{id}/toggle` | PUT | Enable or disable a pattern at runtime |
-| `/api/patterns/reload` | POST | Force reload of pattern configuration from disk (Hot Reload) |
+| `/api/patterns` | GET | List all patterns and current state |
+| `/api/patterns/{id}` | GET | Get specific pattern configuration |
+| `/api/patterns/{id}/toggle` | PUT | Enable/disable pattern |
+| `/api/patterns/reload` | POST | Force reload from disk (hot reload) |
 | `/health` | GET | Liveness probe |
 
 ## Project Structure
@@ -154,19 +147,19 @@ ansible-playbook playbooks/site.yml
 ```
 ThresholdEngine/
 ├── src/
-│   ├── ThresholdEngine.Core/           # Domain models, interfaces, enums
-│   ├── ThresholdEngine.Application/    # Pattern evaluation, workers, services
-│   ├── ThresholdEngine.Infrastructure/ # Data access, Roslyn compiler, gRPC clients
-│   └── ThresholdEngine.Service/        # ASP.NET Core host, API endpoints
+│   ├── ThresholdEngine.Core/           # Domain models, interfaces
+│   ├── ThresholdEngine.Application/    # Pattern evaluation, workers
+│   ├── ThresholdEngine.Infrastructure/ # Roslyn compiler, data access
+│   └── ThresholdEngine.Service/        # ASP.NET Core host
 ├── config/
 │   └── patterns/                       # Pattern definitions by category
 ├── tests/
-│   └── ThresholdEngine.UnitTests/      # xUnit test suite (>220 tests)
-└── Containerfile                       # Multi-stage Docker build
+│   └── ThresholdEngine.UnitTests/      # 153 tests
+└── Containerfile
 ```
 
 ## See Also
 
-- [FredCollector](../FredCollector/README.md) - Federal Reserve Economic Data
+- [FredCollector](../FredCollector/README.md) - Primary data source
 - [AlertService](../AlertService/README.md) - Notification delivery
-- [Events](../Events/README.md) - Shared gRPC client and contracts
+- [ThresholdEngineMcp](../ThresholdEngineMcp/README.md) - MCP access for Claude

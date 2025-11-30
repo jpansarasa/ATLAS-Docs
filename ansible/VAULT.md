@@ -4,13 +4,21 @@ Sensitive credentials encrypted in `group_vars/vault.yml`. Vault password: `~/.a
 
 ## Encrypted Variables
 
-- `atlas_db_password` - FredCollector database
-- `postgres_password` - PostgreSQL admin
-- `fred_api_key` - FRED API key
-- `api_key` - REST API authentication
-- `api_key_enabled` - Enable REST API auth
+### Database
+- `postgres_password` - PostgreSQL admin password
+- `atlas_db_password` - ATLAS services database password
 
-## Common Commands
+### API Keys
+- `fred_api_key` - FRED API key (FredCollector)
+- `alphavantage_api_key` - Alpha Vantage API key (AlphaVantageCollector)
+- `finnhub_api_key` - Finnhub API key (FinnhubCollector)
+- `nasdaq_api_key` - Nasdaq Data Link API key (NasdaqCollector)
+
+### Notifications (Optional)
+- `ntfy_password` - Ntfy push notification password
+- `email_password` - SMTP email password
+
+## Commands
 
 ```bash
 # View encrypted values
@@ -20,30 +28,31 @@ ansible-vault view group_vars/vault.yml
 ansible-vault edit group_vars/vault.yml
 
 # Deploy (vault password auto-loaded from ansible.cfg)
-ansible-playbook playbooks/infrastructure.yml
+ansible-playbook playbooks/site.yml
 
-# Generate strong password
+# Generate strong password/key
 openssl rand -base64 32
 ```
 
-## Production Setup
+## Adding New Secrets
 
 ```bash
-# 1. Generate passwords
-ATLAS_PASS=$(openssl rand -base64 32)
-POSTGRES_PASS=$(openssl rand -base64 32)
-API_KEY=$(openssl rand -base64 32)
+# 1. Generate key
+NEW_KEY=$(openssl rand -base64 32)
+echo $NEW_KEY
 
 # 2. Edit vault
 ansible-vault edit group_vars/vault.yml
-# Update: atlas_db_password, postgres_password, fred_api_key, api_key
 
-# 3. Deploy
-ansible-playbook playbooks/infrastructure.yml
+# 3. Add variable (e.g., new_api_key: <paste key>)
+
+# 4. Reference in compose.yaml.j2
+# - NEW_SERVICE_KEY={{ new_api_key }}
 ```
 
 ## Security
 
-✅ DO: Keep `~/.ansible_vault_pass` with `chmod 600`, use strong passwords, commit `vault.yml` (encrypted)  
-❌ DON'T: Commit password file, use dev passwords in production
-
+- Keep `~/.ansible_vault_pass` with `chmod 600`
+- Never commit vault password file
+- Commit `vault.yml` (it's encrypted)
+- Use strong randomly-generated passwords
