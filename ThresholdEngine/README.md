@@ -126,7 +126,7 @@ Environment variables:
 ### Running the Full Stack
 
 ```bash
-cd ~/ATLAS/ansible
+cd ~/ATLAS/deployment/ansible
 ansible-playbook playbooks/site.yml
 ```
 

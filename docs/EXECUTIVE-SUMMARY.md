@@ -110,7 +110,7 @@ Six-state machine with hysteresis:
 ## Deployment
 
 ```bash
-cd ~/ATLAS/ansible
+cd ~/ATLAS/deployment/ansible
 ansible-playbook playbooks/site.yml
 ```
 

@@ -215,7 +215,7 @@ Response: "Successfully pulled mistral:7b on GPU"
 
 Via Ansible (recommended):
 ```bash
-cd ~/ATLAS/ansible
+cd ~/ATLAS/deployment/ansible
 ansible-playbook playbooks/site.yml
 ```
 

@@ -125,7 +125,7 @@ DOTNET_MODERN:
   ¬sln_files # modern .NET auto-discovers .csproj
   `dotnet build` in project_root = sufficient
 DEPLOYMENTS:
-  use: ansible # infrastructure/ansible/
+  use: ansible # deployment/ansible/
   ¬manual: container_start | service_restart | config_edit
   rationale: reproducible + auditable + idempotent
 ¬PATTERN: "changes are straightforward" → commit_anyway

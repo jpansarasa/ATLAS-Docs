@@ -161,7 +161,7 @@ All collectors → ThresholdEngine → Prometheus → Alertmanager → AlertServ
 
 ```bash
 # Full deployment
-cd ~/ATLAS/ansible
+cd ~/ATLAS/deployment/ansible
 ansible-playbook playbooks/site.yml
 
 # Service management
