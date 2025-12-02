@@ -11,7 +11,8 @@ config/
 │   ├── liquidity/         # VIX, credit spreads, liquidity patterns
 │   ├── growth/            # Growth acceleration patterns
 │   ├── valuation/         # Valuation opportunity patterns
-│   └── nbfi/              # NBFI (Non-Bank Financial Institution) patterns
+│   ├── nbfi/              # NBFI (Non-Bank Financial Institution) patterns
+│   └── inflation/         # CPI, PCE, breakeven inflation patterns
 ├── regimes.json          # Regime transition rules
 └── appsettings.json      # Service configuration
 ```
@@ -45,6 +46,7 @@ Patterns are defined as JSON files with embedded C# expressions:
 - **Growth**: GDP acceleration, ISM expansion, industrial production
 - **Valuation**: CAPE, Buffett Indicator, equity risk premium
 - **NBFI**: Multi-indicator stress detection (Non-Bank Financial Institutions)
+- **Inflation**: CPI, PCE, and breakeven inflation expectations
 
 ## Regime Transition Rules
 
