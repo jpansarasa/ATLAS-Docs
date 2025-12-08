@@ -1,302 +1,377 @@
-# Observability
+# ATLAS Observability
 
-OpenTelemetry (OTLP) for traces, metrics, and logs with correlation.
+OpenTelemetry-based observability with traces, metrics, and logs across all services.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    FC[FredCollector] -->|OTLP gRPC:4317| OC[OTel Collector]
-    TE[ThresholdEngine] -->|OTLP gRPC:4317| OC
-    OC -->|otlp/tempo| T[Tempo]
-    OC -->|otlphttp/loki| L[Loki]
+    subgraph Services
+        FC[FredCollector]
+        AV[AlphaVantageCollector]
+        FH[FinnhubCollector]
+        OFR[OfrCollector]
+        TE[ThresholdEngine]
+        AS[AlertService]
+    end
+
+    FC -->|OTLP gRPC :4317| OC[OTel Collector]
+    AV --> OC
+    FH --> OC
+    OFR --> OC
+    TE --> OC
+    AS --> OC
+
+    OC -->|otlp| T[Tempo]
+    OC -->|otlphttp| L[Loki]
     OC -->|prometheus| P[Prometheus]
-    P -->|alerting rules| AM[Alertmanager]
+    P -->|rules| AM[Alertmanager]
+    AM -->|webhook| AS
+
     T --> G[Grafana]
     L --> G
     P --> G
-    AM --> G
 ```
 
-**Backends**:
-- Tempo: Distributed tracing (traces via OTLP gRPC)
-- Loki: Log aggregation (logs via OTLP HTTP)
-- Prometheus: Metrics storage + alert evaluation
-- Alertmanager: Alert routing and notifications
-- Grafana: Unified dashboards
+## Stack
 
-## Pipeline Status
+| Component | Port | Purpose |
+|-----------|------|---------|
+| OTel Collector | 4317 (gRPC), 4318 (HTTP) | OTLP receiver, routing |
+| Prometheus | 9090 | Metrics storage, alerting rules |
+| Loki | 3101 | Log aggregation |
+| Tempo | 3200 | Distributed tracing |
+| Alertmanager | 9093 | Alert routing |
+| Grafana | 3000 | Dashboards, exploration |
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Metrics → Prometheus | ✅ Working | Via OTel prometheus exporter |
-| Logs → Loki | ✅ Working | Via otlphttp/loki exporter |
-| Traces → Tempo | ✅ Working | Via otlp/tempo exporter |
-| Alert rules | ✅ Defined | 3 rule files in monitoring/alerts/ |
-| Alert routing | ✅ Configured | Severity-based (critical/warning/info) |
-| Notifications | ✅ AlertService | ntfy.sh + email via AlertService sink |
+## Service Configuration
 
-## Instrumentation
+All services use the same OpenTelemetry configuration pattern:
 
-**Automatic**: ASP.NET Core, HttpClient, EF Core  
-**Custom**: Business metrics (observations, rate limiter, API duration, workers, repositories)
+```csharp
+// Program.cs
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r.AddService(serviceName))
+    .WithTracing(t => t
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddGrpcClientInstrumentation()
+        .AddSource(ServiceActivitySource.Name)
+        .AddOtlpExporter())
+    .WithMetrics(m => m
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddMeter(ServiceMeter.Name)
+        .AddOtlpExporter());
+```
 
-### Instrumentation Coverage
-
-**Phase 1 (Complete)**: Core framework (ActivitySource, Meter, OTel config)  
-**Phase 2 (Complete)**: API endpoints (traces, metrics, tags)  
-**Phase 3 (Complete)**: Workers (DataCollectionScheduler, ThresholdAlertWorker, InitialDataBackfillWorker)  
-**Phase 4 (Complete)**: Repositories (ObservationRepository, SeriesConfigRepository, ThresholdAlertRepository)  
-**Phase 5 (Complete)**: Grafana dashboards
-
-## Configuration
-
-**Endpoint**: `OpenTelemetry__OtlpEndpoint=http://otel-collector:4317`  
-**Service Name**: `OpenTelemetry__ServiceName=fred-collector-service` (or `fred-collector-api`)  
-**Logging**: Serilog → OTLP (structured, trace-correlated)
+**Environment Variables**:
+```yaml
+OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+OTEL_SERVICE_NAME: fred-collector
+OTEL_RESOURCE_ATTRIBUTES: deployment.environment=production
+```
 
 ## Metrics
 
-### FRED API Metrics
-- `fredcollector.fred_api.requests.total` - Counter (series_id, success, status_code)
-- `fredcollector.fred_api.request.duration` - Histogram (ms, series_id, success)
-- `fredcollector.fred_api.errors.total` - Counter (series_id, error_type, status_code)
+### Naming Convention
 
-### Data Collection Metrics
-- `fredcollector.observations.collected.total` - Counter (series_id, frequency)
-- `fredcollector.data_collection.duration` - Histogram (ms, series_id, operation, success)
-- `fredcollector.backfill.duration` - Histogram (ms, series_id, success)
-- `fredcollector.backfill.observations.processed` - Counter (series_id)
+```
+{service}.{component}.{metric}
+```
 
-### Worker Metrics
-- `fredcollector.worker.series.scheduled.total` - Counter (worker)
-- `fredcollector.worker.threshold.observations.processed.total` - Counter (series_id, threshold_crossed)
-- `fredcollector.worker.threshold.alerts.generated.total` - Counter (series_id, category)
-- `fredcollector.worker.backfill.initial.series.processed.total` - Counter (success)
+Examples:
+- `fredcollector.api.requests_total`
+- `thresholdengine.patterns.evaluated_total`
+- `ofrcollector.fsi.collection_duration_seconds`
 
-### Repository Metrics
-- `fredcollector.repository.operation.duration` - Histogram (ms, repository, operation, success)
-- `fredcollector.repository.observations.upserted.total` - Counter (series_id, operation)
-- `fredcollector.repository.observations.revised.total` - Counter (series_id)
-- `fredcollector.repository.bulk_insert.batches.total` - Counter (batch_size)
-- `fredcollector.repository.queries.total` - Counter (repository, operation)
+### Common Metrics (All Services)
 
-### API Metrics
-- `fredcollector.api.requests.total` - Counter (endpoint, http_method, status_code, success)
-- `fredcollector.api.cache.hits.total` - Counter (endpoint)
-- `fredcollector.api.cache.misses.total` - Counter (endpoint)
+| Metric | Type | Tags | Description |
+|--------|------|------|-------------|
+| `*.api.requests_total` | Counter | endpoint, method, status | HTTP requests |
+| `*.api.request_duration_seconds` | Histogram | endpoint, method | Request latency |
+| `*.grpc.requests_total` | Counter | method, status | gRPC calls |
+| `*.database.query_duration_seconds` | Histogram | operation | DB query time |
 
-### Seeding Metrics
-- `fredcollector.seeding.series.seeded.total` - Counter (series_id, category)
+### Collector Metrics
 
-## Traces
+| Metric | Type | Description |
+|--------|------|-------------|
+| `*.observations.collected_total` | Counter | Observations ingested |
+| `*.collection.duration_seconds` | Histogram | Collection job duration |
+| `*.api.errors_total` | Counter | External API errors |
+| `*.events.published_total` | Counter | gRPC events streamed |
 
-Custom spans created using `FredCollectorActivitySource`:
-- `ScheduleAllActiveSeries` - Scheduling all series for collection
-- `ScheduleSeriesJob` - Scheduling individual series
-- `ProcessObservation` - Processing observation for threshold checking
-- `InitialDataBackfill` - Initial backfill worker execution
-- `BackfillSeries` - Backfilling individual series
-- `UpsertObservation` - Upserting observation to database
-- `BulkInsertObservations` - Bulk inserting observations
-- `GetObservations` - Querying observations
-- `GetLatestObservation` - Getting latest observation
-- `GetActiveSeries` - Getting active series configurations
-- `AddThresholdAlert` - Adding threshold alert
+### ThresholdEngine Metrics
 
-All spans include relevant tags (series_id, operation type, success/failure, etc.)
+| Metric | Type | Description |
+|--------|------|-------------|
+| `thresholdengine.patterns.evaluated_total` | Counter | Pattern evaluations |
+| `thresholdengine.patterns.triggered_total` | Counter | Patterns that fired |
+| `thresholdengine.macro_score` | Gauge | Current macro score |
+| `thresholdengine.regime` | Gauge | Current regime (0-3) |
+| `thresholdengine.events.received_total` | Counter | Events from collectors |
 
-## Grafana Dashboards
+## Tracing
 
-**Location**: `infrastructure/monitoring/fredcollector-dashboard.json`
+### ActivitySource Pattern
 
-**Panels**:
-- FRED API Request Rate
-- FRED API Request Duration (p95)
-- FRED API Errors
-- Observations Collected
-- Data Collection Duration (p95)
-- Series Scheduled
-- Threshold Observations Processed
-- Threshold Alerts Generated
-- Initial Backfill Series Processed
-- Backfill Duration (p95)
-- Repository Operation Duration (p95)
-- Observations Upserted
-- Observations Revised
-- Bulk Insert Batches
-- Repository Queries
-- API Requests (by endpoint)
+Each service defines its own ActivitySource:
 
-## Access
+```csharp
+public static class ServiceActivitySource
+{
+    public const string Name = "FredCollector";
+    public static readonly ActivitySource Source = new(Name, "1.0.0");
+}
+```
 
-- Grafana: http://localhost:3000
-- Prometheus: http://localhost:9090
-- Tempo: http://localhost:3200
-- Loki: http://localhost:3101
+### Span Creation
 
-## Trace-Log Correlation
+```csharp
+using var activity = ServiceActivitySource.Source.StartActivity("CollectSeries");
+activity?.SetTag("series.id", seriesId);
+activity?.SetTag("source", "FRED");
 
-Click trace ID in Grafana → see all logs for that request. Logs include `trace_id` and `span_id` automatically via Serilog.Enrichers.Span.
+try
+{
+    // ... operation
+    activity?.SetStatus(ActivityStatusCode.Ok);
+}
+catch (Exception ex)
+{
+    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+    activity?.AddException(ex);
+    throw;
+}
+```
+
+### Recording Exceptions
+
+Always record exceptions in catch blocks. This ensures exceptions appear in traces for debugging:
+
+```csharp
+catch (Exception ex)
+{
+    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);  // Marks span as error
+    activity?.AddException(ex);  // Adds exception event with stack trace
+    _logger.LogError(ex, "Operation failed for {SeriesId}", seriesId);
+    throw;
+}
+```
+
+`AddException` adds an event to the span containing:
+- Exception type (`exception.type`)
+- Message (`exception.message`)
+- Stack trace (`exception.stacktrace`)
+
+### Required Tags
+
+| Tag | Description | Example |
+|-----|-------------|---------|
+| `series.id` | Data series identifier | "UNRATE" |
+| `source` | Data source | "FRED", "OFR", "Finnhub" |
+| `operation` | Operation type | "collect", "backfill" |
+| `success` | Outcome | "true", "false" |
+
+## Logging
+
+### Serilog Configuration
+
+All services use Serilog with OTLP export and trace correlation:
+
+```csharp
+builder.Host.UseSerilog((context, config) => config
+    .ReadFrom.Configuration(context.Configuration)
+    .Enrich.FromLogContext()
+    .Enrich.WithSpan()  // Adds trace_id, span_id
+    .WriteTo.OpenTelemetry(opts =>
+    {
+        opts.Endpoint = otlpEndpoint;
+        opts.Protocol = OtlpProtocol.Grpc;
+    }));
+```
+
+### Log Levels
+
+Production default is `Warning`. Use levels correctly:
+
+| Level | Use For | Example |
+|-------|---------|---------|
+| Information | Routine ops, expected retries | "Collected 5 observations for UNRATE" |
+| Warning | Unexpected but recoverable | "Rate limited, backing off" |
+| Error | Failures, exceptions | "Failed to connect to FRED API" |
+
+### Structured Logging
+
+```csharp
+// Good - structured with context
+_logger.LogWarning("Collection failed for {SeriesId} after {Attempts} attempts",
+    seriesId, attempts);
+
+// Bad - string interpolation loses structure
+_logger.LogWarning($"Collection failed for {seriesId} after {attempts} attempts");
+```
 
 ## Alerting
 
 ### Alert Rules
 
-Three rule files in `infrastructure/monitoring/alerts/`:
+Located in `deployment/artifacts/monitoring/alerts/`:
 
-**service-health.yml**:
-- Container restarts > 3 in 15m
-- Service down > 1m
-- Memory usage > 90%
-- CPU usage > 90%
+| File | Scope | Key Alerts |
+|------|-------|------------|
+| `service-health.yml` | All services | Container restarts, memory, CPU |
+| `fredcollector.yml` | FredCollector | API errors, collection failures |
+| `thresholdengine.yml` | ThresholdEngine | Pattern load failures, event processing |
 
-**fredcollector.yml**:
-- API errors > 5% for 5m
-- API latency p95 > 5s
-- Rate limiting active
-- Collection failures
-- Database latency > 1s
-- No events streamed (dead man's switch)
+### Alert Routing
 
-**thresholdengine.yml**:
-- Warmup failures
-- Empty cache (no compiled expressions)
-- Patterns not loaded
-- gRPC connection retries
-- Event processing failures
-- High latency (p95)
-
-### Alert Routing (alertmanager.yml)
-
-| Severity | Group Wait | Repeat | Receiver |
-|----------|------------|--------|----------|
-| critical | 10s | 1h | `critical` |
-| warning | 30s | 2h | `warning` |
-| info | 5m | 12h | `default` |
-
-### Notifications (AlertService)
-
-All Alertmanager receivers POST to AlertService (`http://alert-service:8080/alerts`).
-
-**AlertService** (port 8081):
-- Async notification sink with pluggable channels
-- Receives webhooks from Alertmanager (ops alerts)
-- Can receive direct POSTs from ThresholdEngine (business alerts)
-
-**Notification Channels**:
-- `NtfyChannel`: Push notifications via ntfy.sh
-- `EmailChannel`: SMTP email via MailKit
-
-**Routing** (by severity):
-| Severity | Channels |
-|----------|----------|
-| critical | ntfy + email |
-| warning | ntfy |
-| info | email |
-
-**Configuration**: Environment variables in compose.yaml:
-- `Channels__Ntfy__Topic`: ntfy.sh topic name
-- `Channels__Email__Enabled`: Enable/disable email
-- `Channels__Email__SmtpHost`: SMTP server
-
-## Implementation Patterns
-
-### Metrics Location: Service Boundary Only
-
-Metrics belong at the service boundary (gRPC service, API controller), not in internal layers like repositories. Recording in both causes double-counting.
-
-**Correct** - gRPC service counts when events leave the service:
-```csharp
-// EventStreamService.cs (service boundary)
-await responseStream.WriteAsync(evt, context.CancellationToken);
-eventsStreamed++;
-_eventsStreamedCounter.Add(1, new KeyValuePair<string, object?>("method", "SubscribeToEvents"));
+```yaml
+# alertmanager.yml
+routes:
+  - match:
+      severity: critical
+    receiver: critical
+    group_wait: 10s
+    repeat_interval: 1h
+  - match:
+      severity: warning
+    receiver: warning
+    group_wait: 30s
+    repeat_interval: 2h
 ```
 
-**Wrong** - repository also counting:
-```csharp
-// EventRepository.cs (internal layer) - DON'T DO THIS
-yield return evt;
-SomeMeter.EventsStreamed.Add(1);  // EventStreamService already counts this
+### Notification Flow
+
+```
+Prometheus → Alertmanager → AlertService → ntfy.sh / Email
 ```
 
-### Metric Tag Cardinality
+AlertService receives webhooks and routes by severity:
+- **critical**: ntfy + email
+- **warning**: ntfy only
+- **info**: email only
 
-Tags must have bounded cardinality. Unbounded values explode metric storage and query performance.
+## Dashboards
 
-**Bounded (good)**:
-- `method`: "SubscribeToEvents", "GetEventsSince" (finite set)
-- `status_code`: "200", "500" (finite set)
-- `success`: "true", "false" (2 values)
-- `service_name`: "FredCollector", "NasdaqCollector" (known services)
+### Available Dashboards
 
-**Unbounded (bad)**:
-- `event_type`: `evt.PayloadCase.ToString()` (grows with schema)
-- `user_id`: unique per user
-- `series_id`: grows with data
-- `event_id`: unique per event
+| Dashboard | Purpose |
+|-----------|---------|
+| ATLAS Overview | System health, all services |
+| FredCollector | FRED API, collection metrics |
+| ThresholdEngine | Pattern evaluation, regime status |
+| OfrCollector | FSI trends, STFM/HFM collection |
+| FinnhubCollector | Quote collection, calendar sync |
 
-### Tracing: Error Status in Catch Blocks
+### Dashboard Location
 
-Every catch block that handles an exception must record it in the trace. Otherwise exceptions disappear from observability.
+Provisioned dashboards: `deployment/artifacts/monitoring/dashboards/`
+
+## Best Practices
+
+### 1. Metrics at Service Boundary
+
+Record metrics at the service boundary, not internal layers:
 
 ```csharp
-public async Task<HealthResponse> GetHealth(Empty request, ServerCallContext context)
+// ✓ Correct - gRPC service boundary
+public override async Task SubscribeToEvents(...)
 {
-    using var activity = ActivitySource.StartActivity("GetHealth");
-
-    try
+    await foreach (var evt in _repo.GetEventsAsync())
     {
-        // ... operation
-        return response;
-    }
-    catch (Exception ex)
-    {
-        activity?.SetStatus(ActivityStatusCode.Error, ex.Message);  // Required
-        _logger.LogError(ex, "Health check failed");
-        return new HealthResponse { Healthy = false };
+        await responseStream.WriteAsync(evt);
+        _eventsStreamed.Add(1);  // Count here
     }
 }
-```
 
-### Logging Levels
-
-Production default is WARN. Use levels correctly:
-
-| Level | Use For | Example |
-|-------|---------|---------|
-| `LogInformation` | Routine operations, expected retries, client disconnects | "FredCollector unavailable, retrying in 5s" |
-| `LogWarning` | Unexpected but recoverable, degraded state | "Cache miss, falling back to database" |
-| `LogError` | Failures requiring attention, exceptions | "Failed to process event {EventId}" |
-
-**Correct** - routine retry is Information (filtered in prod):
-```csharp
-catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
+// ✗ Wrong - internal repository
+public async IAsyncEnumerable<Event> GetEventsAsync()
 {
-    _logger.LogInformation("FredCollector unavailable, retrying in {Delay}s", delay);
+    yield return evt;
+    _meter.Add(1);  // Double-counting with service layer
 }
 ```
 
-**Wrong** - routine operation logged as Warning (noise in prod):
+### 2. Bounded Tag Cardinality
+
+Tags must have finite possible values:
+
 ```csharp
-catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
+// ✓ Good - bounded
+activity?.SetTag("status", success ? "ok" : "error");
+activity?.SetTag("method", "GET");
+
+// ✗ Bad - unbounded
+activity?.SetTag("user_id", userId);      // Unique per user
+activity?.SetTag("event_id", eventId);    // Unique per event
+activity?.SetTag("series_id", seriesId);  // Grows with data
+```
+
+### 3. Error Status in Catch Blocks
+
+Always record errors in traces:
+
+```csharp
+catch (Exception ex)
 {
-    _logger.LogWarning("FredCollector unavailable, retrying...");  // Too noisy
+    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+    _logger.LogError(ex, "Operation failed");
+    throw;
 }
 ```
 
-### Streaming Metrics for Long-Running Operations
+### 4. Streaming Metrics
 
-For gRPC streams that run for hours, batch metrics at the end provide no visibility. Use per-event metrics at the service boundary:
+For long-running streams, emit per-event metrics:
 
 ```csharp
-// EventStreamService.cs - per-event visibility during streaming
-await foreach (var evt in _eventRepository.StreamEventsSinceAsync(...))
+// ✓ Visible during streaming
+await foreach (var evt in stream)
 {
-    await responseStream.WriteAsync(evt, context.CancellationToken);
-    _eventsStreamedCounter.Add(1, new KeyValuePair<string, object?>("method", "SubscribeToEvents"));
+    await Process(evt);
+    _counter.Add(1);  // Immediate visibility
 }
+
+// ✗ Only visible after stream ends
+var count = await stream.CountAsync();
+_counter.Add(count);  // Hours of no data
 ```
 
-Counter increments are immediate in memory; Prometheus scrapes on interval (typically 15-60s).
+## Troubleshooting
+
+### No Metrics in Prometheus
+
+1. Check OTLP endpoint: `curl http://otel-collector:4317`
+2. Verify service config: `OTEL_EXPORTER_OTLP_ENDPOINT`
+3. Check OTel Collector logs: `nerdctl logs otel-collector`
+
+### Missing Traces
+
+1. Verify ActivitySource is registered in `.AddSource()`
+2. Check trace sampling (default 100%)
+3. Confirm Tempo is receiving: Grafana → Explore → Tempo
+
+### Logs Not Correlated
+
+1. Ensure `.Enrich.WithSpan()` in Serilog config
+2. Check logs include `trace_id` field
+3. Verify Loki label extraction in OTel Collector config
+
+## Access
+
+| Service | URL |
+|---------|-----|
+| Grafana | http://mercury:3000 |
+| Prometheus | http://mercury:9090 |
+| Alertmanager | http://mercury:9093 |
+| Tempo | http://mercury:3200 |
+| Loki | http://mercury:3101 |
+
+## See Also
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System overview
+- [Deployment](../deployment/README.md) - Infrastructure setup
+- [AlertService](../AlertService/README.md) - Notification routing

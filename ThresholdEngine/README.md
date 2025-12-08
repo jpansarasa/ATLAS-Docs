@@ -13,8 +13,10 @@ ThresholdEngine evaluates configurable C# expressions against real-time economic
 ```mermaid
 flowchart TD
     subgraph Collectors [Data Collectors]
-        FC[FredCollector]
-        OC[OfrCollector]
+        FC[FredCollector :5002]
+        AV[AlphaVantageCollector :5011]
+        FH[FinnhubCollector :5013]
+        OC[OfrCollector :5017]
     end
 
     subgraph Core [ThresholdEngine]
@@ -31,7 +33,7 @@ flowchart TD
         DB[(PostgreSQL)]
     end
 
-    FC & OC -- gRPC Stream --> Consumer
+    FC & AV & FH & OC -- gRPC Stream --> Consumer
     Consumer --> Cache
     Cache --> Context
     Roslyn --> Evaluator
@@ -114,7 +116,10 @@ Environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ConnectionStrings__AtlasDb` | PostgreSQL connection string | Required |
-| `FredCollector__ServiceUrl` | gRPC URL for FredCollector | `http://fredcollector-grpc:5001` |
+| `FredCollector__GrpcUrl` | gRPC URL for FredCollector | `http://fred-collector:5002` |
+| `AlphaVantageCollector__GrpcUrl` | gRPC URL for AlphaVantageCollector | `http://alphavantage-collector:5011` |
+| `FinnhubCollector__GrpcUrl` | gRPC URL for FinnhubCollector | `http://finnhub-collector:5013` |
+| `OfrCollector__GrpcUrl` | gRPC URL for OfrCollector | `http://ofr-collector:5017` |
 | `PatternConfig__Path` | Pattern config directory | `./config` (dev), `/app/config` (prod) |
 | `PatternConfig__HotReload` | Enable file system watcher | `true` |
 | `PatternConfig__WatchInterval` | Watcher interval in milliseconds | `1000` |
@@ -207,7 +212,7 @@ ThresholdEngine/
 
 Background services running in the application:
 
-- **MultiCollectorEventConsumerWorker**: Subscribes to observation events from FredCollector and OfrCollector via gRPC
+- **MultiCollectorEventConsumerWorker**: Subscribes to observation events from all 4 collectors (FredCollector, AlphaVantageCollector, FinnhubCollector, OfrCollector) via gRPC
 - **ObservationEventSubscriber**: Processes observation events from in-memory event bus, caches in ObservationCache
 - **DataWarmupService**: Loads initial observations from database into cache on startup
 - **EventProcessor**: Evaluates patterns when relevant observations are updated
@@ -230,5 +235,7 @@ Transitions require sustained conditions for 30 days with 7-day smoothing window
 ## See Also
 
 - [FredCollector](../FredCollector/README.md) - Economic data collector (FRED API)
+- [AlphaVantageCollector](../AlphaVantageCollector/README.md) - Commodities, forex, crypto (Alpha Vantage API)
+- [FinnhubCollector](../FinnhubCollector/README.md) - Stock quotes, calendars, sentiment (Finnhub API)
 - [OfrCollector](../OfrCollector/README.md) - Financial stability data collector (OFR API)
 - [ThresholdEngineMcp](../ThresholdEngineMcp/README.md) - MCP server for Claude Code integration

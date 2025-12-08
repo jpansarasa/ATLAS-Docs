@@ -25,7 +25,7 @@ deployment/
 
 ```bash
 cd ~/ATLAS/deployment/ansible
-ansible-playbook playbooks/site.yml
+ansible-playbook playbooks/deploy.yml
 ```
 
 This deploys everything:
@@ -40,23 +40,38 @@ This deploys everything:
 ### Data Collectors
 | Service | Ports | Description |
 |---------|-------|-------------|
-| fred-collector | 5001 (REST), 5002 (gRPC) | FRED economic data |
-| alphavantage-collector | 5003 (HTTP), 5004 (gRPC) | Commodities (WTI, Copper) |
-| nasdaq-collector | 5005 (HTTP), 5006 (gRPC) | LBMA gold prices |
-| finnhub-collector | 5007 (HTTP), 5008 (gRPC) | Stocks, sentiment |
+| fred-collector | 5001 (HTTP), 5002 (gRPC) | FRED economic data (200+ series) |
+| alphavantage-collector | 5010 (HTTP), 5011 (gRPC) | Commodities, forex, crypto |
+| finnhub-collector | 5012 (HTTP), 5013 (gRPC) | Stock quotes, calendars, sentiment |
+| ofr-collector | 5016 (HTTP), 5017 (gRPC) | OFR FSI, STFM, HFM data |
+| calendar-service | 5015 | Market holidays, economic calendar |
 
-### Processing & Storage
+### Processing & Alerting
 | Service | Port | Description |
 |---------|------|-------------|
-| threshold-engine | 8080 | Pattern evaluation, regime detection |
+| threshold-engine | 5003 | Pattern evaluation, regime detection (54 patterns) |
 | alert-service | 8081 | Notification dispatch (ntfy, email) |
-| timescaledb | 5432 | PostgreSQL + time-series |
+
+### MCP Servers (Claude Integration)
+| Service | Port | Description |
+|---------|------|-------------|
+| ollama-mcp | 3100 | LLM inference via Ollama |
+| markitdown-mcp | 3102 | Document conversion |
+| fredcollector-mcp | 3103 | FRED data tools (7 tools) |
+| thresholdengine-mcp | 3104 | Pattern evaluation tools (8 tools) |
+| finnhub-mcp | 3105 | Market data tools (26 tools) |
+| ofrcollector-mcp | 3106 | OFR financial data tools (26 tools) |
 
 ### AI Inference
 | Service | Port | Description |
 |---------|------|-------------|
 | ollama-gpu | 11434 | RTX 5090 GPU inference |
 | ollama-cpu | 11435 | CPU fallback |
+
+### Storage
+| Service | Port | Description |
+|---------|------|-------------|
+| timescaledb | 5432 | PostgreSQL + TimescaleDB |
 
 ### Observability
 | Service | Port | Description |
@@ -66,7 +81,9 @@ This deploys everything:
 | grafana | 3000 | Dashboards |
 | loki | 3101 | Log aggregation |
 | tempo | 3200 | Distributed tracing |
-| otel-collector | 4317 | OTLP receiver |
+| otel-collector | 4317/4318 | OTLP gRPC/HTTP receiver |
+| node-exporter | 9100 | Host metrics |
+| gpu-exporter | 9835 | GPU metrics |
 
 ## Common Workflows
 
@@ -147,17 +164,34 @@ ansible-vault edit ansible/group_vars/vault.yml
 `artifacts/compose.yaml.j2` uses Ansible variables from `ansible/group_vars/`:
 - `atlas_db_user`, `atlas_db_name`, `atlas_db_password`
 - `postgres_password`
-- `fred_api_key`, `alphavantage_api_key`, `finnhub_api_key`
+- `fred_api_key`, `alphavantage_api_key`, `finnhub_api_key`, `nasdaq_api_key`
+- `smtp_*` variables for email alerts
+- `ntfy_*` variables for push notifications
+
+## Selective Deployment
+
+Deploy specific services using tags:
+
+```bash
+# Rebuild and deploy specific collector
+ansible-playbook playbooks/deploy.yml --tags fred-collector
+ansible-playbook playbooks/deploy.yml --tags threshold-engine
+ansible-playbook playbooks/deploy.yml --tags ofr-collector,ofr-mcp
+
+# Rebuild all services
+ansible-playbook playbooks/deploy.yml --tags build
+```
 
 ## Monitoring URLs
 
-- **Grafana**: http://localhost:3000
-- **Prometheus**: http://localhost:9090
-- **Alertmanager**: http://localhost:9093
+- **Grafana**: http://mercury:3000
+- **Prometheus**: http://mercury:9090
+- **Alertmanager**: http://mercury:9093
 
 ## Hardware
 
-- **CPU**: AMD Threadripper 9960X
+- **Host**: mercury
+- **CPU**: AMD Threadripper 9960X (24 cores)
 - **GPU**: RTX 5090 (32GB VRAM)
 - **RAM**: 128GB
 - **Storage**: NVMe 1.8TB (fast), SATA 5.2TB (bulk)
