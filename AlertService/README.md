@@ -94,28 +94,20 @@ Define which severities go to which channels:
 The most robust way to develop is using the provided Dev Container, which includes the .NET SDK and tooling.
 
 1. **Open in VS Code**: Open this folder and select "Reopen in Container".
-2. **Configuration**: Update `appsettings.json` or set environment variables for your desired channels.
+2. **Configuration**: Update `src/appsettings.json` or set environment variables for your desired channels.
 3. **Run Service**:
    ```bash
-   cd src/AlertService
+   cd src
    dotnet run
    ```
 
-### Running with Docker (Standalone)
-
-If you just want to run the service image without a dev environment:
-
-```bash
-docker compose up -d alert-service
-```
-
 ### Running the Full Stack
 
-To run the entire ATLAS system:
+To run the entire ATLAS system (including AlertService):
 
 ```bash
-cd ../ansible
-ansible-playbook playbooks/site.yml
+cd ../deployment/ansible
+ansible-playbook playbooks/deploy.yml
 ```
 
 ## API Endpoints
@@ -162,14 +154,15 @@ Used by infrastructure monitoring.
 ```
 AlertService/
 ├── src/
-│   └── AlertService/           # Minimal API Service
-│       ├── Channels/           # INotificationChannel implementations
-│       ├── Endpoints/          # API Route handlers
-│       ├── Models/             # Domain models (Alert, Severity)
-│       └── Services/           # Queue, Dispatcher, Router
-├── tests/
-│   └── AlertService.Tests/     # Unit tests
-└── Containerfile               # Production container
+│   ├── Channels/               # INotificationChannel implementations
+│   ├── Endpoints/              # API route handlers
+│   ├── Models/                 # Domain models (Alert, Severity)
+│   ├── Services/               # Queue, Dispatcher, Router
+│   ├── Telemetry/              # OpenTelemetry metrics and tracing
+│   ├── Program.cs              # Application entry point
+│   ├── appsettings.json        # Configuration
+│   └── Containerfile           # Production container
+└── tests/                      # Unit tests
 ```
 
 ## See Also

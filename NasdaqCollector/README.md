@@ -1,51 +1,19 @@
 # NasdaqCollector
 
-Collector service for LBMA gold price and other financial data from Nasdaq Data Link API.
+Collector service for financial time-series data from Nasdaq Data Link API.
 
 ## Overview
 
-NasdaqCollector ingests daily fixings for precious metals (Gold, Silver) from the London Bullion Market Association (LBMA) via Nasdaq Data Link. It provides this data to downstream systems for commodity-based analysis and ratio calculations.
-
-## Architecture
-
-```mermaid
-flowchart TD
-    subgraph External
-        NDL[Nasdaq Data Link<br/>HTTPS]
-    end
-
-    subgraph Core [NasdaqCollector]
-        Worker[Collection Worker]
-        Client[Nasdaq Client]
-        Repo[Repository]
-    end
-
-    subgraph Outputs
-        DB[(TimescaleDB)]
-        Stream[gRPC Stream]
-    end
-
-    NDL --> Client
-    Client --> Worker
-    Worker --> Repo
-    Repo --> DB
-    Worker --> Stream
-```
+NasdaqCollector ingests daily financial data from Nasdaq Data Link (formerly Quandl). Configured series are collected automatically on a 6-hour schedule, respecting NYSE/Nasdaq market holidays. Data is stored in TimescaleDB and streamed in real-time via gRPC to downstream consumers.
 
 ## Key Features
 
-- **LBMA Gold Fixing**: Retrieves AM/PM gold prices daily.
-- **Resilient Collection**: Automatic retries with exponential backoff.
-- **Efficient Storage**: Optimized TimescaleDB schema for financial time-series.
-- **Event Streaming**: Real-time gRPC stream of new observations.
-
-## Series Configuration
-
-Default configuration includes:
-
-| Series ID | Database | Dataset | Description |
-|-----------|----------|---------|-------------|
-| `LBMA/GOLD` | LBMA | GOLD | Gold Price: London Fixing (USD AM) |
+- **Configurable Series**: Dynamically add/remove datasets via admin API
+- **Market-Aware Scheduling**: Skips collection on NYSE/Nasdaq holidays
+- **Resilient Collection**: Automatic retries with exponential backoff
+- **Event Streaming**: Real-time gRPC stream of new observations
+- **Efficient Storage**: TimescaleDB hypertables for time-series data
+- **Full Observability**: OpenTelemetry traces, metrics, and structured logs
 
 ## Configuration
 
@@ -53,81 +21,125 @@ Environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ConnectionStrings__AtlasDb` | PostgreSQL connection | `Host=timescaledb;...` |
-| `Nasdaq__ApiKey` | API Key | **Required** |
-
-## Getting Started
-
-**Note**: This service is designed to run as part of the larger ATLAS microservices architecture. It relies on shared infrastructure (TimescaleDB) and other services to function correctly.
-
-### Development (Dev Containers)
-
-The most robust way to develop is using the provided Dev Container, which includes the .NET SDK and tooling.
-
-1. **Open in VS Code**: Open this folder and select "Reopen in Container".
-2. **Configure Secrets**: Create a `.env` file in the root of the service with your API key:
-   ```bash
-   Nasdaq__ApiKey=your_api_key_here
-   ```
-3. **Start Infrastructure**: Ensure the shared database is running:
-   ```bash
-   docker compose up -d postgres
-   ```
-4. **Run Service**:
-   ```bash
-   cd src/NasdaqCollector.Service
-   dotnet run
-   ```
-
-### Running with Docker (Standalone)
-
-If you just want to run the service image without a dev environment:
-
-```bash
-export NASDAQ_API_KEY=your_key_here
-docker compose up -d nasdaq-collector
-```
-
-### Running the Full Stack
-
-To run the entire ATLAS system:
-
-```bash
-cd ../ansible
-ansible-playbook playbooks/site.yml
-```
+| `ConnectionStrings__AtlasDb` | PostgreSQL/TimescaleDB connection | Required |
+| `Nasdaq__ApiKey` | Nasdaq Data Link API key | Required |
+| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry__ServiceName` | Service name for telemetry | `nasdaq-collector` |
 
 ## API Endpoints
 
-### REST API (Port 5004)
+### Health Checks (HTTP Port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Liveness probe |
+| `/health/live` | GET | Liveness probe |
 | `/health/ready` | GET | Readiness check (DB connected) |
+| `/health` | GET | Full health with all checks |
 
-### gRPC API (Port 5005)
+### Admin API (HTTP Port 8080)
 
-**Service Definition**: `events.proto`
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/admin/search?q={query}` | GET | Search Nasdaq Data Link datasets |
+| `/api/admin/series` | GET | List all configured series |
+| `/api/admin/series` | POST | Add new series to collect |
+| `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable a series |
+| `/api/admin/series/{seriesId}` | DELETE | Delete a series |
 
-- `SubscribeToEvents`: Streams `SeriesCollectedEvent` messages in real-time.
+### gRPC Event Stream (Port 5009)
+
+Service: `ObservationEventStream`
+
+| Method | Description |
+|--------|-------------|
+| `SubscribeToEvents` | Real-time stream of events (long-lived connection) |
+| `GetEventsSince` | Retrieve events since a timestamp |
+| `GetEventsBetween` | Retrieve events in a time range |
+| `GetLatestEventTime` | Get timestamp of most recent event |
+| `GetHealth` | Health check with event statistics |
+
+## Data Collection
+
+### Workflow
+
+1. **CollectionWorker** runs every 6 hours
+2. Checks if today is a market holiday (NYSE/Nasdaq calendar)
+3. If trading day, collects all active series
+4. For each series, fetches observations since last collection
+5. Stores observations in TimescaleDB
+6. Publishes events to gRPC stream
+
+### Adding a Series
+
+Search for available datasets:
+```bash
+curl 'http://localhost:8080/api/admin/search?q=gold+price'
+```
+
+Add a series:
+```bash
+curl -X POST http://localhost:8080/api/admin/series \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "databaseCode": "LBMA",
+    "datasetCode": "GOLD",
+    "title": "Gold Price: London Fixing",
+    "category": "Commodities",
+    "valueColumn": "USD (AM)",
+    "priority": 10
+  }'
+```
 
 ## Project Structure
 
 ```
 NasdaqCollector/
 ├── src/
-│   ├── NasdaqCollector.Core/           # Domain models
-│   ├── NasdaqCollector.Application/    # Business logic
-│   ├── NasdaqCollector.Infrastructure/ # API Client, Repository
-│   ├── NasdaqCollector.Grpc/           # gRPC Service
-│   └── NasdaqCollector.Service/        # Worker Host
+│   ├── Data/                   # EF Core DbContext and configurations
+│   ├── Grpc/                   # gRPC services and event repository
+│   ├── Interfaces/             # Service interfaces
+│   ├── Models/                 # Domain models (NasdaqSeries, NasdaqObservation)
+│   ├── Services/               # Collection and management services
+│   ├── Workers/                # Background collection worker
+│   ├── Telemetry/              # OpenTelemetry metrics and activity sources
+│   ├── NasdaqApiClient.cs      # Nasdaq Data Link API client
+│   ├── NasdaqRepository.cs     # Data access layer
+│   └── Program.cs              # Application startup
 ├── tests/
-│   └── NasdaqCollector.UnitTests/      # Unit tests
-└── migrations/                         # Database migrations
+│   └── NasdaqCollector.UnitTests/
+├── migrations/                 # SQL schema migrations
+└── Containerfile               # Container build definition
+```
+
+## Development
+
+### Using Dev Container
+
+```bash
+# Open in VS Code and select "Reopen in Container"
+# Infrastructure starts automatically
+cd src
+dotnet run
+```
+
+### Local Build
+
+```bash
+cd src
+dotnet build
+dotnet test ../tests
+```
+
+## Deployment
+
+Deployed via Ansible:
+
+```bash
+cd deployment/ansible
+ansible-playbook playbooks/deploy.yml
 ```
 
 ## See Also
 
-- [ThresholdEngine](../ThresholdEngine/README.md) - Downstream consumer
-- [Events](../Events/README.md) - Shared contracts
+- [CalendarService](../CalendarService/README.md) - Market calendar provider
+- [Events](../Events/README.md) - Shared gRPC event contracts
