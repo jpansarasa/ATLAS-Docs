@@ -76,10 +76,16 @@ coverage=100 → smell
 rationale: test_right_things ¬ test_everything
 
 ## OBS_STACK [where_sensible ¬ everywhere]
-OTEL → Loki(logs) + Prom(metrics) + Grafana(viz)
+OTEL → Loki(logs) + Prom(metrics) + Tempo(traces) + Grafana(viz)
 metric_purpose: {perf_tune, bottleneck_diagnosis}
 config: lightweight(tunables+ext_connections) ¬ framework
 when: sensible_value ¬ dogmatic
+DEBUGGING [service_issues]:
+  1. Grafana FIRST → Tempo(error traces) + Loki(error logs)
+  2. ¬nerdctl_logs # container_stdout = last_resort
+  rationale: exceptions_have_trace_context + searchable + dashboarded
+  if_no_data_in_grafana → check otel-collector + check service restart timing
+  stack: Serilog.Sinks.OpenTelemetry → otel-collector → Loki
 METRICS:
   location: service_boundary_only ¬ internal_layers
     rationale: repository+service = double_count
