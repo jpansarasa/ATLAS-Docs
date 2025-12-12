@@ -1,37 +1,41 @@
 # STATE.md [ATLAS Infrastructure]
 
-## CURRENT_STATUS [2025-11-30]
+## CURRENT_STATUS [2025-12-12]
 
-### All Services: Production Ready ✅
+### All Services: Production Ready
 
 | Service | Status | Tests | Description |
 |---------|--------|-------|-------------|
-| FredCollector | ✅ 100% | 378 | FRED economic data collection |
-| ThresholdEngine | ✅ 100% | 153 | Pattern evaluation & regime detection |
-| AlertService | ✅ 100% | 15+ | Notification dispatch (ntfy, email) |
-| CalendarService | ✅ 100% | 5 | Trading day validation & market status |
-| FinnhubCollector | ✅ 100% | 5 | Stock quotes, sentiment, analyst ratings |
-| AlphaVantageCollector | ✅ 100% | 5 | Commodity prices (WTI, Brent, NatGas) |
-| NasdaqCollector | ✅ 100% | 5 | LBMA gold prices (AM/PM fixings) |
+| FredCollector | done | 378 | FRED economic data (47 series) |
+| ThresholdEngine | done | 226 | Pattern evaluation & regime detection |
+| AlertService | done | 15+ | Notification dispatch (ntfy, email) |
+| CalendarService | done | 5 | Trading day validation & market status |
+| FinnhubCollector | done | 5 | Stock quotes, sentiment, analyst ratings |
+| AlphaVantageCollector | done | 5 | Commodity prices (WTI, Brent, NatGas) |
+| OfrCollector | done | 5 | OFR FSI, STFM, HFM data |
+| NasdaqCollector | done | 5 | LBMA gold prices (AM/PM fixings) |
 
-**Total Tests**: 550+ passing
+**Total Tests**: 640+ passing
 
 ---
 
-## SERVICES [22_running]
+## SERVICES [running]
 
 ### Core Data Collectors
-| Service | Ports | API | Interval |
-|---------|-------|-----|----------|
-| fred-collector | 5001 (REST), 5002 (gRPC) | FRED v1 | 6 hours |
-| alphavantage-collector | 5003 (HTTP), 5004 (gRPC) | Alpha Vantage | 25/day limit |
-| nasdaq-collector | 5005 (HTTP), 5006 (gRPC) | Nasdaq Data Link v3 | 6 hours |
-| finnhub-collector | 5007 (HTTP), 5008 (gRPC) | Finnhub v1 | 60 req/min |
+| Service | Ports (Host) | Internal | Interval |
+|---------|--------------|----------|----------|
+| fred-collector | 5001/5002 | 8080/5001 | 6 hours |
+| finnhub-collector | 5012/5013 | 8080/5001 | 60 req/min |
+| alphavantage-collector | 5010/5011 | 8080/5001 | 25/day limit |
+| ofr-collector | 5016/5017 | 8080/5001 | daily |
+| nasdaq-collector | - | 8080/5009 | 6 hours |
+
+**All collectors use internal port 5001 for gRPC event streaming**
 
 ### Processing & Alerting
 | Service | Port | Purpose |
 |---------|------|---------|
-| threshold-engine | 5009 | Pattern evaluation, regime detection |
+| threshold-engine | 5003 | Pattern evaluation, regime detection |
 | alert-service | 8081 | Notification sink (ntfy, email) |
 | calendar-service | - | Market status, trading day rules |
 | timescaledb | 5432 | TimescaleDB (hypertables) |
@@ -49,137 +53,79 @@
 | markitdown-mcp | 3102 | Document conversion |
 | fredcollector-mcp | 3103 | FRED data access |
 | thresholdengine-mcp | 3104 | Pattern evaluation |
+| finnhub-mcp | 3105 | Finnhub data access |
+| ofrcollector-mcp | 3106 | OFR data access |
 
 ### Observability Stack
 | Service | Port | Purpose |
 |---------|------|---------|
 | prometheus | 9090 | Metrics collection |
-| alertmanager | 9093 | Alert routing → AlertService |
-| grafana | 3000 | 9 dashboards |
+| alertmanager | 9093 | Alert routing |
+| grafana | 3000 | Dashboards |
 | loki | 3101 | Log aggregation |
 | tempo | 3200 | Distributed tracing |
 | otel-collector | 4317 | OTLP receiver |
-| node-exporter | 9100 | System metrics |
-| gpu-exporter | 9835 | NVIDIA metrics |
 
 ---
 
-## EPIC_STATUS
+## THRESHOLD_ENGINE [config_driven]
 
-### FredCollector [production_ready]
-| Epic | Status | Description |
-|------|--------|-------------|
-| E1 | ✅ | Foundation - .NET9, TimescaleDB, dev containers |
-| E2 | ✅ | FRED Integration - HTTP client, rate limiting |
-| E3 | ✅ | Recession Indicators - 7 series |
-| E4 | ➡️ | Threshold Alerting → ThresholdEngine |
-| E5 | ✅ | Historical Backfill - automated startup |
-| E6 | ✅ | Liquidity Indicators - 6 series |
-| E7 | ✅ | Growth/Valuation - 12 series |
-| E8 | ✅ | REST API - /series, /observations, /latest |
-| E9 | ✅ | Production Deploy - containers, systemd |
-| E10 | ✅ | Observability - 20+ metrics, tracing |
-| E11 | ✅ | gRPC Event Streaming |
-| E12 | ✅ | Series Discovery - search API |
+### Collector Subscriptions
+ThresholdEngine subscribes to all collectors via configuration:
 
-**Series**: 25 configured | **Tests**: 378 passing
-
-### ThresholdEngine [production_ready]
-| Epic | Status | Description |
-|------|--------|-------------|
-| E1 | ✅ | Foundation - project structure |
-| E2 | ✅ | Pattern Configuration - JSON, hot reload |
-| E3 | ✅ | Expression Compilation - Roslyn, caching |
-| E4 | ✅ | Pattern Evaluation - context API |
-| E5 | ✅ | Event Integration - multi-collector gRPC |
-| E6 | ✅ | Regime Transition Detection - hysteresis |
-| E7 | ✅ | Pattern Library - 40 patterns |
-| E8 | ✅ | Production Deployment |
-| E9 | ✅ | Observability - 17 metrics, 5 dashboards |
-
-**Patterns**: 40 configured | **Tests**: 153 passing
-
-### Pattern Library [40_patterns]
-| Category | Count | Examples |
-|----------|-------|----------|
-| Recession | 12 | Sahm Rule, yield curve, claims |
-| Liquidity | 8 | VIX L1/L2, DXY, credit spreads |
-| NBFI Stress | 9 | HY spreads, KRE, bankruptcy |
-| Growth | 5 | GDP, industrial, retail, housing |
-| Valuation | 5 | CAPE, Buffett, forward P/E |
-| Commodity | 1 | Cu/Au ratio |
-
-### AlertService [production_ready]
-| Feature | Status | Description |
-|---------|--------|-------------|
-| HTTP API | ✅ | POST /alerts with async queue |
-| NtfyChannel | ✅ | ntfy.sh push notifications |
-| EmailChannel | ✅ | SMTP via MailKit |
-| Dispatcher | ✅ | BackgroundService with routing |
-| Alert Tuning | ✅ | Weekday-aware, 24h suppression |
-
-### FinnhubCollector [production_ready]
-| Feature | Status | Description |
-|---------|--------|-------------|
-| Stock Quotes | ✅ | Real-time price data |
-| News Sentiment | ✅ | Sentiment scoring |
-| Analyst Ratings | ✅ | Consensus tracking |
-| Economic Calendar | ✅ | Event scheduling |
-| Rate Limiting | ✅ | 60 req/min |
-
-**Tables**: 12 | **Tests**: 5 passing
-
-### CalendarService [production_ready]
-| Feature | Status | Description |
-|---------|--------|-------------|
-| Market Status API | ✅ | Open/closed detection |
-| Holiday Integration | ✅ | Nager.Date API |
-| Trading Day Rules | ✅ | Business day calculation |
-| Shared Core Library | ✅ | Used by all collectors |
-
----
-
-## PIPELINE [end_to_end_operational]
-
-```mermaid
-flowchart LR
-    FC[FredCollector] -->|gRPC| TE[ThresholdEngine]
-    AV[AlphaVantageCollector] -->|gRPC| TE
-    NC[NasdaqCollector] -->|gRPC| TE
-    FH[FinnhubCollector] -->|gRPC| TE
-    TE -->|metrics| P[Prometheus]
-    P -->|alerts| AM[Alertmanager]
-    AM -->|POST| AS[AlertService]
-    AS -->|ntfy/email| N[Notifications]
+```json
+"Collectors": {
+  "Items": [
+    { "Name": "FredCollector", "ServiceUrl": "http://fred-collector:5001" },
+    { "Name": "FinnhubCollector", "ServiceUrl": "http://finnhub-collector:5001" },
+    { "Name": "AlphaVantageCollector", "ServiceUrl": "http://alphavantage-collector:5001" },
+    { "Name": "OfrCollector", "ServiceUrl": "http://ofr-collector:5001" }
+  ]
+}
 ```
 
-All collectors → ThresholdEngine → Prometheus → Alertmanager → AlertService → Notifications
+### Macro Scoring Weights (configurable)
+| Category | Weight | Patterns |
+|----------|--------|----------|
+| Recession | 30% | 12 |
+| Liquidity | 20% | 9 |
+| Growth | 20% | 5 |
+| NBFI | 10% | 14 |
+| Currency | 10% | 3 |
+| Inflation | 10% | 8 |
+| Valuation | 0% | 2 |
+| Commodity | 0% | 1 |
+
+**Total Patterns**: 50+ configured
+
+---
+
+## PIPELINE [end_to_end]
+
+```
+FredCollector ──────┐
+FinnhubCollector ───┼──► ThresholdEngine ──► Prometheus ──► Alertmanager ──► AlertService ──► ntfy/email
+AlphaVantageCollector──┤                          │
+OfrCollector ───────┘                          Grafana
+```
 
 ---
 
 ## DEPLOYMENT
 
 ```bash
-# Full deployment
 cd ~/ATLAS/deployment/ansible
-ansible-playbook playbooks/site.yml
-
-# Service management
-sudo systemctl status atlas.service
-sudo nerdctl compose ps
+ansible-playbook playbooks/deploy.yml              # Full deploy
+ansible-playbook playbooks/deploy.yml --tags threshold-engine  # Single service
 ```
-
-**Infrastructure**:
-- Host: AMD Threadripper 9960X, 128GB RAM, RTX 5090
-- Storage: NVMe 1.8TB (fast), SATA 5.2TB (bulk)
-- Database: TimescaleDB with hypertables
 
 ---
 
 ## NEXT_ACTIONS
 
-1. **Alert Rule Refinement**: Monitor production alerts, adjust thresholds
-2. **Phase 2 Planning**: Calculated indicators (CAPE, ERP, Forward P/E)
+1. Deploy ThresholdEngine with new config-driven collector subscriptions
+2. Verify all 4 collector gRPC streams connect successfully
+3. Monitor macro score aggregation across all categories
 
 ---
-**UPDATED**: 2025-11-30 | **STATUS**: production_ready | **DOCS_SYNC**: v6
+**UPDATED**: 2025-12-12 | **STATUS**: production_ready

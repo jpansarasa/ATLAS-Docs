@@ -80,10 +80,10 @@ ATLAS aggregates indicators across six weighted categories to produce a composit
 Composite_Score = Σ(Category_Score × Weight)
 
 Categories:
-- Recession Indicators (35% weight): -10 to +10 range
-- Liquidity Metrics (25% weight): -10 to +10 range
-- Financial Stress (10% weight): -10 to +10 range
+- Recession Indicators (30% weight): -10 to +10 range
+- Liquidity Metrics (20% weight): -10 to +10 range
 - Growth Indicators (20% weight): -10 to +10 range
+- Financial Stress/NBFI (10% weight): -10 to +10 range
 - Currency/Risk Sentiment (10% weight): -5 to +5 range
 - Inflation Signals (10% weight): -5 to +5 range
 ```
@@ -103,7 +103,7 @@ Categories:
 
 Each category contains both bearish and bullish indicators, scored on a -2 to +2 scale:
 
-#### Recession Indicators (35% weight)
+#### Recession Indicators (30% weight)
 
 **Contractionary Signals** (-2 to 0):
 - Freight volumes declining (trucking -15%+, Baltic <600, rail carloads -10%+)
@@ -121,7 +121,7 @@ Each category contains both bearish and bullish indicators, scored on a -2 to +2
 - Steep yield curve (2s10s >100bps, positive term premium)
 - Corporate earnings growth (>10% YoY for 2+ quarters, guidance upgrades)
 
-#### Liquidity Metrics (25% weight)
+#### Liquidity Metrics (20% weight)
 
 **Risk-Off Signals** (-2 to 0):
 - VIX >25 sustained (3+ days), realized vol >20%
@@ -139,7 +139,7 @@ Each category contains both bearish and bullish indicators, scored on a -2 to +2
 - SOFR stable at target, abundant liquidity, reverse repo facility elevated
 - Commodity strength (Cu/Au >0.25, broad-based rally, backwardation)
 
-#### Financial Stress (10% weight)
+#### Financial Stress/NBFI (10% weight)
 
 **Stress Signals** (-2 to 0):
 - NBFI stress: HY spreads >350bps, CLO spreads widening, private credit distress
