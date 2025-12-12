@@ -753,7 +753,7 @@ code .
 # Command Palette: "Dev Containers: Reopen in Container"
 ```
 
-Dev containers automatically connect to shared infrastructure (TimescaleDB, observability stack) via `ai-network`.
+Dev containers automatically connect to shared infrastructure (TimescaleDB, observability stack) via the default compose network.
 
 See service-specific README files for detailed setup:
 - [FredCollector documentation](./FredCollector/README.md)

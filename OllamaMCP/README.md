@@ -223,7 +223,6 @@ Manual container run:
 ```bash
 sudo nerdctl run -d \
   --name ollama-mcp \
-  --network ai-network \
   -p 3100:3100 \
   -e OLLAMA_GPU_URL=http://ollama-gpu:11434 \
   -e OLLAMA_CPU_URL=http://ollama-cpu:11434 \
