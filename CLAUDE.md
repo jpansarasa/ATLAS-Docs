@@ -129,19 +129,10 @@ IF generate_code THEN
 ## VERIFY [before_commit]
 IF code_change THEN verify(compiles) BEFORE commit
 METHODS:
-  dotnet: cd {project}/.devcontainer && docker compose exec dev dotnet build
-  container: sudo nerdctl build -f Containerfile .
-  fallback: ASK_USER("Can't verify build - should I use devcontainer or skip?")
-DOTNET_MODERN:
-  ¬sln_files # modern .NET auto-discovers .csproj
-  `dotnet build` in project_root = sufficient
-DEPLOYMENTS:
-  use: ansible # deployment/ansible/
-  ¬manual: container_start | service_restart | config_edit
-  rationale: reproducible + auditable + idempotent
-¬PATTERN: "changes are straightforward" → commit_anyway
-  this_is_how_bugs_ship
-rationale: unverified_code = production_incidents
+  dotnet: {Project}/.devcontainer/compile.sh [--no-test]
+  container: {Project}/.devcontainer/build.sh [--no-cache]
+  fallback: ASK_USER("Can't verify - use devcontainer or skip?")
+¬PATTERN: "straightforward" → commit_anyway # this_is_how_bugs_ship
 
 ## GRAFANA_DASHBOARD [json_provisioning]
 COMMON_FAILURES: "No data" | duplicate_values | broken_viz | heatmap_fail
@@ -234,3 +225,10 @@ compose_files: compose.yaml ¬ docker-compose.yml
 dockerfile_files: Containerfile ¬ Dockerfile
 development: devcontainer ¬ local_install
 rationale: runtime_agnostic(nerdctl|docker|podman) + compose_v2_standard + clean_host
+
+## CONTAINER_BUILD [ATLAS]
+IMAGE: {service-name}:latest # fred-collector ✓ fredcollector ✗
+  verify: /opt/ai-inference/compose.yaml
+BUILD: {Project}/.devcontainer/build.sh [--no-cache]
+  from: /home/james/ATLAS # monorepo context required
+DEPLOY: ansible --tags {service} # ¬nerdctl_manual
