@@ -10,6 +10,8 @@ SecMasterMcp exposes SecMaster's functionality through standardized MCP tools, e
 - Query instrument metadata and source mappings
 - Perform semantic searches using vector similarity
 - Ask natural language questions with RAG synthesis
+- Search across all data collectors with smart routing
+- List and manage collector series (FRED, Finnhub, AlphaVantage, OFR)
 
 ## Architecture
 
@@ -19,7 +21,7 @@ flowchart LR
     MCP -->|HTTP| SM["SecMaster<br/>(Port 5017)"]
 ```
 
-## MCP Tools (10 Tools)
+## MCP Tools (25 Tools)
 
 ### Basic Search & Resolution
 
@@ -138,6 +140,145 @@ Advanced resolution using multi-strategy approach: SQL → Fuzzy → Vector → 
 Get SecMaster service health status.
 
 **Returns:** Health status and check results.
+
+### Collector Gateway (15 Tools)
+
+SecMasterMcp provides unified access to all data collectors through smart routing and management tools.
+
+#### `search_collectors`
+Search across all data collectors (FRED, Finnhub, OFR, AlphaVantage) using smart routing.
+
+**Parameters:**
+- `query` (required): Search query (e.g., 'unemployment', 'AAPL', 'stress')
+- `limit` (optional): Maximum results (default: 20)
+
+**Returns:** Aggregated results from relevant collectors with source attribution.
+
+**Example:**
+```json
+{
+  "query": "unemployment",
+  "limit": 10
+}
+```
+
+**Smart Routing:** The search analyzes the query and routes to appropriate collectors:
+- Economic indicators → FRED
+- Equity symbols → Finnhub
+- Treasury/funding rates → OFR
+- Commodity/currency data → AlphaVantage
+
+#### List Series Tools (5 tools - readonly)
+
+##### `list_fred_series`
+List all active FRED series being collected.
+
+**Returns:** Array of FRED series with ID, title, frequency, and active status.
+
+##### `list_finnhub_series`
+List all active Finnhub series being collected.
+
+**Returns:** Array of Finnhub series with ID, title, frequency, and active status.
+
+##### `list_ofr_stfm_series`
+List all OFR Short-term Funding Monitor series.
+
+**Returns:** Array of OFR STFM series (read-only, managed via config).
+
+##### `list_ofr_hfm_series`
+List all OFR Hedge Fund Monitor series.
+
+**Returns:** Array of OFR HFM series (read-only, managed via config).
+
+##### `list_alphavantage_series`
+List all active AlphaVantage series being collected.
+
+**Returns:** Array of AlphaVantage series with ID, title, frequency, and active status.
+
+#### Add Series Tools (3 tools)
+
+##### `add_fred_series`
+Add a new series to FRED collector.
+
+**Parameters:**
+- `series_id` (required): FRED series ID (e.g., 'UNRATE', 'GDP')
+- `priority` (optional): Collection priority (default: 10)
+
+**Returns:** Created series details or error if already exists.
+
+##### `add_finnhub_series`
+Add a new series to Finnhub collector.
+
+**Parameters:**
+- `symbol` (required): Stock symbol (e.g., 'AAPL', 'MSFT')
+- `priority` (optional): Collection priority (default: 10)
+
+**Returns:** Created series details or error if already exists.
+
+##### `add_alphavantage_series`
+Add a new series to AlphaVantage collector.
+
+**Parameters:**
+- `symbol` (required): Symbol (e.g., 'GOLD', 'EUR/USD')
+- `type` (required): Data type (e.g., 'commodity', 'forex')
+- `title` (optional): Custom title
+- `priority` (optional): Collection priority (default: 10)
+
+**Returns:** Created series details or error if already exists.
+
+#### Toggle Series Tools (3 tools)
+
+##### `toggle_fred_series`
+Toggle FRED series active/inactive status.
+
+**Parameters:**
+- `series_id` (required): FRED series ID
+
+**Returns:** Updated series with new active status.
+
+##### `toggle_finnhub_series`
+Toggle Finnhub series active/inactive status.
+
+**Parameters:**
+- `series_id` (required): Finnhub series ID
+
+**Returns:** Updated series with new active status.
+
+##### `toggle_alphavantage_series`
+Toggle AlphaVantage series active/inactive status.
+
+**Parameters:**
+- `series_id` (required): AlphaVantage series ID
+
+**Returns:** Updated series with new active status.
+
+#### Remove Series Tools (3 tools)
+
+##### `remove_fred_series`
+Remove series from FRED collector.
+
+**Parameters:**
+- `series_id` (required): FRED series ID
+
+**Returns:** Success status.
+
+##### `remove_finnhub_series`
+Remove series from Finnhub collector.
+
+**Parameters:**
+- `series_id` (required): Finnhub series ID
+
+**Returns:** Success status.
+
+##### `remove_alphavantage_series`
+Remove series from AlphaVantage collector.
+
+**Parameters:**
+- `series_id` (required): AlphaVantage series ID
+
+**Returns:** Success status.
+
+**Note:** OFR series are read-only and managed through configuration files, so there are no add/toggle/remove tools for OFR.
 
 ## Port Mapping
 

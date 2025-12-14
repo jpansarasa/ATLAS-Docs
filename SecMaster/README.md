@@ -158,6 +158,53 @@ flowchart TD
 |--------|----------|-------------|
 | GET | `/api/search?q={query}` | Fuzzy search |
 
+### Collector Gateway
+
+SecMaster provides unified access to all data collectors through smart routing and management endpoints.
+
+#### Search
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/collectors/search?q={query}` | Smart search across all collectors |
+
+The unified search endpoint analyzes queries and routes them to appropriate collectors based on asset class inference:
+- Economic indicators → FRED
+- Equity symbols → Finnhub
+- Treasury/funding rates → OFR
+- Commodity/currency data → AlphaVantage
+
+#### List Series
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/collectors/fred/series` | List FRED series |
+| GET | `/api/collectors/finnhub/series` | List Finnhub series |
+| GET | `/api/collectors/ofr/stfm` | List OFR short-term funding series |
+| GET | `/api/collectors/ofr/hfm` | List OFR hedge fund monitor series |
+| GET | `/api/collectors/alphavantage/series` | List AlphaVantage series |
+
+#### Manage Series (FRED)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/collectors/fred/series` | Add FRED series |
+| PUT | `/api/collectors/fred/series/{seriesId}/toggle` | Toggle FRED series active status |
+| DELETE | `/api/collectors/fred/series/{seriesId}` | Remove FRED series |
+
+#### Manage Series (Finnhub)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/collectors/finnhub/series` | Add Finnhub series |
+| PUT | `/api/collectors/finnhub/series/{seriesId}/toggle` | Toggle Finnhub series active status |
+| DELETE | `/api/collectors/finnhub/series/{seriesId}` | Remove Finnhub series |
+
+#### Manage Series (AlphaVantage)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/collectors/alphavantage/series` | Add AlphaVantage series |
+| PUT | `/api/collectors/alphavantage/series/{seriesId}/toggle` | Toggle AlphaVantage series active status |
+| DELETE | `/api/collectors/alphavantage/series/{seriesId}` | Remove AlphaVantage series |
+
+**Note:** OFR series are read-only and managed through configuration files.
+
 ## gRPC Services
 
 SecMaster exposes two gRPC services on port 8080 (internal) / 5017 (host):
