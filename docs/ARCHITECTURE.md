@@ -2,7 +2,7 @@
 
 ## Overview
 
-ATLAS (Automated Threshold Logic and Alert System) is an event-driven platform for financial data collection, pattern evaluation, and regime detection. It ingests data from multiple sources, evaluates 54 configurable patterns, and delivers alerts when economic conditions change.
+ATLAS (Automated Threshold Logic and Alert System) is an event-driven platform for financial data collection, pattern evaluation, and regime detection. It ingests data from multiple sources, evaluates 50+ configurable patterns, and delivers alerts when economic conditions change.
 
 ```mermaid
 flowchart LR
@@ -14,8 +14,12 @@ flowchart LR
         CS[CalendarService<br/>Market Holidays]
     end
 
+    subgraph Metadata
+        SM[SecMaster<br/>Instrument Registry]
+    end
+
     subgraph Evaluation
-        TE[ThresholdEngine<br/>54 patterns]
+        TE[ThresholdEngine<br/>50+ patterns]
     end
 
     subgraph Alerting
@@ -27,12 +31,16 @@ flowchart LR
         TM[ThresholdEngineMcp]
         FHM[FinnhubMcp]
         OM[OfrCollectorMcp]
+        SMM[SecMasterMcp]
     end
 
     FC -->|gRPC stream| TE
     AV -->|gRPC stream| TE
     FH -->|gRPC stream| TE
     OFR -->|gRPC stream| TE
+    FC -->|register series| SM
+    FH -->|register symbols| SM
+    OFR -->|register series| SM
     TE -->|HTTP POST| AS
     AS --> N[ntfy.sh]
     AS --> E[Email]
@@ -41,19 +49,22 @@ flowchart LR
     TE -.-> TM
     FH -.-> FHM
     OFR -.-> OM
+    SM -.-> SMM
 ```
 
 ## Services
 
 ### Data Collectors
 
-| Service | Ports | Data Source | Key Data |
-|---------|-------|-------------|----------|
-| FredCollector | 5001 (HTTP), 5002 (gRPC) | Federal Reserve | 200+ economic series |
-| AlphaVantageCollector | 5010 (HTTP), 5011 (gRPC) | Alpha Vantage | Commodities, forex, crypto |
-| FinnhubCollector | 5012 (HTTP), 5013 (gRPC) | Finnhub | Stock quotes, earnings, sentiment |
-| OfrCollector | 5016 (HTTP), 5017 (gRPC) | OFR.gov | Financial Stress Index, repo rates |
-| CalendarService | 5015 | Nager.Date, Finnhub | Market holidays, economic events |
+| Service | Ports (Host:Container) | Data Source | Key Data |
+|---------|------------------------|-------------|----------|
+| FredCollector | 5001:8080, 5002:5001 | Federal Reserve | 47 economic series |
+| AlphaVantageCollector | 5010:8080, 5011:5001 | Alpha Vantage | Commodities, forex, crypto |
+| FinnhubCollector | 5012:8080, 5013:5001 | Finnhub | Stock quotes, earnings, sentiment |
+| OfrCollector | 5016:8080 | OFR.gov | Financial Stress Index, repo rates |
+| CalendarService | (internal) | Nager.Date, Finnhub | Market holidays, economic events |
+
+Note: All collectors use internal port 5001 for gRPC event streaming to ThresholdEngine
 
 ### Processing & Alerting
 
@@ -61,6 +72,7 @@ flowchart LR
 |---------|------|----------------|
 | ThresholdEngine | 5003 | Pattern evaluation, regime detection, macro scoring |
 | AlertService | 8081 | Notification routing (ntfy, email) |
+| SecMaster | 5017 | Instrument metadata registry, series search |
 
 ### MCP Servers
 
@@ -70,6 +82,7 @@ flowchart LR
 | ThresholdEngineMcp | 3104 | 8 | Pattern evaluation and regime status |
 | FinnhubMcp | 3105 | 26 | Market data, calendars, live quotes |
 | OfrCollectorMcp | 3106 | 26 | FSI, funding markets, hedge fund data |
+| SecMasterMcp | (internal) | 10+ | Instrument search, metadata query |
 
 ### Infrastructure
 
@@ -96,7 +109,7 @@ flowchart LR
 - All events share the `ObservationCollectedEvent` contract
 
 ### Configuration Over Code
-- 54 patterns defined in YAML with C# expressions
+- 50+ patterns defined in YAML with C# expressions
 - Hot reload via file watcher (no restart needed)
 - Admin APIs for runtime series management
 
@@ -113,7 +126,7 @@ sequenceDiagram
     APIs->>COL: Economic/Market data
     COL->>DB: Store observations
     COL->>TE: ObservationCollectedEvent (gRPC)
-    TE->>TE: Evaluate 54 patterns
+    TE->>TE: Evaluate 50+ patterns
     TE->>TE: Calculate macro score
     TE->>TE: Detect regime transitions
     TE->>AS: POST /alerts (if triggered)
@@ -126,16 +139,16 @@ sequenceDiagram
 
 | Category | Count | Purpose | Key Patterns |
 |----------|-------|---------|--------------|
-| Recession | 10 | Contraction warnings | Sahm Rule, yield curve, claims |
-| Liquidity | 8 | Market stress | VIX spikes, credit spreads, TED |
-| Growth | 6 | Expansion signals | GDP, employment, ISM |
-| NBFI | 8 | Shadow banking | OFR FSI, repo stress, hedge fund leverage |
-| Valuation | 7 | Market levels | Buffett indicator, CAPE, margin debt |
-| Inflation | 7 | Price pressures | CPI, breakevens, commodity prices |
-| Commodity | 5 | Real assets | Gold, oil, copper signals |
-| OFR | 3 | Financial stress | FSI thresholds |
+| Recession | 12 | Contraction warnings | Sahm Rule, yield curve, claims |
+| Liquidity | 9 | Market stress | VIX spikes, credit spreads, TED |
+| Growth | 5 | Expansion signals | GDP, employment, ISM |
+| NBFI | 14 | Shadow banking | OFR FSI, repo stress, hedge fund leverage |
+| Valuation | 2 | Market levels | Buffett indicator, CAPE |
+| Inflation | 8 | Price pressures | CPI, breakevens, commodity prices |
+| Commodity | 1 | Real assets | Copper/Gold ratio |
+| Currency | 3 | Risk sentiment | DXY, EM FX |
 
-**Total: 54 patterns** across 8 categories
+**Total: 50+ patterns** across 8 categories
 
 ## Regime Detection
 
@@ -152,38 +165,61 @@ Regime transitions trigger alerts via AlertService.
 
 ## Data Flow by Source
 
-### FRED (200+ series)
-```
-FRED API → FredCollector → TimescaleDB → ThresholdEngine
-                                      → FredCollectorMcp → Claude
+```mermaid
+flowchart LR
+    subgraph FRED["FRED (47 series)"]
+        FA[FRED API] --> FC[FredCollector]
+    end
+
+    subgraph OFR["OFR (FSI, STFM, HFM)"]
+        OA[OFR API] --> OC[OfrCollector]
+    end
+
+    subgraph Finnhub["Finnhub (Stocks, Calendars)"]
+        FHA[Finnhub API] --> FHC[FinnhubCollector]
+    end
+
+    FC --> DB[(TimescaleDB)]
+    OC --> DB
+    FHC --> DB
+
+    DB --> TE[ThresholdEngine]
+
+    FC -->|gRPC| SM[SecMaster]
+    OC -->|gRPC| SM
+    FHC -->|gRPC| SM
+    SM --> PG[(PostgreSQL)]
+
+    FC -.-> FM[FredCollectorMcp]
+    OC -.-> OM[OfrCollectorMcp]
+    FHC -.-> FHM[FinnhubMcp]
+    SM -.-> SMM[SecMasterMcp]
+
+    FM -.-> C[Claude]
+    OM -.-> C
+    FHM -.-> C
+    SMM -.-> C
 ```
 
-### OFR (FSI, STFM, HFM)
-```
-OFR API → OfrCollector → TimescaleDB → ThresholdEngine
-                                    → OfrCollectorMcp → Claude
-```
-
-### Finnhub (Stocks, Calendars)
-```
-Finnhub API → FinnhubCollector → TimescaleDB → ThresholdEngine
-                                            → FinnhubMcp → Claude
-```
+**SecMaster Purpose**: Centralized instrument metadata, search across sources, series discovery
 
 ## MCP Integration
 
 MCP (Model Context Protocol) servers expose ATLAS data to Claude:
 
-```
-Claude Desktop
-    ├── fredcollector-mcp (SSE :3103)
-    │   └── get_latest, get_observations, search, health...
-    ├── thresholdengine-mcp (SSE :3104)
-    │   └── evaluate, list_patterns, get_pattern...
-    ├── finnhub-mcp (SSE :3105)
-    │   └── get_quote, get_earnings_calendar, get_live_*...
-    └── ofrcollector-mcp (SSE :3106)
-        └── get_fsi_latest, list_stfm_series, add_series...
+```mermaid
+flowchart TB
+    CD[Claude Desktop] --> FM["fredcollector-mcp<br/>SSE :3103"]
+    CD --> TM["thresholdengine-mcp<br/>SSE :3104"]
+    CD --> FHM["finnhub-mcp<br/>SSE :3105"]
+    CD --> OM["ofrcollector-mcp<br/>SSE :3106"]
+    CD --> SMM["secmaster-mcp<br/>SSE :3107"]
+
+    FM -.- FT["get_latest, get_observations,<br/>search, health..."]
+    TM -.- TT["evaluate, list_patterns,<br/>get_pattern..."]
+    FHM -.- FHT["get_quote, get_earnings_calendar,<br/>get_live_*..."]
+    OM -.- OT["get_fsi_latest, list_stfm_series,<br/>add_series..."]
+    SMM -.- ST["search_instruments, semantic_search,<br/>resolve_source, ask_secmaster..."]
 ```
 
 ## Why This Architecture?

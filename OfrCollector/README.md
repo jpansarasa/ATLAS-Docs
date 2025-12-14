@@ -2,6 +2,16 @@
 
 Data collector service for Office of Financial Research (OFR) public datasets. Collects FSI, STFM, and HFM financial data on scheduled intervals and provides REST and gRPC APIs for access.
 
+## Features
+
+- **Multi-source Collection**: FSI, STFM, and HFM data from OFR public APIs
+- **Scheduled Collection**: Automated collection with configurable intervals per dataset
+- **Admin API**: Series management and manual collection triggers
+- **gRPC Streaming**: Real-time observation events to downstream services (ThresholdEngine integration)
+- **SecMaster Integration**: Automatic instrument registration via gRPC
+- **OpenTelemetry**: Distributed tracing and metrics with OTLP export
+- **Health Checks**: Liveness and readiness probes with database validation
+
 ## Data Sources
 
 ### FSI - Financial Stress Index
@@ -80,11 +90,12 @@ Hedge fund leverage and risk metrics:
 - `POST /api/admin/hfm/series/{mnemonic}/collect` - Collect specific series
 - `POST /api/admin/hfm/series/{mnemonic}/backfill` - Backfill series history
 
-### gRPC API
+### gRPC API (Port 8080 container, 5016 host)
 
-**EventStreamService** (port 5001)
-- Streams observation events to subscribers
-- Used for real-time data distribution
+**Service**: `ObservationEventStream`
+Consumed by: ThresholdEngine
+
+- Streams observation events to subscribers in real-time
 
 ### Health Checks
 
@@ -96,12 +107,13 @@ Hedge fund leverage and risk metrics:
 
 ### Environment Variables
 
-```
-DATABASE_CONNECTION_STRING - PostgreSQL connection string
-OPENTELEMETRY__OTLPENDPOINT - OTLP collector endpoint (default: http://otel-collector:4317)
-OPENTELEMETRY__SERVICENAME - Service name (default: ofr-collector-service)
-OPENTELEMETRY__SERVICEVERSION - Service version (default: 1.0.0)
-```
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | **Required** |
+| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry__ServiceName` | Service name | `ofr-collector` |
+| `OpenTelemetry__ServiceVersion` | Service version | `1.0.0` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
 
 ### Series Configuration
 
@@ -112,8 +124,7 @@ Priority series for STFM can be configured via `/config/stfm_series.json` (check
 ## Observability
 
 **Ports**
-- 8080: HTTP/1.1 (REST API, health checks)
-- 5001: HTTP/2 (gRPC)
+- 8080 (container), 5016 (host): REST API, health checks, gRPC
 
 **Telemetry**
 - Logs: Structured JSON via Serilog (OTLP export)

@@ -1,7 +1,7 @@
 # Pattern Expression API Reference
 
 **Status**: ✅ Implemented
-**Last Updated**: 2025-11-21
+**Last Updated**: 2025-12-14
 
 Pattern expressions are C# code snippets compiled at runtime using Roslyn. They have access to a `PatternEvaluationContext` object (`ctx`) and can use standard .NET libraries.
 

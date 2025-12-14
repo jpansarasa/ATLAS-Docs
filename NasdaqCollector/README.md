@@ -2,6 +2,12 @@
 
 Collector service for financial time-series data from Nasdaq Data Link API.
 
+## DEPLOYMENT STATUS: DISABLED
+
+NasdaqCollector is currently **disabled** in production deployment. The Nasdaq Data Link WAF blocks datacenter IP addresses, preventing data collection. The service is awaiting IP whitelist approval from Nasdaq support.
+
+See compose.yaml (lines 441-481) for configuration. Uncomment when IP whitelist is approved.
+
 ## Overview
 
 NasdaqCollector ingests daily financial data from Nasdaq Data Link (formerly Quandl). Configured series are collected automatically on a 6-hour schedule, respecting NYSE/Nasdaq market holidays. Data is stored in TimescaleDB and streamed in real-time via gRPC to downstream consumers.
@@ -11,7 +17,8 @@ NasdaqCollector ingests daily financial data from Nasdaq Data Link (formerly Qua
 - **Configurable Series**: Dynamically add/remove datasets via admin API
 - **Market-Aware Scheduling**: Skips collection on NYSE/Nasdaq holidays
 - **Resilient Collection**: Automatic retries with exponential backoff
-- **Event Streaming**: Real-time gRPC stream of new observations
+- **Event Streaming**: Real-time gRPC stream of new observations (ThresholdEngine integration)
+- **SecMaster Integration**: Automatic instrument registration via gRPC (when enabled)
 - **Efficient Storage**: TimescaleDB hypertables for time-series data
 - **Full Observability**: OpenTelemetry traces, metrics, and structured logs
 
@@ -25,10 +32,11 @@ Environment variables:
 | `Nasdaq__ApiKey` | Nasdaq Data Link API key | Required |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
 | `OpenTelemetry__ServiceName` | Service name for telemetry | `nasdaq-collector` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
 
 ## API Endpoints
 
-### Health Checks (HTTP Port 8080)
+### Health Checks (Port 8080 container, commented out in compose.yaml)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -36,7 +44,7 @@ Environment variables:
 | `/health/ready` | GET | Readiness check (DB connected) |
 | `/health` | GET | Full health with all checks |
 
-### Admin API (HTTP Port 8080)
+### Admin API (Port 8080 container, commented out in compose.yaml)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -46,9 +54,10 @@ Environment variables:
 | `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable a series |
 | `/api/admin/series/{seriesId}` | DELETE | Delete a series |
 
-### gRPC Event Stream (Port 5009)
+### gRPC Event Stream (Port 8080 container, commented out in compose.yaml)
 
 Service: `ObservationEventStream`
+Consumed by: ThresholdEngine (when enabled)
 
 | Method | Description |
 |--------|-------------|

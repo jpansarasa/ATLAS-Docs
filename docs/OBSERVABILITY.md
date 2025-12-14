@@ -13,6 +13,7 @@ flowchart LR
         OFR[OfrCollector]
         TE[ThresholdEngine]
         AS[AlertService]
+        SM[SecMaster]
     end
 
     FC -->|OTLP gRPC :4317| OC[OTel Collector]
@@ -21,6 +22,7 @@ flowchart LR
     OFR --> OC
     TE --> OC
     AS --> OC
+    SM --> OC
 
     OC -->|otlp| T[Tempo]
     OC -->|otlphttp| L[Loki]
@@ -245,8 +247,12 @@ routes:
 
 ### Notification Flow
 
-```
-Prometheus → Alertmanager → AlertService → ntfy.sh / Email
+```mermaid
+flowchart LR
+    P[Prometheus] --> AM[Alertmanager]
+    AM -->|webhook| AS[AlertService]
+    AS --> N[ntfy.sh]
+    AS --> E[Email]
 ```
 
 AlertService receives webhooks and routes by severity:
@@ -265,6 +271,7 @@ AlertService receives webhooks and routes by severity:
 | ThresholdEngine | Pattern evaluation, regime status |
 | OfrCollector | FSI trends, STFM/HFM collection |
 | FinnhubCollector | Quote collection, calendar sync |
+| SecMaster | Instrument registration, search performance |
 
 ### Dashboard Location
 

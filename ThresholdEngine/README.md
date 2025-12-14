@@ -13,10 +13,10 @@ ThresholdEngine evaluates configurable C# expressions against real-time economic
 ```mermaid
 flowchart TD
     subgraph Collectors [Data Collectors]
-        FC[FredCollector :5002]
-        AV[AlphaVantageCollector :5011]
-        FH[FinnhubCollector :5013]
-        OC[OfrCollector :5017]
+        FC[FredCollector :5001]
+        AV[AlphaVantageCollector :5001]
+        FH[FinnhubCollector :5001]
+        OC[OfrCollector :5001]
     end
 
     subgraph Core [ThresholdEngine]
@@ -79,7 +79,7 @@ Patterns are defined in JSON files organized by category in `config/patterns/`:
 }
 ```
 
-**54 patterns** across 9 categories: OFR, Inflation, Liquidity, Valuation, Growth, NBFI, Recession, Commodity
+**58 patterns** across 9 categories: OFR, Inflation, Liquidity, Valuation, Growth, NBFI, Recession, Commodity, Currency
 
 ## Context API
 
@@ -116,10 +116,7 @@ Environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ConnectionStrings__AtlasDb` | PostgreSQL connection string | Required |
-| `FredCollector__GrpcUrl` | gRPC URL for FredCollector | `http://fred-collector:5002` |
-| `AlphaVantageCollector__GrpcUrl` | gRPC URL for AlphaVantageCollector | `http://alphavantage-collector:5011` |
-| `FinnhubCollector__GrpcUrl` | gRPC URL for FinnhubCollector | `http://finnhub-collector:5013` |
-| `OfrCollector__GrpcUrl` | gRPC URL for OfrCollector | `http://ofr-collector:5017` |
+| `Collectors__Items__*__ServiceUrl` | gRPC URLs for collectors (configured in appsettings.json) | `http://fred-collector:5001`, `http://alphavantage-collector:5001`, `http://finnhub-collector:5001`, `http://ofr-collector:5001` |
 | `PatternConfig__Path` | Pattern config directory | `./config` (dev), `/app/config` (prod) |
 | `PatternConfig__HotReload` | Enable file system watcher | `true` |
 | `PatternConfig__WatchInterval` | Watcher interval in milliseconds | `1000` |
@@ -145,7 +142,7 @@ The project uses a flattened structure with a single .csproj file at `/home/jame
    ```bash
    dotnet run
    ```
-   Service listens on port 5002 (HTTP).
+   Service listens on port 8080 internally (exposed as port 5003 on host via Docker).
 
 3. **Database Migrations**:
    Migrations are applied automatically on startup via `dbContext.Database.MigrateAsync()`.
@@ -161,7 +158,7 @@ ansible-playbook playbooks/deploy.yml
 
 ## API Endpoints
 
-### REST API (Port 5002)
+### REST API (Port 8080 internal, 5003 on host)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -186,6 +183,7 @@ ThresholdEngine/
 │   ├── ThresholdEngine.csproj          # Single project file
 │   ├── Program.cs                      # Application entry point
 │   ├── DependencyInjection.cs          # Service registration
+│   ├── appsettings.json                # Configuration file
 │   ├── Compilation/                    # Roslyn expression compiler, cache
 │   ├── Configuration/                  # Pattern config loader, watcher
 │   ├── Data/                           # DbContext, repositories, migrations
@@ -198,14 +196,19 @@ ThresholdEngine/
 │   ├── Interfaces/                     # Abstractions
 │   ├── Services/                       # Pattern evaluation, macro scoring, regime detection
 │   ├── Telemetry/                      # OpenTelemetry activity source, metrics
-│   └── Workers/                        # Background event consumers, data warmup
+│   ├── Workers/                        # Background event consumers, data warmup
+│   └── Containerfile                   # Multi-stage Docker build
 ├── config/
-│   ├── patterns/                       # Pattern definitions by category (54 files)
+│   ├── patterns/                       # Pattern definitions by category (58 files)
 │   ├── regimes.json                    # Regime threshold configuration
 │   └── pattern-schema.json             # JSON schema for pattern validation
 ├── tests/
 │   └── ThresholdEngine.UnitTests/      # Unit test project
-└── Containerfile                       # Multi-stage Docker build
+└── .devcontainer/
+    ├── build.sh                        # Container image build script
+    ├── compile.sh                      # Compile and test script
+    ├── compose.yaml                    # Dev container compose config
+    └── devcontainer.json               # VS Code dev container config
 ```
 
 ## Workers

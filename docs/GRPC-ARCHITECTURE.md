@@ -33,21 +33,31 @@ graph LR
 
 ### Collectors (Event Producers)
 
-| Service | gRPC Port | Event Types |
-|---------|-----------|-------------|
-| FredCollector | 5002 | ObservationCollectedEvent |
-| AlphaVantageCollector | 5011 | ObservationCollectedEvent |
-| FinnhubCollector | 5013 | ObservationCollectedEvent |
-| OfrCollector | 5017 | ObservationCollectedEvent |
+| Service | gRPC Port (Internal) | Event Types |
+|---------|---------------------|-------------|
+| FredCollector | 5001 | ObservationCollectedEvent |
+| AlphaVantageCollector | 5001 | ObservationCollectedEvent |
+| FinnhubCollector | 5001 | ObservationCollectedEvent |
+| OfrCollector | (no gRPC streaming) | N/A |
 
-All collectors implement the same `ObservationEventStream` gRPC service contract.
+All collectors implement the same `ObservationEventStream` gRPC service contract. All use internal port 5001 for consistency.
 
 ### ThresholdEngine (Event Consumer)
 
-- **MultiCollectorEventConsumerWorker**: Maintains connections to all 4 collectors
+- **MultiCollectorEventConsumerWorker**: Maintains connections to all collectors
 - **ObservationEventSubscriber**: Handles individual collector subscriptions
 - **EventProcessor**: Routes events to pattern evaluation
 - **Checkpoint tracking**: Per-collector progress stored in TimescaleDB
+
+### SecMaster (Metadata Service)
+
+SecMaster provides gRPC services for instrument metadata management:
+
+| Service | gRPC Port | Purpose |
+|---------|-----------|---------|
+| SecMaster | 8080 | Instrument registration, search, metadata query |
+
+Collectors register instruments via gRPC on startup and during collection. SecMaster stores metadata in PostgreSQL for fast lookup and cross-source search.
 
 ## Key Design Decisions
 
@@ -183,8 +193,7 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         ("FredCollector", _fredClient),
         ("AlphaVantageCollector", _avClient),
-        ("FinnhubCollector", _finnhubClient),
-        ("OfrCollector", _ofrClient)
+        ("FinnhubCollector", _finnhubClient)
     };
 
     var tasks = collectors.Select(c =>
@@ -255,11 +264,13 @@ grpcurl -plaintext localhost:5002 atlas.events.ObservationEventStream/GetHealth
 ### Verify Connectivity
 
 ```bash
-# Check each collector's gRPC endpoint
-grpcurl -plaintext localhost:5002 atlas.events.ObservationEventStream/GetLatestEventTime
-grpcurl -plaintext localhost:5011 atlas.events.ObservationEventStream/GetLatestEventTime
-grpcurl -plaintext localhost:5013 atlas.events.ObservationEventStream/GetLatestEventTime
-grpcurl -plaintext localhost:5017 atlas.events.ObservationEventStream/GetLatestEventTime
+# Check each collector's gRPC endpoint (all on internal port 5001)
+nerdctl exec fred-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
+nerdctl exec alphavantage-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
+nerdctl exec finnhub-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
+
+# Check SecMaster gRPC health
+nerdctl exec secmaster grpcurl -plaintext localhost:8080 grpc.health.v1.Health/Check
 ```
 
 ### Check Checkpoint Lag

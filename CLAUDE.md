@@ -270,6 +270,8 @@ shared: Events/, deployment/, docs/
 
 ## DATA_FLOW
 Collectors →gRPC:5001→ ThresholdEngine →metrics→ Prometheus → Alertmanager → AlertService → ntfy|email
+Collectors →gRPC:8080→ SecMaster (registration, fire-and-forget)
+ThresholdEngine →gRPC:8080→ SecMaster (resolution, context-based routing)
 gRPC: internal_only (container-to-container)
 HTTP: 8080 internal, 50xx host
 

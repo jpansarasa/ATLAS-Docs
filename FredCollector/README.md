@@ -13,9 +13,10 @@ FredCollector retrieves economic indicators from the Federal Reserve Economic Da
 - **Scheduled Collection**: Automates data retrieval using Quartz cron schedules with Federal Reserve holiday exclusions
 - **Rate Limiting**: Token bucket rate limiter respects FRED API limits (120 requests/minute)
 - **Smart Backfill**: Automatically fills gaps in historical data on startup and on-demand
-- **Event Streaming**: Real-time gRPC streams for downstream consumers
+- **Event Streaming**: Real-time gRPC streams for downstream consumers (ThresholdEngine integration)
 - **Admin API**: Add, enable/disable, delete series; trigger manual collection/backfill
 - **Series Search**: Search FRED API for new series with filtering and sorting
+- **SecMaster Integration**: Automatic instrument registration via gRPC
 - **Observability**: Full OpenTelemetry instrumentation (metrics, traces, logs to OTLP)
 - **MCP Integration**: Standalone Model Context Protocol server (FredCollectorMcp) for AI assistants
 
@@ -41,6 +42,7 @@ Environment variables:
 | `RATE_LIMITER_REFILL_RATE` | Tokens per second | `2.0` |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
 | `OpenTelemetry__ServiceName` | Service name | `fred-collector` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
 | `X_API_KEY` | API key for REST endpoints | **Required for API access** |
 
 ## Getting Started
@@ -78,7 +80,7 @@ ansible-playbook playbooks/deploy.yml
 
 ## API Endpoints
 
-### REST API (Port 8080)
+### REST API (Port 8080 container, 5001 host)
 
 Requires `X-API-Key` header for authentication.
 
@@ -103,9 +105,10 @@ Requires `X-API-Key` header for authentication.
 | `/api/admin/series/{seriesId}/collect` | POST | Trigger immediate collection |
 | `/api/admin/series/{seriesId}/backfill` | POST | Trigger backfill (query: months) |
 
-### gRPC API (Port 5001)
+### gRPC API (Port 8080 container, 5001 host)
 
 Service: `ObservationEventStream` (observation_events.proto)
+Consumed by: ThresholdEngine
 
 | Method | Description |
 |--------|-------------|

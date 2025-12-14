@@ -41,7 +41,7 @@ flowchart LR
 
 ---
 
-## MCP Tools (7 Tools)
+## MCP Tools (12 Tools)
 
 ### Data Tools
 
@@ -364,6 +364,64 @@ In addition to tools, expose static resources for context:
 |--------------|-------------|
 | `fred://series/all` | Complete series inventory with metadata |
 | `fred://categories` | Category definitions and series counts |
+
+---
+
+## Admin Tools (5 Tools)
+
+### `add_series`
+Add a new FRED series to collect (auto-fetches metadata from FRED API).
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `seriesId` | string | Yes | FRED series ID (e.g., UNRATE, GDP, CPIAUCSL) |
+| `category` | string | Yes | Category for the series |
+| `backfill` | boolean | No | Whether to backfill historical data (default: true) |
+
+### `get_all_series_admin`
+Get all configured series including inactive ones (admin view).
+
+### `toggle_series`
+Enable or disable a series for data collection.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `seriesId` | string | Yes | FRED series ID to toggle |
+
+### `delete_series`
+Delete a series and all its observations (use with caution).
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `seriesId` | string | Yes | FRED series ID to delete |
+
+### `trigger_collection`
+Trigger immediate data collection for a series.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `seriesId` | string | Yes | FRED series ID to collect |
+
+### `trigger_backfill`
+Trigger historical data backfill for a series.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `seriesId` | string | Yes | FRED series ID to backfill |
+| `months` | integer | No | Number of months to backfill (default: 1, max: 120) |
+
+---
+
+## Port Mapping
+
+- Internal: 8080
+- External (host): 3103
+- SSE endpoint: http://mercury:3103/sse
 
 ---
 

@@ -270,6 +270,14 @@ Claude Desktop doesn't natively support SSE transport, so `mcp-proxy` bridges st
 
 ---
 
+## Port Mapping
+
+- Internal: 8080
+- External (host): 3104
+- SSE endpoint: http://mercury:3104/sse
+
+---
+
 ## Usage Examples
 
 ### Morning Briefing

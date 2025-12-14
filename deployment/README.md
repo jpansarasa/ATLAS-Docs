@@ -40,16 +40,18 @@ This deploys everything:
 ### Data Collectors
 | Service | Ports | Description |
 |---------|-------|-------------|
-| fred-collector | 5001 (HTTP), 5002 (gRPC) | FRED economic data (200+ series) |
-| alphavantage-collector | 5010 (HTTP), 5011 (gRPC) | Commodities, forex, crypto |
-| finnhub-collector | 5012 (HTTP), 5013 (gRPC) | Stock quotes, calendars, sentiment |
+| fred-collector | 5001 (HTTP), 5002 (gRPC) | FRED economic data (47+ series) |
+| alphavantage-collector | 5010 (HTTP), 5011 (gRPC) | Commodities (WTI, Brent, NatGas) |
+| nasdaq-collector | - (internal: 8080/5009) | LBMA gold prices (AM/PM) |
+| finnhub-collector | 5012 (HTTP), 5013 (gRPC) | Stock quotes, sentiment, analyst ratings |
 | ofr-collector | 5016 (HTTP), 5017 (gRPC) | OFR FSI, STFM, HFM data |
-| calendar-service | 5015 | Market holidays, economic calendar |
+| calendar-service | 5015 | Market holidays, trading days, economic calendar |
 
 ### Processing & Alerting
 | Service | Port | Description |
 |---------|------|-------------|
-| threshold-engine | 5003 | Pattern evaluation, regime detection (54 patterns) |
+| secmaster | - (internal: 8080) | Security master & instrument metadata registry |
+| threshold-engine | 5003 | Pattern evaluation, regime detection (50+ patterns) |
 | alert-service | 8081 | Notification dispatch (ntfy, email) |
 
 ### MCP Servers (Claude Integration)
@@ -61,6 +63,7 @@ This deploys everything:
 | thresholdengine-mcp | 3104 | Pattern evaluation tools (8 tools) |
 | finnhub-mcp | 3105 | Market data tools (26 tools) |
 | ofrcollector-mcp | 3106 | OFR financial data tools (26 tools) |
+| secmaster-mcp | - (internal: 8080) | Instrument metadata & source resolution tools |
 
 ### AI Inference
 | Service | Port | Description |

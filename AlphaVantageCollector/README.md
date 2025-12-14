@@ -12,7 +12,8 @@ AlphaVantageCollector fetches financial and economic data from Alpha Vantage, in
 - **Priority Scheduling**: High-priority series collected more frequently based on urgency and interval
 - **Rate Limiting**: Token bucket algorithm enforces 25 requests/day with burst control
 - **Market Calendar Integration**: Skips collection on CME market holidays
-- **Real-time Streaming**: gRPC event stream for downstream consumers
+- **Real-time Streaming**: gRPC event stream for downstream consumers (ThresholdEngine integration)
+- **SecMaster Integration**: Automatic instrument registration via gRPC
 - **Admin API**: Dynamic series management without service restart
 - **TimescaleDB Storage**: Efficient time-series storage with hypertables
 
@@ -43,10 +44,12 @@ Environment variables:
 | `AlphaVantage__ApiKey` | API key from alphavantage.co | Required |
 | `AlphaVantage__DailyLimit` | Max requests per day | `25` |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry__ServiceName` | Service name | `alphavantage-collector` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
 
 ## API Endpoints
 
-### REST API (Port 5006)
+### REST API (Port 8080 container, 5010 host)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -59,9 +62,10 @@ Environment variables:
 | `/health/ready` | GET | Readiness probe |
 | `/health/live` | GET | Liveness probe |
 
-### gRPC API (Port 5007)
+### gRPC API (Port 8080 container, 5010 host)
 
 Service: `ObservationEventStream`
+Consumed by: ThresholdEngine
 
 - `SubscribeToEvents(SubscriptionRequest)`: Stream observation events in real-time
 

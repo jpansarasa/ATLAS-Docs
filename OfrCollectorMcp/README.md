@@ -10,7 +10,7 @@ Wraps the OfrCollector REST API, providing:
 - **Hedge Fund Monitor (HFM)**: Hedge fund leverage and risk indicators
 - **Series Management**: Admin tools to configure data collection and backfill historical data
 
-## Available Tools
+## Available Tools (26 Tools)
 
 ### FSI (Financial Stress Index) Tools (2 tools)
 
@@ -89,6 +89,12 @@ SSE endpoint: `http://mercury:3106/sse`
 ```
 
 Claude Desktop doesn't natively support SSE transport, so `mcp-proxy` bridges stdio↔SSE.
+
+## Port Mapping
+
+- Internal: 8080
+- External (host): 3106
+- SSE endpoint: http://mercury:3106/sse
 
 ## OFR Data Categories
 

@@ -1,21 +1,24 @@
 # ATLAS Indicators → FRED Series Mapping
 
-**Status**: ✅ Implemented (30 series configured)
-**Last Updated**: 2025-11-21
+**Status**: ✅ Implemented (47 series configured)
+**Last Updated**: 2025-12-14
 
 This file maps ATLAS framework indicators to specific FRED series IDs for automated collection.
 
 ## Framework Alignment
 
-**Sigma.md Categories & Weights:**
-- Recession: 35% weight → 7 indicators
-- Liquidity: 25% weight → 5 indicators  
-- Growth: 20% weight → 4 indicators
-- Financial Stress: 10% weight → 2 indicators
-- Currency: 10% weight → 1 indicator
-- Inflation: 10% weight → 1 indicator
+**Pattern Categories:**
+- Recession: 10 patterns
+- Liquidity: 8 patterns
+- Growth: 6 patterns
+- NBFI/Financial Stress: 8 patterns
+- Currency: 3 patterns
+- Inflation: 7 patterns
+- Valuation: 7 patterns
+- Commodity: 5 patterns
+- OFR: 3 patterns
 
-**Total: 20 Core Series for ATLAS FredCollector v1.0**
+**Total: 47 FRED series configured in FredCollector**
 
 ---
 
@@ -548,7 +551,7 @@ curl "https://api.stlouisfed.org/fred/series/observations?series_id=ICSA&api_key
 
 ---
 
-**Last Updated**: 2025-11-21
-**Status**: ✅ Implemented - 30 series configured and collecting
+**Last Updated**: 2025-12-14
+**Status**: ✅ Implemented - 47 series configured and collecting
 **Owner**: James
-**Implementation**: FredCollector service (319 tests passing)
+**Implementation**: FredCollector service (378 tests passing)

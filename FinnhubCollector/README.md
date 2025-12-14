@@ -12,7 +12,8 @@ FinnhubCollector ingests diverse market data including stock quotes, candles, ne
 - **Live Data Endpoints**: On-demand queries directly to Finnhub API (quotes, candles, profiles, recommendations, price targets, sentiment, peers)
 - **Admin API**: Series management (add, toggle, delete, trigger collection)
 - **Rate Limiting**: Token bucket algorithm (60 req/min default)
-- **gRPC Streaming**: Real-time observation events to downstream services
+- **gRPC Streaming**: Real-time observation events to downstream services (ThresholdEngine integration)
+- **SecMaster Integration**: Automatic instrument registration via gRPC
 - **OpenTelemetry**: Distributed tracing and metrics with OTLP export
 - **Health Checks**: Liveness and readiness probes with database validation
 
@@ -40,11 +41,12 @@ Environment variables:
 | `Finnhub__ApiKey` | API Key from finnhub.io | **Required** |
 | `Finnhub__RateLimit` | Requests per minute | `60` |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry | `finnhub-collector-service` |
+| `OpenTelemetry__ServiceName` | Service name for telemetry | `finnhub-collector` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
 
 ## API Endpoints
 
-### REST API (Port 8080)
+### REST API (Port 8080 container, 5012 host)
 
 #### Health
 - `GET /health` - Liveness probe
@@ -88,9 +90,10 @@ Direct Finnhub API queries (bypasses local storage):
 - `GET /api/admin/series` - Get all series (including inactive)
 - `POST /api/admin/series/{seriesId}/collect` - Trigger immediate collection
 
-### gRPC API (Port 5001)
+### gRPC API (Port 8080 container, 5012 host)
 
 **Service**: `ObservationEventService`
+Consumed by: ThresholdEngine
 
 - `SubscribeToEvents`: Server-streaming RPC that emits `SeriesCollectedEvent` messages in real-time as data is collected
 

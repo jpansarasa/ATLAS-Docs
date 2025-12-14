@@ -12,7 +12,7 @@ Wraps the FinnhubCollector REST API, providing:
 - **Live Data Access**: Query any symbol via Finnhub API (not just tracked series)
 - **Series Management**: Admin tools to configure data collection
 
-## Available Tools
+## Available Tools (26 Tools)
 
 ### Data Query Tools (14 tools)
 
@@ -80,6 +80,12 @@ SSE endpoint: `http://mercury:3105/sse`
 ```
 
 Claude Desktop doesn't natively support SSE transport, so `mcp-proxy` bridges stdio↔SSE.
+
+## Port Mapping
+
+- Internal: 8080
+- External (host): 3105
+- SSE endpoint: http://mercury:3105/sse
 
 ## Series Types
 

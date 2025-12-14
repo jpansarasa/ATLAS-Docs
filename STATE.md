@@ -1,6 +1,6 @@
 # STATE.md [ATLAS Infrastructure]
 
-## CURRENT_STATUS [2025-12-12]
+## CURRENT_STATUS [2025-12-14]
 
 ### All Services: Production Ready
 
@@ -14,8 +14,9 @@
 | AlphaVantageCollector | done | 5 | Commodity prices (WTI, Brent, NatGas) |
 | OfrCollector | done | 5 | OFR FSI, STFM, HFM data |
 | NasdaqCollector | done | 5 | LBMA gold prices (AM/PM fixings) |
+| SecMaster | done | 5+ | Security master & instrument metadata |
 
-**Total Tests**: 640+ passing
+**Total Tests**: 645+ passing
 
 ---
 
@@ -35,6 +36,7 @@
 ### Processing & Alerting
 | Service | Port | Purpose |
 |---------|------|---------|
+| secmaster | - | Security master, instrument metadata, source resolution |
 | threshold-engine | 5003 | Pattern evaluation, regime detection |
 | alert-service | 8081 | Notification sink (ntfy, email) |
 | calendar-service | - | Market status, trading day rules |
@@ -55,6 +57,7 @@
 | thresholdengine-mcp | 3104 | Pattern evaluation |
 | finnhub-mcp | 3105 | Finnhub data access |
 | ofrcollector-mcp | 3106 | OFR data access |
+| secmaster-mcp | - | Instrument metadata & source resolution |
 
 ### Observability Stack
 | Service | Port | Purpose |
@@ -105,8 +108,11 @@ ThresholdEngine subscribes to all collectors via configuration:
 ```
 FredCollector ──────┐
 FinnhubCollector ───┼──► ThresholdEngine ──► Prometheus ──► Alertmanager ──► AlertService ──► ntfy/email
-AlphaVantageCollector──┤                          │
-OfrCollector ───────┘                          Grafana
+AlphaVantageCollector──┤       │                    │
+OfrCollector ───────┤       │                    Grafana
+NasdaqCollector ────┘       │
+                            ↓
+                       SecMaster (registration + resolution)
 ```
 
 ---

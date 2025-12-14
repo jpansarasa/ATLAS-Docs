@@ -140,6 +140,12 @@ flowchart TD
 | GET | `/api/resolve/batch?symbols=A,B,C` | Batch resolve |
 | GET | `/api/resolve/lookup/{collector}/{sourceId}` | Reverse lookup |
 
+### Health
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check endpoint |
+
 ### Registration
 
 | Method | Endpoint | Description |
@@ -154,7 +160,9 @@ flowchart TD
 
 ## gRPC Services
 
-### SecMasterRegistry
+SecMaster exposes two gRPC services on port 8080 (internal) / 5017 (host):
+
+### RegistryGrpcService
 ```protobuf
 service SecMasterRegistry {
     rpc RegisterSeries(RegisterSeriesRequest) returns (RegisterSeriesResponse);
@@ -162,7 +170,7 @@ service SecMasterRegistry {
 }
 ```
 
-### SecMasterResolver
+### ResolverGrpcService
 ```protobuf
 service SecMasterResolver {
     rpc ResolveSymbol(ResolveRequest) returns (ResolveResponse);
@@ -207,6 +215,13 @@ var resolution = await _resolver.ResolveAsync("UNRATE", new ResolutionContext
 // resolution.ResolvedSource.SourceId = "UNRATE"
 ```
 
+## Ports
+
+| Port | Description |
+|------|-------------|
+| **5017** | Host access (mapped to container 8080) |
+| **8080** | Container internal (HTTP/1.1 REST + HTTP/2 gRPC) |
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -214,7 +229,11 @@ var resolution = await _resolver.ResolveAsync("UNRATE", new ResolutionContext
 | `ConnectionStrings__SecMaster` | - | PostgreSQL connection string |
 | `ASPNETCORE_URLS` | `http://+:8080` | Listen address |
 | `OpenTelemetry__OtlpEndpoint` | `http://otel-collector:4317` | OTLP endpoint |
-| `OpenTelemetry__ServiceName` | `secmaster` | Service name for traces |
+| `Ollama__Url` | `http://ollama-gpu:11434` | Ollama API endpoint |
+| `Ollama__EmbeddingModel` | `nomic-embed-text` | Model for embeddings |
+| `Ollama__GenerationModel` | `llama3.2:3b` | Model for RAG synthesis |
+| `SemanticSearch__VectorHighConfidenceThreshold` | `0.8` | Vector match confidence threshold |
+| `SemanticSearch__DefaultMinScore` | `0.5` | Default minimum similarity score |
 
 ## Development
 
@@ -246,7 +265,7 @@ All operations emit OpenTelemetry spans under `SecMaster.Resolution` and `SecMas
 
 ## MCP Server
 
-SecMasterMcp exposes tools for AI assistants:
+SecMasterMcp (port 3107) exposes tools for AI assistants. See [SecMasterMcp/README.md](../SecMasterMcp/README.md) for details.
 
 | Tool | Description |
 |------|-------------|
@@ -256,12 +275,51 @@ SecMasterMcp exposes tools for AI assistants:
 | `resolve_batch` | Batch resolution |
 | `list_sources` | List sources for instrument |
 | `lookup_by_collector_id` | Reverse lookup |
+| `semantic_search` | Vector similarity search |
+| `ask_secmaster` | Natural language Q&A with RAG |
+| `hybrid_resolve` | Hybrid resolution (SQL→Vector→RAG) |
 | `health` | Health check |
+
+## Semantic Search
+
+SecMaster includes semantic vector search powered by:
+- **pgvector**: PostgreSQL extension for vector similarity search
+- **Ollama**: Local embeddings via `nomic-embed-text` model (768-dimensional vectors)
+- **HNSW indexing**: Fast approximate nearest neighbor search
+- **Hybrid resolution**: SQL → Fuzzy → Vector → RAG synthesis
+- **RAG synthesis**: Natural language query answering using `llama3.2:3b`
+
+### Semantic Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/semantic/search` | Vector similarity search |
+| GET | `/api/semantic/resolve` | Hybrid resolution (SQL→Vector→RAG) |
+| POST | `/api/semantic/ask` | Natural language Q&A with RAG |
+| POST | `/api/semantic/embed/{id}` | Generate embedding for instrument |
+| POST | `/api/semantic/embed/backfill` | Backfill all missing embeddings |
+
+### Example Queries
+
+```bash
+# Vector similarity search
+curl "http://localhost:5017/api/semantic/search?q=unemployment%20indicator&minScore=0.5&limit=10"
+
+# Natural language query
+curl -X POST "http://localhost:5017/api/semantic/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What data do you have for tracking inflation?"}'
+
+# Hybrid resolve (tries SQL, fuzzy, vector, RAG in sequence)
+curl "http://localhost:5017/api/semantic/resolve?q=job%20market%20health&enableRag=true"
+```
 
 ## Database
 
 SecMaster uses TimescaleDB (PostgreSQL) with:
-- `pg_trgm` extension for fuzzy search
+- **EF Core migrations** for schema management (auto-applied on startup)
+- `pgvector` extension for semantic vector search
+- `pg_trgm` extension for fuzzy text search
 - Unique constraints on `(Collector, SourceId)` pairs
 - JSONB metadata column for extensibility
-- Auto-migration on startup
+- HNSW vector indexes for efficient similarity search

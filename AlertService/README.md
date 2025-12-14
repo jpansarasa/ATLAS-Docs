@@ -4,14 +4,13 @@ Centralized alert routing and notification dispatch service for ATLAS.
 
 ## Overview
 
-AlertService receives alert webhooks from internal services (ThresholdEngine) and external monitoring (Alertmanager), queues them, and dispatches notifications to configured channels (Ntfy, Email) based on severity routing rules.
+AlertService receives alert webhooks from external monitoring (Alertmanager), queues them, and dispatches notifications to configured channels (Ntfy, Email) based on severity routing rules.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     subgraph Inputs
-        TE[ThresholdEngine]
         AM[Alertmanager]
         API[Webhook API]
     end
@@ -27,7 +26,7 @@ flowchart LR
         Email[Email Channel]
     end
 
-    TE & AM --> API
+    AM --> API
     API --> Queue
     Queue --> Dispatcher
     Dispatcher --> Router
@@ -87,7 +86,7 @@ Define which severities go to which channels:
 
 ## Getting Started
 
-**Note**: This service is designed to run as part of the larger ATLAS microservices architecture. It relies on upstream services (ThresholdEngine) to generate alerts.
+**Note**: This service is designed to run as part of the larger ATLAS microservices architecture. It receives alerts from Prometheus Alertmanager for infrastructure monitoring.
 
 ### Development (Dev Containers)
 
@@ -114,28 +113,28 @@ ansible-playbook playbooks/deploy.yml
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/alerts` | POST | Ingests alerts from ThresholdEngine or Alertmanager |
-| `/health` | GET | Liveness probe (returns 200 OK) |
+| `/alerts` | POST | Ingests alerts from internal services or Alertmanager |
+| `/health` | GET | Health check (returns 200 OK with status) |
 
 ### Alert Payloads
 
 The `/alerts` endpoint accepts two formats:
 
-**1. Direct Format** (ATLAS Standard)
-Used by ThresholdEngine for internal alerts.
+**1. Direct Format** (Simple JSON)
+Used for direct alert submission.
 
 ```json
 {
-  "source": "ThresholdEngine",
+  "source": "custom-source",
   "severity": "critical",
-  "title": "VIX Deployment Signal",
-  "message": "VIX exceeded 30.0, triggering defensive allocation.",
-  "metadata": { "patternId": "vix-l1", "value": "31.2" }
+  "title": "Alert Title",
+  "message": "Alert message describing the issue.",
+  "metadata": { "key": "value" }
 }
 ```
 
 **2. Alertmanager Format** (Prometheus Standard)
-Used by infrastructure monitoring.
+Primary format used by Prometheus Alertmanager.
 
 ```json
 {
@@ -154,18 +153,36 @@ Used by infrastructure monitoring.
 ```
 AlertService/
 ├── src/
-│   ├── Channels/               # INotificationChannel implementations
+│   ├── Channels/               # INotificationChannel implementations (Ntfy, Email)
 │   ├── Endpoints/              # API route handlers
-│   ├── Models/                 # Domain models (Alert, Severity)
+│   ├── Models/                 # Domain models (Alert, AlertRequest, Severity)
 │   ├── Services/               # Queue, Dispatcher, Router
 │   ├── Telemetry/              # OpenTelemetry metrics and tracing
 │   ├── Program.cs              # Application entry point
 │   ├── appsettings.json        # Configuration
 │   └── Containerfile           # Production container
-└── tests/                      # Unit tests
+├── tests/                      # Unit tests
+└── .devcontainer/
+    └── devcontainer.json       # VS Code dev container config
 ```
+
+## Deployment
+
+AlertService runs on port 8080 internally (no host port exposed by default in compose.yaml).
+
+Deploy via Ansible:
+```bash
+cd /home/james/ATLAS/deployment/ansible
+ansible-playbook playbooks/deploy.yml --tags alert-service
+```
+
+Container configuration in `/opt/ai-inference/compose.yaml`:
+- Image: `alert-service:latest`
+- Internal Port: 8080
+- Host Port: Not exposed (internal service only)
+- Dependencies: otel-collector
 
 ## See Also
 
-- [ThresholdEngine](../ThresholdEngine/README.md) - Main alert source
+- [Prometheus Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) - Alert source
 - [Observability](../docs/OBSERVABILITY.md) - Metrics documentation

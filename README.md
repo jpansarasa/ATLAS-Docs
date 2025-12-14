@@ -439,6 +439,34 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 [Technical documentation](./CalendarService/README.md)
 
+### 1f. SecMaster - Security Master & Instrument Metadata
+
+**Purpose**: Centralized instrument metadata and intelligent source resolution for the ATLAS ecosystem
+**Status**: ✅ Complete
+**Technology**: .NET 9, C# 13, TimescaleDB, gRPC, Linux containers
+
+**Core Capabilities**:
+- Single source of truth for financial instrument definitions
+- Intelligent routing to data sources based on context (frequency, latency, preference)
+- Collector registration via gRPC (fire-and-forget, idempotent)
+- Multi-source resolution with priority ranking and fallbacks
+- Fuzzy search with pg_trgm for instrument discovery
+- REST API and gRPC services for consumers
+
+**Data Model**:
+- Instruments: Symbol, Name, AssetClass, InstrumentType, Frequency, Sector, Exchange
+- SourceMappings: Collector, SourceId, Priority, PublicationLag, LastObservation
+- Aliases: Alternative symbols for cross-reference
+
+**Resolution Algorithm**:
+- Frequency hierarchy (intraday > daily > weekly > monthly > quarterly > annual)
+- Filter by max publication lag
+- Apply collector preference
+- Sort by priority, return primary or highest-ranked source
+- Include alternative sources for fallback
+
+[Technical documentation](./SecMaster/README.md)
+
 ### 2. ThresholdEngine - Pattern Evaluation & Regime Detection
 
 **Purpose**: Evaluate configurable C# expressions against economic data to detect regime transitions and generate allocation signals
@@ -678,7 +706,8 @@ flowchart TB
 ```
 
 **Key Architectural Principles**:
-- **Data Collectors** (FredCollector, AlphaVantageCollector, NasdaqCollector): Poll sources, publish events
+- **Data Collectors** (FredCollector, AlphaVantageCollector, NasdaqCollector, FinnhubCollector, OfrCollector): Poll sources, publish events
+- **SecMaster**: Centralized metadata registry, intelligent source resolution
 - **ThresholdEngine**: Subscribes to all events, evaluates rules, publishes breaches
 - **AlertService**: Delivers notifications (email, push, etc.)
 - **Event-Driven**: System.Threading.Channels (MVP) or message queue (production scale)
@@ -695,15 +724,19 @@ ATLAS/
 ├── AlphaVantageCollector/  # Commodity prices (WTI, Brent, NatGas)
 ├── NasdaqCollector/        # LBMA gold prices
 ├── FinnhubCollector/       # Stock quotes, sentiment
+├── OfrCollector/           # OFR financial stability data
 ├── CalendarService/        # Market status, trading days
+├── SecMaster/              # Instrument metadata & source resolution
 ├── ThresholdEngine/        # Pattern evaluation & regime detection
 ├── AlertService/           # Notification dispatch
 ├── Events/                 # Shared gRPC event contracts
-├── OllamaMCP/              # Ollama MCP server (Claude Desktop)
+├── OllamaMcp/              # Ollama MCP server (Claude Desktop)
 ├── FredCollectorMcp/       # FRED data MCP server
 ├── ThresholdEngineMcp/     # Pattern evaluation MCP server
-├── infrastructure/         # compose.yaml.j2, monitoring configs
-├── ansible/                # Deployment playbooks
+├── FinnhubMcp/             # Finnhub data MCP server
+├── OfrCollectorMcp/        # OFR data MCP server
+├── SecMasterMcp/           # SecMaster data MCP server
+├── deployment/             # Ansible playbooks, compose templates, configs
 ├── CLAUDE.md               # AI assistant rules
 └── STATE.md                # Current system status
 ```
@@ -795,13 +828,16 @@ See service-specific README files for detailed setup:
 
 ## Project Timeline
 
-### Current Status (2025-11-30)
+### Current Status (2025-12-14)
 
 **Phase 1-3: Complete** - All core services production-ready
-- 4 data collectors (FRED, Alpha Vantage, Nasdaq, Finnhub)
-- ThresholdEngine with 40 patterns and regime detection
+- 5 data collectors (FRED, Alpha Vantage, Nasdaq, Finnhub, OFR)
+- SecMaster security master with intelligent source resolution
+- ThresholdEngine with 50+ patterns and regime detection
 - AlertService with ntfy + email notifications
+- CalendarService for market status and trading day validation
 - Full observability stack (Prometheus, Loki, Tempo, Grafana)
+- 6 MCP servers for Claude Desktop integration (FRED, ThresholdEngine, Finnhub, OFR, SecMaster, Ollama)
 
 ### Future Phases
 
@@ -873,4 +909,4 @@ Proprietary - Personal use only
 
 ---
 
-**Last Updated**: 2025-11-30 | **Status**: ✅ Production Ready | **Tests**: 550+ passing | **Patterns**: 40 configured
+**Last Updated**: 2025-12-14 | **Status**: ✅ Production Ready | **Tests**: 640+ passing | **Patterns**: 50+ configured | **Services**: 18 total (5 collectors, SecMaster, ThresholdEngine, AlertService, CalendarService, 6 MCP servers, 4 observability)
