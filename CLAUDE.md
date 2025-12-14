@@ -232,3 +232,16 @@ IMAGE: {service-name}:latest # fred-collector ✓ fredcollector ✗
 BUILD: {Project}/.devcontainer/build.sh [--no-cache]
   from: /home/james/ATLAS # monorepo context required
 DEPLOY: ansible --tags {service} # ¬nerdctl_manual
+
+## DATABASE [ef_core]
+SCHEMA: EF migrations only # ¬raw_sql_scripts
+SEED_DATA: EF HasData() | app-level seeding on startup
+DEPLOYMENT: app handles own migrations/seeding
+  rationale: single_source_of_truth + version_controlled + testable
+DEBUG_ONLY: raw psql queries for inspection
+  ✓ SELECT to verify state
+  ✗ INSERT/UPDATE/DELETE to fix state # fix_in_code_instead
+ANTI:
+  ✗ raw SQL scripts during deployment
+  ✗ bypassing EF to seed/migrate
+  ✗ manual database fixes # fix_root_cause_in_app
