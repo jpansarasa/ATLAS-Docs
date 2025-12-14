@@ -2,7 +2,7 @@
 
 **Purpose**: Standardized criteria for assigning reliability weights to ThresholdEngine patterns  
 **Audience**: Engineers, Product Owners  
-**Version**: 1.0  
+**Version**: 1.1  
 **Updated**: 2025-12-14  
 
 ---
@@ -154,64 +154,154 @@
 
 ---
 
-## Decay Period Assignment
+## Publication Frequency Assignment
 
-The `signalDecayDays` parameter controls how quickly stale data loses influence.
+The `publicationFrequencyDays` parameter is an **objective fact** about data availability, not a tuning parameter. This tells the system when to expect new data.
 
-### Fast Decay (7-14 days)
+### Real-Time / Intraday (publicationFrequencyDays = 0)
 
-**Use for**:
-- Market-based signals (VIX, credit spreads, DXY)
-- High-frequency data (daily updates)
-- Volatile signals that change rapidly
+**Indicators**:
+- VIX (continuous during market hours)
+- DXY (forex markets 24/5)
+- Credit Spreads (calculated from bond prices)
+- Stock/ETF prices
+
+**Behavior**: Decay starts immediately since data could update any moment.
+
+### Daily (publicationFrequencyDays = 1)
+
+**Indicators**:
+- Standing Repo Facility (Fed publishes daily)
+- Treasury Yields (daily market close)
+- Reverse Repo (Fed daily)
+
+**Behavior**: Data older than 1 day starts decaying.
+
+### Weekly (publicationFrequencyDays = 7)
+
+**Indicators**:
+- Initial Jobless Claims (every Thursday)
+- Continuing Claims (every Thursday)
+- M2 Money Supply (Fed H.6 weekly)
+
+**Behavior**: Data remains 100% fresh for 7 days, then decays.
+
+### Monthly (publicationFrequencyDays = 30)
+
+**Indicators**:
+- ISM Manufacturing/Services (1st business day)
+- Nonfarm Payrolls (1st Friday)
+- CPI / Core CPI (mid-month ~15th)
+- PCE / Core PCE (end of month ~30th)
+- Industrial Production (mid-month ~15th)
+- Retail Sales (mid-month ~15th)
+- Housing Starts (mid-month ~17th)
+- Consumer Sentiment (end of month, final)
+- Chicago NFCI (weekly but use 30 for stability)
+- OFR FSI (weekly but use 30 for stability)
+
+**Behavior**: Data remains 100% fresh for 30 days, then decays.
+
+### Quarterly (publicationFrequencyDays = 90)
+
+**Indicators**:
+- GDP (advance estimate ~30 days after quarter end)
+- Corporate Earnings (staggered throughout earnings season)
+
+**Behavior**: Data remains 100% fresh for 90 days, then decays.
+
+### Special Cases
+
+**Sahm Rule** (uses unemployment rate):
+- Based on monthly unemployment data + 12-month MA
+- `publicationFrequencyDays = 30`
+
+**Yield Curve Inversion**:
+- Uses daily Treasury yields but signal is persistent
+- `publicationFrequencyDays = 1` (daily calculation)
+
+**Freight Recession**:
+- Monthly publication
+- `publicationFrequencyDays = 30`
+
+**Rule of Thumb**: Set `publicationFrequencyDays` to the **shortest normal publication interval**. If weekly data is sometimes delayed by a few days, still use 7 (not 10).
+
+---
+
+## Signal Decay Assignment (After Data Becomes Overdue)
+
+The `signalDecayDays` parameter controls how quickly a signal loses influence **after it becomes overdue**. This is independent of publication frequency and reflects signal persistence.
+
+**Critical Distinction**:
+- `publicationFrequencyDays` = When we expect new data (objective)
+- `signalDecayDays` = How long the signal matters after overdue (subjective)
+
+### Fast Decay (7-14 days after overdue)
+
+**Use for**: Transient, mean-reverting signals that lose relevance quickly
 
 **Examples**:
-- VIX: 7 days (volatility mean-reverts quickly)
-- DXY Risk-Off: 14 days (FX moves are transient)
-- Standing Repo Stress: 14 days (emergency facility usage)
+- **VIX spikes**: Market panic/volatility mean-reverts quickly → `signalDecayDays = 7`
+- **DXY Risk-Off**: FX moves are often transient → `signalDecayDays = 14`
+- **Standing Repo Stress**: Emergency facility usage is acute → `signalDecayDays = 14`
 
-**Formula**: `signalDecayDays = 2 × update_frequency_days`
+**Rationale**: These signals reflect temporary market conditions that resolve quickly.
 
-### Moderate Decay (30-60 days)
+### Moderate Decay (30-60 days after overdue)
 
-**Use for**:
-- Monthly economic data
-- Business surveys (ISM, sentiment)
-- Most coincident indicators
+**Use for**: Monthly indicators with normal business cycle persistence
 
 **Examples**:
-- ISM Manufacturing: 30 days (monthly release)
-- Initial Claims: 30 days (weekly but smoothed)
-- Chicago NFCI: 30 days (monthly financial conditions)
-- Continuing Claims: 60 days (slower-moving labor metric)
+- **ISM Manufacturing**: Business conditions evolve monthly → `signalDecayDays = 30`
+- **Initial Claims**: Labor market trends persist for weeks → `signalDecayDays = 30`
+- **Chicago NFCI**: Financial conditions are moderately persistent → `signalDecayDays = 30`
+- **Continuing Claims**: Slower labor metric → `signalDecayDays = 60`
 
-**Formula**: `signalDecayDays = 1 × typical_update_cycle`
+**Rationale**: Economic data that reflects evolving conditions over weeks/months.
 
-### Slow Decay (90-180 days)
+### Slow Decay (90-180 days after overdue)
 
-**Use for**:
-- Quarterly data (GDP)
-- Persistent trends (freight, yield curve)
-- Structural indicators (M2, demographics)
+**Use for**: Persistent structural trends and long-cycle indicators
 
 **Examples**:
-- Sahm Rule: 90 days (unemployment changes slowly)
-- Yield Curve: 180 days (signal persists for quarters)
-- Freight Recession: 180 days (industrial trends are persistent)
-- Buffett Indicator: 180 days (market cap ratios change slowly)
+- **Sahm Rule**: Unemployment changes very slowly → `signalDecayDays = 90`
+- **GDP**: Quarterly structural data → `signalDecayDays = 90`
+- **Yield Curve Inversion**: Signal persists for quarters before recession → `signalDecayDays = 180`
+- **Freight Recession**: Industrial cycles are long → `signalDecayDays = 180`
 
-**Formula**: `signalDecayDays = 2-3 × quarterly_period`
+**Rationale**: Structural trends that persist for quarters or years.
 
-### Glacial Decay (365 days)
+### Glacial Decay (365+ days after overdue)
 
-**Use for**:
-- Long-term structural indicators
-- Informational patterns (not used for regime detection)
-- Annual data
+**Use for**: Long-term valuation and structural indicators
 
 **Examples**:
-- Demographics-based patterns (if added)
-- Secular trend indicators
+- **Buffett Indicator**: Market cap ratios change very slowly → `signalDecayDays = 180-365`
+- **Demographics-based patterns**: Secular trends
+
+**Rationale**: Informational patterns that don't require frequent updates.
+
+---
+
+## Publication Frequency vs Signal Decay: Decision Matrix
+
+| Indicator | Pub Freq | Why | Decay | Why |
+|-----------|----------|-----|-------|-----|
+| **VIX** | 0 (real-time) | Continuous updates | 7 | Volatility mean-reverts fast |
+| **Standing Repo** | 1 (daily) | Fed publishes daily | 14 | Emergency stress is acute |
+| **Initial Claims** | 7 (weekly) | Every Thursday | 30 | Labor trends persist weeks |
+| **ISM Manufacturing** | 30 (monthly) | 1st business day | 30 | Business conditions monthly |
+| **CPI** | 30 (monthly) | Mid-month release | 60 | Inflation is persistent |
+| **Sahm Rule** | 30 (monthly) | Monthly unemployment | 90 | Unemployment slow-moving |
+| **GDP** | 90 (quarterly) | ~30d after quarter | 90 | Structural, slow-moving |
+| **Yield Curve** | 1 (daily) | Daily yield calculation | 180 | Signal persists for quarters |
+| **Freight Recession** | 30 (monthly) | Monthly freight data | 180 | Industrial cycles are long |
+| **Buffett Indicator** | 90 (quarterly) | Market cap data | 180 | Valuation ratios very slow |
+
+**Key Pattern**: Decay period often equals or exceeds publication frequency, but they measure different things:
+- VIX: Pub=0, Decay=7 (fast reaction, fast decay)
+- ISM: Pub=30, Decay=30 (monthly update, monthly persistence)
+- Yield Curve: Pub=1, Decay=180 (daily update, long persistence)
 
 ---
 
@@ -241,11 +331,11 @@ The `confidence` field (0.0-1.0) is **not used in calculations** but serves as d
 **Step 1: Gather Facts**
 - **Data Source**: Office of Financial Research (official US Treasury data)
 - **History**: Available since 2017 (8 years)
-- **Update Frequency**: Weekly
+- **Update Frequency**: Weekly (every Wednesday)
 - **Threshold**: FSI > 1.5 (extreme stress, historical events: COVID, 2018 selloff)
 - **Accuracy**: 2/2 major stress events detected, 1 false positive (2018 volatility spike)
 
-**Step 2: Apply Criteria**
+**Step 2: Apply Weight Criteria**
 
 | Criterion | Assessment | Score | Rationale |
 |-----------|------------|-------|-----------|
@@ -262,11 +352,20 @@ Weighted average: (0.70×0.4) + (0.80×0.3) + (0.85×0.2) + (0.75×0.1) = 0.28 +
 
 **Step 4: Assign Temporal Classification**
 
-- OFR FSI: Coincident (reflects current financial stress)
-- Lead Time: 0 months
-- Decay: 30 days (weekly data, monthly smoothing)
+- OFR FSI: **Coincident** (reflects current financial stress)
+- Lead Time: **0 months**
 
-**Step 5: Set Confidence**
+**Step 5: Set Publication Frequency**
+
+- Published weekly (every Wednesday)
+- `publicationFrequencyDays = 7`
+
+**Step 6: Set Decay Period**
+
+- Financial stress is moderately persistent (not as fast as VIX, not as slow as GDP)
+- `signalDecayDays = 30` (decays over 30 days once overdue)
+
+**Step 7: Set Confidence**
 
 - Short history (8 years): 0.70
 - Good but limited sample: 0.70
@@ -280,10 +379,89 @@ Weighted average: (0.70×0.4) + (0.80×0.3) + (0.85×0.2) + (0.75×0.1) = 0.28 +
   "weight": 0.75,
   "temporalType": "Coincident",
   "leadTimeMonths": 0,
+  "publicationFrequencyDays": 7,
   "signalDecayDays": 30,
   "confidence": 0.70
 }
 ```
+
+**Interpretation**:
+- Weekly data remains 100% fresh for 7 days
+- After 7 days (overdue), signal decays with 30-day half-life
+- At 37 days old (30 days overdue), signal is at ~37% strength
+- At 67 days old (60 days overdue), signal is at ~14% strength
+
+---
+
+## More Complete Examples
+
+### VIX Deployment L1 (Real-Time Market Data)
+
+```json
+{
+  "patternId": "vix-deployment-l1",
+  "name": "VIX Level 1 Deployment Trigger",
+  "weight": 0.75,
+  "temporalType": "Coincident",
+  "leadTimeMonths": 0,
+  "publicationFrequencyDays": 0,   // Real-time
+  "signalDecayDays": 7,             // Volatility mean-reverts quickly
+  "confidence": 0.80
+}
+```
+
+**Behavior**: VIX from 1 day ago is already decaying (e^(-1/7) = 86% fresh).
+
+### ISM Manufacturing Contraction (Monthly Survey)
+
+```json
+{
+  "patternId": "ism-contraction",
+  "name": "ISM Manufacturing Below 50",
+  "weight": 0.85,
+  "temporalType": "Coincident",
+  "leadTimeMonths": 0,
+  "publicationFrequencyDays": 30,  // Monthly release
+  "signalDecayDays": 30,           // Business conditions evolve monthly
+  "confidence": 0.85
+}
+```
+
+**Behavior**: ISM published 15 days ago is 100% fresh. ISM published 50 days ago (20 days overdue) is 51% fresh.
+
+### GDP Growth Acceleration (Quarterly Data)
+
+```json
+{
+  "patternId": "gdp-acceleration",
+  "name": "GDP Growth Above 3% YoY",
+  "weight": 0.85,
+  "temporalType": "Coincident",
+  "leadTimeMonths": 0,
+  "publicationFrequencyDays": 90,  // Quarterly release
+  "signalDecayDays": 90,           // Structural economic data
+  "confidence": 0.80
+}
+```
+
+**Behavior**: GDP published 45 days ago is 100% fresh (next release in 45 days). GDP published 120 days ago (30 days overdue) is 72% fresh.
+
+### Yield Curve Inversion (Leading, Persistent Signal)
+
+```json
+{
+  "patternId": "yield-curve-inversion",
+  "name": "10Y-2Y Treasury Spread Negative",
+  "weight": 0.90,
+  "temporalType": "Leading",
+  "leadTimeMonths": 12,
+  "publicationFrequencyDays": 1,   // Daily calculation
+  "signalDecayDays": 180,          // Signal persists for quarters
+  "confidence": 0.90
+}
+```
+
+**Behavior**: Yield curve from yesterday is 100% fresh. Yield curve from 30 days ago (29 days overdue) is 85% fresh (signal is very persistent).
 
 ---
 
@@ -310,6 +488,13 @@ Weighted average: (0.70×0.4) + (0.80×0.3) + (0.85×0.2) + (0.75×0.1) = 0.28 +
 **Action**: Maintain `weight=0.70`, increase `confidence=0.85`  
 **Rationale**: More data confirms reliability but doesn't change accuracy
 
+### Scenario 4: Publication frequency changes
+
+**Initial**: Weekly data, `publicationFrequencyDays=7`  
+**After change**: Monthly data, `publicationFrequencyDays=30`  
+**Action**: Update `publicationFrequencyDays=30`, possibly adjust `signalDecayDays` if signal persistence changes  
+**Rationale**: Reflects new data availability schedule
+
 ---
 
 ## Category-Specific Guidelines
@@ -318,6 +503,7 @@ Weighted average: (0.70×0.4) + (0.80×0.3) + (0.85×0.2) + (0.75×0.1) = 0.28 +
 
 **Typical Weights**: 0.75-0.95 (high-stakes, well-studied)  
 **Temporal**: Mix of Leading (yield curve) and Coincident (claims, ISM)  
+**Publication Freq**: 1-30 days (mostly monthly)  
 **Decay**: Moderate to Slow (30-90 days)  
 **Notes**: Prioritize proven indicators (Sahm, yield curve) over sentiment
 
@@ -325,6 +511,7 @@ Weighted average: (0.70×0.4) + (0.80×0.3) + (0.85×0.2) + (0.75×0.1) = 0.28 +
 
 **Typical Weights**: 0.65-0.90 (market-based, react quickly)  
 **Temporal**: Mix of Leading (credit spreads) and Coincident (VIX)  
+**Publication Freq**: 0-7 days (real-time to weekly)  
 **Decay**: Fast to Moderate (7-30 days)  
 **Notes**: Context-dependent signals (VIX) may have variable weights
 
@@ -332,6 +519,7 @@ Weighted average: (0.70×0.4) + (0.80×0.3) + (0.85×0.2) + (0.75×0.1) = 0.28 +
 
 **Typical Weights**: 0.75-0.90 (shadow banking is critical)  
 **Temporal**: Primarily Coincident  
+**Publication Freq**: 1-30 days (daily to monthly)  
 **Decay**: Moderate (14-30 days)  
 **Notes**: Composite indicators (NBFI Escalation) can have high weights
 
@@ -339,6 +527,7 @@ Weighted average: (0.70×0.4) + (0.80×0.3) + (0.85×0.2) + (0.75×0.1) = 0.28 +
 
 **Typical Weights**: 0.70-0.85 (expansion signals)  
 **Temporal**: Mix of Leading (permits) and Coincident (ISM)  
+**Publication Freq**: 30 days (mostly monthly)  
 **Decay**: Moderate to Slow (30-90 days)  
 **Notes**: Real data (production, sales) over surveys
 
@@ -346,6 +535,7 @@ Weighted average: (0.70×0.4) + (0.80×0.3) + (0.85×0.2) + (0.75×0.1) = 0.28 +
 
 **Typical Weights**: 0.70-0.90 (Fed policy driver)  
 **Temporal**: Primarily Lagging (CPI, PCE)  
+**Publication Freq**: 30 days (monthly)  
 **Decay**: Moderate to Slow (60-90 days)  
 **Notes**: Breakevens are Leading, CPI/PCE are Lagging
 
@@ -353,6 +543,7 @@ Weighted average: (0.70×0.4) + (0.80×0.3) + (0.85×0.2) + (0.75×0.1) = 0.28 +
 
 **Typical Weights**: 0.55-0.70 (informational, not predictive)  
 **Temporal**: Lagging  
+**Publication Freq**: 30-90 days  
 **Decay**: Slow to Glacial (90-180 days)  
 **Notes**: Lower weights due to poor market timing
 
@@ -365,7 +556,9 @@ Before committing weight assignments:
 - [ ] Weight justified using 4 criteria (accuracy, timeliness, clarity, quality)
 - [ ] Weight within appropriate range for category
 - [ ] Temporal classification matches signal characteristics
-- [ ] Decay period matches update frequency and persistence
+- [ ] **Publication frequency set to actual data release schedule**
+- [ ] **Decay period reflects signal persistence (not publication frequency)**
+- [ ] **Both parameters documented with rationale**
 - [ ] Confidence score documented with rationale
 - [ ] Comparison to similar patterns in category
 - [ ] Historical accuracy data cited (if available)
@@ -373,8 +566,35 @@ Before committing weight assignments:
 
 ---
 
+## Common Mistakes to Avoid
+
+### ❌ Mistake 1: Conflating Publication Frequency with Decay
+
+**Wrong**: "ISM is monthly, so `signalDecayDays = 30`"  
+**Right**: "ISM publishes monthly (`publicationFrequencyDays = 30`) AND business conditions persist monthly (`signalDecayDays = 30`)"
+
+These happen to be equal for ISM, but they're conceptually different!
+
+### ❌ Mistake 2: Real-Time Data Without Immediate Decay
+
+**Wrong**: VIX with `publicationFrequencyDays = 1` (treating it as daily)  
+**Right**: VIX with `publicationFrequencyDays = 0` (it's continuous, decays immediately)
+
+### ❌ Mistake 3: Ignoring Signal Persistence
+
+**Wrong**: Yield curve with `signalDecayDays = 1` (just because it updates daily)  
+**Right**: Yield curve with `signalDecayDays = 180` (signal persists for quarters)
+
+### ❌ Mistake 4: Over-Decaying Quarterly Data
+
+**Wrong**: GDP published 45 days ago treated as stale  
+**Right**: GDP published 45 days ago is 100% fresh (next release in 45 days)
+
+---
+
 ## References
 
 - [Pattern Weighting Implementation Spec](./pattern-weighting-temporal-metadata.md)
+- [Signal Decay Reference](./pattern-signal-decay-reference.md)
 - [ThresholdEngine Documentation](../ThresholdEngine/README.md)
 - [ATLAS Architecture](../docs/ARCHITECTURE.md)
