@@ -245,3 +245,26 @@ ANTI:
   ✗ raw SQL scripts during deployment
   ✗ bypassing EF to seed/migrate
   ✗ manual database fixes # fix_root_cause_in_app
+
+## BUILD [devcontainer]
+compile: {Project}/.devcontainer/compile.sh [--no-test]
+image: {Project}/.devcontainer/build.sh [--no-cache]
+deploy: ansible-playbook playbooks/deploy.yml --tags {service}
+filter_test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'Name~{Test}'
+
+## SERVICES [monorepo]
+collectors: FredCollector, AlphaVantageCollector, NasdaqCollector, FinnhubCollector, OfrCollector
+processing: ThresholdEngine
+alerting: AlertService
+calendar: CalendarService
+metadata: SecMaster
+mcp: FredCollectorMcp, ThresholdEngineMcp, FinnhubMcp, OfrCollectorMcp, SecMasterMcp
+shared: Events/, deployment/, docs/
+
+## DATA_FLOW
+Collectors →gRPC:5001→ ThresholdEngine →metrics→ Prometheus → Alertmanager → AlertService → ntfy|email
+gRPC: internal_only (container-to-container)
+HTTP: 8080 internal, 50xx host
+
+## STACK
+.NET9/C#13 | TimescaleDB | nerdctl/containerd | OTEL→Loki/Prom/Tempo→Grafana | Serilog
