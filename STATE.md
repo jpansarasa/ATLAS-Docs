@@ -123,9 +123,19 @@ ansible-playbook playbooks/deploy.yml --tags threshold-engine  # Single service
 
 ## NEXT_ACTIONS
 
-1. Deploy ThresholdEngine with new config-driven collector subscriptions
-2. Verify all 4 collector gRPC streams connect successfully
-3. Monitor macro score aggregation across all categories
+### SecMaster Roadmap
+| PR | Description | Status |
+|----|-------------|--------|
+| #66 | Core SecMaster - gRPC services, FredCollector integration | Merged |
+| #67 | Sector Taxonomy - `units` column, alias endpoints, search enhancement | Next |
+| #68 | Collector Metadata - Pass-through from FRED/OFR/Finnhub/AV | Planned |
+| Future | LLM/RSS - News analysis, instrument/sector mapping | Requires #67 |
+
+**Key Principle**: Store raw, display normalized. No cross-collector normalization.
+
+### Immediate
+1. Deploy SecMaster to production
+2. Create PR #67 branch for taxonomy work
 
 ---
-**UPDATED**: 2025-12-12 | **STATUS**: production_ready
+**UPDATED**: 2025-12-14 | **STATUS**: production_ready
