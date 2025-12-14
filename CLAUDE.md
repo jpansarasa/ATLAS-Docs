@@ -226,6 +226,13 @@ dockerfile_files: Containerfile ¬ Dockerfile
 development: devcontainer ¬ local_install
 rationale: runtime_agnostic(nerdctl|docker|podman) + compose_v2_standard + clean_host
 
+## DEPLOYMENT [ATLAS] [HARD_STOP]
+✗ NEVER edit /opt/ai-inference/compose.yaml directly
+✓ ALWAYS use ansible for deployments
+  playbook: ansible-playbook playbooks/deploy.yml --tags {service}
+  inventory: deployment/inventory/hosts
+rationale: compose.yaml = ansible-managed ∧ direct_edit = config_drift
+
 ## CONTAINER_BUILD [ATLAS]
 IMAGE: {service-name}:latest # fred-collector ✓ fredcollector ✗
   verify: /opt/ai-inference/compose.yaml
