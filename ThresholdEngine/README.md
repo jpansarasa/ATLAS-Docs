@@ -57,7 +57,10 @@ flowchart TD
 - **Context API**: DSL for financial analysis (GetLatest, GetYoY, GetMoM, GetMA, GetSpread, GetRatio, GetLowest, GetHighest, IsSustained)
 - **Hot Reload**: Pattern changes detected and reloaded automatically via file system watcher
 - **Regime Detection**: State machine tracking six regimes (Crisis, Recession, LateCycle, Neutral, Recovery, Growth)
-- **Macro Score Calculator**: Aggregates pattern signals into composite macro score
+- **Macro Score Calculator**: Aggregates pattern signals into composite macro score with pattern weighting
+- **Pattern Weighting**: Reliability weights (0.0-1.0) per pattern based on historical accuracy
+- **Freshness Decay**: Publication-frequency-aware exponential decay for stale data
+- **Temporal Multipliers**: Boost leading indicators and penalize lagging during regime transitions
 - **On-Demand Evaluation**: REST API endpoints for manual pattern evaluation
 
 ## Pattern Configuration
@@ -71,13 +74,36 @@ Patterns are defined in JSON files organized by category in `config/patterns/`:
   "description": "VIX >22 indicates elevated volatility, context-dependent signal",
   "category": "Liquidity",
   "expression": "ctx.GetLatest(\"VIXCLS\") > 22m",
-  "signalExpression": "var vix = ctx.GetLatest(\"VIXCLS\") ?? 0m; var score = ctx.MacroScore; if (vix <= 22m) return 0m; if (score < -10m) return vix > 30m ? 2m : 1m; if (score > 10m) return vix > 30m ? -2m : -1m; return vix > 30m ? -1m : -0.5m;",
+  "signalExpression": "var vix = ctx.GetLatest(\"VIXCLS\") ?? 0m; ...",
   "applicableRegimes": ["Crisis", "Recession", "LateCycle", "Neutral", "Recovery", "Growth"],
   "requiredSeries": ["VIXCLS"],
   "maxLookbackDays": 1,
-  "enabled": true
+  "enabled": true,
+  "weight": 0.75,
+  "temporalType": "Coincident",
+  "publicationFrequencyDays": 0,
+  "signalDecayDays": 7,
+  "leadTimeMonths": 0,
+  "confidence": 0.75
 }
 ```
+
+### Pattern Weighting Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `weight` | decimal | 1.0 | Pattern reliability weight (0.0-1.0). Higher = more influence on macro score |
+| `temporalType` | enum | Coincident | Signal timing: `Leading` (predicts 3+ months ahead), `Coincident` (current state), `Lagging` (confirms past) |
+| `publicationFrequencyDays` | int | 30 | Expected days between data releases. Used for freshness calculation |
+| `signalDecayDays` | int | 30 | Days until signal loses 63% strength after becoming overdue |
+| `leadTimeMonths` | int | 0 | Months ahead (positive) or behind (negative) of economic events |
+| `confidence` | decimal | 0.75 | Historical accuracy/reliability (informational) |
+
+**Weight guidelines**:
+- 0.95: Exceptional track record (Sahm Rule, Yield Curve Inversion)
+- 0.80-0.90: Strong reliability (ISM, Initial Claims)
+- 0.60-0.79: Solid but context-dependent (VIX, Fed Balance Sheet)
+- 0.40-0.59: Supplementary signals (Consumer Sentiment, Freight)
 
 **58 patterns** across 9 categories: OFR, Inflation, Liquidity, Valuation, Growth, NBFI, Recession, Commodity, Currency
 
@@ -168,8 +194,10 @@ ansible-playbook playbooks/deploy.yml
 | `/api/patterns/reload` | POST | Trigger manual pattern reload from disk |
 | `/api/patterns/evaluate` | POST | Evaluate all enabled patterns on-demand |
 | `/api/patterns/{patternId}/evaluate` | POST | Evaluate specific pattern on-demand |
+| `/api/patterns/contributions` | GET | Get weighted pattern contribution breakdown |
+| `/api/patterns/health` | GET | Get pattern data freshness and health status |
 | `/health` | GET | Health check with detailed status |
-| `/health/ready` | GET | Readiness probe (database, patterns, grpc) |
+| `/health/ready` | GET | Readiness probe (database, patterns, grpc, data) |
 | `/health/live` | GET | Liveness probe |
 | `/swagger` | GET | OpenAPI documentation (dev environment only) |
 
@@ -201,7 +229,11 @@ ThresholdEngine/
 ├── config/
 │   ├── patterns/                       # Pattern definitions by category (58 files)
 │   ├── regimes.json                    # Regime threshold configuration
-│   └── pattern-schema.json             # JSON schema for pattern validation
+│   ├── pattern-schema.json             # JSON schema for pattern validation
+│   └── series-publication-frequencies.json  # Reference table for data freshness
+├── grafana-dashboards/
+│   ├── pattern-contributions.json      # Weighted signal contributions dashboard
+│   └── pattern-data-health.json        # Data freshness monitoring dashboard
 ├── tests/
 │   └── ThresholdEngine.UnitTests/      # Unit test project
 └── .devcontainer/
@@ -219,6 +251,41 @@ Background services running in the application:
 - **ObservationEventSubscriber**: Processes observation events from in-memory event bus, caches in ObservationCache
 - **DataWarmupService**: Loads initial observations from database into cache on startup
 - **EventProcessor**: Evaluates patterns when relevant observations are updated
+
+## Weighted Macro Scoring
+
+The macro score is calculated using weighted pattern contributions:
+
+```
+weightedSignal = signal × weight × freshnessFactor × temporalMultiplier × confidence
+categoryScore = Σ(weightedSignals) / Σ(weights)
+macroScore = Σ(categoryScore × categoryWeight) / Σ(categoryWeights)
+```
+
+### Freshness Decay
+
+Data freshness is publication-frequency-aware:
+- **Within publication cycle**: 100% fresh (e.g., ISM 15 days old with 30-day cycle)
+- **Overdue**: Exponential decay `exp(-overdue / decayDays)`
+- **Floor**: 10% minimum to never completely ignore a signal
+
+```
+freshness = daysSince <= pubFreq ? 1.0 : exp(-(daysSince - pubFreq) / decayDays)
+```
+
+### Temporal Multipliers
+
+During regime transitions (score trend > 0.3):
+- **Leading indicators**: +30% boost (yield curve, credit spreads)
+- **Coincident indicators**: No change (ISM, employment)
+- **Lagging indicators**: -30% penalty (CPI, continuing claims)
+
+### Category Weights
+
+Configurable via `appsettings.json` MacroScoring section:
+- Recession: 30%, Liquidity: 20%, Growth: 20%
+- NBFI: 10%, Currency: 10%, Inflation: 10%
+- Valuation: 0%, Commodity: 0%
 
 ## Regime Detection
 

@@ -1,13 +1,13 @@
 # STATE.md [ATLAS Infrastructure]
 
-## CURRENT_STATUS [2025-12-14]
+## CURRENT_STATUS [2025-12-15]
 
 ### All Services: Production Ready
 
 | Service | Status | Tests | Description |
 |---------|--------|-------|-------------|
 | FredCollector | done | 378 | FRED economic data (47 series) |
-| ThresholdEngine | done | 226 | Pattern evaluation & regime detection |
+| ThresholdEngine | done | 226 | Pattern evaluation & regime detection (weighted scoring) |
 | AlertService | done | 15+ | Notification dispatch (ntfy, email) |
 | CalendarService | done | 5 | Trading day validation & market status |
 | FinnhubCollector | done | 5 | Stock quotes, sentiment, analyst ratings |
@@ -17,6 +17,14 @@
 | SecMaster | done | 5+ | Security master & instrument metadata |
 
 **Total Tests**: 645+ passing
+
+### Recent Changes [2025-12-15]
+- ✓ Pattern Weighting & Temporal Metadata (ThresholdEngine)
+- ✓ Freshness Decay with publication frequency awareness
+- ✓ Temporal multipliers during regime transitions
+- ✓ Health checks for stale/missing data
+- ✓ `/api/patterns/contributions` and `/api/patterns/health` endpoints
+- ✓ Grafana dashboards for pattern observability
 
 ---
 
@@ -99,7 +107,22 @@ ThresholdEngine subscribes to all collectors via configuration:
 | Valuation | 0% | 2 |
 | Commodity | 0% | 1 |
 
-**Total Patterns**: 50+ configured
+**Total Patterns**: 57 configured with weighted scoring
+
+### Pattern Weighting [NEW]
+Each pattern has reliability weights and temporal metadata:
+- `weight`: 0.0-1.0 reliability score (0.95=proven, 0.50=supplementary)
+- `temporalType`: Leading|Coincident|Lagging
+- `publicationFrequencyDays`: Expected update frequency (0=real-time, 30=monthly)
+- `signalDecayDays`: How long signal remains relevant after overdue
+
+**Formula**: `weightedSignal = signal × weight × freshness × temporal × confidence`
+
+### Health Monitoring [NEW]
+- `/api/patterns/contributions`: Weighted breakdown by category
+- `/api/patterns/health`: Data freshness and staleness alerts
+- `PatternDataHealthCheck`: Integrated health check for stale/missing data
+- Grafana dashboards: `pattern-contributions.json`, `pattern-data-health.json`
 
 ---
 
@@ -129,6 +152,14 @@ ansible-playbook playbooks/deploy.yml --tags threshold-engine  # Single service
 
 ## NEXT_ACTIONS
 
+### ThresholdEngine Pattern Weighting [done]
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Phase 1 | Schema & Data - 6 new fields, 57 patterns updated | ✓ done |
+| Phase 2 | Evaluation Engine - weighted scoring, freshness decay | ✓ done |
+| Phase 3 | API & Observability - endpoints, dashboards, metrics | ✓ done |
+| Phase 4 | Documentation - README, rollback procedures | ◯ optional |
+
 ### SecMaster Roadmap
 | PR | Description | Status |
 |----|-------------|--------|
@@ -140,8 +171,9 @@ ansible-playbook playbooks/deploy.yml --tags threshold-engine  # Single service
 **Key Principle**: Store raw, display normalized. No cross-collector normalization.
 
 ### Immediate
-1. Deploy SecMaster to production
-2. Create PR #67 branch for taxonomy work
+1. Deploy pattern weighting changes to production
+2. Deploy SecMaster to production
+3. Create PR #67 branch for taxonomy work
 
 ---
-**UPDATED**: 2025-12-14 | **STATUS**: production_ready
+**UPDATED**: 2025-12-15 | **STATUS**: production_ready
