@@ -1,6 +1,6 @@
 # STATE.md [ATLAS Infrastructure]
 
-## CURRENT_STATUS [2025-12-15]
+## CURRENT_STATUS [2025-12-16]
 
 ### All Services: Production Ready
 
@@ -18,7 +18,13 @@
 
 **Total Tests**: 645+ passing
 
-### Recent Changes [2025-12-15]
+### Recent Changes [2025-12-16]
+- ✓ PR #70 merged: Pattern Weighting & Temporal Metadata complete
+- ✓ SecMaster hybrid search instrument catalog (#69)
+- ✓ Documentation consolidated: 5 ThresholdEngine docs → `THRESHOLDENGINE-PATTERNS.md`
+- ✓ Removed stale STATE.md files from service directories
+
+### Completed [2025-12-15]
 - ✓ Pattern Weighting & Temporal Metadata (ThresholdEngine)
 - ✓ Freshness Decay with publication frequency awareness
 - ✓ Temporal multipliers during regime transitions
@@ -152,28 +158,21 @@ ansible-playbook playbooks/deploy.yml --tags threshold-engine  # Single service
 
 ## NEXT_ACTIONS
 
-### ThresholdEngine Pattern Weighting [done]
-| Phase | Description | Status |
-|-------|-------------|--------|
-| Phase 1 | Schema & Data - 6 new fields, 57 patterns updated | ✓ done |
-| Phase 2 | Evaluation Engine - weighted scoring, freshness decay | ✓ done |
-| Phase 3 | API & Observability - endpoints, dashboards, metrics | ✓ done |
-| Phase 4 | Documentation - README, rollback procedures | ◯ optional |
-
 ### SecMaster Roadmap
 | PR | Description | Status |
 |----|-------------|--------|
-| #66 | Core SecMaster - gRPC services, FredCollector integration | Merged |
-| #67 | Sector Taxonomy - `units` column, alias endpoints, search enhancement | Next |
+| #66 | Core SecMaster - gRPC services, FredCollector integration | ✓ Merged |
+| #69 | Hybrid search instrument catalog | ✓ Merged |
+| #70 | Pattern Weighting & Temporal Metadata | ✓ Merged |
+| #67 | Sector Taxonomy - `units` column, alias endpoints | Next |
 | #68 | Collector Metadata - Pass-through from FRED/OFR/Finnhub/AV | Planned |
 | Future | LLM/RSS - News analysis, instrument/sector mapping | Requires #67 |
 
 **Key Principle**: Store raw, display normalized. No cross-collector normalization.
 
 ### Immediate
-1. Deploy pattern weighting changes to production
-2. Deploy SecMaster to production
-3. Create PR #67 branch for taxonomy work
+1. Create PR #67 branch for sector taxonomy work
+2. Production deployment verification
 
 ---
-**UPDATED**: 2025-12-15 | **STATUS**: production_ready
+**UPDATED**: 2025-12-16 | **STATUS**: production_ready

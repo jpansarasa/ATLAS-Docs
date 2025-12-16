@@ -1,77 +1,30 @@
 # Ollama MCP Server
 
-MCP server exposing local Ollama instances (GPU/CPU) as tools for Claude Desktop.
+MCP server providing Claude Desktop and Claude Code access to local Ollama LLM instances for text generation, chat, and model management.
 
 ## Overview
 
-Bridges Claude Desktop to self-hosted Ollama, providing:
-- **GPU/CPU Selection**: Route requests to RTX 5090 (32GB VRAM) or CPU fallback
-- **Text Generation**: Completion and multi-turn chat
-- **Model Management**: List, pull, and inspect models
-- **No External API**: All inference runs locally
+Bridges AI assistants to self-hosted Ollama instances, enabling local LLM inference without external API dependencies. Supports both GPU-accelerated (RTX 5090) and CPU fallback instances with dynamic routing.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Client
-        CD[Claude Desktop / Claude.ai]
-    end
-
-    subgraph MCP Server
-        MCP[Ollama MCP\n:3100/sse]
-    end
-
-    subgraph Inference
-        GPU[ollama-gpu\n:11434\nRTX 5090]
-        CPU[ollama-cpu\n:11435\nCPU fallback]
-    end
-
-    CD -->|SSE + JSON-RPC| MCP
-    MCP -->|use_gpu=true| GPU
-    MCP -->|use_gpu=false| CPU
+    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[OllamaMCP<br/>:3100]
+    MCP -->|use_gpu=true| GPU[ollama-gpu<br/>:11434<br/>RTX 5090]
+    MCP -->|use_gpu=false| CPU[ollama-cpu<br/>:11435<br/>CPU]
 ```
 
-## Technology Stack
-
-- **.NET 9 / C# 13** - Consistent with ATLAS platform
-- **MCP Transport**: SSE (Server-Sent Events over HTTP)
-- **HTTP Client**: Direct Ollama API calls
-
----
-
-## MCP Tools (5 Tools)
+## MCP Tools
 
 ### Generation Tools
 
-#### `ollama_generate`
-Generate text completion using Ollama.
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `ollama_generate` | Generate text completion | `model`, `prompt`, `system`, `temperature`, `use_gpu` |
+| `ollama_chat` | Multi-turn chat with context | `model`, `messages`, `temperature`, `use_gpu` |
 
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `model` | string | Yes | Model name (e.g., "llama3.2:3b", "qwen2.5:14b") |
-| `prompt` | string | Yes | The prompt text |
-| `system` | string | No | Optional system message |
-| `temperature` | number | No | Temperature 0.0-2.0 (default: 0.7) |
-| `use_gpu` | boolean | No | Use GPU (true) or CPU (false), default: true |
-
-**Returns:** Generated text completion
-
----
-
-#### `ollama_chat`
-Multi-turn chat with Ollama model.
-
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `model` | string | Yes | Model name |
-| `messages` | array | Yes | Chat messages with role/content |
-| `temperature` | number | No | Temperature (default: 0.7) |
-| `use_gpu` | boolean | No | Use GPU (default: true) |
-
-**Message format:**
+**Chat message format:**
 ```json
 {
   "messages": [
@@ -83,74 +36,48 @@ Multi-turn chat with Ollama model.
 }
 ```
 
-**Returns:** Assistant response text
-
----
-
 ### Model Management Tools
 
-#### `ollama_list_models`
-List available Ollama models.
-
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `use_gpu` | boolean | No | Check GPU (true) or CPU (false), default: true |
-
-**Returns:**
-```
-Found 5 models on GPU instance:
-- llama3.2:3b
-- qwen2.5:14b
-- codellama:13b
-- mistral:7b
-- deepseek-coder:6.7b
-```
-
----
-
-#### `ollama_pull_model`
-Download a model from Ollama library.
-
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `model` | string | Yes | Model name to pull (e.g., "llama3.2:3b") |
-| `use_gpu` | boolean | No | Pull to GPU (true) or CPU (false), default: true |
-
-**Returns:** Success confirmation
-
-**Note:** 10-minute timeout for large model downloads.
-
----
-
-#### `ollama_model_info`
-Get detailed model information.
-
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `model` | string | Yes | Model name |
-| `use_gpu` | boolean | No | Query GPU (true) or CPU (false), default: true |
-
-**Returns:** Model metadata (parameters, license, template, etc.)
-
----
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `ollama_list_models` | List available models on GPU or CPU instance | `use_gpu` |
+| `ollama_pull_model` | Download model from Ollama library (10min timeout) | `model`, `use_gpu` |
+| `ollama_model_info` | Get detailed model metadata | `model`, `use_gpu` |
 
 ## Configuration
 
 ### Environment Variables
 
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_GPU_URL` | `http://ollama-gpu:11434` | GPU instance URL |
+| `OLLAMA_CPU_URL` | `http://ollama-cpu:11434` | CPU instance URL |
+| `MCP_PORT` | `3100` | SSE server port |
+| `MCP_HOST` | `0.0.0.0` | Bind address |
+
+### Port Mapping
+
+- Internal: 8080
+- External (host): 3100
+- SSE endpoint: `http://mercury:3100/sse`
+
+## Development
+
+### Build Container
 ```bash
-OLLAMA_GPU_URL=http://ollama-gpu:11434   # GPU instance
-OLLAMA_CPU_URL=http://ollama-cpu:11434   # CPU fallback
-MCP_PORT=3100                             # SSE server port
-MCP_HOST=0.0.0.0                          # Bind address
+.devcontainer/build.sh
 ```
 
-### Claude Desktop Configuration
+## Deployment
 
-`~/.config/Claude/claude_desktop_config.json`:
+```bash
+ansible-playbook playbooks/deploy.yml --tags ollama-mcp
+```
+
+## Claude Desktop Integration
+
+Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+
 ```json
 {
   "mcpServers": {
@@ -162,25 +89,20 @@ MCP_HOST=0.0.0.0                          # Bind address
 }
 ```
 
-Claude Desktop doesn't natively support SSE transport, so `mcp-proxy` bridges stdio to SSE.
-
----
+Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
 
 ## Usage Examples
 
-### Quick Generation
+**Quick generation:**
 ```
 User: "Generate a haiku about coding"
-
 Claude calls: ollama_generate(model="llama3.2:3b", prompt="Write a haiku about coding")
-
 Response: "Fingers on the keys / Logic flows like morning streams / Bugs become features"
 ```
 
-### Code Review with GPU
+**Code review with GPU:**
 ```
 User: "Review this function using the local model"
-
 Claude calls: ollama_chat(
   model="codellama:13b",
   messages=[
@@ -191,58 +113,22 @@ Claude calls: ollama_chat(
 )
 ```
 
-### Check Available Models
+**Check available models:**
 ```
 User: "What models do I have locally?"
-
 Claude calls: ollama_list_models(use_gpu=true)
-
-Response: Lists all models on the GPU instance
+Response: "Found 5 models on GPU: llama3.2:3b, qwen2.5:14b, codellama:13b, mistral:7b, deepseek-coder:6.7b"
 ```
 
-### Download New Model
+**Download new model:**
 ```
 User: "Pull the Mistral model"
-
 Claude calls: ollama_pull_model(model="mistral:7b", use_gpu=true)
-
 Response: "Successfully pulled mistral:7b on GPU"
 ```
 
----
-
-## Deployment
-
-Via Ansible (recommended):
-```bash
-cd ~/ATLAS/deployment/ansible
-ansible-playbook playbooks/site.yml
-```
-
-Manual container run:
-```bash
-sudo nerdctl run -d \
-  --name ollama-mcp \
-  -p 3100:3100 \
-  -e OLLAMA_GPU_URL=http://ollama-gpu:11434 \
-  -e OLLAMA_CPU_URL=http://ollama-cpu:11434 \
-  ollama-mcp:latest
-```
-
-## Test
-
-```bash
-# Health check
-curl http://localhost:3100/sse
-
-# Should return:
-# event: endpoint
-# data: http://localhost:3100/messages/
-```
-
----
-
 ## See Also
 
-- [FredCollectorMcp](../FredCollectorMcp/README.md) - FRED economic data access
+- [FredCollectorMcp](../FredCollectorMcp/README.md) - FRED data access
 - [ThresholdEngineMcp](../ThresholdEngineMcp/README.md) - Pattern evaluation access
+- [SecMasterMcp](../SecMasterMcp/README.md) - Instrument search and metadata

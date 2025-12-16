@@ -1,82 +1,107 @@
 # Events
 
-Shared event contracts and gRPC definitions for ATLAS microservices.
+Shared gRPC event contracts and in-memory event definitions for ATLAS microservices.
 
 ## Overview
 
-This library serves as the "Schema Registry" for the ATLAS system. It ensures that all services speak the same language when exchanging data, whether in-process or over the network.
+This library is the schema registry for ATLAS. It defines two types of contracts:
 
-## Structure
+1. **gRPC Protobuf contracts** - Wire format for inter-service streaming (collectors to consumers)
+2. **C# event records** - In-memory events for internal event buses (System.Threading.Channels)
 
-```
-Events/
-├── src/
-│   ├── Events/                 # Core definitions
-│   │   ├── Protos/             # gRPC Protobuf contracts (.proto)
-│   │   └── *.cs                # In-memory C# event records
-│   └── Events.Client/          # gRPC Client Library
-```
+All collectors stream events using the same gRPC interface. All consumers subscribe using the same client.
 
-## Protobuf Contracts
+## Proto Files
 
-The source of truth for inter-service communication.
+| File | Purpose |
+|------|---------|
+| `observation_events.proto` | Data collection events (SeriesCollected, OhlcvCollected, CollectionFailed) |
+| `secmaster.proto` | SecMaster registration and resolution services |
 
-### `events.proto`
+## Event Types
 
-Defines the data exchange format between Collectors and ThresholdEngine.
+### Data Collection Events (observation_events.proto)
 
-```protobuf
-message Event {
-    string event_id = 1;
-    google.protobuf.Timestamp occurred_at = 2;
-    string source_service = 3;
-    
-    oneof payload {
-        SeriesCollectedEvent series_collected = 10;
-        CollectionFailedEvent collection_failed = 11;
-        // ...
+| Event Type | Description | Used By |
+|------------|-------------|---------|
+| `SeriesCollectedEvent` | Scalar data points collected (economic indicators, commodities) | FredCollector, AlphaVantageCollector, OfrCollector |
+| `OhlcvCollectedEvent` | OHLCV candles collected (equities, forex, crypto) | FinnhubCollector |
+| `CollectionFailedEvent` | Collection attempt failed (rate limit, API error, network) | All collectors |
+
+### SecMaster Services (secmaster.proto)
+
+| Service | Purpose | Used By |
+|---------|---------|---------|
+| `SecMasterRegistry` | Register series with SecMaster (fire-and-forget) | All collectors |
+| `SecMasterResolver` | Resolve symbols to data sources | ThresholdEngine |
+
+## In-Memory C# Events
+
+Used for internal event buses within a service:
+
+- `ObservationCollectedEvent` - Single observation collected
+- `ThresholdCrossedEvent` - Threshold evaluation triggered
+- `RegimeTransitionEvent` - Market regime change detected
+- `IEvent` - Base interface for all events
+
+## Usage
+
+### Collectors (Publishing Events)
+
+Collectors implement `ObservationEventStream` service:
+
+```csharp
+public class EventStreamService : ObservationEventStream.ObservationEventStreamBase
+{
+    public override async Task SubscribeToEvents(
+        SubscriptionRequest request,
+        IServerStreamWriter<Event> responseStream,
+        ServerCallContext context)
+    {
+        // Stream events to consumer
     }
 }
-
-message SeriesCollectedEvent {
-    string series_id = 1;
-    google.protobuf.Timestamp collected_at = 2;
-    repeated DataPoint data_points = 3;
-}
 ```
 
-## C# Event Records
+### Consumers (Subscribing to Events)
 
-Used for internal event buses (e.g., `ChannelEventBus` inside a service).
-
-```csharp
-public record ObservationCollectedEvent(
-    string SeriesId,
-    DateTimeOffset Date,
-    decimal Value,
-    DateTimeOffset CollectedAt
-) : IEvent;
-```
-
-## Events.Client
-
-A standard gRPC client wrapper that simplifies consuming events from any Collector service.
-
-### Usage
+Consumers use `Events.Client` wrapper:
 
 ```csharp
-// In Consumer Service (e.g., ThresholdEngine)
-services.AddCollectorClient("FredCollector", "http://fred-collector:5001");
+services.AddCollectorClient("FredCollector", "http://fred-collector:5002");
 
-// In Code
+// Subscribe to events
 await foreach (var evt in client.SubscribeToEventsAsync(cancellationToken))
 {
-    // Handle event
+    switch (evt.PayloadCase)
+    {
+        case Event.PayloadOneofCase.SeriesCollected:
+            // Handle scalar data
+            break;
+        case Event.PayloadOneofCase.OhlcvCollected:
+            // Handle OHLCV data
+            break;
+    }
 }
 ```
 
-## Versioning Strategy
+## Building
 
-1. **Forward Compatibility**: New fields in Protobuf are always optional.
-2. **Backward Compatibility**: Never remove or renumber existing fields.
-3. **Breaking Changes**: Require a new message type (e.g., `SeriesCollectedEventV2`).
+gRPC code is auto-generated during build via `Grpc.Tools` package.
+
+Manual regeneration (if needed):
+
+```bash
+cd Events/src/Events
+dotnet build Events/src/Events/Events.csproj
+```
+
+Generated files appear in `obj/Debug/net9.0/`:
+- `Events.cs` - Message classes
+- `EventsGrpc.cs` - Service stubs
+
+## Versioning
+
+- Forward compatible: New fields are always optional
+- Backward compatible: Never remove or renumber fields
+- Breaking changes: Create new message types (e.g., `SeriesCollectedEventV2`)

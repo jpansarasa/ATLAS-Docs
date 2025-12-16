@@ -1,325 +1,148 @@
-# SecMasterMcp
+# SecMaster MCP Server
 
-Model Context Protocol (MCP) server for the SecMaster service - provides AI assistants with tools to search, resolve, and query financial instrument metadata.
+MCP server providing Claude Desktop and Claude Code direct access to ATLAS instrument metadata, semantic search, and data collector management.
 
 ## Overview
 
-SecMasterMcp exposes SecMaster's functionality through standardized MCP tools, enabling AI assistants to:
-- Search instruments by name, symbol, or natural language
-- Resolve symbols to data sources with context-aware routing
-- Query instrument metadata and source mappings
-- Perform semantic searches using vector similarity
-- Ask natural language questions with RAG synthesis
-- Search across all data collectors with smart routing
-- List and manage collector series (FRED, Finnhub, AlphaVantage, OFR)
+Exposes SecMaster REST API as MCP tools, enabling AI assistants to search instruments, resolve symbols to data sources, perform semantic searches with vector similarity, ask natural language questions with RAG synthesis, and manage series across all ATLAS data collectors.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    AI["AI Client<br/>(Claude)"] -->|MCP| MCP["SecMasterMcp<br/>(Port 3107)"]
-    MCP -->|HTTP| SM["SecMaster<br/>(Port 5017)"]
+    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[SecMasterMcp<br/>:3107]
+    MCP -->|HTTP| SM[secmaster<br/>:8080]
+    SM -->|SQL| DB[(TimescaleDB<br/>+ pgvector)]
+    SM -->|HTTP| Collectors[FRED/Finnhub<br/>OFR/AlphaVantage]
 ```
 
-## MCP Tools (25 Tools)
+## MCP Tools
 
 ### Basic Search & Resolution
 
-#### `search_instruments`
-Search for instruments by name, symbol, or description.
-
-**Parameters:**
-- `query` (required): Search query (e.g., 'unemployment', 'AAPL')
-- `asset_class` (optional): Filter by asset class (Economic, Equity, Commodity, Index, Currency, Rate)
-- `limit` (optional): Maximum results (default: 20)
-
-**Example:**
-```json
-{
-  "query": "unemployment",
-  "asset_class": "Economic",
-  "limit": 10
-}
-```
-
-#### `get_instrument`
-Get detailed information about an instrument by symbol or ID.
-
-**Parameters:**
-- `identifier` (required): Symbol like 'UNRATE' or UUID
-
-**Returns:** Full instrument details including source mappings, aliases, and external identifiers (FIGI, CUSIP, SEDOL, ISIN).
-
-#### `resolve_source`
-Resolve a symbol to the best data source based on context.
-
-**Parameters:**
-- `symbol` (required): Symbol to resolve
-- `frequency` (optional): Required frequency (any, intraday, daily, weekly, monthly, quarterly, annual)
-- `max_lag` (optional): Maximum publication lag in days
-- `prefer_collector` (optional): Preferred collector name
-
-**Returns:** Resolved source with alternatives.
-
-#### `resolve_batch`
-Resolve multiple symbols in a single request.
-
-**Parameters:**
-- `symbols` (required): Comma-separated list (e.g., 'UNRATE,SOFR,GDP')
-- `frequency` (optional): Required frequency
-
-#### `list_sources`
-List all data sources available for an instrument.
-
-**Parameters:**
-- `symbol` (required): Symbol to look up
-
-#### `lookup_by_collector_id`
-Reverse lookup: find instrument by collector-specific ID.
-
-**Parameters:**
-- `collector` (required): Collector name (e.g., 'FredCollector')
-- `source_id` (required): Collector-specific ID (e.g., 'UNRATE')
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `search_instruments` | Search by name, symbol, or description | `query`, `asset_class`, `limit` |
+| `get_instrument` | Get detailed instrument info by symbol or ID | `identifier` |
+| `resolve_source` | Resolve symbol to best data source | `symbol`, `frequency`, `max_lag`, `prefer_collector` |
+| `resolve_batch` | Resolve multiple symbols in single request | `symbols`, `frequency` |
+| `list_sources` | List all data sources for an instrument | `symbol` |
+| `lookup_by_collector_id` | Reverse lookup: collector ID to instrument | `collector`, `source_id` |
 
 ### Semantic Search (Vector-based)
 
-#### `semantic_search`
-Search instruments using semantic similarity - understands natural language queries.
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `semantic_search` | Search using semantic similarity (768-dim embeddings) | `query`, `min_score`, `limit` |
+| `ask_secmaster` | Natural language Q&A with RAG synthesis | `question` |
+| `hybrid_resolve` | Multi-strategy: SQL → Fuzzy → Vector → RAG | `query`, `enable_rag`, `min_score`, `limit` |
 
-**Parameters:**
-- `query` (required): Natural language query (e.g., 'economic indicator for job market health', 'inflation measures')
-- `min_score` (optional): Minimum similarity score 0-1 (default: 0.5, higher = more relevant)
-- `limit` (optional): Maximum results (default: 10)
+**How semantic search works:**
+- Query converted to 768-dimensional embedding via `nomic-embed-text` model
+- Cosine similarity search against instrument embeddings in pgvector
+- Results ranked by relevance score (0-1)
 
-**Example:**
-```json
-{
-  "query": "What measures stock market volatility?",
-  "min_score": 0.6,
-  "limit": 5
-}
-```
-
-**How it works:** Converts query to 768-dimensional embedding using `nomic-embed-text` model, then performs cosine similarity search against instrument embeddings in pgvector.
-
-#### `ask_secmaster`
-Ask a natural language question and get a synthesized answer using RAG.
-
-**Parameters:**
-- `question` (required): Question about instruments (e.g., 'What data do you have for tracking inflation?')
-
-**Returns:** Synthesized answer from `llama3.2:3b` model with relevant instrument matches.
-
-**Example:**
-```json
-{
-  "question": "Which instruments measure unemployment?"
-}
-```
-
-#### `hybrid_resolve`
-Advanced resolution using multi-strategy approach: SQL → Fuzzy → Vector → RAG.
-
-**Parameters:**
-- `query` (required): Can be exact symbol or natural language
-- `enable_rag` (optional): Enable RAG synthesis for ambiguous queries (default: true)
-- `min_score` (optional): Minimum vector similarity 0-1 (default: 0.5)
-- `limit` (optional): Maximum vector results (default: 5)
-
-**Resolution Strategy:**
-1. **SQL**: Try exact symbol match
-2. **Fuzzy**: Try fuzzy text search (pg_trgm)
+**Hybrid resolve strategy:**
+1. **SQL**: Exact symbol match
+2. **Fuzzy**: pg_trgm text similarity
 3. **Vector**: Semantic similarity search
-4. **RAG**: Natural language synthesis if no clear match
+4. **RAG**: Natural language synthesis via `llama3.2:3b`
 
-**Returns:** Resolution with method used (sql/fuzzy/vector/rag) and relevant results.
+### Collector Gateway (15 tools)
+
+Unified access to all data collectors with smart routing.
+
+#### Cross-Collector Search
+
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `search_collectors` | Search across all collectors with smart routing | `query`, `limit` |
+
+Smart routing examples:
+- "unemployment" → FRED
+- "AAPL" → Finnhub
+- "repo rates" → OFR
+- "gold prices" → AlphaVantage
+
+#### List Series (5 tools - read-only)
+
+| Tool Name | Description |
+|-----------|-------------|
+| `list_fred_series` | List all active FRED series |
+| `list_finnhub_series` | List all active Finnhub series |
+| `list_ofr_stfm_series` | List OFR Short-term Funding Monitor series |
+| `list_ofr_hfm_series` | List OFR Hedge Fund Monitor series |
+| `list_alphavantage_series` | List all active AlphaVantage series |
+
+#### Add Series (3 tools)
+
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `add_fred_series` | Add series to FRED collector | `series_id`, `priority` |
+| `add_finnhub_series` | Add series to Finnhub collector | `symbol`, `priority` |
+| `add_alphavantage_series` | Add series to AlphaVantage collector | `symbol`, `type`, `title`, `priority` |
+
+#### Toggle Series (3 tools)
+
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `toggle_fred_series` | Toggle FRED series active/inactive | `series_id` |
+| `toggle_finnhub_series` | Toggle Finnhub series active/inactive | `series_id` |
+| `toggle_alphavantage_series` | Toggle AlphaVantage series active/inactive | `series_id` |
+
+#### Remove Series (3 tools)
+
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `remove_fred_series` | Remove series from FRED collector | `series_id` |
+| `remove_finnhub_series` | Remove series from Finnhub collector | `series_id` |
+| `remove_alphavantage_series` | Remove series from AlphaVantage collector | `series_id` |
+
+**Note:** OFR series are read-only and managed via configuration files.
 
 ### Health
 
-#### `health`
-Get SecMaster service health status.
-
-**Returns:** Health status and check results.
-
-### Collector Gateway (15 Tools)
-
-SecMasterMcp provides unified access to all data collectors through smart routing and management tools.
-
-#### `search_collectors`
-Search across all data collectors (FRED, Finnhub, OFR, AlphaVantage) using smart routing.
-
-**Parameters:**
-- `query` (required): Search query (e.g., 'unemployment', 'AAPL', 'stress')
-- `limit` (optional): Maximum results (default: 20)
-
-**Returns:** Aggregated results from relevant collectors with source attribution.
-
-**Example:**
-```json
-{
-  "query": "unemployment",
-  "limit": 10
-}
-```
-
-**Smart Routing:** The search analyzes the query and routes to appropriate collectors:
-- Economic indicators → FRED
-- Equity symbols → Finnhub
-- Treasury/funding rates → OFR
-- Commodity/currency data → AlphaVantage
-
-#### List Series Tools (5 tools - readonly)
-
-##### `list_fred_series`
-List all active FRED series being collected.
-
-**Returns:** Array of FRED series with ID, title, frequency, and active status.
-
-##### `list_finnhub_series`
-List all active Finnhub series being collected.
-
-**Returns:** Array of Finnhub series with ID, title, frequency, and active status.
-
-##### `list_ofr_stfm_series`
-List all OFR Short-term Funding Monitor series.
-
-**Returns:** Array of OFR STFM series (read-only, managed via config).
-
-##### `list_ofr_hfm_series`
-List all OFR Hedge Fund Monitor series.
-
-**Returns:** Array of OFR HFM series (read-only, managed via config).
-
-##### `list_alphavantage_series`
-List all active AlphaVantage series being collected.
-
-**Returns:** Array of AlphaVantage series with ID, title, frequency, and active status.
-
-#### Add Series Tools (3 tools)
-
-##### `add_fred_series`
-Add a new series to FRED collector.
-
-**Parameters:**
-- `series_id` (required): FRED series ID (e.g., 'UNRATE', 'GDP')
-- `priority` (optional): Collection priority (default: 10)
-
-**Returns:** Created series details or error if already exists.
-
-##### `add_finnhub_series`
-Add a new series to Finnhub collector.
-
-**Parameters:**
-- `symbol` (required): Stock symbol (e.g., 'AAPL', 'MSFT')
-- `priority` (optional): Collection priority (default: 10)
-
-**Returns:** Created series details or error if already exists.
-
-##### `add_alphavantage_series`
-Add a new series to AlphaVantage collector.
-
-**Parameters:**
-- `symbol` (required): Symbol (e.g., 'GOLD', 'EUR/USD')
-- `type` (required): Data type (e.g., 'commodity', 'forex')
-- `title` (optional): Custom title
-- `priority` (optional): Collection priority (default: 10)
-
-**Returns:** Created series details or error if already exists.
-
-#### Toggle Series Tools (3 tools)
-
-##### `toggle_fred_series`
-Toggle FRED series active/inactive status.
-
-**Parameters:**
-- `series_id` (required): FRED series ID
-
-**Returns:** Updated series with new active status.
-
-##### `toggle_finnhub_series`
-Toggle Finnhub series active/inactive status.
-
-**Parameters:**
-- `series_id` (required): Finnhub series ID
-
-**Returns:** Updated series with new active status.
-
-##### `toggle_alphavantage_series`
-Toggle AlphaVantage series active/inactive status.
-
-**Parameters:**
-- `series_id` (required): AlphaVantage series ID
-
-**Returns:** Updated series with new active status.
-
-#### Remove Series Tools (3 tools)
-
-##### `remove_fred_series`
-Remove series from FRED collector.
-
-**Parameters:**
-- `series_id` (required): FRED series ID
-
-**Returns:** Success status.
-
-##### `remove_finnhub_series`
-Remove series from Finnhub collector.
-
-**Parameters:**
-- `series_id` (required): Finnhub series ID
-
-**Returns:** Success status.
-
-##### `remove_alphavantage_series`
-Remove series from AlphaVantage collector.
-
-**Parameters:**
-- `series_id` (required): AlphaVantage series ID
-
-**Returns:** Success status.
-
-**Note:** OFR series are read-only and managed through configuration files, so there are no add/toggle/remove tools for OFR.
-
-## Port Mapping
-
-- Internal: 8080
-- External (host): 3107
-- SSE endpoint: http://mercury:3107/sse
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `health` | Get SecMaster service health status | None |
 
 ## Configuration
 
 ### Environment Variables
 
-```bash
-SECMASTER_API_URL=http://secmaster:8080
-SECMASTER_MCP_LOG_LEVEL=Warning
-SECMASTER_MCP_TIMEOUT_SECONDS=30
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SECMASTER_API_URL` | `http://secmaster:8080` | Backend service URL |
+| `SECMASTER_MCP_LOG_LEVEL` | `Warning` | Logging level |
+| `SECMASTER_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
 
-### Connection
+### Port Mapping
 
-SSE endpoint: `http://mercury:3107/sse`
+- Internal: 8080
+- External (host): 3107
+- SSE endpoint: `http://mercury:3107/sse`
 
 ## Development
 
 ### Build
 ```bash
-SecMasterMcp/.devcontainer/compile.sh
+.devcontainer/compile.sh
 ```
 
 ### Build Container
 ```bash
-SecMasterMcp/.devcontainer/build.sh
+.devcontainer/build.sh
 ```
 
-### Deploy
+## Deployment
+
 ```bash
-ansible-playbook playbooks/deploy.yml --tags secmaster-mcp -i inventory/hosts.yml
+ansible-playbook playbooks/deploy.yml --tags secmaster-mcp
 ```
 
-## Usage with Claude Desktop
+## Claude Desktop Integration
 
-Add to Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
@@ -332,49 +155,48 @@ Add to Claude Desktop config (`~/Library/Application Support/Claude/claude_deskt
 }
 ```
 
-Claude Desktop doesn't natively support SSE transport, so `mcp-proxy` bridges stdio↔SSE.
+Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
 
-## Example Interactions
+## Usage Examples
 
-### Basic Search
+**Basic search:**
 ```
-User: Search for unemployment data
-Tool: search_instruments(query="unemployment", asset_class="Economic")
-```
-
-### Semantic Search
-```
-User: What instruments measure job market health?
-Tool: semantic_search(query="job market health", min_score=0.6)
+User: "Search for unemployment data"
+Claude calls: search_instruments(query="unemployment", asset_class="Economic")
+Response: "Found UNRATE: Unemployment Rate (FRED, monthly)"
 ```
 
-### Natural Language Query
+**Semantic search:**
 ```
-User: What inflation data is available?
-Tool: ask_secmaster(question="What inflation data is available?")
-```
-
-### Hybrid Resolution
-```
-User: Find data for treasury yields
-Tool: hybrid_resolve(query="treasury yields", enable_rag=true)
+User: "What instruments measure job market health?"
+Claude calls: semantic_search(query="job market health", min_score=0.6)
+Response: "UNRATE (0.89), ICSA (0.81), PAYEMS (0.78)"
 ```
 
-## Integration with SecMaster
+**Natural language Q&A:**
+```
+User: "What inflation data is available?"
+Claude calls: ask_secmaster(question="What inflation data is available?")
+Response: "ATLAS tracks CPI, PCE, and PPI from FRED..."
+```
 
-SecMasterMcp is a thin wrapper that:
-1. Exposes SecMaster REST API as MCP tools
-2. Handles parameter validation and error handling
-3. Formats responses for AI consumption
-4. Maps HTTP status codes to appropriate MCP responses
+**Smart collector search:**
+```
+User: "Find repo rate data"
+Claude calls: search_collectors(query="repo rates")
+Response: "OFR STFM: REPO-DVP-AR-TOT-P, REPO-GCF-AR-TOT-P..."
+```
 
-All data comes directly from SecMaster - SecMasterMcp maintains no state.
-
-## Observability
-
-SecMasterMcp emits OpenTelemetry traces for all tool invocations, forwarded to the ATLAS observability stack (Tempo/Loki/Prometheus/Grafana).
+**Manage series:**
+```
+User: "Add NASDAQ to tracking"
+Claude calls: add_finnhub_series(symbol="NDAQ", priority=10)
+Response: "Added NDAQ to Finnhub collector"
+```
 
 ## See Also
 
-- [SecMaster README](../SecMaster/README.md) - Core service documentation
-- [MCP Specification](https://modelcontextprotocol.io) - Model Context Protocol
+- [SecMaster](../SecMaster/README.md) - Backend service documentation
+- [FredCollectorMcp](../FredCollectorMcp/README.md) - FRED data access
+- [FinnhubMcp](../FinnhubMcp/README.md) - Stock market data access
+- [OfrCollectorMcp](../OfrCollectorMcp/README.md) - OFR financial stress data

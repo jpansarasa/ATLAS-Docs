@@ -1,29 +1,31 @@
 # SecMaster
 
-Centralized instrument metadata and source resolution service for the ATLAS ecosystem.
+Centralized instrument metadata and intelligent source resolution service for ATLAS.
 
 ## Overview
 
-SecMaster provides a single source of truth for financial instrument definitions and intelligent routing to data sources. It enables collectors to register their series and consumers to resolve symbols to the appropriate data source based on context (frequency, latency requirements, collector preference).
+SecMaster provides a single source of truth for financial instrument definitions and context-aware routing to data sources. Collectors register their series capabilities, and consumers resolve symbols to the appropriate data source based on frequency, latency requirements, and collector preferences. Includes hybrid search combining SQL, fuzzy matching, vector similarity, and RAG-powered natural language queries.
 
 ## Architecture
 
 ```mermaid
-graph TB
+flowchart TD
     subgraph Collectors
         FC[FredCollector]
         AV[AlphaVantageCollector]
-        NC[NasdaqCollector]
         FH[FinnhubCollector]
         OFR[OfrCollector]
+        NC[NasdaqCollector]
     end
 
     subgraph SecMaster
-        API[REST API :8080]
-        GRPC[gRPC Services]
-        RS[ResolutionService]
-        REG[RegistrationService]
-        DB[(TimescaleDB)]
+        GRPC[gRPC :8080]
+        REST[REST API :8080]
+        REG[Registration Service]
+        RES[Resolution Service]
+        SEM[Semantic Search]
+        DB[(TimescaleDB + pgvector)]
+        OLLAMA[Ollama GPU]
     end
 
     subgraph Consumers
@@ -31,185 +33,121 @@ graph TB
         MCP[SecMasterMcp]
     end
 
-    FC -->|Register| GRPC
-    AV -->|Register| GRPC
-    NC -->|Register| GRPC
-    FH -->|Register| GRPC
-    OFR -->|Register| GRPC
-
+    FC & AV & FH & OFR & NC -->|Register Series| GRPC
     GRPC --> REG
     REG --> DB
 
-    TE -->|Resolve| GRPC
-    MCP -->|Query| API
+    TE -->|Resolve Symbol| GRPC
+    MCP -->|Query Catalog| REST
 
-    GRPC --> RS
-    API --> RS
-    RS --> DB
+    GRPC & REST --> RES
+    REST --> SEM
+    RES & SEM --> DB
+    SEM <-->|Embeddings & RAG| OLLAMA
 ```
 
-## Data Model
+## Features
 
-```mermaid
-erDiagram
-    Instrument ||--o{ SourceMapping : has
-    Instrument ||--o{ Alias : has
+- **Instrument Registry**: Central catalog of financial instruments with metadata
+- **Context-Aware Resolution**: Routes symbol lookups to optimal data source by frequency and latency
+- **Fire-and-Forget Registration**: Collectors register series asynchronously at startup
+- **Frequency Hierarchy**: Higher frequencies satisfy lower (intraday > daily > monthly)
+- **Hybrid Search**: SQL exact match → fuzzy text → vector similarity → RAG synthesis
+- **Semantic Search**: pgvector + Ollama embeddings for natural language queries
+- **Collector Gateway**: Unified API for searching and managing all data collectors
+- **Source Priority**: Primary/alternative source routing with configurable preferences
+- **gRPC + REST**: Dual protocol support (gRPC for services, REST for tools)
 
-    Instrument {
-        uuid Id PK
-        string Symbol UK
-        string Name
-        string Description
-        string AssetClass
-        string InstrumentType
-        string Frequency
-        string Currency
-        string Country
-        string Sector
-        string Exchange
-        jsonb Metadata
-        bool IsActive
-        datetime CreatedAt
-        datetime UpdatedAt
-    }
+## Configuration
 
-    SourceMapping {
-        uuid Id PK
-        uuid InstrumentId FK
-        string Collector
-        string SourceId
-        string Frequency
-        int Priority
-        int PublicationLagDays
-        bool IsPrimary
-        bool IsActive
-        datetime LastObservation
-        datetime LastSync
-    }
-
-    Alias {
-        uuid Id PK
-        uuid InstrumentId FK
-        string AliasSymbol UK
-        string AliasType
-    }
-```
-
-## Resolution Algorithm
-
-```mermaid
-flowchart TD
-    A[Resolve Symbol] --> B{Find Instrument}
-    B -->|Not Found| C[Return Not Found]
-    B -->|Found| D[Get Active Sources]
-    D --> E{Filter by Frequency}
-    E --> F{Filter by Max Lag}
-    F --> G{Apply Collector Preference}
-    G --> H[Sort by Priority]
-    H --> I{Has Primary?}
-    I -->|Yes| J[Return Primary]
-    I -->|No| K[Return Highest Priority]
-    J --> L[Include Alternatives]
-    K --> L
-    L --> M[Return Resolution]
-```
-
-**Frequency Hierarchy** (higher satisfies lower):
-- intraday > daily > weekly > monthly > quarterly > annual
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ConnectionStrings__SecMaster` | Required | PostgreSQL connection string |
+| `ASPNETCORE_URLS` | `http://+:8080` | Listen address |
+| `OpenTelemetry__OtlpEndpoint` | `http://otel-collector:4317` | OTLP collector endpoint |
+| `Ollama__Url` | `http://ollama-gpu:11434` | Ollama API endpoint |
+| `Ollama__EmbeddingModel` | `nomic-embed-text` | Model for 768-dim vector embeddings |
+| `Ollama__GenerationModel` | `llama3.2:3b` | Model for RAG synthesis |
+| `SemanticSearch__VectorHighConfidenceThreshold` | `0.8` | High confidence similarity threshold |
+| `SemanticSearch__DefaultMinScore` | `0.5` | Default minimum similarity score |
 
 ## API Endpoints
 
-### Instruments
+### REST API (Port 8080 internal, 5017 on host)
+
+#### Instruments
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/instruments` | List all instruments |
-| GET | `/api/instruments/{id}` | Get by ID |
-| GET | `/api/instruments/by-symbol/{symbol}` | Get by symbol |
-| POST | `/api/instruments` | Create instrument |
-| PUT | `/api/instruments/{id}` | Update instrument |
+| GET | `/api/instruments` | List all instruments with pagination |
+| GET | `/api/instruments/{id}` | Get instrument by ID |
+| GET | `/api/instruments/by-symbol/{symbol}` | Get instrument by symbol |
+| POST | `/api/instruments` | Create new instrument |
+| PUT | `/api/instruments/{id}` | Update existing instrument |
 | DELETE | `/api/instruments/{id}` | Delete instrument |
-| GET | `/api/instruments/{id}/sources` | List source mappings |
+| GET | `/api/instruments/{id}/sources` | List source mappings for instrument |
 
-### Resolution
+#### Resolution
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/resolve/{symbol}` | Resolve symbol |
-| POST | `/api/resolve` | Resolve with context |
-| GET | `/api/resolve/batch?symbols=A,B,C` | Batch resolve |
-| GET | `/api/resolve/lookup/{collector}/{sourceId}` | Reverse lookup |
+| GET | `/api/resolve/{symbol}` | Resolve symbol with default context |
+| POST | `/api/resolve` | Resolve with custom context (frequency, lag, preference) |
+| GET | `/api/resolve/batch?symbols=A,B,C` | Batch resolve multiple symbols |
+| GET | `/api/resolve/lookup/{collector}/{sourceId}` | Reverse lookup by collector and source ID |
 
-### Health
+#### Search
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/search?q={query}` | Fuzzy text search across instruments |
+
+#### Semantic Search
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/semantic/search` | Vector similarity search by natural language |
+| GET | `/api/semantic/resolve` | Hybrid resolution (SQL → fuzzy → vector → RAG) |
+| POST | `/api/semantic/ask` | Natural language Q&A with RAG synthesis |
+| POST | `/api/semantic/embed/{id}` | Generate embedding for specific instrument |
+| POST | `/api/semantic/embed/backfill` | Backfill missing embeddings for all instruments |
+
+#### Collector Gateway
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/collectors/search?q={query}` | Smart search across all collectors with asset class routing |
+| GET | `/api/collectors/fred/series` | List FRED series |
+| POST | `/api/collectors/fred/series` | Add FRED series |
+| PUT | `/api/collectors/fred/series/{seriesId}/toggle` | Toggle FRED series active status |
+| DELETE | `/api/collectors/fred/series/{seriesId}` | Remove FRED series |
+| GET | `/api/collectors/finnhub/series` | List Finnhub series |
+| POST | `/api/collectors/finnhub/series` | Add Finnhub series |
+| PUT | `/api/collectors/finnhub/series/{seriesId}/toggle` | Toggle Finnhub series |
+| DELETE | `/api/collectors/finnhub/series/{seriesId}` | Remove Finnhub series |
+| GET | `/api/collectors/alphavantage/series` | List AlphaVantage series |
+| POST | `/api/collectors/alphavantage/series` | Add AlphaVantage series |
+| PUT | `/api/collectors/alphavantage/series/{seriesId}/toggle` | Toggle AlphaVantage series |
+| DELETE | `/api/collectors/alphavantage/series/{seriesId}` | Remove AlphaVantage series |
+| GET | `/api/collectors/ofr/stfm` | List OFR short-term funding monitor series |
+| GET | `/api/collectors/ofr/hfm` | List OFR hedge fund monitor series |
+
+#### Registration
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/register` | Register source mapping (used by collectors) |
+
+#### Health
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/health` | Health check endpoint |
 
-### Registration
+### gRPC Services (Port 8080 internal, 5017 on host)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/register` | Register source mapping |
+#### RegistryGrpcService
 
-### Search
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/search?q={query}` | Fuzzy search |
-
-### Collector Gateway
-
-SecMaster provides unified access to all data collectors through smart routing and management endpoints.
-
-#### Search
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/collectors/search?q={query}` | Smart search across all collectors |
-
-The unified search endpoint analyzes queries and routes them to appropriate collectors based on asset class inference:
-- Economic indicators → FRED
-- Equity symbols → Finnhub
-- Treasury/funding rates → OFR
-- Commodity/currency data → AlphaVantage
-
-#### List Series
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/collectors/fred/series` | List FRED series |
-| GET | `/api/collectors/finnhub/series` | List Finnhub series |
-| GET | `/api/collectors/ofr/stfm` | List OFR short-term funding series |
-| GET | `/api/collectors/ofr/hfm` | List OFR hedge fund monitor series |
-| GET | `/api/collectors/alphavantage/series` | List AlphaVantage series |
-
-#### Manage Series (FRED)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/collectors/fred/series` | Add FRED series |
-| PUT | `/api/collectors/fred/series/{seriesId}/toggle` | Toggle FRED series active status |
-| DELETE | `/api/collectors/fred/series/{seriesId}` | Remove FRED series |
-
-#### Manage Series (Finnhub)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/collectors/finnhub/series` | Add Finnhub series |
-| PUT | `/api/collectors/finnhub/series/{seriesId}/toggle` | Toggle Finnhub series active status |
-| DELETE | `/api/collectors/finnhub/series/{seriesId}` | Remove Finnhub series |
-
-#### Manage Series (AlphaVantage)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/collectors/alphavantage/series` | Add AlphaVantage series |
-| PUT | `/api/collectors/alphavantage/series/{seriesId}/toggle` | Toggle AlphaVantage series active status |
-| DELETE | `/api/collectors/alphavantage/series/{seriesId}` | Remove AlphaVantage series |
-
-**Note:** OFR series are read-only and managed through configuration files.
-
-## gRPC Services
-
-SecMaster exposes two gRPC services on port 8080 (internal) / 5017 (host):
-
-### RegistryGrpcService
 ```protobuf
 service SecMasterRegistry {
     rpc RegisterSeries(RegisterSeriesRequest) returns (RegisterSeriesResponse);
@@ -217,7 +155,10 @@ service SecMasterRegistry {
 }
 ```
 
-### ResolverGrpcService
+Used by collectors for fire-and-forget series registration at startup.
+
+#### ResolverGrpcService
+
 ```protobuf
 service SecMasterResolver {
     rpc ResolveSymbol(ResolveRequest) returns (ResolveResponse);
@@ -226,147 +167,89 @@ service SecMasterResolver {
 }
 ```
 
-## Integration
+Used by ThresholdEngine and other consumers for symbol resolution.
 
-### Collector Registration
+## Project Structure
 
-Collectors register their series on startup using fire-and-forget semantics:
-
-```csharp
-await _secMasterClient.RegisterAsync(new RegistrationRequest
-{
-    Collector = "FredCollector",
-    SourceId = "UNRATE",
-    Symbol = "UNRATE",
-    Name = "Unemployment Rate",
-    AssetClass = "Economic",
-    Frequency = "monthly"
-});
+```
+SecMaster/
+├── src/
+│   ├── SecMaster.csproj
+│   ├── Program.cs                   # Application entry point
+│   ├── DependencyInjection.cs       # Service registration
+│   ├── appsettings.json             # Configuration
+│   ├── Data/                        # DbContext, entities, migrations
+│   ├── Endpoints/                   # REST API endpoint handlers
+│   ├── Grpc/                        # gRPC service implementations
+│   ├── Services/                    # Registration, resolution, semantic search
+│   ├── Repositories/                # Data access layer
+│   ├── Models/                      # Domain models and DTOs
+│   ├── Telemetry/                   # OpenTelemetry activity source, metrics
+│   ├── Protos/                      # gRPC protocol definitions
+│   └── Containerfile                # Multi-stage Docker build
+├── config/
+│   └── series-publication-frequencies.json  # Reference data for freshness
+├── .devcontainer/
+│   ├── build.sh                     # Container image build script
+│   ├── compile.sh                   # Compile and test script
+│   ├── compose.yaml                 # Dev container configuration
+│   └── devcontainer.json            # VS Code dev container config
+└── tests/
+    └── SecMaster.UnitTests/         # Unit test project
 ```
 
-Registration is idempotent and gracefully degrades if SecMaster is unavailable.
+## Development
 
-### Consumer Resolution
+### Compile and Test
 
-ThresholdEngine resolves symbols to route data requests:
+```bash
+.devcontainer/compile.sh
+```
 
-```csharp
-var resolution = await _resolver.ResolveAsync("UNRATE", new ResolutionContext
-{
-    Frequency = "daily",
-    MaxLagDays = 1,
-    PreferCollector = "FredCollector"
-});
+### Build Container Image
 
-// resolution.ResolvedSource.Collector = "FredCollector"
-// resolution.ResolvedSource.SourceId = "UNRATE"
+```bash
+.devcontainer/build.sh
+```
+
+### Deploy
+
+```bash
+cd deployment/ansible
+ansible-playbook playbooks/deploy.yml --tags secmaster
 ```
 
 ## Ports
 
 | Port | Description |
 |------|-------------|
-| **5017** | Host access (mapped to container 8080) |
-| **8080** | Container internal (HTTP/1.1 REST + HTTP/2 gRPC) |
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ConnectionStrings__SecMaster` | - | PostgreSQL connection string |
-| `ASPNETCORE_URLS` | `http://+:8080` | Listen address |
-| `OpenTelemetry__OtlpEndpoint` | `http://otel-collector:4317` | OTLP endpoint |
-| `Ollama__Url` | `http://ollama-gpu:11434` | Ollama API endpoint |
-| `Ollama__EmbeddingModel` | `nomic-embed-text` | Model for embeddings |
-| `Ollama__GenerationModel` | `llama3.2:3b` | Model for RAG synthesis |
-| `SemanticSearch__VectorHighConfidenceThreshold` | `0.8` | Vector match confidence threshold |
-| `SemanticSearch__DefaultMinScore` | `0.5` | Default minimum similarity score |
-
-## Development
-
-### Build
-```bash
-SecMaster/.devcontainer/compile.sh
-```
-
-### Build Container
-```bash
-SecMaster/.devcontainer/build.sh
-```
-
-### Deploy
-```bash
-ansible-playbook playbooks/deploy.yml --tags secmaster -i inventory/hosts.yml
-```
-
-## Observability
-
-### Metrics
-- `secmaster_resolution_requests_total` - Resolution request counter
-- `secmaster_registration_requests_total` - Registration counter by collector
-- `secmaster_resolution_duration_seconds` - Resolution latency histogram
-- `secmaster_instruments_created_total` - Instruments created by asset class
-
-### Tracing
-All operations emit OpenTelemetry spans under `SecMaster.Resolution` and `SecMaster.Registration` activities.
-
-## MCP Server
-
-SecMasterMcp (port 3107) exposes tools for AI assistants. See [SecMasterMcp/README.md](../SecMasterMcp/README.md) for details.
-
-| Tool | Description |
-|------|-------------|
-| `search_instruments` | Fuzzy search by name/symbol |
-| `get_instrument` | Get instrument details |
-| `resolve_source` | Resolve symbol with context |
-| `resolve_batch` | Batch resolution |
-| `list_sources` | List sources for instrument |
-| `lookup_by_collector_id` | Reverse lookup |
-| `semantic_search` | Vector similarity search |
-| `ask_secmaster` | Natural language Q&A with RAG |
-| `hybrid_resolve` | Hybrid resolution (SQL→Vector→RAG) |
-| `health` | Health check |
-
-## Semantic Search
-
-SecMaster includes semantic vector search powered by:
-- **pgvector**: PostgreSQL extension for vector similarity search
-- **Ollama**: Local embeddings via `nomic-embed-text` model (768-dimensional vectors)
-- **HNSW indexing**: Fast approximate nearest neighbor search
-- **Hybrid resolution**: SQL → Fuzzy → Vector → RAG synthesis
-- **RAG synthesis**: Natural language query answering using `llama3.2:3b`
-
-### Semantic Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/semantic/search` | Vector similarity search |
-| GET | `/api/semantic/resolve` | Hybrid resolution (SQL→Vector→RAG) |
-| POST | `/api/semantic/ask` | Natural language Q&A with RAG |
-| POST | `/api/semantic/embed/{id}` | Generate embedding for instrument |
-| POST | `/api/semantic/embed/backfill` | Backfill all missing embeddings |
-
-### Example Queries
-
-```bash
-# Vector similarity search
-curl "http://localhost:5017/api/semantic/search?q=unemployment%20indicator&minScore=0.5&limit=10"
-
-# Natural language query
-curl -X POST "http://localhost:5017/api/semantic/ask" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What data do you have for tracking inflation?"}'
-
-# Hybrid resolve (tries SQL, fuzzy, vector, RAG in sequence)
-curl "http://localhost:5017/api/semantic/resolve?q=job%20market%20health&enableRag=true"
-```
+| 8080 | Container internal (HTTP/1.1 REST + HTTP/2 gRPC) |
+| 5017 | Host access (mapped to container 8080) |
 
 ## Database
 
 SecMaster uses TimescaleDB (PostgreSQL) with:
-- **EF Core migrations** for schema management (auto-applied on startup)
-- `pgvector` extension for semantic vector search
-- `pg_trgm` extension for fuzzy text search
-- Unique constraints on `(Collector, SourceId)` pairs
-- JSONB metadata column for extensibility
-- HNSW vector indexes for efficient similarity search
+- **EF Core migrations**: Auto-applied on startup via `db.Database.MigrateAsync()`
+- **pgvector extension**: 768-dimensional vector similarity search with HNSW indexing
+- **pg_trgm extension**: Fuzzy text search using trigram matching
+- **Unique constraints**: Ensures `(Collector, SourceId)` pairs are unique
+- **JSONB metadata**: Extensible metadata storage for instruments
+
+## Hybrid Search Strategy
+
+SecMaster implements a cascading search strategy for maximum flexibility:
+
+1. **SQL Exact Match**: Direct symbol lookup (fastest)
+2. **Fuzzy Text Search**: Trigram similarity matching (handles typos)
+3. **Vector Similarity**: Semantic search via embeddings (understands context)
+4. **RAG Synthesis**: Natural language generation with LLM (conversational queries)
+
+Each level falls through to the next if no confident match is found.
+
+## See Also
+
+- [SecMasterMcp](../SecMasterMcp/README.md) - MCP server for Claude Code integration
+- [ThresholdEngine](../ThresholdEngine/README.md) - Primary consumer of resolution services
+- [FredCollector](../FredCollector/README.md) - Economic data collector (registers FRED series)
+- [FinnhubCollector](../FinnhubCollector/README.md) - Stock quotes and sentiment (registers equity series)
+- [OfrCollector](../OfrCollector/README.md) - Financial stability data (registers OFR series)

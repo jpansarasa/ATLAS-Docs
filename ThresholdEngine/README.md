@@ -150,37 +150,41 @@ Environment variables:
 | `OpenTelemetry__ServiceName` | Service name for telemetry | `thresholdengine-service` |
 | `OpenTelemetry__ServiceVersion` | Service version for telemetry | `1.0.0` |
 
-## Getting Started
+## Development
 
-**Note**: This service runs as part of the ATLAS microservices architecture.
-
-### Development
-
-The project uses a flattened structure with a single .csproj file at `/home/james/ATLAS/ThresholdEngine/src/ThresholdEngine.csproj`.
-
-1. **Build**:
-   ```bash
-   cd /home/james/ATLAS/ThresholdEngine/src
-   dotnet build
-   ```
-
-2. **Run**:
-   ```bash
-   dotnet run
-   ```
-   Service listens on port 8080 internally (exposed as port 5003 on host via Docker).
-
-3. **Database Migrations**:
-   Migrations are applied automatically on startup via `dbContext.Database.MigrateAsync()`.
-
-### Running the Full Stack
-
-Deploy all ATLAS services via Ansible:
+### Compile and Test
 
 ```bash
-cd /home/james/ATLAS/deployment/ansible
-ansible-playbook playbooks/deploy.yml
+.devcontainer/compile.sh
 ```
+
+### Build Container Image
+
+```bash
+.devcontainer/build.sh
+```
+
+### Deploy
+
+```bash
+cd deployment/ansible
+ansible-playbook playbooks/deploy.yml --tags thresholdengine
+```
+
+## Ports
+
+| Port | Description |
+|------|-------------|
+| 8080 | Container internal (HTTP/1.1 REST) |
+| 5003 | Host access (mapped to container 8080) |
+
+## Database
+
+ThresholdEngine uses TimescaleDB (PostgreSQL) with:
+- **EF Core migrations**: Auto-applied on startup via `dbContext.Database.MigrateAsync()`
+- **Observation storage**: Time-series data from collectors
+- **Pattern evaluations**: Results and regime transitions
+- **Indexed queries**: Optimized for time-range lookups
 
 ## API Endpoints
 

@@ -1,72 +1,115 @@
-# FinnhubMcp
+# Finnhub MCP Server
 
-MCP server providing Claude direct access to ATLAS stock market data and economic calendar events.
+MCP server providing Claude Desktop and Claude Code direct access to ATLAS stock market data and economic calendar events from Finnhub.
 
 ## Overview
 
-Wraps the FinnhubCollector REST API, providing:
-- **Real-time Stock Quotes**: Current and historical price data
-- **Economic Calendar**: FOMC meetings, CPI releases, employment reports
-- **Earnings & IPO Calendars**: Corporate event tracking
-- **Market Sentiment**: News sentiment, insider activity, analyst recommendations
-- **Live Data Access**: Query any symbol via Finnhub API (not just tracked series)
-- **Series Management**: Admin tools to configure data collection
+Exposes FinnhubCollector REST API as MCP tools, enabling AI assistants to query real-time stock quotes, economic calendar events (FOMC, CPI, etc.), earnings calendars, news sentiment, and analyst data. Includes both tracked series and live API pass-through for ad-hoc queries.
 
-## Available Tools (26 Tools)
+## Architecture
+
+```mermaid
+flowchart LR
+    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[FinnhubMcp<br/>:3105]
+    MCP -->|HTTP| API[finnhub-collector<br/>:8080]
+    API -->|SQL| DB[(TimescaleDB)]
+    API -->|HTTP| Finnhub[Finnhub API]
+```
+
+## MCP Tools
 
 ### Data Query Tools (14 tools)
 
-- `health` - Get FinnhubCollector service health status
-- `get_series` - List all configured Finnhub series (filter by type)
-- `get_quote` - Get latest quote for a tracked stock symbol
-- `get_quote_history` - Get historical quotes for a tracked symbol
-- `get_economic_calendar` - Get upcoming economic calendar events (FOMC, CPI, etc.)
-- `get_high_impact_events` - Get high-impact economic events (Fed decisions, major reports)
-- `get_earnings_calendar` - Get upcoming earnings announcements
-- `get_ipo_calendar` - Get upcoming IPOs
-- `get_news_sentiment` - Get news sentiment analysis for a stock
-- `get_insider_sentiment` - Get insider buying/selling activity
-- `get_recommendations` - Get analyst recommendations (buy/hold/sell)
-- `get_price_target` - Get analyst price targets
-- `get_company_profile` - Get company profile information
-- `get_market_status` - Check if stock market is currently open
-- `search_symbols` - Search for stock symbols by company name
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `health` | Get FinnhubCollector service health status | None |
+| `get_series` | List all configured Finnhub series | `type` (optional): Filter by type |
+| `get_quote` | Get latest quote for a tracked stock symbol | `symbol` |
+| `get_quote_history` | Get historical quotes for a tracked symbol | `symbol`, `start_date`, `end_date` |
+| `get_economic_calendar` | Get upcoming economic calendar events | `from_date`, `to_date` |
+| `get_high_impact_events` | Get high-impact economic events only | `from_date`, `to_date` |
+| `get_earnings_calendar` | Get upcoming earnings announcements | `from_date`, `to_date`, `symbol` |
+| `get_ipo_calendar` | Get upcoming IPOs | `from_date`, `to_date` |
+| `get_news_sentiment` | Get news sentiment analysis for a stock | `symbol` |
+| `get_insider_sentiment` | Get insider buying/selling activity | `symbol`, `from_date`, `to_date` |
+| `get_recommendations` | Get analyst recommendations | `symbol` |
+| `get_price_target` | Get analyst price targets | `symbol` |
+| `get_company_profile` | Get company profile information | `symbol` |
+| `search_symbols` | Search for stock symbols by company name | `query` |
 
 ### Live Data Tools (7 tools)
 
 Query any stock symbol directly from Finnhub API (not limited to tracked series):
 
-- `get_live_quote` - Get live quote for any symbol
-- `get_live_candles` - Get historical price candles (configurable resolution: 1m, 5m, D, W, M)
-- `get_live_profile` - Get company profile for any symbol
-- `get_live_recommendation` - Get analyst recommendations for any symbol
-- `get_live_price_target` - Get analyst price target for any symbol
-- `get_live_news_sentiment` - Get news sentiment for any symbol
-- `get_live_peers` - Get company peers for any symbol
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `get_live_quote` | Get live quote for any symbol | `symbol` |
+| `get_live_candles` | Get historical price candles | `symbol`, `resolution` (1m, 5m, D, W, M), `from`, `to` |
+| `get_live_profile` | Get company profile for any symbol | `symbol` |
+| `get_live_recommendation` | Get analyst recommendations for any symbol | `symbol` |
+| `get_live_price_target` | Get analyst price target for any symbol | `symbol` |
+| `get_live_news_sentiment` | Get news sentiment for any symbol | `symbol` |
+| `get_live_peers` | Get company peers for any symbol | `symbol` |
 
 ### Admin Tools (5 tools)
 
-- `get_all_series_admin` - Get all configured series including inactive ones
-- `add_series` - Add new series to track (Quote, Candle, NewsSentiment, Recommendation, etc.)
-- `toggle_series` - Enable or disable a series for data collection
-- `delete_series` - Delete a series (use with caution)
-- `trigger_collection` - Trigger immediate data collection for a series
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `get_all_series_admin` | Get all configured series including inactive | None |
+| `add_series` | Add new series to track | `symbol`, `type` (Quote/Candle/etc.), `priority` |
+| `toggle_series` | Enable or disable series for collection | `series_id` |
+| `delete_series` | Delete series (use with caution) | `series_id` |
+| `trigger_collection` | Trigger immediate data collection | `series_id` |
+
+### Series Types
+
+- `Quote` - Real-time stock quotes
+- `Candle` - Historical price candles
+- `NewsSentiment` - News sentiment analysis
+- `Recommendation` - Analyst recommendations
+- `PriceTarget` - Analyst price targets
+- `CompanyProfile` - Company information
+- `EconomicCalendar` - Economic calendar events
+- `EarningsCalendar` - Earnings announcements
+- `IpoCalendar` - IPO events
 
 ## Configuration
 
 ### Environment Variables
 
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FINNHUB_API_URL` | `http://finnhub-collector:8080` | Backend service URL |
+| `FINNHUB_MCP_LOG_LEVEL` | `Warning` | Logging level |
+| `FINNHUB_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
+
+### Port Mapping
+
+- Internal: 8080
+- External (host): 3105
+- SSE endpoint: `http://mercury:3105/sse`
+
+## Development
+
+### Build
 ```bash
-FINNHUB_API_URL=http://finnhub-collector:8080
-FINNHUB_MCP_LOG_LEVEL=Warning
-FINNHUB_MCP_TIMEOUT_SECONDS=30
+.devcontainer/compile.sh
 ```
 
-### Connection
+### Build Container
+```bash
+.devcontainer/build.sh
+```
 
-SSE endpoint: `http://mercury:3105/sse`
+## Deployment
 
-### Claude Desktop Configuration
+```bash
+ansible-playbook playbooks/deploy.yml --tags finnhub-mcp
+```
+
+## Claude Desktop Integration
+
+Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
@@ -79,30 +122,32 @@ SSE endpoint: `http://mercury:3105/sse`
 }
 ```
 
-Claude Desktop doesn't natively support SSE transport, so `mcp-proxy` bridges stdio↔SSE.
+Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
 
-## Port Mapping
+## Usage Examples
 
-- Internal: 8080
-- External (host): 3105
-- SSE endpoint: http://mercury:3105/sse
+**Check stock price:**
+```
+User: "What's Apple trading at?"
+Claude calls: get_live_quote("AAPL")
+Response: "AAPL: $175.23 (+1.2%)"
+```
 
-## Series Types
+**Economic calendar:**
+```
+User: "When's the next FOMC meeting?"
+Claude calls: get_high_impact_events()
+Response: "Next FOMC meeting: Jan 31-Feb 1, 2025"
+```
 
-Tracked series can be of type:
-- `Quote` - Real-time stock quotes
-- `Candle` - Historical price candles
-- `NewsSentiment` - News sentiment analysis
-- `Recommendation` - Analyst recommendations
-- `PriceTarget` - Analyst price targets
-- `CompanyProfile` - Company profile information
-- `EconomicCalendar` - Economic calendar events
-- `EarningsCalendar` - Earnings announcements
-- `IpoCalendar` - IPO events
+**Earnings schedule:**
+```
+User: "Who reports earnings this week?"
+Claude calls: get_earnings_calendar(from_date="2025-01-15", to_date="2025-01-19")
+Response: "Major earnings: NFLX (Jan 16), TSLA (Jan 18)"
+```
 
-## Technology Stack
+## See Also
 
-- **.NET 9 / C# 13** - Consistent with ATLAS platform
-- **MCP Transport**: SSE (Server-Sent Events over HTTP)
-- **HTTP Client**: `HttpClient`
-- **Port**: 3105 (mapped from internal 8080)
+- [FinnhubCollector](../FinnhubCollector/README.md) - Backend service documentation
+- [SecMasterMcp](../SecMasterMcp/README.md) - Instrument metadata and search

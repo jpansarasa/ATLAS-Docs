@@ -2,62 +2,73 @@
 
 Collector service for financial time-series data from Nasdaq Data Link API.
 
-## DEPLOYMENT STATUS: DISABLED
-
-NasdaqCollector is currently **disabled** in production deployment. The Nasdaq Data Link WAF blocks datacenter IP addresses, preventing data collection. The service is awaiting IP whitelist approval from Nasdaq support.
-
-See compose.yaml (lines 441-481) for configuration. Uncomment when IP whitelist is approved.
-
 ## Overview
 
 NasdaqCollector ingests daily financial data from Nasdaq Data Link (formerly Quandl). Configured series are collected automatically on a 6-hour schedule, respecting NYSE/Nasdaq market holidays. Data is stored in TimescaleDB and streamed in real-time via gRPC to downstream consumers.
 
-## Key Features
+**DEPLOYMENT STATUS**: Currently disabled in production. The Nasdaq Data Link WAF blocks datacenter IP addresses. Service is awaiting IP whitelist approval from Nasdaq support.
 
-- **Configurable Series**: Dynamically add/remove datasets via admin API
-- **Market-Aware Scheduling**: Skips collection on NYSE/Nasdaq holidays
-- **Resilient Collection**: Automatic retries with exponential backoff
-- **Event Streaming**: Real-time gRPC stream of new observations (ThresholdEngine integration)
-- **SecMaster Integration**: Automatic instrument registration via gRPC (when enabled)
-- **Efficient Storage**: TimescaleDB hypertables for time-series data
-- **Full Observability**: OpenTelemetry traces, metrics, and structured logs
+## Architecture
+
+```mermaid
+flowchart LR
+    NDL[Nasdaq Data Link API<br/>data.nasdaq.com] -->|HTTP/JSON| NC[NasdaqCollector]
+    NC -->|Store| DB[(TimescaleDB)]
+    NC -->|gRPC Stream| TE[ThresholdEngine]
+    NC -->|Register| SM[SecMaster]
+    NC -->|Metrics/Traces| OTEL[OpenTelemetry<br/>Collector]
+    CAL[CalendarService] -->|NYSE/Nasdaq Holidays| NC
+```
+
+## Features
+
+- Configurable Series: Dynamically add/remove datasets via admin API
+- Market-Aware Scheduling: Skips collection on NYSE/Nasdaq holidays
+- Resilient Collection: Automatic retries with exponential backoff
+- Event Streaming: Real-time gRPC stream of new observations
+- SecMaster Integration: Automatic instrument registration via gRPC
+- Efficient Storage: TimescaleDB hypertables for time-series data
+- Full Observability: OpenTelemetry traces, metrics, and structured logs
 
 ## Configuration
 
-Environment variables:
-
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ConnectionStrings__AtlasDb` | PostgreSQL/TimescaleDB connection | Required |
-| `Nasdaq__ApiKey` | Nasdaq Data Link API key | Required |
+| `ConnectionStrings__AtlasDb` | PostgreSQL/TimescaleDB connection | **Required** |
+| `Nasdaq__ApiKey` | Nasdaq Data Link API key | **Required** |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
 | `OpenTelemetry__ServiceName` | Service name for telemetry | `nasdaq-collector` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
 
 ## API Endpoints
 
-### Health Checks (Port 8080 container, commented out in compose.yaml)
+### REST API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health/live` | GET | Liveness probe |
+| `/api/series` | GET | List all active series |
+| `/api/series/{seriesId}` | GET | Get specific series details |
+| `/api/series/{seriesId}/observations` | GET | Get observations (query: startDate, endDate, limit) |
+| `/api/series/{seriesId}/latest` | GET | Get latest observation |
+| `/api/search` | GET | Unified search for SecMaster gateway (query: q, limit) |
+| `/api/discover` | GET | Search upstream Nasdaq Data Link API (query: q, limit) |
+| `/api/health` | GET | Health check |
+| `/health` | GET | Full health check with database status |
 | `/health/ready` | GET | Readiness check (DB connected) |
-| `/health` | GET | Full health with all checks |
+| `/health/live` | GET | Liveness probe |
 
-### Admin API (Port 8080 container, commented out in compose.yaml)
+### Admin API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/admin/search?q={query}` | GET | Search Nasdaq Data Link datasets |
 | `/api/admin/series` | GET | List all configured series |
-| `/api/admin/series` | POST | Add new series to collect |
-| `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable a series |
-| `/api/admin/series/{seriesId}` | DELETE | Delete a series |
+| `/api/admin/series` | POST | Add new series (body: {databaseCode, datasetCode, title, category, valueColumn, priority}) |
+| `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable series |
+| `/api/admin/series/{seriesId}` | DELETE | Delete series |
 
-### gRPC Event Stream (Port 8080 container, commented out in compose.yaml)
+### gRPC API
 
-Service: `ObservationEventStream`
-Consumed by: ThresholdEngine (when enabled)
+**Service**: `ObservationEventStream`
 
 | Method | Description |
 |--------|-------------|
@@ -66,38 +77,6 @@ Consumed by: ThresholdEngine (when enabled)
 | `GetEventsBetween` | Retrieve events in a time range |
 | `GetLatestEventTime` | Get timestamp of most recent event |
 | `GetHealth` | Health check with event statistics |
-
-## Data Collection
-
-### Workflow
-
-1. **CollectionWorker** runs every 6 hours
-2. Checks if today is a market holiday (NYSE/Nasdaq calendar)
-3. If trading day, collects all active series
-4. For each series, fetches observations since last collection
-5. Stores observations in TimescaleDB
-6. Publishes events to gRPC stream
-
-### Adding a Series
-
-Search for available datasets:
-```bash
-curl 'http://localhost:8080/api/admin/search?q=gold+price'
-```
-
-Add a series:
-```bash
-curl -X POST http://localhost:8080/api/admin/series \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "databaseCode": "LBMA",
-    "datasetCode": "GOLD",
-    "title": "Gold Price: London Fixing",
-    "category": "Commodities",
-    "valueColumn": "USD (AM)",
-    "priority": 10
-  }'
-```
 
 ## Project Structure
 
@@ -116,8 +95,7 @@ NasdaqCollector/
 │   └── Program.cs              # Application startup
 ├── tests/
 │   └── NasdaqCollector.UnitTests/
-├── migrations/                 # SQL schema migrations
-└── Containerfile               # Container build definition
+└── .devcontainer/              # VS Code dev container
 ```
 
 ## Development
@@ -126,29 +104,40 @@ NasdaqCollector/
 
 ```bash
 # Open in VS Code and select "Reopen in Container"
-# Infrastructure starts automatically
-cd src
+cd /workspace/NasdaqCollector/src
 dotnet run
 ```
 
-### Local Build
+### Compile
 
 ```bash
-cd src
-dotnet build
-dotnet test ../tests
+.devcontainer/compile.sh
+```
+
+### Build Container Image
+
+```bash
+.devcontainer/build.sh
 ```
 
 ## Deployment
 
-Deployed via Ansible:
-
 ```bash
-cd deployment/ansible
-ansible-playbook playbooks/deploy.yml
+ansible-playbook playbooks/deploy.yml --tags nasdaq-collector
 ```
+
+Note: Service is currently disabled in compose.yaml. Uncomment when IP whitelist is approved.
+
+## Ports
+
+| Port | Type | Description |
+|------|------|-------------|
+| 8080 | HTTP (container) | REST API, health checks, gRPC |
+| 5011 | Host | Mapped to container port 8080 (when enabled) |
 
 ## See Also
 
+- [ThresholdEngine](../ThresholdEngine/README.md) - Consumes observation events
+- [SecMaster](../SecMaster/README.md) - Instrument registration
 - [CalendarService](../CalendarService/README.md) - Market calendar provider
 - [Events](../Events/README.md) - Shared gRPC event contracts

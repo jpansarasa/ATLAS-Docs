@@ -1,81 +1,133 @@
-# OfrCollectorMcp
+# OfrCollector MCP Server
 
-MCP server providing Claude direct access to ATLAS Office of Financial Research (OFR) financial stress and funding market data.
+MCP server providing Claude Desktop and Claude Code direct access to ATLAS Office of Financial Research (OFR) financial stress and funding market data.
 
 ## Overview
 
-Wraps the OfrCollector REST API, providing:
-- **Financial Stress Index (FSI)**: OFR's primary financial stress measure with category and regional breakdowns
-- **Short-term Funding Monitor (STFM)**: Repo rates, SOFR, Treasury bill rates, money market data
-- **Hedge Fund Monitor (HFM)**: Hedge fund leverage and risk indicators
-- **Series Management**: Admin tools to configure data collection and backfill historical data
+Exposes OfrCollector REST API as MCP tools, enabling AI assistants to query the Financial Stress Index (FSI), Short-term Funding Monitor (STFM), and Hedge Fund Monitor (HFM) data collected from OFR.
 
-## Available Tools (26 Tools)
+## Architecture
 
-### FSI (Financial Stress Index) Tools (2 tools)
+```mermaid
+flowchart LR
+    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[OfrCollectorMcp<br/>:3106]
+    MCP -->|HTTP| API[ofr-api<br/>:8080]
+    API -->|SQL| DB[(TimescaleDB)]
+```
 
-- `get_fsi_latest` - Get latest FSI observation with detailed breakdowns:
-  - Category contributions (credit, equity valuation, funding, safe assets, volatility)
-  - Regional contributions (US, advanced economies, emerging markets)
-- `get_fsi_history` - Get historical FSI observations with date filtering
+## MCP Tools
 
-### STFM (Short-term Funding Monitor) Tools (3 tools)
+### FSI (Financial Stress Index) Tools
 
-- `list_stfm_series` - List all configured STFM series (repo rates, SOFR, T-bills, etc.)
-- `get_stfm_latest` - Get latest observation for a STFM series
-- `get_stfm_observations` - Get historical observations for a STFM series with date filtering
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `get_fsi_latest` | Get latest FSI with category and regional breakdowns | None |
+| `get_fsi_history` | Get historical FSI observations | `start_date`, `end_date` |
 
-### HFM (Hedge Fund Monitor) Tools (3 tools)
+FSI provides breakdowns by:
+- **Category**: Credit, Equity Valuation, Funding, Safe Assets, Volatility
+- **Region**: US, Advanced Economies, Emerging Markets
 
-- `list_hfm_series` - List all configured HFM series
-- `get_hfm_latest` - Get latest observation for a HFM series
-- `get_hfm_observations` - Get historical observations for a HFM series with date filtering
+### STFM (Short-term Funding Monitor) Tools
 
-### General Tools (2 tools)
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `list_stfm_series` | List all configured STFM series | None |
+| `get_stfm_latest` | Get latest observation for a STFM series | `series_id` |
+| `get_stfm_observations` | Get historical STFM observations | `series_id`, `start_date`, `end_date` |
 
-- `categories` - List all available OFR data categories
-- `health` - Get OfrCollector service health status
+STFM tracks:
+- Repo rates (DVP, GCF, tri-party)
+- SOFR (Secured Overnight Financing Rate)
+- Treasury bill rates
+- Money market fund rates
+- Commercial paper rates
 
-### Data Collection Admin Tools (6 tools)
+### HFM (Hedge Fund Monitor) Tools
 
-- `trigger_fsi_collection` - Trigger immediate FSI data collection
-- `trigger_stfm_collection` - Trigger immediate STFM data collection (optionally filtered by dataset)
-- `trigger_hfm_collection` - Trigger immediate HFM data collection (optionally filtered by dataset)
-- `trigger_fsi_backfill` - Trigger FSI historical data backfill (specify date range)
-- `trigger_stfm_series_collection` - Trigger collection for specific STFM series
-- `trigger_hfm_series_collection` - Trigger collection for specific HFM series
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `list_hfm_series` | List all configured HFM series | None |
+| `get_hfm_latest` | Get latest observation for a HFM series | `series_id` |
+| `get_hfm_observations` | Get historical HFM observations | `series_id`, `start_date`, `end_date` |
 
-### STFM Series Management Tools (5 tools)
+HFM tracks hedge fund leverage and risk indicators from SEC filings.
 
-- `list_stfm_series_admin` - List all STFM series including inactive ones (admin view)
-- `add_stfm_series` - Add new STFM series to track (auto-fetches metadata from OFR API)
-- `toggle_stfm_series` - Enable or disable STFM series for data collection
-- `delete_stfm_series` - Delete STFM series and all observations (use with caution)
-- `trigger_stfm_series_backfill` - Trigger historical backfill for specific STFM series
+### General Tools
 
-### HFM Series Management Tools (5 tools)
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `categories` | List all available OFR data categories | None |
+| `health` | Get OfrCollector service health status | None |
 
-- `list_hfm_series_admin` - List all HFM series including inactive ones (admin view)
-- `add_hfm_series` - Add new HFM series to track (auto-fetches metadata from OFR API)
-- `toggle_hfm_series` - Enable or disable HFM series for data collection
-- `delete_hfm_series` - Delete HFM series and all observations (use with caution)
-- `trigger_hfm_series_backfill` - Trigger historical backfill for specific HFM series
+### Data Collection Admin Tools
+
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `trigger_fsi_collection` | Trigger immediate FSI data collection | None |
+| `trigger_stfm_collection` | Trigger STFM data collection | `dataset` (optional) |
+| `trigger_hfm_collection` | Trigger HFM data collection | `dataset` (optional) |
+| `trigger_fsi_backfill` | Trigger FSI historical backfill | `start_date`, `end_date` |
+| `trigger_stfm_series_collection` | Trigger collection for specific STFM series | `series_id` |
+| `trigger_hfm_series_collection` | Trigger collection for specific HFM series | `series_id` |
+
+### STFM Series Management Tools
+
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `list_stfm_series_admin` | List all STFM series including inactive | None |
+| `add_stfm_series` | Add new STFM series to track | `series_id`, `backfill` |
+| `toggle_stfm_series` | Enable or disable STFM series | `series_id` |
+| `delete_stfm_series` | Delete STFM series and observations | `series_id` |
+| `trigger_stfm_series_backfill` | Trigger historical backfill for STFM series | `series_id`, `start_date`, `end_date` |
+
+### HFM Series Management Tools
+
+| Tool Name | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `list_hfm_series_admin` | List all HFM series including inactive | None |
+| `add_hfm_series` | Add new HFM series to track | `series_id`, `backfill` |
+| `toggle_hfm_series` | Enable or disable HFM series | `series_id` |
+| `delete_hfm_series` | Delete HFM series and observations | `series_id` |
+| `trigger_hfm_series_backfill` | Trigger historical backfill for HFM series | `series_id`, `start_date`, `end_date` |
 
 ## Configuration
 
 ### Environment Variables
 
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OFRCOLLECTOR_API_URL` | `http://ofr-api:8080` | Backend service URL |
+| `OFRCOLLECTOR_MCP_LOG_LEVEL` | `Warning` | Logging level |
+| `OFRCOLLECTOR_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
+
+### Port Mapping
+
+- Internal: 8080
+- External (host): 3106
+- SSE endpoint: `http://mercury:3106/sse`
+
+## Development
+
+### Build
 ```bash
-OFRCOLLECTOR_API_URL=http://ofr-api:8080
-OFRCOLLECTOR_MCP_LOG_LEVEL=Warning
-OFRCOLLECTOR_MCP_TIMEOUT_SECONDS=30
+.devcontainer/compile.sh
 ```
 
-### Connection
+### Build Container
+```bash
+.devcontainer/build.sh
+```
 
-SSE endpoint: `http://mercury:3106/sse`
+## Deployment
 
-### Claude Desktop Configuration
+```bash
+ansible-playbook playbooks/deploy.yml --tags ofr-collector-mcp
+```
+
+## Claude Desktop Integration
+
+Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
@@ -88,48 +140,33 @@ SSE endpoint: `http://mercury:3106/sse`
 }
 ```
 
-Claude Desktop doesn't natively support SSE transport, so `mcp-proxy` bridges stdio↔SSE.
+Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
 
-## Port Mapping
+## Usage Examples
 
-- Internal: 8080
-- External (host): 3106
-- SSE endpoint: http://mercury:3106/sse
+**Check financial stress:**
+```
+User: "What's the current financial stress level?"
+Claude calls: get_fsi_latest()
+Response: "FSI at 0.3 (elevated from -0.2 last week).
+Credit stress contributing +0.4, driven by emerging market spreads."
+```
 
-## OFR Data Categories
+**Review repo rates:**
+```
+User: "Show me recent repo rate trends"
+Claude calls: get_stfm_latest("REPO-DVP-AR-TOT-P")
+Response: "DVP repo rate: 5.32% (up 5bp from last week)"
+```
 
-### Financial Stress Index (FSI)
+**SOFR history:**
+```
+User: "What's SOFR been doing?"
+Claude calls: get_stfm_observations("SOFR-AVG-30", start_date="2024-12-01")
+Response: "30-day avg SOFR ranged 4.85-4.92% in December"
+```
 
-Comprehensive measure of financial system stress with breakdowns:
-- **Credit**: Credit spreads, default risk
-- **Equity Valuation**: Stock market volatility and valuations
-- **Funding**: Money market and funding stress
-- **Safe Assets**: Flight-to-safety indicators
-- **Volatility**: Market volatility measures
+## See Also
 
-Regional breakdowns:
-- **US**: United States contribution
-- **Advanced Economies**: Developed market stress
-- **Emerging Markets**: Emerging market stress
-
-### Short-term Funding Monitor (STFM)
-
-Short-term funding market indicators:
-- Repo rates (DVP, GCF, tri-party)
-- SOFR (Secured Overnight Financing Rate)
-- Treasury bill rates
-- Money market fund rates
-- Commercial paper rates
-
-Example mnemonics: `REPO-DVP-AR-TOT-P`, `SOFR-AVG-30`, `TBILL-3M`
-
-### Hedge Fund Monitor (HFM)
-
-Hedge fund leverage and risk indicators based on SEC filings.
-
-## Technology Stack
-
-- **.NET 9 / C# 13** - Consistent with ATLAS platform
-- **MCP Transport**: SSE (Server-Sent Events over HTTP)
-- **HTTP Client**: `HttpClient`
-- **Port**: 3106 (mapped from internal 8080)
+- [OfrCollector](../OfrCollector/README.md) - Backend service documentation
+- [ThresholdEngineMcp](../ThresholdEngineMcp/README.md) - Pattern evaluation using OFR data

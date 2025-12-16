@@ -97,6 +97,12 @@ TRACING:
   catch_blocks: activity?.SetStatus(ActivityStatusCode.Error, ex.Message)
     rationale: exceptions_must_appear_in_traces
   spans: service_operations ¬ internal_methods
+ALERTING [metrics_without_alerts = dashboard_archaeology]:
+  P1_PAGE: service_down | data_loss | security
+  P2_URGENT: error_spike | latency_degraded | init_fail
+  P3_NOTIFY: warning_threshold | capacity_approaching
+  golden_signals: latency(p95) + traffic(rate) + errors(%) + saturation
+  health: liveness(restart) + readiness(routing) + startup(warmup)
 
 ## IDIOM_MAP [lang_specific]
 Rust: Result<T,E> | pattern_match | ownership

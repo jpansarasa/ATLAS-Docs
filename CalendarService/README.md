@@ -1,114 +1,194 @@
 # CalendarService
 
-Market and economic calendar service for ATLAS.
+Market and economic calendar service providing temporal data for the ATLAS ecosystem.
 
 ## Overview
 
-CalendarService provides temporal data for the financial system:
-- **Market Calendar**: Trading days, holidays, and market status (Open/Closed) for NYSE/Nasdaq
-- **Economic Calendar**: Scheduled economic events (CPI, FOMC, etc.) with impact ratings
+CalendarService tracks trading days, market holidays, and scheduled economic events. It provides both REST API endpoints for external access and a shared library (CalendarService.Core) for in-process calendar operations by other services. Synchronizes NYSE holiday data and economic release schedules from FRED and Finnhub APIs.
 
-Exposes REST API and shared core library (`CalendarService.Core`) for in-process use.
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph External
+        FRED[FRED API]
+        FH[Finnhub API]
+        NAGER[Nager.Date API]
+    end
+
+    subgraph CalendarService
+        WORKERS[Background Workers]
+        DB[(PostgreSQL)]
+        API[REST API :8080]
+        CORE[CalendarService.Core]
+    end
+
+    subgraph Consumers
+        TE[ThresholdEngine]
+        APPS[Other Services]
+    end
+
+    FRED --> WORKERS
+    FH --> WORKERS
+    NAGER --> WORKERS
+    WORKERS --> DB
+    DB --> API
+    DB --> CORE
+    API --> TE
+    API --> APPS
+    CORE --> APPS
+```
 
 ## Features
 
-- Trading day calculations (accounting for weekends and NYSE holidays)
-- Real-time market status checks
-- Economic event tracking with impact ratings
-- Holiday data integration (Nager.Date API for US public holidays)
-- Background workers for data collection
-- In-memory calendar rules engine for high-performance operations
-
-## API Endpoints
-
-### Market Calendar
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/market/status` | GET | Current market status (open/closed) |
-| `/api/market/holidays` | GET | Market holidays for specified year |
-| `/api/market/is-trading-day` | GET | Check if date is a trading day |
-| `/api/market/next-trading-day` | GET | Next trading day from specified date |
-| `/api/market/trading-days` | GET | Trading days in date range |
-| `/api/market/holidays/external` | GET | US public holidays from Nager.Date API |
-
-### Economic Calendar
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/economic/events` | GET | Economic events by date range, impact, type, country |
-| `/api/economic/upcoming` | GET | Upcoming events (default 7 days ahead) |
-| `/api/economic/high-impact` | GET | Upcoming high-impact events |
-| `/api/economic/has-high-impact` | GET | Check if date has high-impact events |
+- **Market Calendar**: Trading day calculations accounting for weekends and NYSE holidays
+- **Real-Time Status**: Check if markets are currently open or closed
+- **Economic Events**: Track scheduled events (CPI, FOMC, NFP) with impact ratings
+- **Holiday Integration**: Sync US public holidays from Nager.Date API
+- **Shared Library**: CalendarService.Core for in-process high-performance calendar operations
+- **Background Sync**: Automated daily collection of holiday and event data
+- **Date Math**: Next trading day, trading days in range, holiday lookups
 
 ## Configuration
 
-Environment variables:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ConnectionStrings__Calendar` | Required | PostgreSQL connection string |
+| `FRED_API_KEY` | Required | FRED API key for economic release dates |
+| `FINNHUB_API_KEY` | Optional | Finnhub API key (economic calendar, paid subscription) |
+| `ASPNETCORE_URLS` | `http://+:8080` | Listen address |
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `ConnectionStrings__Calendar` | PostgreSQL connection string | Yes |
-| `FINNHUB_API_KEY` | Finnhub API key for economic calendar | No |
-| `FRED_API_KEY` | FRED API key for economic releases | Yes |
+## API Endpoints
 
-## Background Workers
+### REST API (Port 8080 internal, no host port)
 
-- **MarketHolidaySyncWorker**: Syncs NYSE holidays to database (runs every 24 hours)
-- **FredReleasesCollectorWorker**: Collects economic release dates from FRED API
-- **EconomicCalendarCollectorWorker**: Collects economic events from Finnhub (requires paid subscription, disabled by default)
+#### Market Calendar
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/market/status` | Current market status (open/closed) |
+| GET | `/api/market/holidays` | Market holidays for specified year |
+| GET | `/api/market/is-trading-day` | Check if date is a trading day |
+| GET | `/api/market/next-trading-day` | Next trading day from specified date |
+| GET | `/api/market/trading-days` | Trading days in date range |
+| GET | `/api/market/holidays/external` | US public holidays from Nager.Date API |
+
+#### Economic Calendar
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/economic/events` | Economic events filtered by date range, impact, type, country |
+| GET | `/api/economic/upcoming` | Upcoming events (default 7 days ahead) |
+| GET | `/api/economic/high-impact` | Upcoming high-impact events only |
+| GET | `/api/economic/has-high-impact` | Check if date has high-impact events |
+
+#### Health
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check endpoint |
 
 ## Project Structure
 
 ```
 CalendarService/
 ├── src/
-│   ├── Core/                   # Shared library (abstractions, models, providers)
-│   ├── Endpoints/              # API endpoint handlers
-│   ├── External/               # External API clients (Finnhub, FRED, Nager)
-│   ├── Persistence/            # Database context and repositories
-│   ├── Workers/                # Background workers
-│   ├── Migrations/             # EF Core migrations
-│   ├── Containerfile           # Container image definition
-│   └── Program.cs              # Application entry point
-└── tests/                      # Unit tests
+│   ├── CalendarService.csproj
+│   ├── Program.cs                   # Application entry point
+│   ├── appsettings.json             # Configuration
+│   ├── Core/                        # Shared library (abstractions, models, providers)
+│   ├── Endpoints/                   # API endpoint handlers
+│   ├── External/                    # External API clients (Finnhub, FRED, Nager)
+│   ├── Persistence/                 # Database context and repositories
+│   ├── Workers/                     # Background data collection workers
+│   ├── Migrations/                  # EF Core database migrations
+│   └── Containerfile                # Multi-stage Docker build
+├── .devcontainer/
+│   ├── build.sh                     # Container image build script
+│   ├── compile.sh                   # Compile and test script
+│   ├── compose.yaml                 # Dev container configuration
+│   └── devcontainer.json            # VS Code dev container config
+└── tests/
+    └── CalendarService.UnitTests/   # Unit test project
 ```
+
+## Background Workers
+
+CalendarService runs three background workers for automated data collection:
+
+- **MarketHolidaySyncWorker**: Syncs NYSE holidays to database (runs every 24 hours)
+- **FredReleasesCollectorWorker**: Collects economic release dates from FRED API daily
+- **EconomicCalendarCollectorWorker**: Collects economic events from Finnhub (requires paid subscription, disabled by default)
 
 ## Development
 
-Uses .NET 9.0 minimal APIs with OpenAPI/Scalar for documentation.
-
-### Container Build
+### Compile and Test
 
 ```bash
-# Build from ATLAS root
-sudo nerdctl build -f CalendarService/src/Containerfile -t calendar-service .
+.devcontainer/compile.sh
 ```
 
-### Local Development
+### Build Container Image
 
 ```bash
-# Run from CalendarService/src
-dotnet run
+.devcontainer/build.sh
 ```
 
-API documentation available at `/scalar/v1` when running.
+### Deploy
+
+```bash
+cd deployment/ansible
+ansible-playbook playbooks/deploy.yml --tags calendar-service
+```
+
+## Ports
+
+| Port | Description |
+|------|-------------|
+| 8080 | Container internal (HTTP/1.1 REST) |
+| N/A | Not exposed on host (internal service only) |
 
 ## Library Usage
 
-Other services reference `CalendarService.Core` for in-memory calendar operations:
+Other ATLAS services can reference CalendarService.Core for in-memory calendar operations:
 
 ```csharp
+using CalendarService.Core;
+
 public class MyService
 {
     private readonly IMarketCalendar _calendar;
 
-    public void Process()
+    public MyService(IMarketCalendar calendar)
     {
-        if (_calendar.IsTradingDay(DateOnly.FromDateTime(DateTime.UtcNow)))
+        _calendar = calendar;
+    }
+
+    public void ProcessIfMarketOpen()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        if (_calendar.IsTradingDay(today))
         {
             // Execute trading logic
         }
+
+        var nextDay = _calendar.GetNextTradingDay(today);
+        var tradingDays = _calendar.GetTradingDaysInRange(today, today.AddDays(30));
     }
 }
 ```
 
+## Database
+
+CalendarService uses PostgreSQL with:
+- **EF Core migrations**: Auto-applied on startup via `db.Database.MigrateAsync()`
+- **MarketHolidays table**: Stores NYSE holidays by date
+- **EconomicEvents table**: Stores scheduled economic events with impact ratings
+- **Indexed lookups**: Optimized for date range queries
+
+## See Also
+
+- [ThresholdEngine](../ThresholdEngine/README.md) - Uses market calendar for trading day validation
+- [FredCollector](../FredCollector/README.md) - Economic data collector
+- [FinnhubCollector](../FinnhubCollector/README.md) - Stock quotes and economic calendar
