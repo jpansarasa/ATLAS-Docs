@@ -1,6 +1,6 @@
 # STATE.md [ATLAS Infrastructure]
 
-## CURRENT_STATUS [2025-12-16]
+## CURRENT_STATUS [2025-12-26]
 
 ### All Services: Production Ready
 
@@ -15,10 +15,18 @@
 | OfrCollector | done | 5 | OFR FSI, STFM, HFM data |
 | NasdaqCollector | done | 5 | LBMA gold prices (AM/PM fixings) |
 | SecMaster | done | 5+ | Security master & instrument metadata |
+| SentinelCollector | pr | - | Alternative data + LLM extraction (PR #72) |
 
 **Total Tests**: 645+ passing
 
-### Recent Changes [2025-12-16]
+### Recent Changes [2025-12-26]
+- → PR #72 created: SentinelCollector + Edge Worker for alternative data
+  - Cloudflare Workers edge component (Challenger RSS, Fed RSS, TSA)
+  - LLM extraction with Chain-of-Verification (CoVe)
+  - SearXNG news search integration
+  - Ansible deployment ready
+
+### Previous [2025-12-16]
 - ✓ PR #70 merged: Pattern Weighting & Temporal Metadata complete
 - ✓ SecMaster hybrid search instrument catalog (#69)
 - ✓ Documentation consolidated: 5 ThresholdEngine docs → `THRESHOLDENGINE-PATTERNS.md`
@@ -44,8 +52,14 @@
 | alphavantage-collector | 5010/5011 | 8080/5001 | 25/day limit |
 | ofr-collector | 5016/5017 | 8080/5001 | daily |
 | nasdaq-collector | - | 8080/5009 | 6 hours |
+| sentinel-collector | 5020 | 8080/5001 | edge-triggered |
 
 **All collectors use internal port 5001 for gRPC event streaming**
+
+### Edge Workers (Cloudflare)
+| Worker | Sources | Schedule |
+|--------|---------|----------|
+| sentinel-edge | Challenger RSS, Fed RSS, TSA | 6 hours |
 
 ### Processing & Alerting
 | Service | Port | Purpose |
@@ -136,12 +150,14 @@ Each pattern has reliability weights and temporal metadata:
 
 ```
 FredCollector ──────┐
-FinnhubCollector ───┼──► ThresholdEngine ──► Prometheus ──► Alertmanager ──► AlertService ──► ntfy/email
-AlphaVantageCollector──┤       │                    │
-OfrCollector ───────┤       │                    Grafana
-NasdaqCollector ────┘       │
-                            ↓
-                       SecMaster (registration + resolution)
+FinnhubCollector ───┤
+AlphaVantageCollector──┼──► ThresholdEngine ──► Prometheus ──► Alertmanager ──► AlertService ──► ntfy/email
+OfrCollector ───────┤       │                    │
+NasdaqCollector ────┤       │                    Grafana
+SentinelCollector ──┘       │
+       ↑                    ↓
+  Edge Workers         SecMaster (registration + resolution)
+  (Cloudflare D1)
 ```
 
 ---
@@ -158,21 +174,30 @@ ansible-playbook playbooks/deploy.yml --tags threshold-engine  # Single service
 
 ## NEXT_ACTIONS
 
+### SentinelCollector Deployment (PR #72)
+| Step | Description | Status |
+|------|-------------|--------|
+| 1 | Deploy Cloudflare Worker + D1 database | ◯ |
+| 2 | Add vault credentials (edge endpoint, API key) | ◯ |
+| 3 | Deploy SentinelCollector: `--tags sentinel-collector` | ◯ |
+| 4 | End-to-end validation with Challenger data | ◯ |
+| 5 | Merge PR #72 | ◯ |
+
 ### SecMaster Roadmap
 | PR | Description | Status |
 |----|-------------|--------|
 | #66 | Core SecMaster - gRPC services, FredCollector integration | ✓ Merged |
 | #69 | Hybrid search instrument catalog | ✓ Merged |
 | #70 | Pattern Weighting & Temporal Metadata | ✓ Merged |
+| #72 | SentinelCollector + Edge Worker | → In Review |
 | #67 | Sector Taxonomy - `units` column, alias endpoints | Next |
 | #68 | Collector Metadata - Pass-through from FRED/OFR/Finnhub/AV | Planned |
-| Future | LLM/RSS - News analysis, instrument/sector mapping | Requires #67 |
 
 **Key Principle**: Store raw, display normalized. No cross-collector normalization.
 
 ### Immediate
-1. Create PR #67 branch for sector taxonomy work
-2. Production deployment verification
+1. Complete SentinelCollector deployment (PR #72)
+2. Create PR #67 branch for sector taxonomy work
 
 ---
-**UPDATED**: 2025-12-16 | **STATUS**: production_ready
+**UPDATED**: 2025-12-26 | **STATUS**: production_ready
