@@ -2,7 +2,7 @@
 
 MCP server providing Claude Desktop and Claude Code access to document conversion (PDF, Office files) to markdown for ATLAS analysis.
 
-https://github.com/microsoft/markitdown
+<https://github.com/microsoft/markitdown>
 
 ## Overview
 

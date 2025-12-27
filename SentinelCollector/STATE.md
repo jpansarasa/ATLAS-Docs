@@ -1,18 +1,22 @@
 # STATE.md [SentinelCollector]
 
 ## GOAL
-Alternative data collection platform with LLM-based extraction using Chain-of-Verification (CoVe).
+Alternative data collection platform with dual LLM-based extraction:
+- **Chain of Verification (CoVe)**: Verified structured data extraction
+- **Chain of Density (CoD)**: Context-preserving summaries for RAG
 
 ### Accept Criteria
 - Edge worker collects RSS/scrape data to D1 buffer
 - Home-side pulls from edge, stores to raw layer
-- LLM extraction with CoVe produces structured observations
+- Dual extraction: CoVe (structured) + CoD (context summaries)
+- Epistemic certainty classification (definite/expected/speculative/conditional)
 - SecMaster resolves instruments with confidence routing
-- Events published to ThresholdEngine via gRPC
+- Events published to ThresholdEngine via gRPC (definite/expected only)
+- Context summaries stored for RAG consumption
 
 ### Constraints
 - Must use existing gRPC EventStreamService pattern
-- CoVe extraction requires Ollama 70B model
+- CoVe/CoD extraction requires Ollama 70B model
 - Edge sync requires Cloudflare D1 database
 
 ---
@@ -23,13 +27,31 @@ Alternative data collection platform with LLM-based extraction using Chain-of-Ve
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Edge collection | Cloudflare Workers + D1 | Low-latency RSS/scrape, edge buffering |
-| LLM extraction | Ollama 70B + CoVe | Chain-of-Verification for accuracy |
+| Structured extraction | Ollama 70B + CoVe | Chain-of-Verification for accuracy |
+| Context summaries | Ollama 70B + CoD | Chain-of-Density preserves epistemic nuance |
+| Certainty classification | 4-level enum | Prevents speculative data triggering alerts |
 | Instrument resolution | SecMaster semantic search | Confidence-based routing |
 | Event publishing | gRPC EventStreamService | Consistent with other collectors |
 
 ### Data Flow
 ```
-Edge Workers (D1) → EdgeSyncWorker → Raw Layer → ExtractionProcessor (CoVe) → SecMaster → Events → ThresholdEngine
+Edge Workers (D1) → EdgeSyncWorker → Raw Layer
+                                         │
+                    ┌────────────────────┴────────────────────┐
+                    ▼                                          ▼
+              CoD (5 iterations)                    CoVe (4 steps)
+              Context Summary                       Structured Data
+              Epistemic Markers                     + Certainty
+                    │                                          │
+                    ▼                                          ▼
+              RawContent.ContextSummary            ExtractedObservation
+              (for RAG)                            + Certainty + Condition
+                                                               │
+                                                   ┌───────────┴───────────┐
+                                                   ▼                       ▼
+                                            definite/expected      speculative/conditional
+                                                   ▼                       ▼
+                                            SecMaster → Events      Stored only (no alerts)
 ```
 
 ---
@@ -88,9 +110,12 @@ Edge Workers (D1) → EdgeSyncWorker → Raw Layer → ExtractionProcessor (CoVe
 | File | Purpose |
 |------|---------|
 | `src/Workers/EdgeSyncWorker.cs` | Polls edge D1, writes to raw layer |
-| `src/Workers/ExtractionProcessor.cs` | LLM extraction with CoVe |
+| `src/Workers/ExtractionProcessor.cs` | Dual extraction (CoD + CoVe) |
 | `src/Workers/SearxngCollectionScheduler.cs` | SearXNG news search |
-| `src/Extraction/ChainOfVerification.cs` | 4-step CoVe implementation |
+| `src/Extraction/ChainOfVerification.cs` | 4-step CoVe for structured extraction |
+| `src/Extraction/ChainOfDensity.cs` | 5-iteration CoD for context summaries |
+| `src/Extraction/Certainty.cs` | Epistemic certainty enum |
+| `src/Extraction/DensityPrompts.cs` | CoD prompts |
 | `src/Services/SecMasterClient.cs` | Instrument resolution |
 | `src/Publishers/EventPublisher.cs` | gRPC event creation |
 
@@ -109,4 +134,4 @@ Edge Workers (D1) → EdgeSyncWorker → Raw Layer → ExtractionProcessor (CoVe
 - `Searxng:Queries` - Economic indicator search terms
 
 ---
-**UPDATED**: 2025-12-26 | **STATUS**: pr_created
+**UPDATED**: 2025-12-27 | **STATUS**: cod_implemented
