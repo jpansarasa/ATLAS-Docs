@@ -2,6 +2,8 @@
 
 MCP server providing Claude Desktop and Claude Code access to document conversion (PDF, Office files) to markdown for ATLAS analysis.
 
+https://github.com/microsoft/markitdown
+
 ## Overview
 
 Exposes the markitdown Python library as MCP tools, enabling AI assistants to convert PDFs, Word documents, Excel spreadsheets, and PowerPoint presentations to markdown format for analysis and processing within ATLAS workflows.
