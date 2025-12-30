@@ -23,52 +23,73 @@ Fine-tune qwen2.5:32b-instruct using QLoRA to improve extraction accuracy and re
 
 ## Phase 1: Training Data Generation
 
-### 1.0 Answer-First Synthetic Data (Primary Approach)
+### 1.0 Answer-First LLM Generation (Primary Approach)
 
-**Key Insight**: Instead of finding documents and annotating expected outputs, we **define the outputs first** and generate diverse input texts that must produce those outputs.
+**Key Insight**: Define the target extractions first, then use an LLM to creatively generate diverse input texts that contain those values. Validate outputs with simple text search.
 
 ```
 Traditional: Documents → Annotation → Training Data (error-prone, slow)
-Answer-First: Define Outputs → Generate Inputs → Training Data (deterministic, scalable)
+Answer-First: Define Outputs → LLM Generates Inputs → Validate → Training Data
 ```
 
-**Benefits**:
-| Aspect | Traditional | Answer-First |
-|--------|-------------|--------------|
-| Ground truth accuracy | ~90% (human error) | 100% (by construction) |
-| Scalability | Limited by annotation speed | Unlimited generation |
-| Edge case coverage | Depends on finding examples | Explicitly designed |
-| Spin/bias testing | Hard to find natural examples | Trivially generated |
-| Negation patterns | Rare in real data | Explicitly included |
+**Why LLM Generation > Programmatic Templates**:
+| Aspect | Programmatic Templates | LLM Generation |
+|--------|------------------------|----------------|
+| Phrasing diversity | Limited to templates | Infinite variety |
+| Language patterns | Repetitive, robotic | Natural, varied |
+| Model learns | Specific phrases | True extraction task |
+| Spin/bias coverage | Fixed sentiment words | Creative expressions |
+| Scalability | Template-bound | Unlimited |
 
 **Generation Flow**:
 ```
-┌─────────────────────┐
-│ Define Target       │  {value: 4.1, unit: percent, description: "unemployment rate"}
-│ Extractions         │
-└─────────┬───────────┘
-          │
-          v
-┌─────────────────────┐
-│ Generate Text       │  "The unemployment rate was 4.1 percent in December."
-│ Variations          │  "December's jobless rate came in at 4.1%."
-│ (neutral/spin)      │  "Unemployment plunged to just 4.1 percent."
-└─────────┬───────────┘
-          │
-          v
-┌─────────────────────┐
-│ Combine into        │  [{input: variation_1, output: target}, ...]
-│ Training Pairs      │
-└─────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ 1. Define Target Extraction                                         │
+│    {value: 4.1, unit: percent, metric: "unemployment", period: Dec} │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │
+                          v
+┌─────────────────────────────────────────────────────────────────────┐
+│ 2. LLM Generation Prompt                                            │
+│    "Write a sentence about unemployment being 4.1% in December.     │
+│     Tone: negative/pessimistic. Be creative with phrasing.          │
+│     Must include '4.1' and 'December' verbatim."                    │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │
+                          v
+┌─────────────────────────────────────────────────────────────────────┐
+│ 3. LLM Output                                                       │
+│    "The labor market deteriorated further as unemployment crept up  │
+│     to 4.1% in December, defying optimistic forecasts."             │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │
+                          v
+┌─────────────────────────────────────────────────────────────────────┐
+│ 4. Validation (simple text search)                                  │
+│    "4.1" in text? ✓   "December" in text? ✓   → ACCEPT              │
+│    If validation fails → retry with new generation                  │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │
+                          v
+┌─────────────────────────────────────────────────────────────────────┐
+│ 5. Training Pair                                                    │
+│    {input: generated_text, output: target_extraction}               │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+**Validation Rules**:
+- All numeric values must appear verbatim in generated text
+- Period references must be present (month, quarter, year)
+- Retry up to 3 times if validation fails
+- Log failures for analysis
 
 ### 1.1 Data Sources
 
-**Primary: Synthetic Generation** (see `generate_training_data.py`)
-- Define extraction templates with target values
-- Generate text variations (neutral, positive spin, negative spin)
-- Include negation patterns, comparisons, multi-value sentences
-- Perfect ground truth by construction
+**Primary: LLM-Generated Synthetic Data** (see `generate_training_data.py`)
+- Define target extractions with required values
+- LLM generates creative, natural text containing those values
+- Simple text search validates required values are present
+- Perfect ground truth by construction (values defined, then validated)
 
 **Secondary: Verified Extractions** (supplement synthetic data)
 ```sql
