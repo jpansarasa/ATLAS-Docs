@@ -1,9 +1,9 @@
 # Sentinel Edge Platform - Product Specification
 
-**Version:** 2.7  
-**Date:** December 26, 2025  
-**Product Owner:** Claude  
-**Status:** Ready for Engineering  
+**Version:** 2.8
+**Date:** December 31, 2025
+**Product Owner:** Claude
+**Status:** Phase 1 MVP - In Progress  
 
 ---
 
@@ -1137,20 +1137,124 @@ Daily automated validation:
 
 ---
 
+## Implementation Status (as of December 31, 2025)
+
+### Deployment
+
+| Component | Status | Location | Notes |
+|-----------|--------|----------|-------|
+| sentinel-edge | ✅ Deployed | Cloudflare Workers | D1 + R2 storage |
+| sentinel-collector | ✅ Running | mercury (nerdctl) | Publishes to ThresholdEngine |
+| Database schema | ⚠️ Partial | TimescaleDB | Tables created but not hypertables |
+| Raw file storage | ❌ Not implemented | - | Using database/R2 only |
+
+### Sources Operational
+
+| Source | Method | Status | Schedule | Notes |
+|--------|--------|--------|----------|-------|
+| Challenger Gray | RSS via Edge | ✅ Active | 1st Thursday monthly @ 12:30 UTC | Press releases collected |
+| Truflation | API | ❌ Skipped | - | No free API tier available |
+| TSA Checkpoint | Scrape via Edge | ✅ Active | Daily @ 11:00 UTC | Passenger throughput |
+| Fed RSS | RSS via Edge | ✅ Active | Every 6 hours | Press releases, speeches |
+| SearXNG | Home | ✅ Active | Every 60 minutes | 10 keyword queries |
+
+**Result: 4 of 5 planned sources operational** (Truflation requires paid API)
+
+### Pipeline Metrics (Session Snapshot)
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Events published to ThresholdEngine | 14 | SeriesCollected events via gRPC |
+| Ollama extractions completed | 110 | CoD+CoVe pipeline operational |
+| SearXNG extractions | 10 | Success rate 100% |
+| TSA extractions | 1 | Daily collection |
+| SecMaster resolutions | 21 | 14 resolved (67%), 7 unresolved |
+| MarkItDown conversions | 1 | HTML→Markdown for extraction |
+| Avg Ollama latency | ~15s | Most within 25s bucket |
+
+### Architecture Implemented
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ CLOUDFLARE EDGE (sentinel-edge)                                 │
+│ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                │
+│ │ Challenger  │ │   Fed RSS   │ │     TSA     │                │
+│ │    RSS      │ │  Collector  │ │   Scraper   │                │
+│ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘                │
+│        │               │               │                        │
+│        └───────────────┼───────────────┘                        │
+│                        ▼                                        │
+│                 ┌─────────────┐         ┌─────────────┐        │
+│                 │     D1      │         │     R2      │        │
+│                 │  (buffer)   │         │  (binary)   │        │
+│                 └──────┬──────┘         └─────────────┘        │
+└────────────────────────┼────────────────────────────────────────┘
+                         │ HTTPS POST /api/pending
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ HOME (sentinel-collector)                                       │
+│ ┌─────────────────────────────────────────────────────────────┐│
+│ │ EdgeSyncWorker (polls every 300s)                           ││
+│ └──────────────────────────┬──────────────────────────────────┘│
+│                            ▼                                    │
+│ ┌─────────────────────────────────────────────────────────────┐│
+│ │ SearxngCollectionScheduler (every 60m, 10 queries)          ││
+│ └──────────────────────────┬──────────────────────────────────┘│
+│                            ▼                                    │
+│ ┌─────────────────────────────────────────────────────────────┐│
+│ │ ExtractionProcessor                                         ││
+│ │ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────────┐││
+│ │ │MarkItDown │→│    CoD    │→│   CoVe    │→│  SecMaster    │││
+│ │ │ (HTML→MD) │ │(5 passes) │ │ (verify)  │ │  Resolution   │││
+│ │ └───────────┘ └───────────┘ └───────────┘ └───────┬───────┘││
+│ └──────────────────────────────────────────────────┬┘         │
+│                                                    ▼           │
+│ ┌─────────────────────────────────────────────────────────────┐│
+│ │ EventStreamService (gRPC :5001) → ThresholdEngine           ││
+│ └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Remaining Work for Phase 1 Completion
+
+| Task | Priority | Notes |
+|------|----------|-------|
+| Verify hypertable partitioning | High | Tables exist but may not be properly partitioned |
+| Add `/health` endpoint details | Medium | Basic health exists, need richer status |
+| Raw file layer | Low | Deferred - R2 + database sufficient for MVP |
+| Edge health endpoint | Medium | Currently returns 404 |
+| Dashboard creation | Medium | Grafana dashboard for Sentinel metrics |
+| Alert rules | Low | Define alert conditions |
+
+### Known Issues
+
+1. **Port conflict on restart** - sentinel-collector tries to bind 8080 which conflicts with internal container port
+2. **Edge health endpoint** - Returns 404, needs implementation
+3. **SearXNG cancellation** - Queries can timeout during shutdown, causes ObjectDisposedException
+
+---
+
 ## Open Questions for Engineering
 
+### Resolved
+
+| # | Question | Resolution |
+|---|----------|------------|
+| 2 | **Challenger source** - RSS feed sufficient? | ✅ RSS via Edge works, collecting press releases |
+| 3 | **Truflation** - API key acquisition? | ✅ Skipped - no free tier available |
+| 4 | **TSA scrape** - Page structure fragility? | ✅ Implemented, scraper working daily |
+| 5 | **Raw → Enriched trigger** | ✅ Polling - ExtractionProcessor polls every 60s |
+| 9 | **SearXNG query design** | ✅ 10 hardcoded queries, 60m interval |
+| 12 | **CoD/CoVe implementation** | ✅ Sequential Ollama calls via ExtractionProcessor |
+
+### Still Open
+
 1. **gRPC contract** - Does `ObservationCollectedEvent` need extension for Sentinel metadata (raw_file_path, extraction_confidence, resolution_confidence, match_type)?
-2. **Challenger source** - Is RSS feed sufficient or need API/scrape?
-3. **Truflation** - API key acquisition, rate limits?
-4. **TSA scrape** - Page structure, fragility assessment?
-5. **Raw → Enriched trigger** - Filesystem watch? Queue? Polling?
 6. **Review queue UI** - How do humans review low-confidence matches? Admin endpoint? Separate tool?
 7. **SecMaster confidence threshold** - Use existing 0.8/0.5 or tune for Sentinel use case?
 8. **Instrument creation workflow** - Auto-create with embedding after human approval? Or manual SecMaster API call?
-9. **SearXNG query design** - Which keywords? Frequency? How to scope queries to ATLAS-relevant content?
 10. **Source count tracking** - How to increment when same fact arrives from multiple sources?
 11. **ThresholdEngine patterns** - How to express patterns that combine Sentinel + FRED data? (e.g., Challenger vs ICSA divergence)
-12. **CoD/CoVe implementation** - Single prompt combining both? Or sequential calls? How to structure verification questions for financial data specifically?
 
 ---
 
@@ -1270,3 +1374,4 @@ For architectural awareness:
 | 2.5 | 2025-12-26 | Fixed naive temporal model: period ≠ release_date ≠ collected_at; revision tracking |
 | 2.6 | 2025-12-26 | Removed source_count (echo count doesn't improve accuracy); simplified deduplication |
 | 2.7 | 2025-12-26 | Restored observation counting: store all, derive counts via GROUP BY for conflict/contrarian detection |
+| 2.8 | 2025-12-31 | Added Implementation Status section; 4/5 sources operational; marked resolved questions |

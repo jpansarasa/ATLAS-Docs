@@ -283,3 +283,13 @@ HTTP: 8080 internal, 50xx host
 
 ## STACK
 .NET9/C#13 | TimescaleDB | nerdctl/containerd | OTEL→Loki/Prom/Tempo→Grafana | Serilog
+
+## EXECUTION_CONTEXT [HARD_STOP]
+YOU_ARE_ON: mercury # this machine, the production server
+✗ ssh mercury # you are already here
+✗ ansible mercury # you are already here
+✓ sudo nerdctl ... # direct command
+✓ sudo systemctl ... # direct command
+✓ ansible-playbook -i inventory/hosts.yml ... # deploys TO mercury, runs FROM mercury
+rationale: ssh/ansible to localhost = unnecessary_hop + templating_issues + confusion
+REMEMBER: run commands directly with sudo, not via ssh or ansible targeting mercury
