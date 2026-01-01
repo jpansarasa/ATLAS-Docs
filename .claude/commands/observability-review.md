@@ -24,10 +24,26 @@ Search for metric/counter usage in wrong layers:
 Grep pattern: `_counter|_meter|\.Add\(1` in `*Repository.cs`
 
 ### 3. Check Exception Tracing
-Find catch blocks missing SetStatus:
+Find catch blocks missing SetStatus or AddException:
 - Look for `catch.*Exception` blocks
 - Check if `activity` variable in scope (look for `using var activity =` above)
 - VIOLATION: Activity in scope but no `SetStatus(ActivityStatusCode.Error`
+- VIOLATION: Activity in scope but no `AddException(ex)` (for full stacktrace in traces)
+
+**Complete pattern for catch blocks with activity:**
+```csharp
+catch (Exception ex)
+{
+    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);  // marks span as error
+    activity?.AddException(ex);                                  // attaches full stacktrace
+    // ... logging, metrics, throw/handle
+}
+```
+
+**When AddException is optional:**
+- If exception will be caught by a parent span that has richer context
+- If this is an internal layer that always re-throws to a boundary handler
+- In most cases, add it at the origin where context is richest
 
 ### 4. Check Structured Logging
 Find string interpolation in log calls:
@@ -83,6 +99,7 @@ Produce a report with this structure:
 ## CRITICAL (must fix)
 - [file:line] Metrics in Repository layer - move to service boundary
 - [file:line] Catch block missing SetStatus - add activity?.SetStatus(ActivityStatusCode.Error, ex.Message)
+- [file:line] Catch block missing AddException - add activity?.AddException(ex)
 
 ## WARNING (should fix)
 - [file:line] String interpolation in log - use structured template
