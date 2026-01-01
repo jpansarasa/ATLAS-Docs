@@ -103,8 +103,12 @@ MISCLASSIFIED:
 
 RULES (CLAUDE.md:LOG_RULES):
   LogInformation: routine_ops | expected_retries | client_disconnect
-  LogWarning: unexpected_but_recoverable | degraded_state
+  LogWarning: unexpected_but_recoverable | degraded_state | service_startup
   LogError: failures | exceptions | requires_attention
+
+EXCEPTION: service_startup → LogWarning
+  rationale: unexpected_restarts_visible_in_prod_logs
+  pattern: Program.cs startup banner, "Starting.*Service"
 
 report: file:line → suggested_level
 ```
