@@ -87,11 +87,21 @@ DEBUGGING [service_issues]:
   if_no_data_in_grafana → check otel-collector + check service restart timing
   stack: Serilog.Sinks.OpenTelemetry → otel-collector → Loki
 METRICS:
-  location: service_boundary_only ¬ internal_layers
-    rationale: repository+service = double_count
+  location: uncertainty_boundaries ¬ internal_layers
+    ✓ service_edge: HTTP/gRPC endpoints (latency, errors, throughput)
+    ✓ external_api: upstream calls (FRED, SecMaster) - rate limits, degradation
+    ✓ database: significant operations (bulk inserts, complex queries)
+    ✓ cross_process: gRPC client calls - downstream health
+    ✓ long_running_ops: backfill, batch processing - duration, counts
+    ✗ internal_method: use traces instead
+    ✗ double_count: repository + service for same DB call
+  test: actionable ∧ variable ∧ observed
+    actionable: degradation → clear investigation path
+    variable: actually changes over time (not always ~same)
+    observed: dashboarded or alerted (unobserved = waste + complexity)
   tags: bounded_cardinality_only
-    ✓ method_name | status_code | service_name
-    ✗ event_type.ToString() | user_id | unbounded_enum
+    ✓ method_name | status_code | service_name | series_id (<100)
+    ✗ event_id | user_id | request_id | correlation_id (unbounded)
   streaming: per_event_at_boundary for long_running_visibility
 TRACING:
   catch_blocks: activity?.SetStatus(ActivityStatusCode.Error, ex.Message)

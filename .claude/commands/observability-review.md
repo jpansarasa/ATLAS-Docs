@@ -1,120 +1,156 @@
 ---
-description: "Review C# code for observability compliance (metrics, tracing, logging)"
-allowed-tools: ["Bash", "Glob", "Grep", "Read", "mcp__ide__getDiagnostics"]
+description: "Review C# code for observability compliance (metrics, tracing, logging) (project)"
+allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "mcp__ide__getDiagnostics"]
 ---
 
-# Observability Code Review
+# OBS_REVIEW [CLAUDE.md:OBS_STACK compliance]
 
-Review code for ATLAS observability compliance based on docs/OBSERVABILITY.md.
+## SCOPE
+$ARGUMENTS | default: `git diff --name-only` → *.cs
 
-## Scope
-$ARGUMENTS (defaults to modified .cs files via `git diff --name-only`)
+## EXECUTION
 
-## Review Steps
+### Step 1: LSP (blocking)
+`mcp__ide__getDiagnostics` → catch compile errors first
 
-### 1. Get LSP Diagnostics
-Run `mcp__ide__getDiagnostics` on the target files to catch compile errors first.
+### Step 2: Parallel Agents
+Launch via Task tool `subagent_type: "general-purpose"`:
 
-### 2. Check Metrics Boundary
-Search for metric/counter usage in wrong layers:
-- VIOLATION: `*Repository.cs` files with `_counter.Add` or `_meter.`
-- VIOLATION: Internal service classes (non-gRPC) with metrics
-- OK: `*GrpcService.cs`, `*Endpoints.cs`, `*Worker.cs` (ExecuteAsync)
+**A1: Metrics Boundary**
+```
+scope: {scope}
+grep: `Meter\.|_counter|\.Add\(1`
 
-Grep pattern: `_counter|_meter|\.Add\(1` in `*Repository.cs`
+LOCATION_CHECK:
+  ✓ *Endpoints.cs | *GrpcService.cs → service_edge
+  ✓ *ApiClient.cs → external_api
+  ✓ *Worker.cs:ExecuteAsync → background_ops
+  ✓ BackfillService | *CollectionService → long_running
+  ✓ gRPC client calls → cross_process
+  ✗ *Repository.cs duplicating service metrics → double_count
+  ✗ internal helpers → use_traces
 
-### 3. Check Exception Tracing
-Find catch blocks missing SetStatus or AddException:
-- Look for `catch.*Exception` blocks
-- Check if `activity` variable in scope (look for `using var activity =` above)
-- VIOLATION: Activity in scope but no `SetStatus(ActivityStatusCode.Error`
-- VIOLATION: Activity in scope but no `AddException(ex)` (for full stacktrace in traces)
+METRIC_VALUE_TEST: actionable ∧ variable ∧ observed
+  actionable: degradation → clear_investigation_path
+  variable: changes_over_time ¬ always_same
+  observed: dashboarded | alerted
 
-**Complete pattern for catch blocks with activity:**
-```csharp
-catch (Exception ex)
-{
-    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);  // marks span as error
-    activity?.AddException(ex);                                  // attaches full stacktrace
-    // ... logging, metrics, throw/handle
-}
+report: file:line → OK_boundary | VIOLATION_double_count
 ```
 
-**When AddException is optional:**
-- If exception will be caught by a parent span that has richer context
-- If this is an internal layer that always re-throws to a boundary handler
-- In most cases, add it at the origin where context is richest
+**A2: Exception Tracing**
+```
+scope: {scope}
+grep: `catch.*Exception` -C10
 
-### 4. Check Structured Logging
-Find string interpolation in log calls:
-- VIOLATION: `Log(Information|Warning|Error|Debug)\(\$"`
-- VIOLATION: `_logger.Log.*\$"`
+RULE: activity_in_scope → require_both:
+  ✓ SetStatus(ActivityStatusCode.Error, ex.Message)
+  ✓ AddException(ex)
 
-Grep pattern: `Log.*\$"` in `*.cs`
+report: file:line → missing SetStatus | missing AddException
+```
 
-### 5. Check Tag Cardinality
-Find unbounded tags:
-- VIOLATION: `SetTag("user_id"`, `SetTag("event_id"`, `SetTag("request_id"`, `SetTag("series_id"`
-- OK: `SetTag("status"`, `SetTag("method"`, `SetTag("source"`
+**A3: Structured Logging**
+```
+scope: {scope}
+grep: `Log.*\$"` in *.cs
 
-Grep pattern: `SetTag.*_id"` in `*.cs`
+VIOLATION: Log(Information|Warning|Error|Debug)\(\$"
+  fix: use structured template {Param}
 
-### 6. Check Streaming Metrics
-For `await foreach` loops, verify counter inside loop:
-- VIOLATION: Counter only after loop completion
-- OK: `_counter.Add(1)` inside `await foreach` body
+report: file:line → string_interpolation_in_log
+```
 
-### 7. Check Log Level Classification
-Verify log levels match the operation type:
+**A4: Tag Cardinality**
+```
+scope: {scope}
+grep: `SetTag.*_id"`
 
-**LogWarning misuse** (should be LogInformation):
-- VIOLATION: `LogWarning.*"(Client|User|Request) (subscribed|connected|started|completed|received)` - routine ops
-- VIOLATION: `LogWarning.*"(Starting|Initializing|Loading|Processing|Collected)"` - routine ops
-- VIOLATION: `LogWarning.*"Successfully"` - success is routine
+BOUNDED (OK): series_id(<100) | method | status | source
+UNBOUNDED (✗): user_id | request_id | event_id | correlation_id
 
-**LogInformation misuse** (should be LogWarning/Error):
-- VIOLATION: `LogInformation.*"(failed|error|exception|timeout|retry)"` - failures need Warning+
-- VIOLATION: `LogInformation.*"(degraded|unavailable|disconnected unexpectedly)"` - degraded state
+report: file:line → cardinality_assessment
+```
 
-**LogError misuse** (should be LogWarning):
-- VIOLATION: `LogError.*"will retry"` - if retrying, it's recoverable
-- VIOLATION: `LogError.*"transient"` - transient errors are recoverable
-- VIOLATION: LogError in catch block that returns failure result (caller can retry)
-- VIOLATION: LogError in catch block where loop continues processing other items
-- VIOLATION: LogError before throwing HttpRequestException (caller handles as transient)
+**A5: Streaming Metrics**
+```
+scope: {scope}
+grep: `await foreach`
 
-**Classification rules** (from CLAUDE.md LOG_RULES):
-- `LogInformation`: routine_ops | expected_retries | client_disconnect
-- `LogWarning`: unexpected_but_recoverable | degraded_state
-- `LogError`: failures | exceptions | requires_attention
+CHECK: long_running_stream → counter_inside_loop
+  ⚠ counter_after_loop → acceptable_for_short_streams
+  ✓ counter_in_loop_body → proper_visibility
 
-**Key insight**: If the system handles the error gracefully (retries, continues loop, returns result for caller to handle), use LogWarning. LogError is for errors that require human attention.
+report: file:line → assessment
+```
 
-Grep patterns:
-- `LogWarning.*"(Client|User).*(subscribed|connected|started)"` → routine, should be Information
-- `LogWarning.*"Successfully"` → success is routine
-- `LogInformation.*"[Ff]ailed"` → failure needs Warning+
-- `LogError.*"will retry"` → recoverable, should be Warning
-- `LogError.*"[Tt]ransient"` → recoverable, should be Warning
+**A6: Log Level Classification**
+```
+scope: {scope}
 
-## Output Format
+MISCLASSIFIED:
+  LogWarning → LogInformation:
+    grep: `LogWarning.*"(Client|User).*(subscribed|connected|started)"`
+    grep: `LogWarning.*"Successfully"`
 
-Produce a report with this structure:
+  LogInformation → LogWarning:
+    grep: `LogInformation.*"[Ff]ailed"`
+    grep: `LogInformation.*"[Ee]rror"`
 
+  LogError → LogWarning:
+    grep: `LogError.*"will retry"` → recoverable
+    grep: `LogError.*"[Tt]ransient"` → recoverable
+
+RULES (CLAUDE.md:LOG_RULES):
+  LogInformation: routine_ops | expected_retries | client_disconnect
+  LogWarning: unexpected_but_recoverable | degraded_state
+  LogError: failures | exceptions | requires_attention
+
+report: file:line → suggested_level
+```
+
+**A7: Metrics Coverage**
+```
+scope: {scope}
+
+PART_A [unused_metrics]:
+  find: *Meter.cs → CreateCounter | CreateHistogram | CreateGauge
+  check: usage exists → .Add( | .Record(
+  ✗ defined_but_unused → missing_instrumentation | dead_code
+
+PART_B [missing_metrics]:
+  REQUIRED at uncertainty_boundaries:
+    *ApiClient.cs → duration_histogram + error_counter
+    BackfillService → duration + observations_processed
+    *CollectionService → duration + items_collected
+    *Worker.cs (long_running) → duration + batch_counts
+    gRPC endpoints → duration + error_counts
+
+  NOT_REQUIRED (use_traces):
+    internal_helpers | repository_methods | delegation_methods
+
+UNCERTAINTY_BOUNDARY: ¬control_other_side
+  ✓ external_api | db_bulk_ops | long_running_background
+  ✗ internal_method_chains
+
+report: UNUSED list | MISSING list → recommendation
+```
+
+### Step 3: Aggregate
+Collect agent outputs → final report
+
+## OUTPUT_FORMAT
 ```
 # Observability Review: [scope]
 
 ## LSP Diagnostics
-[Any errors from mcp__ide__getDiagnostics]
+[errors from mcp__ide__getDiagnostics]
 
 ## CRITICAL (must fix)
-- [file:line] Metrics in Repository layer - move to service boundary
-- [file:line] Catch block missing SetStatus - add activity?.SetStatus(ActivityStatusCode.Error, ex.Message)
-- [file:line] Catch block missing AddException - add activity?.AddException(ex)
+- [file:line] description → fix
 
 ## WARNING (should fix)
-- [file:line] String interpolation in log - use structured template
-- [file:line] Unbounded tag "series_id" - use bounded values only
+- [file:line] description → fix
 
 ## PASSED
 - Metrics boundary: ✓
@@ -122,5 +158,25 @@ Produce a report with this structure:
 - Structured logging: ✓
 - Tag cardinality: ✓
 - Streaming metrics: ✓
-- Log level classification: ✓
+- Log level: ✓
+- Metrics coverage: ✓
 ```
+
+## REFERENCE
+
+**catch_block_pattern:**
+```csharp
+catch (Exception ex)
+{
+    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+    activity?.AddException(ex);
+    _logger.LogError(ex, "Message {Param}", param);
+    throw;
+}
+```
+
+**metrics_location:**
+  ✓ service_edge | external_api | database_bulk | cross_process | long_running
+  ✗ internal_method | double_count
+
+**metric_value_test:** actionable ∧ variable ∧ observed

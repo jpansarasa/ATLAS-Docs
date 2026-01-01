@@ -279,12 +279,28 @@ Provisioned dashboards: `deployment/artifacts/monitoring/dashboards/`
 
 ## Best Practices
 
-### 1. Metrics at Service Boundary
+### 1. Metrics at Uncertainty Boundaries
 
-Record metrics at the service boundary, not internal layers:
+Record metrics where you don't control the other side—not everywhere:
+
+**Uncertainty boundaries** (metrics valuable):
+- External API calls (FRED, Finnhub, OFR)
+- Database bulk operations
+- Long-running background jobs (backfill, collection)
+- Cross-process calls (gRPC)
+
+**Not uncertainty boundaries** (use traces instead):
+- Internal method chains
+- Repository methods (would double-count with service layer)
+- Delegation methods
+
+**Metric value test**: A metric is worthwhile if it's `actionable ∧ variable ∧ observed`:
+- **Actionable**: Degradation leads to clear investigation path
+- **Variable**: Value changes over time (not always the same)
+- **Observed**: Dashboarded or alerted on
 
 ```csharp
-// ✓ Correct - gRPC service boundary
+// ✓ Correct - gRPC service boundary (uncertainty: cross-process)
 public override async Task SubscribeToEvents(...)
 {
     await foreach (var evt in _repo.GetEventsAsync())
@@ -294,7 +310,11 @@ public override async Task SubscribeToEvents(...)
     }
 }
 
-// ✗ Wrong - internal repository
+// ✓ Correct - external API call (uncertainty: don't control FRED)
+var response = await _fredClient.GetObservationsAsync(seriesId);
+_apiDuration.Record(stopwatch.ElapsedMilliseconds);
+
+// ✗ Wrong - internal repository (no uncertainty, use traces)
 public async IAsyncEnumerable<Event> GetEventsAsync()
 {
     yield return evt;
@@ -304,31 +324,45 @@ public async IAsyncEnumerable<Event> GetEventsAsync()
 
 ### 2. Bounded Tag Cardinality
 
-Tags must have finite possible values:
+Tags must have finite, predictable cardinality. The key question: **is the set bounded?**
 
 ```csharp
-// ✓ Good - bounded
-activity?.SetTag("status", success ? "ok" : "error");
-activity?.SetTag("method", "GET");
+// ✓ Good - inherently bounded
+activity?.SetTag("status", success ? "ok" : "error");  // 2 values
+activity?.SetTag("method", "GET");                      // ~5 HTTP methods
+activity?.SetTag("source", "FRED");                     // ~5 data sources
 
-// ✗ Bad - unbounded
-activity?.SetTag("user_id", userId);      // Unique per user
-activity?.SetTag("event_id", eventId);    // Unique per event
-activity?.SetTag("series_id", seriesId);  // Grows with data
+// ✓ OK - bounded by design (<100 configured series)
+activity?.SetTag("series.id", seriesId);  // FredCollector has ~50 series
+
+// ✗ Bad - truly unbounded (grows without limit)
+activity?.SetTag("user_id", userId);       // Unique per user
+activity?.SetTag("event_id", eventId);     // Unique per event
+activity?.SetTag("request_id", requestId); // Unique per request
+activity?.SetTag("correlation_id", corrId); // Unique per trace
 ```
 
-### 3. Error Status in Catch Blocks
+**Rule of thumb**: If you can enumerate all possible values and it's <100, it's bounded.
 
-Always record errors in traces:
+### 3. Exception Tracing in Catch Blocks
+
+Always record both error status AND exception details in traces:
 
 ```csharp
 catch (Exception ex)
 {
-    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);  // Marks span as error
+    activity?.AddException(ex);  // Attaches full stack trace to span
     _logger.LogError(ex, "Operation failed");
     throw;
 }
 ```
+
+**Why both?**
+- `SetStatus` marks the span red in Tempo, enables error filtering
+- `AddException` adds an event with `exception.type`, `exception.message`, `exception.stacktrace`
+
+Without `AddException`, you see the error but not the stack trace in traces.
 
 ### 4. Streaming Metrics
 
