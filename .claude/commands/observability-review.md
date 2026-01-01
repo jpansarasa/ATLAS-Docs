@@ -76,15 +76,26 @@ Verify log levels match the operation type:
 - VIOLATION: `LogInformation.*"(failed|error|exception|timeout|retry)"` - failures need Warning+
 - VIOLATION: `LogInformation.*"(degraded|unavailable|disconnected unexpectedly)"` - degraded state
 
+**LogError misuse** (should be LogWarning):
+- VIOLATION: `LogError.*"will retry"` - if retrying, it's recoverable
+- VIOLATION: `LogError.*"transient"` - transient errors are recoverable
+- VIOLATION: LogError in catch block that returns failure result (caller can retry)
+- VIOLATION: LogError in catch block where loop continues processing other items
+- VIOLATION: LogError before throwing HttpRequestException (caller handles as transient)
+
 **Classification rules** (from CLAUDE.md LOG_RULES):
 - `LogInformation`: routine_ops | expected_retries | client_disconnect
 - `LogWarning`: unexpected_but_recoverable | degraded_state
 - `LogError`: failures | exceptions | requires_attention
 
+**Key insight**: If the system handles the error gracefully (retries, continues loop, returns result for caller to handle), use LogWarning. LogError is for errors that require human attention.
+
 Grep patterns:
 - `LogWarning.*"(Client|User).*(subscribed|connected|started)"` → routine, should be Information
 - `LogWarning.*"Successfully"` → success is routine
 - `LogInformation.*"[Ff]ailed"` → failure needs Warning+
+- `LogError.*"will retry"` → recoverable, should be Warning
+- `LogError.*"[Tt]ransient"` → recoverable, should be Warning
 
 ## Output Format
 
