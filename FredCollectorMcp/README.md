@@ -1,10 +1,10 @@
-# FredCollector MCP Server
+# FredCollectorMcp
 
-MCP server providing Claude Desktop and Claude Code direct access to ATLAS economic data from FRED.
+MCP server exposing ATLAS economic data from FRED to AI assistants.
 
 ## Overview
 
-Exposes FredCollector REST API as MCP tools, enabling AI assistants to query FRED economic data collected locally in TimescaleDB with sub-second response times. No FRED API key required - all data is already collected and served from the ATLAS platform.
+Exposes FredCollector REST API as MCP tools, enabling Claude Desktop and Claude Code to query FRED economic data collected locally in TimescaleDB with sub-second response times. No FRED API key required - all data is already collected and served from the ATLAS platform.
 
 ## Architecture
 
@@ -19,20 +19,20 @@ flowchart LR
 
 ### Data Query Tools
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
-| `list_series` | List all configured FRED series in ATLAS | `category` (optional): Filter by category |
-| `get_latest` | Get most recent observation for a series | `series_id` (required): FRED series ID |
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `list_series` | List all configured FRED series in ATLAS | `category` (optional) |
+| `get_latest` | Get most recent observation for a series | `series_id` |
 | `get_observations` | Get historical observations for a series | `series_id`, `start_date`, `end_date`, `limit` |
-| `search` | Search FRED for series by keyword | `query`, `limit`, `frequency`, `active_only` |
+| `search` | Search FRED for series by keyword | `query`, `limit` |
 | `categories` | List all available data categories and series counts | None |
 | `health` | Get FredCollector service health and data freshness | None |
-| `api_schema` | Get OpenAPI specification for FredCollector API | `format`: "full" or "summary" |
+| `api_schema` | Get OpenAPI specification for FredCollector API | `format` |
 
 ### Admin Tools
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
+| Tool | Description | Parameters |
+|------|-------------|------------|
 | `add_series` | Add new FRED series to collect | `seriesId`, `category`, `backfill` |
 | `get_all_series_admin` | Get all configured series including inactive | None |
 | `toggle_series` | Enable or disable series for collection | `seriesId` |
@@ -42,31 +42,61 @@ flowchart LR
 
 ## Configuration
 
-### Environment Variables
-
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FREDCOLLECTOR_API_URL` | `http://fred-api:8080` | Backend service URL |
+| `FREDCOLLECTOR_API_URL` | `http://fred-collector:8080` | Backend service URL |
 | `FREDCOLLECTOR_MCP_LOG_LEVEL` | `Warning` | Logging level |
 | `FREDCOLLECTOR_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
 
 ### Port Mapping
 
-- Internal: 8080
-- External (host): 3103
-- SSE endpoint: `http://mercury:3103/sse`
+| Port | Purpose |
+|------|---------|
+| 8080 | Internal container port |
+| 3103 | External host port |
+| `http://mercury:3103/sse` | SSE endpoint |
+
+## Project Structure
+
+```
+FredCollectorMcp/
+├── .devcontainer/
+│   ├── compile.sh         # Build script
+│   └── devcontainer.json  # VS Code dev container config
+├── src/
+│   ├── Client/
+│   │   ├── FredCollectorClient.cs   # HTTP client implementation
+│   │   ├── IFredCollectorClient.cs  # Client interface
+│   │   └── Models/
+│   │       └── ClientModels.cs      # DTO models
+│   ├── Tools/
+│   │   └── FredCollectorTools.cs    # MCP tool definitions
+│   ├── Containerfile                # Container build
+│   ├── FredCollectorMcp.csproj      # Project file
+│   └── Program.cs                   # Entry point
+└── README.md
+```
 
 ## Development
 
+### Prerequisites
+
+- .NET 9.0 SDK (via devcontainer)
+- FredCollector backend running
+
 ### Build
+
 ```bash
 .devcontainer/compile.sh
 ```
 
 ### Build Container
+
 ```bash
-.devcontainer/build.sh
+sudo nerdctl build -t fred-collector-mcp:latest -f src/Containerfile .
 ```
+
+Run from monorepo root (`/home/james/ATLAS`).
 
 ## Deployment
 
@@ -110,7 +140,7 @@ Response: "Unemployment rate over past 12 months: Nov: 4.1%, Oct: 4.1%..."
 **Find housing series:**
 ```
 User: "What series do you have for housing?"
-Claude calls: search("housing", active_only=true)
+Claude calls: search("housing")
 Response: "ATLAS is tracking 2 housing series: HOUST, PERMIT"
 ```
 
@@ -118,3 +148,4 @@ Response: "ATLAS is tracking 2 housing series: HOUST, PERMIT"
 
 - [FredCollector](../FredCollector/README.md) - Backend service documentation
 - [ThresholdEngineMcp](../ThresholdEngineMcp/README.md) - Pattern evaluation and macro scoring
+- [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification

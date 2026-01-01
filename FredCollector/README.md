@@ -10,50 +10,52 @@ FredCollector retrieves economic indicators from the Federal Reserve Economic Da
 
 ```mermaid
 flowchart LR
-    FRED[FRED API<br/>stlouisfed.org] -->|HTTP/JSON| FC[FredCollector]
+    FRED[FRED API] -->|HTTP/JSON| FC[FredCollector]
     FC -->|Store| DB[(TimescaleDB)]
     FC -->|gRPC Stream| TE[ThresholdEngine]
     FC -->|Register| SM[SecMaster]
-    FC -->|Metrics/Traces| OTEL[OpenTelemetry<br/>Collector]
+    FC -->|Metrics/Traces| OTEL[OpenTelemetry]
 ```
 
 ## Features
 
-- Scheduled Collection: Automates data retrieval using Quartz cron schedules with Federal Reserve holiday exclusions
-- Rate Limiting: Token bucket rate limiter respects FRED API limits (120 requests/minute)
-- Smart Backfill: Automatically fills gaps in historical data on startup and on-demand
-- Event Streaming: Real-time gRPC streams for downstream consumers
-- Admin API: Add, enable/disable, delete series; trigger manual collection/backfill
-- Series Search: Search FRED API for new series with filtering and sorting
-- SecMaster Integration: Automatic instrument registration via gRPC
-- Full Observability: OpenTelemetry instrumentation (metrics, traces, logs to OTLP)
+- **Scheduled Collection**: Automates data retrieval using Quartz cron schedules with Federal Reserve holiday exclusions
+- **Rate Limiting**: Token bucket rate limiter respects FRED API limits (120 requests/minute)
+- **Smart Backfill**: Automatically fills gaps in historical data on startup and on-demand
+- **Event Streaming**: Real-time gRPC streams for downstream consumers (ThresholdEngine)
+- **Admin API**: Add, enable/disable, delete series; trigger manual collection/backfill
+- **Series Search**: Search FRED API for new series with filtering and sorting
+- **SecMaster Integration**: Automatic instrument registration via gRPC
+- **Full Observability**: OpenTelemetry instrumentation (metrics, traces, logs to OTLP)
 
 ## Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | **Required** |
-| `FRED_API_KEY` | FRED API key | **Required** |
-| `FRED_API_BASE_URL` | FRED API URL | `https://api.stlouisfed.org/fred/` |
-| `RATE_LIMITER_CAPACITY` | Token bucket capacity | `120` |
-| `RATE_LIMITER_REFILL_RATE` | Tokens per second | `2.0` |
+| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | Required |
+| `FRED_API_KEY` | FRED API key | Required |
+| `FredApi__BaseUrl` | FRED API URL | `https://api.stlouisfed.org/fred/` |
+| `FredApi__RateLimitPerMinute` | Rate limit (requests/min) | `120` |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
 | `OpenTelemetry__ServiceName` | Service name | `fred-collector` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
-| `X_API_KEY` | API key for REST endpoints | **Required for API access** |
+| `X_API_KEY` | API key for REST endpoints | Required for API access |
 
 ## API Endpoints
 
 ### REST API
 
-Requires `X-API-Key` header for authentication.
+Requires `X-API-Key` header for authentication (except health endpoints).
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/series` | GET | List active series |
+| `/api/series/{seriesId}` | GET | Get specific series by ID |
 | `/api/series/{seriesId}/observations` | GET | Get observations (query: startDate, endDate, limit) |
 | `/api/series/{seriesId}/latest` | GET | Get latest observation |
 | `/api/series/search` | GET | Search FRED API (query: query, limit, frequency, minPopularity, activeOnly, orderBy) |
+| `/api/search` | GET | Unified search for SecMaster gateway (query: q, limit) |
+| `/api/discover` | GET | Upstream discovery for SecMaster catalog (query: q, limit) |
 | `/health` | GET | Health check (anonymous) |
 | `/health/ready` | GET | Readiness check (anonymous) |
 | `/health/live` | GET | Liveness check (anonymous) |
@@ -71,7 +73,7 @@ Requires `X-API-Key` header for authentication.
 
 ### gRPC API
 
-**Service**: `ObservationEventStream`
+**Service**: `ObservationEventStream` (port 5001)
 
 | Method | Description |
 |--------|-------------|
@@ -97,14 +99,13 @@ FredCollector/
 │   ├── Middleware/             # API key authentication
 │   ├── Publishers/             # Event publisher
 │   ├── RateLimiting/           # Token bucket rate limiter
-│   ├── Services/               # Business logic (DataCollection, Backfill, SeriesManagement, SeriesSearch)
+│   ├── Services/               # Business logic (DataCollection, Backfill, SeriesManagement)
 │   ├── Telemetry/              # OpenTelemetry meters and activity sources
-│   ├── Workers/                # Background workers (DataCollectionScheduler, MarketStatusWorker, InitialDataBackfillWorker)
+│   ├── Workers/                # Background workers (MarketStatusWorker, InitialDataBackfillWorker)
 │   ├── Program.cs              # Application entry point
 │   ├── DependencyInjection.cs  # Service registration
 │   └── Containerfile           # Multi-stage container build
-├── config/
-│   └── series.yaml             # Initial series configuration
+├── config/                     # Configuration files
 └── .devcontainer/              # VS Code dev container
 ```
 
@@ -140,9 +141,8 @@ ansible-playbook playbooks/deploy.yml --tags fred-collector
 
 | Port | Type | Description |
 |------|------|-------------|
-| 8080 | HTTP (container) | REST API, health checks |
-| 5001 | HTTP/2 (container) | gRPC event stream |
-| 5001 | Host | Mapped to container port 8080 |
+| 8080 | HTTP (internal) | REST API, health checks |
+| 5001 | HTTP/2 (internal) | gRPC event stream |
 
 ## See Also
 

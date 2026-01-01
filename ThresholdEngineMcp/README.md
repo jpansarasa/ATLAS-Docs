@@ -1,4 +1,4 @@
-# ThresholdEngine MCP Server
+# ThresholdEngineMcp
 
 MCP server providing Claude Desktop and Claude Code direct access to ATLAS pattern evaluation and regime detection.
 
@@ -19,29 +19,29 @@ flowchart LR
 
 ### Evaluation Tools
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
+| Tool | Description | Parameters |
+|------|-------------|------------|
 | `evaluate` | Evaluate ALL enabled patterns and return complete system state | None |
-| `evaluate_pattern` | Evaluate a specific pattern on-demand | `pattern_id` (required): Pattern ID |
+| `evaluate_pattern` | Evaluate a specific pattern on-demand | `pattern_id` (required) |
 
 ### Pattern Discovery Tools
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
+| Tool | Description | Parameters |
+|------|-------------|------------|
 | `list_patterns` | List all pattern configurations with filtering | `category`, `enabled_only` |
 | `get_pattern` | Get detailed configuration for a specific pattern | `pattern_id` (required) |
 | `categories` | List pattern categories with counts | None |
 
 ### Administrative Tools
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
+| Tool | Description | Parameters |
+|------|-------------|------------|
 | `reload` | Hot-reload pattern configurations from disk | None |
 
 ### Diagnostics Tools
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
+| Tool | Description | Parameters |
+|------|-------------|------------|
 | `health` | Get ThresholdEngine service health status | None |
 | `api_schema` | Get OpenAPI specification for ThresholdEngine API | `format`: "full" or "summary" |
 
@@ -68,8 +68,6 @@ flowchart LR
 
 ## Configuration
 
-### Environment Variables
-
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `THRESHOLDENGINE_API_URL` | `http://threshold-engine:8080` | Backend service URL |
@@ -82,14 +80,40 @@ flowchart LR
 - External (host): 3104
 - SSE endpoint: `http://mercury:3104/sse`
 
+## Project Structure
+
+```
+ThresholdEngineMcp/
+  src/
+    Client/
+      IThresholdEngineClient.cs   # HTTP client interface
+      ThresholdEngineClient.cs    # HTTP client implementation
+      Models/
+        ClientModels.cs           # API response models
+    Tools/
+      ThresholdEngineTools.cs     # MCP tool definitions (8 tools)
+    Program.cs                    # Application entry point
+  .devcontainer/
+    devcontainer.json             # Dev container config
+    compile.sh                    # Build script
+    build.sh                      # Container build script
+```
+
 ## Development
 
+### Prerequisites
+
+- .NET 9.0 SDK
+- Access to threshold-engine service
+
 ### Build
+
 ```bash
 .devcontainer/compile.sh
 ```
 
 ### Build Container
+
 ```bash
 .devcontainer/build.sh
 ```
@@ -146,3 +170,4 @@ Response: "Pattern triggered: signal -1.5, high confidence"
 
 - [ThresholdEngine](../ThresholdEngine/README.md) - Backend service documentation
 - [FredCollectorMcp](../FredCollectorMcp/README.md) - Economic data access
+- [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification

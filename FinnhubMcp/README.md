@@ -1,10 +1,10 @@
-# Finnhub MCP Server
+# FinnhubMcp
 
 MCP server providing Claude Desktop and Claude Code direct access to ATLAS stock market data and economic calendar events from Finnhub.
 
 ## Overview
 
-Exposes FinnhubCollector REST API as MCP tools, enabling AI assistants to query real-time stock quotes, economic calendar events (FOMC, CPI, etc.), earnings calendars, news sentiment, and analyst data. Includes both tracked series and live API pass-through for ad-hoc queries.
+Exposes FinnhubCollector REST API as MCP tools, enabling AI assistants to query real-time stock quotes, economic calendar events (FOMC, CPI, etc.), earnings calendars, news sentiment, and analyst data. Includes both tracked series and live API pass-through for ad-hoc queries on any stock symbol.
 
 ## Architecture
 
@@ -18,47 +18,48 @@ flowchart LR
 
 ## MCP Tools
 
-### Data Query Tools (14 tools)
+### Data Query Tools (15 tools)
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
-| `health` | Get FinnhubCollector service health status | None |
-| `get_series` | List all configured Finnhub series | `type` (optional): Filter by type |
-| `get_quote` | Get latest quote for a tracked stock symbol | `symbol` |
-| `get_quote_history` | Get historical quotes for a tracked symbol | `symbol`, `start_date`, `end_date` |
-| `get_economic_calendar` | Get upcoming economic calendar events | `from_date`, `to_date` |
-| `get_high_impact_events` | Get high-impact economic events only | `from_date`, `to_date` |
-| `get_earnings_calendar` | Get upcoming earnings announcements | `from_date`, `to_date`, `symbol` |
-| `get_ipo_calendar` | Get upcoming IPOs | `from_date`, `to_date` |
-| `get_news_sentiment` | Get news sentiment analysis for a stock | `symbol` |
-| `get_insider_sentiment` | Get insider buying/selling activity | `symbol`, `from_date`, `to_date` |
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `health` | Get FinnhubCollector service health status | - |
+| `get_series` | List all configured Finnhub series | `type` (optional) |
+| `get_quote` | Get latest quote for a tracked symbol | `symbol` |
+| `get_quote_history` | Get historical quotes for a tracked symbol | `symbol`, `from`, `to` |
+| `get_economic_calendar` | Get upcoming economic calendar events | `days` |
+| `get_high_impact_events` | Get high-impact economic events only | `from`, `to` |
+| `get_earnings_calendar` | Get upcoming earnings announcements | `days` |
+| `get_ipo_calendar` | Get upcoming IPOs | `days` |
+| `get_news_sentiment` | Get news sentiment analysis | `symbol` |
+| `get_insider_sentiment` | Get insider buying/selling activity | `symbol` |
 | `get_recommendations` | Get analyst recommendations | `symbol` |
 | `get_price_target` | Get analyst price targets | `symbol` |
 | `get_company_profile` | Get company profile information | `symbol` |
-| `search_symbols` | Search for stock symbols by company name | `query` |
+| `get_market_status` | Check if market is currently open | `exchange` |
+| `search_symbols` | Search for stock symbols | `query` |
 
 ### Live Data Tools (7 tools)
 
 Query any stock symbol directly from Finnhub API (not limited to tracked series):
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
+| Tool | Description | Parameters |
+|------|-------------|------------|
 | `get_live_quote` | Get live quote for any symbol | `symbol` |
-| `get_live_candles` | Get historical price candles | `symbol`, `resolution` (1m, 5m, D, W, M), `from`, `to` |
+| `get_live_candles` | Get historical price candles | `symbol`, `resolution`, `days` |
 | `get_live_profile` | Get company profile for any symbol | `symbol` |
-| `get_live_recommendation` | Get analyst recommendations for any symbol | `symbol` |
-| `get_live_price_target` | Get analyst price target for any symbol | `symbol` |
-| `get_live_news_sentiment` | Get news sentiment for any symbol | `symbol` |
-| `get_live_peers` | Get company peers for any symbol | `symbol` |
+| `get_live_recommendation` | Get analyst recommendations | `symbol` |
+| `get_live_price_target` | Get analyst price target | `symbol` |
+| `get_live_news_sentiment` | Get news sentiment | `symbol` |
+| `get_live_peers` | Get company peers | `symbol` |
 
 ### Admin Tools (5 tools)
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
-| `get_all_series_admin` | Get all configured series including inactive | None |
-| `add_series` | Add new series to track | `symbol`, `type` (Quote/Candle/etc.), `priority` |
-| `toggle_series` | Enable or disable series for collection | `series_id` |
-| `delete_series` | Delete series (use with caution) | `series_id` |
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `get_all_series_admin` | Get all series including inactive | - |
+| `add_series` | Add new series to track | `symbol`, `type`, `category`, `poll_interval_seconds` |
+| `toggle_series` | Enable/disable series collection | `series_id` |
+| `delete_series` | Delete series (destructive) | `series_id` |
 | `trigger_collection` | Trigger immediate data collection | `series_id` |
 
 ### Series Types
@@ -75,8 +76,6 @@ Query any stock symbol directly from Finnhub API (not limited to tracked series)
 
 ## Configuration
 
-### Environment Variables
-
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FINNHUB_API_URL` | `http://finnhub-collector:8080` | Backend service URL |
@@ -89,14 +88,39 @@ Query any stock symbol directly from Finnhub API (not limited to tracked series)
 - External (host): 3105
 - SSE endpoint: `http://mercury:3105/sse`
 
+## Project Structure
+
+```
+FinnhubMcp/
+├── src/
+│   ├── Client/
+│   │   ├── FinnhubCollectorClient.cs   # HTTP client for collector API
+│   │   ├── IFinnhubCollectorClient.cs  # Client interface
+│   │   └── Models/
+│   │       └── ClientModels.cs         # API response models
+│   ├── Tools/
+│   │   └── FinnhubTools.cs             # MCP tool definitions (27 tools)
+│   ├── Program.cs                       # Entry point, MCP server setup
+│   ├── Containerfile                    # Container image definition
+│   └── FinnhubMcp.csproj               # Project file
+└── README.md
+```
+
 ## Development
 
+### Prerequisites
+
+- .NET 9 SDK
+- Access to finnhub-collector service
+
 ### Build
+
 ```bash
 .devcontainer/compile.sh
 ```
 
 ### Build Container
+
 ```bash
 .devcontainer/build.sh
 ```
@@ -129,25 +153,23 @@ Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
 **Check stock price:**
 ```
 User: "What's Apple trading at?"
-Claude calls: get_live_quote("AAPL")
-Response: "AAPL: $175.23 (+1.2%)"
+Claude calls: get_live_quote(symbol="AAPL")
 ```
 
 **Economic calendar:**
 ```
 User: "When's the next FOMC meeting?"
 Claude calls: get_high_impact_events()
-Response: "Next FOMC meeting: Jan 31-Feb 1, 2025"
 ```
 
 **Earnings schedule:**
 ```
 User: "Who reports earnings this week?"
-Claude calls: get_earnings_calendar(from_date="2025-01-15", to_date="2025-01-19")
-Response: "Major earnings: NFLX (Jan 16), TSLA (Jan 18)"
+Claude calls: get_earnings_calendar(days=7)
 ```
 
 ## See Also
 
-- [FinnhubCollector](../FinnhubCollector/README.md) - Backend service documentation
+- [FinnhubCollector](../FinnhubCollector/README.md) - Backend service
 - [SecMasterMcp](../SecMasterMcp/README.md) - Instrument metadata and search
+- [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification

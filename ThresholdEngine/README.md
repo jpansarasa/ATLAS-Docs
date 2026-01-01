@@ -4,312 +4,151 @@ Pattern evaluation and regime detection service for ATLAS.
 
 ## Overview
 
-ThresholdEngine evaluates configurable C# expressions against real-time economic data to detect regime transitions and generate signals. It consumes observation events from collectors via gRPC and publishes evaluation results to PostgreSQL.
-
-**Scope**: Pattern evaluation, macro scoring, and regime detection. Data collection is handled by collector services.
+ThresholdEngine evaluates configurable C# expressions against real-time economic data to detect regime transitions and generate macro signals. It consumes observation events from collectors via gRPC streaming, calculates weighted macro scores with freshness-aware decay, and publishes evaluation results to TimescaleDB.
 
 ## Architecture
 
 ```mermaid
-flowchart TD
-    subgraph Collectors [Data Collectors]
+flowchart LR
+    subgraph Collectors
         FC[FredCollector :5001]
-        AV[AlphaVantageCollector :5001]
-        FH[FinnhubCollector :5001]
+        AV[AlphaVantage :5001]
+        FH[Finnhub :5001]
         OC[OfrCollector :5001]
     end
 
-    subgraph Core [ThresholdEngine]
-        Consumer[gRPC Consumer]
-        Cache[Observation Cache]
-        Roslyn[Roslyn Compiler]
-        Context[Evaluation Context]
-        Evaluator[Pattern Evaluator]
-        MacroScore[Macro Score Calculator]
-        Regime[Regime Detector]
+    subgraph ThresholdEngine
+        GC[gRPC Consumer]
+        CACHE[Observation Cache]
+        EVAL[Pattern Evaluator]
+        ROSLYN[Roslyn Compiler]
+        MACRO[Macro Score Calculator]
+        REGIME[Regime Detector]
     end
 
-    subgraph Storage
-        DB[(PostgreSQL)]
-    end
-
-    FC & AV & FH & OC -- gRPC Stream --> Consumer
-    Consumer --> Cache
-    Cache --> Context
-    Roslyn --> Evaluator
-    Context --> Evaluator
-    Evaluator --> MacroScore
-    MacroScore --> Regime
-    Regime --> DB
+    FC & AV & FH & OC -->|gRPC Stream| GC
+    GC --> CACHE
+    CACHE --> EVAL
+    ROSLYN --> EVAL
+    EVAL --> MACRO
+    MACRO --> REGIME
+    REGIME -->|Store| DB[(TimescaleDB)]
+    GC -->|Metrics/Traces| OTEL[OTEL Collector]
 ```
 
-## Technology Stack
+## Features
 
-- **.NET 9 / C# 13** - Flattened single-project structure
-- **Roslyn** - Runtime C# expression compilation via Microsoft.CodeAnalysis.CSharp.Scripting
-- **PostgreSQL** - Event persistence and pattern evaluation results
-- **OpenTelemetry** - Traces, metrics, logs to observability stack
-- **gRPC** - Event streaming from data collectors
-
-## Key Features
-
-- **Roslyn Compilation**: C# expressions compiled at runtime from JSON configuration with caching
-- **Context API**: DSL for financial analysis (GetLatest, GetYoY, GetMoM, GetMA, GetSpread, GetRatio, GetLowest, GetHighest, IsSustained)
-- **Hot Reload**: Pattern changes detected and reloaded automatically via file system watcher
-- **Regime Detection**: State machine tracking six regimes (Crisis, Recession, LateCycle, Neutral, Recovery, Growth)
-- **Macro Score Calculator**: Aggregates pattern signals into composite macro score with pattern weighting
-- **Pattern Weighting**: Reliability weights (0.0-1.0) per pattern based on historical accuracy
-- **Freshness Decay**: Publication-frequency-aware exponential decay for stale data
-- **Temporal Multipliers**: Boost leading indicators and penalize lagging during regime transitions
-- **On-Demand Evaluation**: REST API endpoints for manual pattern evaluation
-
-## Pattern Configuration
-
-Patterns are defined in JSON files organized by category in `config/patterns/`:
-
-```json
-{
-  "patternId": "vix-deployment-l1",
-  "name": "VIX Level 1 Deployment Trigger",
-  "description": "VIX >22 indicates elevated volatility, context-dependent signal",
-  "category": "Liquidity",
-  "expression": "ctx.GetLatest(\"VIXCLS\") > 22m",
-  "signalExpression": "var vix = ctx.GetLatest(\"VIXCLS\") ?? 0m; ...",
-  "applicableRegimes": ["Crisis", "Recession", "LateCycle", "Neutral", "Recovery", "Growth"],
-  "requiredSeries": ["VIXCLS"],
-  "maxLookbackDays": 1,
-  "enabled": true,
-  "weight": 0.75,
-  "temporalType": "Coincident",
-  "publicationFrequencyDays": 0,
-  "signalDecayDays": 7,
-  "leadTimeMonths": 0,
-  "confidence": 0.75
-}
-```
-
-### Pattern Weighting Fields
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `weight` | decimal | 1.0 | Pattern reliability weight (0.0-1.0). Higher = more influence on macro score |
-| `temporalType` | enum | Coincident | Signal timing: `Leading` (predicts 3+ months ahead), `Coincident` (current state), `Lagging` (confirms past) |
-| `publicationFrequencyDays` | int | 30 | Expected days between data releases. Used for freshness calculation |
-| `signalDecayDays` | int | 30 | Days until signal loses 63% strength after becoming overdue |
-| `leadTimeMonths` | int | 0 | Months ahead (positive) or behind (negative) of economic events |
-| `confidence` | decimal | 0.75 | Historical accuracy/reliability (informational) |
-
-**Weight guidelines**:
-- 0.95: Exceptional track record (Sahm Rule, Yield Curve Inversion)
-- 0.80-0.90: Strong reliability (ISM, Initial Claims)
-- 0.60-0.79: Solid but context-dependent (VIX, Fed Balance Sheet)
-- 0.40-0.59: Supplementary signals (Consumer Sentiment, Freight)
-
-**58 patterns** across 9 categories: OFR, Inflation, Liquidity, Valuation, Growth, NBFI, Recession, Commodity, Currency
-
-## Context API
-
-The `ctx` object provided to pattern expressions includes time-series analysis methods:
-
-```csharp
-// Basic Retrieval
-ctx.GetLatest("VIXCLS")                         // Most recent value
-ctx.GetHistorical("UNRATE", date)               // Value at specific date
-
-// Transformations
-ctx.GetYoY("GDP")                               // Year-over-year % change
-ctx.GetMoM("PAYEMS")                            // Month-over-month % change
-ctx.GetMA("UNRATE", 90)                         // 90-day moving average
-ctx.GetSpread("DGS10", "DGS2")                  // Difference between two series
-ctx.GetRatio("MORTGAGE30US", "DGS10")           // Ratio of two series
-ctx.GetLowest("UNRATE", 365)                    // Lowest value over period
-ctx.GetHighest("SP500", 365)                    // Highest value over period
-
-// Logic
-ctx.IsSustained("ICSA", v => v > 300000m, 30)   // Condition held for period
-
-// Current State
-ctx.MacroScore                                  // Current composite macro score
-ctx.MacroScoreTrend                             // Macro score trend (7-day change)
-ctx.CurrentRegime                               // Current MacroRegime enum
-ctx.CurrentDate                                 // Evaluation timestamp
-```
+- **Roslyn Compilation**: C# expressions compiled at runtime with caching for pattern definitions
+- **Context API DSL**: Time-series functions (GetLatest, GetYoY, GetMoM, GetMA, GetSpread, GetRatio, IsSustained)
+- **Hot Reload**: File system watcher detects pattern changes and reloads automatically
+- **Regime Detection**: Six-state machine (Crisis, Recession, LateCycle, Neutral, Recovery, Growth)
+- **Weighted Scoring**: Pattern reliability weights with freshness decay and temporal multipliers
+- **Multi-Collector Streaming**: Consumes events from all 4 collectors via gRPC
+- **On-Demand Evaluation**: REST API endpoints for manual pattern evaluation and health checks
 
 ## Configuration
-
-Environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ConnectionStrings__AtlasDb` | PostgreSQL connection string | Required |
-| `Collectors__Items__*__ServiceUrl` | gRPC URLs for collectors (configured in appsettings.json) | `http://fred-collector:5001`, `http://alphavantage-collector:5001`, `http://finnhub-collector:5001`, `http://ofr-collector:5001` |
+| `Collectors__Items__*__ServiceUrl` | gRPC URLs for collectors | See appsettings.json |
 | `PatternConfig__Path` | Pattern config directory | `./config` (dev), `/app/config` (prod) |
 | `PatternConfig__HotReload` | Enable file system watcher | `true` |
-| `PatternConfig__WatchInterval` | Watcher interval in milliseconds | `1000` |
 | `OpenTelemetry__OtlpEndpoint` | OpenTelemetry collector endpoint | `http://otel-collector:4317` |
 | `OpenTelemetry__ServiceName` | Service name for telemetry | `thresholdengine-service` |
-| `OpenTelemetry__ServiceVersion` | Service version for telemetry | `1.0.0` |
-
-## Development
-
-### Compile and Test
-
-```bash
-.devcontainer/compile.sh
-```
-
-### Build Container Image
-
-```bash
-.devcontainer/build.sh
-```
-
-### Deploy
-
-```bash
-cd deployment/ansible
-ansible-playbook playbooks/deploy.yml --tags thresholdengine
-```
-
-## Ports
-
-| Port | Description |
-|------|-------------|
-| 8080 | Container internal (HTTP/1.1 REST) |
-| 5003 | Host access (mapped to container 8080) |
-
-## Database
-
-ThresholdEngine uses TimescaleDB (PostgreSQL) with:
-- **EF Core migrations**: Auto-applied on startup via `dbContext.Database.MigrateAsync()`
-- **Observation storage**: Time-series data from collectors
-- **Pattern evaluations**: Results and regime transitions
-- **Indexed queries**: Optimized for time-range lookups
 
 ## API Endpoints
 
-### REST API (Port 8080 internal, 5003 on host)
+### REST API (Port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/patterns` | GET | List all pattern configurations |
 | `/api/patterns/{patternId}` | GET | Get specific pattern configuration |
 | `/api/patterns/{patternId}/toggle` | PUT | Enable or disable a pattern |
-| `/api/patterns/reload` | POST | Trigger manual pattern reload from disk |
+| `/api/patterns/reload` | POST | Trigger manual pattern reload |
 | `/api/patterns/evaluate` | POST | Evaluate all enabled patterns on-demand |
 | `/api/patterns/{patternId}/evaluate` | POST | Evaluate specific pattern on-demand |
 | `/api/patterns/contributions` | GET | Get weighted pattern contribution breakdown |
 | `/api/patterns/health` | GET | Get pattern data freshness and health status |
-| `/health` | GET | Health check with detailed status |
-| `/health/ready` | GET | Readiness probe (database, patterns, grpc, data) |
-| `/health/live` | GET | Liveness probe |
-| `/swagger` | GET | OpenAPI documentation (dev environment only) |
+
+### Health Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/health` | Full health check with detailed status |
+| `/health/ready` | Readiness probe (database, patterns, grpc, data) |
+| `/health/live` | Liveness probe |
 
 ## Project Structure
-
-Flattened single-project structure:
 
 ```
 ThresholdEngine/
 ├── src/
-│   ├── ThresholdEngine.csproj          # Single project file
-│   ├── Program.cs                      # Application entry point
-│   ├── DependencyInjection.cs          # Service registration
-│   ├── appsettings.json                # Configuration file
-│   ├── Compilation/                    # Roslyn expression compiler, cache
-│   ├── Configuration/                  # Pattern config loader, watcher
-│   ├── Data/                           # DbContext, repositories, migrations
-│   ├── Endpoints/                      # REST API endpoints
-│   ├── Entities/                       # Domain models, PatternEvaluationContext
-│   ├── Enums/                          # MacroRegime, PatternCategory
-│   ├── Events/                         # Event bus infrastructure
-│   ├── Grpc/                           # gRPC client consumers
-│   ├── HealthChecks/                   # Database, pattern, gRPC health checks
-│   ├── Interfaces/                     # Abstractions
-│   ├── Services/                       # Pattern evaluation, macro scoring, regime detection
-│   ├── Telemetry/                      # OpenTelemetry activity source, metrics
-│   ├── Workers/                        # Background event consumers, data warmup
-│   └── Containerfile                   # Multi-stage Docker build
+│   ├── Compilation/          # Roslyn expression compiler, cache
+│   ├── Configuration/        # Pattern config loader, watcher
+│   ├── Data/                 # DbContext, repositories, migrations
+│   ├── Endpoints/            # REST API endpoints
+│   ├── Entities/             # Domain models, PatternEvaluationContext
+│   ├── Enums/                # MacroRegime, PatternCategory, TemporalType
+│   ├── Events/               # Event bus infrastructure
+│   ├── Grpc/                 # gRPC client consumers
+│   ├── HealthChecks/         # Database, pattern, gRPC health checks
+│   ├── Services/             # Pattern evaluation, macro scoring, regime detection
+│   ├── Telemetry/            # OpenTelemetry activity source, metrics
+│   ├── Workers/              # Background event consumers, data warmup
+│   └── Containerfile         # Multi-stage container build
 ├── config/
-│   ├── patterns/                       # Pattern definitions by category (58 files)
-│   ├── regimes.json                    # Regime threshold configuration
-│   ├── pattern-schema.json             # JSON schema for pattern validation
-│   └── series-publication-frequencies.json  # Reference table for data freshness
-├── grafana-dashboards/
-│   ├── pattern-contributions.json      # Weighted signal contributions dashboard
-│   └── pattern-data-health.json        # Data freshness monitoring dashboard
-├── tests/
-│   └── ThresholdEngine.UnitTests/      # Unit test project
-└── .devcontainer/
-    ├── build.sh                        # Container image build script
-    ├── compile.sh                      # Compile and test script
-    ├── compose.yaml                    # Dev container compose config
-    └── devcontainer.json               # VS Code dev container config
+│   ├── patterns/             # Pattern definitions by category (58 files)
+│   ├── regimes.json          # Regime threshold configuration
+│   └── pattern-schema.json   # JSON schema for pattern validation
+├── tests/                    # Unit tests
+└── .devcontainer/            # VS Code dev container
 ```
 
-## Workers
+## Development
 
-Background services running in the application:
+### Prerequisites
 
-- **MultiCollectorEventConsumerWorker**: Subscribes to observation events from all 4 collectors (FredCollector, AlphaVantageCollector, FinnhubCollector, OfrCollector) via gRPC
-- **ObservationEventSubscriber**: Processes observation events from in-memory event bus, caches in ObservationCache
-- **DataWarmupService**: Loads initial observations from database into cache on startup
-- **EventProcessor**: Evaluates patterns when relevant observations are updated
+- VS Code with Dev Containers extension
+- Docker or nerdctl/containerd
 
-## Weighted Macro Scoring
+### Getting Started
 
-The macro score is calculated using weighted pattern contributions:
-
-```
-weightedSignal = signal × weight × freshnessFactor × temporalMultiplier × confidence
-categoryScore = Σ(weightedSignals) / Σ(weights)
-macroScore = Σ(categoryScore × categoryWeight) / Σ(categoryWeights)
+```bash
+# Open in VS Code and select "Reopen in Container"
+cd /workspace/ThresholdEngine/src
+dotnet run
 ```
 
-### Freshness Decay
+### Build Commands
 
-Data freshness is publication-frequency-aware:
-- **Within publication cycle**: 100% fresh (e.g., ISM 15 days old with 30-day cycle)
-- **Overdue**: Exponential decay `exp(-overdue / decayDays)`
-- **Floor**: 10% minimum to never completely ignore a signal
+```bash
+# Compile and test
+.devcontainer/compile.sh
 
+# Build container image
+.devcontainer/build.sh
 ```
-freshness = daysSince <= pubFreq ? 1.0 : exp(-(daysSince - pubFreq) / decayDays)
+
+## Deployment
+
+```bash
+ansible-playbook playbooks/deploy.yml --tags thresholdengine
 ```
 
-### Temporal Multipliers
+## Ports
 
-During regime transitions (score trend > 0.3):
-- **Leading indicators**: +30% boost (yield curve, credit spreads)
-- **Coincident indicators**: No change (ISM, employment)
-- **Lagging indicators**: -30% penalty (CPI, continuing claims)
+| Port | Type | Description |
+|------|------|-------------|
+| 8080 | HTTP (container) | REST API, health checks (internal only) |
 
-### Category Weights
-
-Configurable via `appsettings.json` MacroScoring section:
-- Recession: 30%, Liquidity: 20%, Growth: 20%
-- NBFI: 10%, Currency: 10%, Inflation: 10%
-- Valuation: 0%, Commodity: 0%
-
-## Regime Detection
-
-Regime transitions are determined by macro score thresholds defined in `config/regimes.json`:
-
-| Regime | Score Range | Description |
-|--------|-------------|-------------|
-| Crisis | score ≤ -20 | Severe economic stress, capital preservation priority |
-| Recession | -20 < score ≤ -10 | Economic contraction, defensive positioning |
-| LateCycle | -10 < score ≤ 0 | Late expansion phase, prepare for downturn |
-| Neutral | 0 < score ≤ 10 | Balanced conditions, maintain allocation |
-| Recovery | 10 < score ≤ 20 | Economic recovery, deploy cash aggressively |
-| Growth | score > 20 | Strong expansion, maintain equity allocation |
-
-Transitions require sustained conditions for 30 days with 7-day smoothing window and 0.8 confidence threshold.
+Note: ThresholdEngine has no external port mapping. Access via ThresholdEngineMcp (port 3104) for AI assistant integration.
 
 ## See Also
 
-- [FredCollector](../FredCollector/README.md) - Economic data collector (FRED API)
-- [AlphaVantageCollector](../AlphaVantageCollector/README.md) - Commodities, forex, crypto (Alpha Vantage API)
-- [FinnhubCollector](../FinnhubCollector/README.md) - Stock quotes, calendars, sentiment (Finnhub API)
-- [OfrCollector](../OfrCollector/README.md) - Financial stability data collector (OFR API)
+- [FredCollector](../FredCollector/README.md) - FRED economic data collector
+- [AlphaVantageCollector](../AlphaVantageCollector/README.md) - Commodities, forex, crypto collector
+- [FinnhubCollector](../FinnhubCollector/README.md) - Stock quotes, calendars, sentiment collector
+- [OfrCollector](../OfrCollector/README.md) - Financial stability data collector
 - [ThresholdEngineMcp](../ThresholdEngineMcp/README.md) - MCP server for Claude Code integration

@@ -4,7 +4,7 @@ Collector service for financial time-series data from Nasdaq Data Link API.
 
 ## Overview
 
-NasdaqCollector ingests daily financial data from Nasdaq Data Link (formerly Quandl). Configured series are collected automatically on a 6-hour schedule, respecting NYSE/Nasdaq market holidays. Data is stored in TimescaleDB and streamed in real-time via gRPC to downstream consumers.
+NasdaqCollector ingests daily financial data from Nasdaq Data Link (formerly Quandl). Configured series are collected automatically on a 6-hour schedule, respecting NYSE/Nasdaq market holidays via CalendarService integration. Data is stored in TimescaleDB and streamed in real-time via gRPC to downstream consumers.
 
 **DEPLOYMENT STATUS**: Currently disabled in production. The Nasdaq Data Link WAF blocks datacenter IP addresses. Service is awaiting IP whitelist approval from Nasdaq support.
 
@@ -22,13 +22,13 @@ flowchart LR
 
 ## Features
 
-- Configurable Series: Dynamically add/remove datasets via admin API
-- Market-Aware Scheduling: Skips collection on NYSE/Nasdaq holidays
-- Resilient Collection: Automatic retries with exponential backoff
-- Event Streaming: Real-time gRPC stream of new observations
-- SecMaster Integration: Automatic instrument registration via gRPC
-- Efficient Storage: TimescaleDB hypertables for time-series data
-- Full Observability: OpenTelemetry traces, metrics, and structured logs
+- **Configurable Series**: Dynamically add/remove datasets via admin API
+- **Market-Aware Scheduling**: Skips collection on NYSE/Nasdaq holidays using CalendarService
+- **Resilient Collection**: Automatic retries with exponential backoff
+- **Event Streaming**: Real-time gRPC stream of new observations to ThresholdEngine
+- **SecMaster Integration**: Automatic instrument registration via gRPC
+- **Efficient Storage**: TimescaleDB hypertables for time-series data
+- **Full Observability**: OpenTelemetry traces, metrics, and structured logs
 
 ## Configuration
 
@@ -50,7 +50,7 @@ flowchart LR
 | `/api/series/{seriesId}` | GET | Get specific series details |
 | `/api/series/{seriesId}/observations` | GET | Get observations (query: startDate, endDate, limit) |
 | `/api/series/{seriesId}/latest` | GET | Get latest observation |
-| `/api/search` | GET | Unified search for SecMaster gateway (query: q, limit) |
+| `/api/search` | GET | Search local series for SecMaster gateway (query: q, limit) |
 | `/api/discover` | GET | Search upstream Nasdaq Data Link API (query: q, limit) |
 | `/api/health` | GET | Health check |
 | `/health` | GET | Full health check with database status |
@@ -132,8 +132,10 @@ Note: Service is currently disabled in compose.yaml. Uncomment when IP whitelist
 
 | Port | Type | Description |
 |------|------|-------------|
-| 8080 | HTTP (container) | REST API, health checks, gRPC |
-| 5011 | Host | Mapped to container port 8080 (when enabled) |
+| 5004 | HTTP (container) | REST API, health checks |
+| 5005 | HTTP/2 (container) | gRPC event stream |
+| 5008 | Host | Mapped to container port 5004 |
+| 5009 | Host | Mapped to container port 5005 |
 
 ## See Also
 

@@ -104,11 +104,13 @@ ansible-playbook playbooks/deploy.yml --tags service-name
 
 ## Ports
 
-| Port | Protocol | Description |
-|------|----------|-------------|
-| 8080 | HTTP | REST API (internal) |
-| 50XX | HTTP | REST API (host) |
-| 5001 | gRPC | Event streaming (if applicable) |
+Internal services expose 8080 (HTTP) and optionally 5001 (gRPC) for container-to-container communication only. Services requiring external access also map to a host port (50XX range).
+
+| Port | Description |
+|------|-------------|
+| 8080 | REST API (internal) |
+| 5001 | gRPC event streaming (internal, if applicable) |
+| 50XX | Host-mapped API (only if external access needed) |
 
 ## See Also
 

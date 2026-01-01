@@ -4,104 +4,166 @@ Shared gRPC event contracts and in-memory event definitions for ATLAS microservi
 
 ## Overview
 
-This library is the schema registry for ATLAS. It defines two types of contracts:
+Events is the schema registry for ATLAS. It defines gRPC Protobuf contracts for inter-service streaming and C# event records for internal event buses. All collectors stream events using the same gRPC interface, and all consumers subscribe using the same client libraries.
 
-1. **gRPC Protobuf contracts** - Wire format for inter-service streaming (collectors to consumers)
-2. **C# event records** - In-memory events for internal event buses (System.Threading.Channels)
+## Features
 
-All collectors stream events using the same gRPC interface. All consumers subscribe using the same client.
+- **gRPC Event Streaming** - Protobuf-based contracts for real-time data collection events between services
+- **SecMaster Integration** - Registration and resolution services for symbol/instrument management
+- **In-Memory Events** - C# record types for internal event buses using System.Threading.Channels
+- **Client Libraries** - Ready-to-use gRPC clients with retry logic and DI integration
+- **Auto-Generated Code** - Grpc.Tools generates C# stubs from proto files during build
 
-## Proto Files
+## Project Structure
 
-| File | Purpose |
-|------|---------|
-| `observation_events.proto` | Data collection events (SeriesCollected, OhlcvCollected, CollectionFailed) |
-| `secmaster.proto` | SecMaster registration and resolution services |
+```
+Events/
+├── src/
+│   ├── Events/                     # Core contracts
+│   │   ├── Protos/
+│   │   │   ├── observation_events.proto   # Data collection event contracts
+│   │   │   └── secmaster.proto            # SecMaster registration/resolution
+│   │   ├── IEvent.cs                      # Base event interface
+│   │   ├── ObservationCollectedEvent.cs   # In-memory observation event
+│   │   ├── ThresholdCrossedEvent.cs       # In-memory threshold event
+│   │   └── RegimeTransitionEvent.cs       # In-memory regime event
+│   └── Events.Client/              # gRPC client libraries
+│       ├── ObservationEventClient.cs      # Event stream subscription client
+│       ├── SecMasterRegistryClient.cs     # Series registration client
+│       ├── SecMasterResolverClient.cs     # Symbol resolution client
+│       └── ServiceCollectionExtensions.cs # DI registration helpers
+└── README.md
+```
 
-## Event Types
+## Development
 
-### Data Collection Events (observation_events.proto)
+### Prerequisites
 
-| Event Type | Description | Used By |
-|------------|-------------|---------|
-| `SeriesCollectedEvent` | Scalar data points collected (economic indicators, commodities) | FredCollector, AlphaVantageCollector, OfrCollector |
-| `OhlcvCollectedEvent` | OHLCV candles collected (equities, forex, crypto) | FinnhubCollector |
-| `CollectionFailedEvent` | Collection attempt failed (rate limit, API error, network) | All collectors |
+- .NET 9.0 SDK
+- Grpc.Tools NuGet package (included in project)
 
-### SecMaster Services (secmaster.proto)
+### Building
 
-| Service | Purpose | Used By |
-|---------|---------|---------|
-| `SecMasterRegistry` | Register series with SecMaster (fire-and-forget) | All collectors |
-| `SecMasterResolver` | Resolve symbols to data sources | ThresholdEngine |
+gRPC code is auto-generated during build:
 
-## In-Memory C# Events
+```bash
+cd Events/src/Events.Client
+dotnet build
+```
 
-Used for internal event buses within a service:
-
-- `ObservationCollectedEvent` - Single observation collected
-- `ThresholdCrossedEvent` - Threshold evaluation triggered
-- `RegimeTransitionEvent` - Market regime change detected
-- `IEvent` - Base interface for all events
+Generated files appear in `obj/Debug/net9.0/`:
+- `ObservationEvents.cs` - Message classes
+- `ObservationEventsGrpc.cs` - Service stubs
+- `Secmaster.cs` - SecMaster message classes
+- `SecmasterGrpc.cs` - SecMaster service stubs
 
 ## Usage
 
-### Collectors (Publishing Events)
+### Adding as a Project Reference
 
-Collectors implement `ObservationEventStream` service:
-
-```csharp
-public class EventStreamService : ObservationEventStream.ObservationEventStreamBase
-{
-    public override async Task SubscribeToEvents(
-        SubscriptionRequest request,
-        IServerStreamWriter<Event> responseStream,
-        ServerCallContext context)
-    {
-        // Stream events to consumer
-    }
-}
+```xml
+<ProjectReference Include="../Events/src/Events.Client/Events.Client.csproj" />
 ```
 
-### Consumers (Subscribing to Events)
-
-Consumers use `Events.Client` wrapper:
+### Subscribing to Events (Consumer)
 
 ```csharp
-services.AddCollectorClient("FredCollector", "http://fred-collector:5002");
+// Register client in DI
+services.AddObservationEventClient(options =>
+{
+    options.Endpoint = "http://fred-collector:5002";
+    options.Name = "FredCollector";
+});
 
-// Subscribe to events
-await foreach (var evt in client.SubscribeToEventsAsync(cancellationToken))
+// Subscribe to event stream
+await foreach (var evt in client.SubscribeAsync(DateTime.UtcNow.AddHours(-1), cancellationToken: ct))
 {
     switch (evt.PayloadCase)
     {
         case Event.PayloadOneofCase.SeriesCollected:
-            // Handle scalar data
+            HandleSeriesCollected(evt.SeriesCollected);
             break;
         case Event.PayloadOneofCase.OhlcvCollected:
-            // Handle OHLCV data
+            HandleOhlcvCollected(evt.OhlcvCollected);
+            break;
+        case Event.PayloadOneofCase.CollectionFailed:
+            HandleCollectionFailed(evt.CollectionFailed);
             break;
     }
 }
 ```
 
-## Building
+### Registering Series with SecMaster (Collector)
 
-gRPC code is auto-generated during build via `Grpc.Tools` package.
+```csharp
+// Register client in DI
+services.AddSecMasterRegistryClient(options =>
+{
+    options.Endpoint = "http://secmaster:8080";
+});
 
-Manual regeneration (if needed):
-
-```bash
-cd Events/src/Events
-dotnet build Events/src/Events/Events.csproj
+// Register a series (fire-and-forget with retry)
+await registryClient.RegisterSeriesAsync(
+    collectorName: "FredCollector",
+    collectorSeriesId: "UNRATE",
+    symbol: "UNRATE",
+    title: "Unemployment Rate",
+    assetClass: "Economic",
+    frequency: "Monthly");
 ```
 
-Generated files appear in `obj/Debug/net9.0/`:
-- `Events.cs` - Message classes
-- `EventsGrpc.cs` - Service stubs
+### Resolving Symbols (ThresholdEngine)
+
+```csharp
+// Register client in DI
+services.AddSecMasterResolverClient(options =>
+{
+    options.Endpoint = "http://secmaster:8080";
+});
+
+// Resolve symbol to data source
+var resolution = await resolverClient.ResolveSymbolAsync("UNRATE");
+if (resolution?.Found == true)
+{
+    var collector = resolution.PrimarySource.Collector;
+    var seriesId = resolution.PrimarySource.CollectorSeriesId;
+}
+```
+
+## Contract Reference
+
+### Proto Files
+
+| File | Services | Purpose |
+|------|----------|---------|
+| `observation_events.proto` | ObservationEventStream | Data collection events streaming |
+| `secmaster.proto` | SecMasterRegistry, SecMasterResolver | Symbol registration and resolution |
+
+### Event Types (observation_events.proto)
+
+| Event | Description | Publishers |
+|-------|-------------|------------|
+| SeriesCollectedEvent | Scalar data points (economic indicators) | FredCollector, AlphaVantageCollector, OfrCollector |
+| OhlcvCollectedEvent | OHLCV candles (equities, forex) | FinnhubCollector |
+| CollectionFailedEvent | Collection failures | All collectors |
+
+### In-Memory Events (C# Records)
+
+| Event | Publisher | Consumer |
+|-------|-----------|----------|
+| ObservationCollectedEvent | Collectors | ThresholdEngine |
+| ThresholdCrossedEvent | ThresholdEngine | AlertService |
+| RegimeTransitionEvent | ThresholdEngine | AlertService |
 
 ## Versioning
 
-- Forward compatible: New fields are always optional
-- Backward compatible: Never remove or renumber fields
-- Breaking changes: Create new message types (e.g., `SeriesCollectedEventV2`)
+- **Forward compatible**: New fields are always optional
+- **Backward compatible**: Never remove or renumber fields
+- **Breaking changes**: Create new message types (e.g., `SeriesCollectedEventV2`)
+
+## See Also
+
+- [FredCollector](../FredCollector/) - FRED economic data collector
+- [FinnhubCollector](../FinnhubCollector/) - Finnhub market data collector
+- [ThresholdEngine](../ThresholdEngine/) - Event consumer and threshold evaluation
+- [SecMaster](../SecMaster/) - Instrument and source registry

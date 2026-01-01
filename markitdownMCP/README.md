@@ -1,47 +1,36 @@
-# markitdown MCP Server
+# markitdownMCP
 
-MCP server providing Claude Desktop and Claude Code access to document conversion (PDF, Office files) to markdown for ATLAS analysis.
-
-<https://github.com/microsoft/markitdown>
+MCP server providing Claude Desktop and Claude Code access to document-to-markdown conversion for ATLAS analysis workflows.
 
 ## Overview
 
-Exposes the markitdown Python library as MCP tools, enabling AI assistants to convert PDFs, Word documents, Excel spreadsheets, and PowerPoint presentations to markdown format for analysis and processing within ATLAS workflows.
+Wraps Microsoft's [markitdown](https://github.com/microsoft/markitdown) Python library as an MCP server, enabling AI assistants to convert PDFs, Office documents, and other file formats to markdown. Deployed via the official `mcp/markitdown` container image with SSE transport.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    AI[AI Assistant] -->|MCP| MCP[markitdownMCP :3102]
-    MCP -->|File I/O| Storage[(Document Storage)]
+    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[markitdown-mcp<br/>:3102]
+    MCP -->|File I/O| Docs[/workdir<br/>Documents/]
+    MCP -->|File I/O| Raw[/opt/ai-inference<br/>raw-data/]
 ```
 
 ## MCP Tools
 
-**Note:** markitdownMCP is a Python-based MCP server using the official markitdown library. Tool availability depends on the library's capabilities.
-
-### Expected Tools
-
 | Tool Name | Description | Key Parameters |
 |-----------|-------------|----------------|
-| `convert_to_markdown` | Convert document to markdown | `file_path`, `output_path` (optional) |
-| `list_documents` | List available documents in storage | `path` (optional) |
+| `convert_to_markdown` | Convert document to markdown format | `uri`: file:, http:, https:, or data: URI |
 
-### Supported Document Types
+### Supported Formats
 
 - PDF documents (.pdf)
 - Microsoft Word (.docx, .doc)
 - Microsoft Excel (.xlsx, .xls)
 - Microsoft PowerPoint (.pptx, .ppt)
-- Text files (.txt)
-
-## Use Cases
-
-- **Portfolio reconciliation**: Brokerage PDFs to positions
-- **NBFI monitoring**: Bankruptcy filings to stress signals
-- **Fed analysis**: FOMC minutes, H.4.1 PDFs to policy shifts
-- **Research reports**: Analyst PDFs to structured data
-- **Financial statements**: 10-K/10-Q PDFs to extractable text
+- HTML pages (via URL)
+- Images with OCR
+- Audio files (via speech-to-text)
+- Text files (.txt, .csv)
 
 ## Configuration
 
@@ -49,9 +38,8 @@ flowchart LR
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MARKITDOWN_WORKDIR` | `/workdir` | Document storage path (container) |
-| `MCP_PORT` | `3102` | SSE server port |
 | `MCP_HOST` | `0.0.0.0` | Bind address |
+| `MCP_PORT` | `3102` | SSE server port |
 
 ### Port Mapping
 
@@ -59,27 +47,38 @@ flowchart LR
 - External (host): 3102
 - SSE endpoint: `http://mercury:3102/sse`
 
-### Storage
+### Volume Mounts
 
-- Host path: `/opt/ai-inference/documents`
-- ZFS dataset: `sata-bulk/ai-inference/documents`
-- Mount mode: Read-only (default)
+| Container Path | Host Path | Mode | Purpose |
+|----------------|-----------|------|---------|
+| `/workdir` | `/opt/ai-inference/documents` | ro | Document storage |
+| `/opt/ai-inference/raw-data` | `/opt/ai-inference/raw-data` | ro | Sentinel raw data |
+
+## Project Structure
+
+```
+markitdownMCP/
+└── README.md           # This file (no source code - uses official image)
+```
+
+This service uses the official `mcp/markitdown:latest` image from Microsoft without modification.
+
+## Development
+
+No local development required - uses official container image.
+
+### Testing Locally
+
+```bash
+# Run markitdown directly
+uvx markitdown /path/to/document.pdf
+
+# Run MCP server locally
+uvx markitdown-mcp --sse --port 3102
+```
 
 ## Deployment
 
-Add to infrastructure compose file:
-
-```yaml
-markitdown-mcp:
-  image: mcp/markitdown:latest
-  ports:
-    - "3102:3102"
-  volumes:
-    - "/opt/ai-inference/documents:/workdir:ro"
-  command: ["--sse", "--host", "0.0.0.0", "--port", "3102"]
-```
-
-Deploy via Ansible:
 ```bash
 ansible-playbook playbooks/deploy.yml --tags markitdown-mcp
 ```
@@ -99,46 +98,33 @@ Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Appli
 }
 ```
 
-Alternatively, for local Claude Desktop usage with local markitdown installation:
-
-```json
-{
-  "mcpServers": {
-    "markitdown": {
-      "command": "uvx",
-      "args": ["markitdown-mcp"]
-    }
-  }
-}
-```
-
-Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE for the ATLAS server deployment.
+Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
 
 ## Usage Examples
 
 **Convert brokerage statement:**
 ```
 User: "Convert the Q4 brokerage statement to markdown"
-Claude calls: convert_to_markdown(file_path="/workdir/statements/2024-Q4.pdf")
-Response: "Converted 2024-Q4.pdf to markdown. Found 47 positions..."
+Claude calls: convert_to_markdown(uri="file:///workdir/statements/2024-Q4.pdf")
+Response: Markdown text of converted PDF
 ```
 
-**Extract FOMC minutes:**
+**Convert FOMC minutes from URL:**
 ```
 User: "Parse the latest FOMC minutes"
-Claude calls: convert_to_markdown(file_path="/workdir/fed/fomc-2024-12.pdf")
-Response: "Extracted FOMC minutes: Committee voted 11-1 to hold rates..."
+Claude calls: convert_to_markdown(uri="https://federalreserve.gov/monetarypolicy/fomcminutes20241218.htm")
+Response: Markdown text of FOMC minutes
 ```
 
-**List available documents:**
-```
-User: "What PDFs are in the documents folder?"
-Claude calls: list_documents(path="/workdir")
-Response: "Found 23 documents: brokerage statements (8), FOMC minutes (5)..."
-```
+**Use Cases:**
+- Portfolio reconciliation: Brokerage PDFs to positions
+- Fed analysis: FOMC minutes, H.4.1 PDFs to policy data
+- Research reports: Analyst PDFs to structured text
+- Financial statements: 10-K/10-Q PDFs to extractable content
 
 ## See Also
 
-- [FredCollectorMcp](../FredCollectorMcp/README.md) - Economic data access
-- [SecMasterMcp](../SecMasterMcp/README.md) - Instrument metadata
 - [markitdown GitHub](https://github.com/microsoft/markitdown) - Official Python library
+- [MCP Protocol](https://modelcontextprotocol.io/) - Model Context Protocol specification
+- [SecMasterMcp](../SecMasterMcp/README.md) - Instrument metadata access
+- [FredCollectorMcp](../FredCollectorMcp/README.md) - Economic data access

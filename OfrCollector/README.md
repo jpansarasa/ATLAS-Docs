@@ -4,13 +4,13 @@ Data collector service for Office of Financial Research (OFR) public datasets.
 
 ## Overview
 
-OfrCollector collects FSI, STFM, and HFM financial data from the OFR public APIs on scheduled intervals. Data is stored in TimescaleDB and exposed via REST and gRPC APIs for downstream consumption by ThresholdEngine and other services.
+OfrCollector retrieves financial stress and funding market data from the OFR public APIs (FSI, STFM, HFM) and stores them in TimescaleDB. It handles scheduled collection, backfill, and exposes data via REST API and gRPC event streams for downstream consumption by ThresholdEngine.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    OFR[OFR Public API<br/>financialresearch.gov] -->|HTTP/JSON/CSV| OC[OfrCollector]
+    OFR[OFR Public APIs<br/>financialresearch.gov] -->|HTTP/JSON/CSV| OC[OfrCollector]
     OC -->|Store| DB[(TimescaleDB)]
     OC -->|gRPC Stream| TE[ThresholdEngine]
     OC -->|Register| SM[SecMaster]
@@ -19,47 +19,14 @@ flowchart LR
 
 ## Features
 
-- Multi-source Collection: FSI, STFM, and HFM data from OFR public APIs
-- Scheduled Collection: Automated collection with configurable intervals per dataset
-- Admin API: Series management and manual collection triggers
-- gRPC Streaming: Real-time observation events to downstream services
-- SecMaster Integration: Automatic instrument registration via gRPC
-- Full Observability: Distributed tracing and metrics with OTLP export
-
-## Data Sources
-
-### FSI - Financial Stress Index
-
-Composite measure of stress in global financial markets. Single daily value with regional and category breakdowns.
-
-- Collection: Daily at 10:00 UTC
-- Frequency: Daily
-- API: CSV-based
-
-### STFM - Short-term Funding Monitor
-
-Money market and repo rate data across multiple datasets:
-
-- FNYR: NY Fed Reference Rates (SOFR, EFFR, OBFR)
-- Repo: U.S. Repo Markets (DVP, GCF rates and volumes)
-- MMF: U.S. Money Market Funds (N-MFP holdings)
-- NYPD: Primary Dealer Statistics
-- TYLD: Treasury Constant Maturity Rates
-
-Collection: Varies by dataset (8h-24h intervals)
-Frequency: Daily
-API: JSON REST API
-
-### HFM - Hedge Fund Monitor
-
-Hedge fund leverage and risk metrics:
-
-- FPF: Form PF Aggregates (leverage, liquidity, stress tests)
-- FICC: FICC Sponsored Repo
-
-Collection: Daily at 17:00 UTC
-Frequency: Quarterly
-API: JSON REST API
+- **Multi-source Collection**: FSI (Financial Stress Index), STFM (Short-term Funding Monitor), HFM (Hedge Fund Monitor)
+- **Scheduled Collection**: Automated retrieval with configurable intervals per dataset
+- **Smart Backfill**: Fill historical data gaps on-demand
+- **Event Streaming**: Real-time gRPC streams for downstream consumers
+- **Admin API**: Series management, toggle active status, trigger manual collection
+- **Search API**: Search across all OFR data types
+- **SecMaster Integration**: Automatic instrument registration via gRPC
+- **Full Observability**: OpenTelemetry instrumentation (metrics, traces, logs to OTLP)
 
 ## Configuration
 
@@ -70,44 +37,27 @@ API: JSON REST API
 | `OpenTelemetry__ServiceName` | Service name | `ofr-collector` |
 | `OpenTelemetry__ServiceVersion` | Service version | `1.0.0` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
+| `SeriesConfig__Directory` | Directory for series config files | `/app/config` |
 
 ## API Endpoints
 
 ### REST API
 
-**FSI**
-
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/fsi/latest` | GET | Latest FSI value |
-| `/api/fsi/history` | GET | Historical FSI data (query: startDate, endDate, limit) |
-
-**STFM**
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
+| `/api/fsi/latest` | GET | Get latest FSI value |
+| `/api/fsi/history` | GET | Get FSI history (query: startDate, endDate, limit) |
 | `/api/stfm/series` | GET | List active STFM series |
-| `/api/stfm/{mnemonic}/latest` | GET | Latest observation for series |
-| `/api/stfm/{mnemonic}/observations` | GET | Series observations (query: startDate, endDate, limit) |
-
-**HFM**
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
+| `/api/stfm/{mnemonic}/latest` | GET | Get latest STFM observation |
+| `/api/stfm/{mnemonic}/observations` | GET | Get STFM observations (query: startDate, endDate, limit) |
 | `/api/hfm/series` | GET | List active HFM series |
-| `/api/hfm/{mnemonic}/latest` | GET | Latest observation for series |
-| `/api/hfm/{mnemonic}/observations` | GET | Series observations (query: startDate, endDate, limit) |
-
-**Metadata**
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
+| `/api/hfm/{mnemonic}/latest` | GET | Get latest HFM observation |
+| `/api/hfm/{mnemonic}/observations` | GET | Get HFM observations (query: startDate, endDate, limit) |
 | `/api/categories` | GET | List available data categories |
+| `/api/search` | GET | Search all OFR data (query: q, type, limit) |
 | `/api/health` | GET | Service health |
 
 ### Admin API
-
-**Collection Triggers**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -115,24 +65,14 @@ API: JSON REST API
 | `/api/admin/fsi/backfill` | POST | Backfill FSI history (query: months) |
 | `/api/admin/stfm/{dataset}/collect` | POST | Trigger STFM dataset collection |
 | `/api/admin/stfm/priority/collect` | POST | Collect priority STFM series |
-| `/api/admin/hfm/{dataset}/collect` | POST | Trigger HFM dataset collection |
-| `/api/admin/hfm/all/collect` | POST | Collect all HFM datasets |
-
-**STFM Series Management**
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
 | `/api/admin/stfm/series` | GET | List all STFM series |
 | `/api/admin/stfm/series` | POST | Add new STFM series |
 | `/api/admin/stfm/series/{mnemonic}/toggle` | PUT | Toggle series active status |
 | `/api/admin/stfm/series/{mnemonic}` | DELETE | Delete series |
 | `/api/admin/stfm/series/{mnemonic}/collect` | POST | Collect specific series |
 | `/api/admin/stfm/series/{mnemonic}/backfill` | POST | Backfill series history |
-
-**HFM Series Management**
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
+| `/api/admin/hfm/{dataset}/collect` | POST | Trigger HFM dataset collection |
+| `/api/admin/hfm/all/collect` | POST | Collect all HFM datasets |
 | `/api/admin/hfm/series` | GET | List all HFM series |
 | `/api/admin/hfm/series` | POST | Add new HFM series |
 | `/api/admin/hfm/series/{mnemonic}/toggle` | PUT | Toggle series active status |
@@ -154,7 +94,11 @@ API: JSON REST API
 
 | Method | Description |
 |--------|-------------|
-| `SubscribeToEvents` | Stream observation events to subscribers in real-time |
+| `SubscribeToEvents` | Stream events in real-time (long-running) |
+| `GetEventsSince` | Replay events from timestamp |
+| `GetEventsBetween` | Get events in time range |
+| `GetLatestEventTime` | Get timestamp of latest event |
+| `GetHealth` | Health check with event statistics |
 
 ## Project Structure
 
@@ -162,17 +106,20 @@ API: JSON REST API
 OfrCollector/
 ├── src/
 │   ├── Api/                    # OFR API clients (FSI, STFM, HFM)
-│   ├── Data/                   # EF Core DbContext and configurations
+│   ├── Configuration/          # Series configuration provider
+│   ├── Data/                   # EF Core DbContext, repositories
 │   ├── Endpoints/              # REST API endpoints
 │   ├── Grpc/                   # gRPC services and repositories
 │   ├── HealthChecks/           # Database health check
 │   ├── Models/                 # Domain models
 │   ├── Services/               # Collection and management services
-│   ├── Telemetry/              # OpenTelemetry metrics and activity sources
+│   ├── Telemetry/              # OpenTelemetry meters and activity sources
 │   ├── Workers/                # Background collection workers
-│   └── Program.cs              # Application entry point
+│   ├── Program.cs              # Application entry point
+│   └── DependencyInjection.cs  # Service registration
 ├── config/
-│   └── stfm_series.json        # Priority STFM series configuration
+│   ├── stfm-series.json        # Priority STFM series configuration
+│   └── hfm-series.json         # Priority HFM series configuration
 └── .devcontainer/              # VS Code dev container
 ```
 
@@ -210,7 +157,8 @@ ansible-playbook playbooks/deploy.yml --tags ofr-collector
 |------|------|-------------|
 | 8080 | HTTP (container) | REST API, health checks |
 | 5001 | HTTP/2 (container) | gRPC event stream |
-| 5016 | Host | Mapped to container port 8080 |
+
+No external host port mapping - internal API only.
 
 ## See Also
 
