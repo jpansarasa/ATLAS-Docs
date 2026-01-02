@@ -1,11 +1,11 @@
 # ATLAS Platform - Executive Summary
 
 **Status:** Production Ready
-**Updated:** 2025-12-14
+**Updated:** 2026-01-01
 
 ## Overview
 
-ATLAS is a real-time macroeconomic monitoring platform that ingests data from multiple sources (FRED, Alpha Vantage, Finnhub, OFR, Nasdaq), evaluates 50+ pattern-based signals, detects regime transitions, and delivers actionable alerts for portfolio allocation decisions.
+ATLAS is a real-time macroeconomic monitoring platform that ingests data from multiple sources (FRED, Alpha Vantage, Finnhub, OFR, Nasdaq), evaluates 62 pattern-based signals, detects regime transitions, and delivers actionable alerts for portfolio allocation decisions.
 
 ## Architecture
 
@@ -17,12 +17,18 @@ flowchart LR
         NC[Nasdaq]
         FH[Finnhub]
         OFR[OfrCollector]
+        SC[Sentinel]
     end
 
     subgraph Processing
         SM[SecMaster]
         TE[ThresholdEngine]
         AS[AlertService]
+    end
+
+    subgraph AI
+        WS[WhisperService]
+        FB[FinBert]
     end
 
     subgraph Storage
@@ -34,10 +40,11 @@ flowchart LR
         G[Grafana]
     end
 
-    FC & AV & NC & FH & OFR -->|gRPC Events| TE
+    FC & AV & NC & FH & OFR & SC -->|gRPC Events| TE
     FC & AV & NC & FH & OFR -->|gRPC Register| SM
-    FC & AV & NC & FH & OFR --> DB
+    FC & AV & NC & FH & OFR & SC --> DB
     TE -->|gRPC Resolve| SM
+    SC -->|Sentiment| FB
     TE --> P
     P --> AS
     AS --> N[ntfy.sh / Email]
@@ -49,32 +56,36 @@ flowchart LR
 
 | Service | Status | Description |
 |---------|--------|-------------|
-| FredCollector | ✅ | 47 FRED economic series, 378 tests |
-| AlphaVantageCollector | ✅ | Commodities (WTI, Brent, Natural Gas) |
-| NasdaqCollector | ✅ | LBMA gold prices (AM/PM fixings) |
-| FinnhubCollector | ✅ | Stock quotes, sentiment, analyst ratings |
-| OfrCollector | ✅ | OFR Financial Stress Index, STFM, HFM data |
-| CalendarService | ✅ | Market status, trading day validation |
-| SecMaster | ✅ | Instrument metadata, source resolution, fuzzy search |
-| ThresholdEngine | ✅ | 50+ patterns, regime detection, 226 tests |
-| AlertService | ✅ | ntfy.sh + email notification channels |
+| FredCollector | :white_check_mark: | 47 FRED economic series |
+| AlphaVantageCollector | :white_check_mark: | Commodities (WTI, Brent, Natural Gas) |
+| NasdaqCollector | :warning: | LBMA gold prices (disabled - IP whitelist pending) |
+| FinnhubCollector | :white_check_mark: | Stock quotes, sentiment, analyst ratings |
+| OfrCollector | :white_check_mark: | OFR Financial Stress Index, STFM, HFM data |
+| SentinelCollector | :white_check_mark: | News aggregation, sentiment analysis |
+| CalendarService | :white_check_mark: | Market status, trading day validation |
+| SecMaster | :white_check_mark: | Instrument metadata, source resolution, fuzzy search |
+| ThresholdEngine | :white_check_mark: | 62 patterns, regime detection |
+| AlertService | :white_check_mark: | ntfy.sh + email notification channels |
+| WhisperService | :white_check_mark: | YouTube transcription via Whisper |
+| FinBertSidecar | :white_check_mark: | Financial sentiment analysis |
 
-**Total:** 30+ containers, 645+ tests passing
+**Total:** 35+ containers
 
 ## Pattern Library
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Recession | 12 | Sahm Rule, yield curve inversion, initial claims |
-| Liquidity | 9 | VIX L1/L2, credit spreads, Fed liquidity |
-| NBFI Stress | 14 | HY spreads, repo facility, Chicago NFCI, OFR FSI |
-| Growth | 5 | GDP acceleration, industrial production |
-| Valuation | 2 | CAPE, Buffett indicator |
+| Recession | 13 | Sahm Rule, yield curve inversion, initial claims |
+| Growth | 8 | GDP acceleration, industrial production, ISM |
+| Liquidity | 8 | VIX L1/L2, credit spreads, Fed liquidity |
+| NBFI Stress | 8 | HY spreads, repo facility, Chicago NFCI |
 | Inflation | 8 | CPI, breakevens, commodity prices |
+| OFR | 7 | FSI components, STFM repo, HFM leverage |
+| Valuation | 6 | CAPE, Buffett indicator |
+| Currency | 3 | DXY, EM FX, carry trades |
 | Commodity | 1 | Copper/Gold ratio |
-| Currency | 3 | DXY, EM FX, risk sentiment |
 
-**Total:** 50+ patterns across 8 categories
+**Total:** 62 patterns across 9 categories
 
 ## Regime Detection
 
@@ -91,19 +102,15 @@ Six-state machine with hysteresis:
 
 ## Key Endpoints
 
+All services use internal ports (8080 REST, 5001 gRPC). Only services requiring external access have host port mappings.
+
 | Service | Port (Host) | Purpose |
 |---------|-------------|---------|
-| fred-collector | 5001/5002 | REST API / gRPC streaming |
-| alphavantage-collector | 5010/5011 | REST API / gRPC streaming |
-| finnhub-collector | 5012/5013 | REST API / gRPC streaming |
-| ofr-collector | 5016 | REST API |
-| threshold-engine | 5003 | Pattern management API |
-| alert-service | 8081 | Alertmanager webhook sink |
-| secmaster | 5017 | Instrument metadata API / gRPC |
 | grafana | 3000 | Dashboards |
-| prometheus | 9090 | Metrics |
-
-**Note:** All collectors use internal port 5001 for gRPC event streaming
+| timescaledb | 5432 | Database |
+| whisper-service | 8090 | YouTube transcription |
+| ollama-gpu | 11434 | LLM inference (GPU) |
+| ollama-cpu | 11435 | LLM inference (CPU) |
 
 ## MCP Servers (Claude Desktop)
 
@@ -115,13 +122,14 @@ Six-state machine with hysteresis:
 | thresholdengine-mcp | 3104 | Pattern evaluation |
 | finnhub-mcp | 3105 | Market data, calendars |
 | ofrcollector-mcp | 3106 | OFR financial stress data |
-| secmaster-mcp | (internal) | Instrument metadata search |
+| secmaster-mcp | 3107 | Instrument metadata search |
+| whisper-mcp | 3108 | YouTube transcription |
 
 ## Infrastructure
 
 - **Runtime:** nerdctl + containerd
 - **Database:** TimescaleDB (PostgreSQL + hypertables)
-- **Observability:** OpenTelemetry → Prometheus, Loki, Tempo, Grafana
+- **Observability:** OpenTelemetry -> Prometheus, Loki, Tempo, Grafana
 - **Deployment:** Ansible playbooks, systemd auto-start
 - **Hardware:** AMD Threadripper 9960X, RTX 5090 (32GB), 128GB RAM
 
