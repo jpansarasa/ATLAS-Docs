@@ -150,6 +150,19 @@ METHODS:
   fallback: ASK_USER("Can't verify - use devcontainer or skip?")
 ¬PATTERN: "straightforward" → commit_anyway # this_is_how_bugs_ship
 
+## GIT_PUSH [HARD_STOP]
+✗ NEVER git push without first running ALL tests for modified projects
+✓ ALWAYS run {Project}/.devcontainer/compile.sh (without --no-test) before push
+✓ VERIFY: 0 errors AND 0 warnings AND all tests pass
+ENFORCE: tests_pass ∧ build_clean → push_allowed
+PROCESS:
+  1. identify_modified_projects(git diff --name-only)
+  2. FOR each project: run compile.sh (with tests)
+  3. IF any_failure → fix_before_push
+  4. ONLY after all_pass → git push
+rationale: broken_tests = broken_code = broken_trust
+hook: .claude/hooks/git-push-guard.sh # enforced_by_tooling
+
 ## GRAFANA_DASHBOARD [json_provisioning]
 COMMON_FAILURES: "No data" | duplicate_values | broken_viz | heatmap_fail
   root_cause: config_mistakes → predictable → eliminable
