@@ -58,12 +58,16 @@ Only then may you push.
 ## Adding New Hooks
 
 1. Create script in `.claude/hooks/`
-2. Read `tool_input` from stdin JSON
-3. Output JSON with `hookSpecificOutput`:
+2. **Make it executable**: `chmod +x script.sh`
+3. Read `tool_input` from stdin JSON
+4. Output JSON with `hookSpecificOutput`:
    - `permissionDecision`: "allow" | "deny"
    - `permissionDecisionReason`: message shown to Claude
    - `additionalContext`: extra context for allowed operations
-4. Add to `.claude/settings.local.json` hooks config
+5. Add to `.claude/settings.local.json` hooks config
+
+**Important**: Scripts must have execute permission. Without it, you'll see
+`PreToolUse:Bash hook error` on every command but tools will still run.
 
 ## Hook Output Format
 
