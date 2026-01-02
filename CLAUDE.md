@@ -273,6 +273,8 @@ ANTI:
 compile: {Project}/.devcontainer/compile.sh [--no-test]
 image: {Project}/.devcontainer/build.sh [--no-cache]
 deploy: ansible-playbook playbooks/deploy.yml --tags {service}
+dashboards: ansible-playbook playbooks/deploy.yml --tags dashboards
+  note: copies monitoring/ dir, Grafana auto-reloads provisioned dashboards
 filter_test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'Name~{Test}'
 
 ## SERVICES [monorepo]
