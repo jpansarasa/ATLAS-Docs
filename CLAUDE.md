@@ -277,10 +277,18 @@ DEPLOYMENT: app handles own migrations/seeding
 DEBUG_ONLY: raw psql queries for inspection
   ✓ SELECT to verify state
   ✗ INSERT/UPDATE/DELETE to fix state # fix_in_code_instead
+MIGRATIONS [HARD_STOP]:
+  ✗ NEVER manually create migration .cs files
+  ✓ ALWAYS use: dotnet ef migrations add {Name} --project {path}
+  rationale: manual_migration → missing_Designer.cs → migration_recorded_but_not_applied
+  required_files: {Migration}.cs + {Migration}.Designer.cs + ModelSnapshot.cs
+  failure_mode: EF records in __EFMigrationsHistory but schema unchanged
+  command: nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project src/Data
 ANTI:
   ✗ raw SQL scripts during deployment
   ✗ bypassing EF to seed/migrate
   ✗ manual database fixes # fix_root_cause_in_app
+  ✗ manually creating migration files # missing Designer.cs
 
 ## BUILD [devcontainer]
 compile: {Project}/.devcontainer/compile.sh [--no-test]

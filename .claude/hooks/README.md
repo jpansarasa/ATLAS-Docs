@@ -9,6 +9,7 @@ Context-aware hooks that inject patterns when working on specific file types.
 | `testing-context.sh` | Edit/Write `*Tests.cs`, `*_test.*`, `test_*.*` | Inject AAA, naming, assertions patterns |
 | `benchmark-context.sh` | Edit/Write `*Benchmark*.cs`, `*_bench.*` | Inject BenchmarkDotNet, Release mode |
 | `git-push-guard.sh` | Bash `git push*` | **BLOCK** - requires tests pass first |
+| `ef-migration-guard.sh` | Write `Migrations/*_*.cs` | **BLOCK** - prevents manual migration creation |
 
 ## How It Works
 
@@ -80,3 +81,20 @@ Only then may you push.
 
 - `0`: Continue (allow or with modifications)
 - `2`: Block command, show stderr to Claude
+
+## EF Migration Guard
+
+**Purpose**: Prevent manual creation of EF migration files.
+
+**Problem**: Creating migration `.cs` files manually (without `dotnet ef migrations add`)
+produces incomplete migrations missing the required `Designer.cs` file. EF Core then:
+1. Records the migration in `__EFMigrationsHistory`
+2. But does NOT apply the schema changes
+3. Runtime errors like "column X does not exist"
+
+**Correct Process**:
+```bash
+nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project src/Data
+```
+
+**Blocked Pattern**: Any Write to `Migrations/[timestamp]_[Name].cs` that isn't a Designer.cs
