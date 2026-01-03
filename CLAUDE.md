@@ -277,6 +277,8 @@ DEPLOYMENT: app handles own migrations/seeding
 DEBUG_ONLY: raw psql queries for inspection
   ✓ SELECT to verify state
   ✗ INSERT/UPDATE/DELETE to fix state # fix_in_code_instead
+PSQL_CONNECTION: sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data
+  rationale: container=timescaledb, user=ai_inference, db=atlas_data
 MIGRATIONS [HARD_STOP]:
   ✗ NEVER manually create migration .cs files
   ✓ ALWAYS use: dotnet ef migrations add {Name} --project {path}

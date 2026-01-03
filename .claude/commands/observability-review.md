@@ -98,8 +98,17 @@ MISCLASSIFIED:
     grep: `LogInformation.*"[Ee]rror"`
 
   LogError → LogWarning:
+    # PRINCIPLE: if message indicates system continues operating, it's Warning not Error
+    # Error = requires_attention, Warning = degraded_but_operational
     grep: `LogError.*"will retry"` → recoverable
     grep: `LogError.*"[Tt]ransient"` → recoverable
+    grep: `LogError.*"[Cc]ontinuing"` → degraded_but_operational
+    grep: `LogError.*"[Ss]kipping"` → degraded_but_operational
+    grep: `LogError.*"[Ff]alling back"` → degraded_but_operational
+    grep: `LogError.*"[Uu]sing default"` → degraded_but_operational
+    grep: `LogError.*"[Pp]artial"` → degraded_but_operational
+    grep: `LogError.*"[Dd]egraded"` → degraded_but_operational
+    grep: `LogError.*"next (item|query|record)"` → loop_continues
 
 RULES (CLAUDE.md:LOG_RULES):
   LogInformation: routine_ops | expected_retries | client_disconnect
