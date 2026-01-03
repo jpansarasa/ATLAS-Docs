@@ -113,8 +113,7 @@ SentinelCollector/
 │   ├── DependencyInjection.cs # Service registration
 │   └── Containerfile          # Multi-stage container build
 ├── tests/
-│   ├── SentinelCollector.UnitTests/     # Unit tests
-│   └── SentinelCollector.LlmBenchmark/  # LLM accuracy benchmarks with golden dataset
+│   └── SentinelCollector.UnitTests/     # Unit tests
 └── .devcontainer/             # VS Code dev container
 ```
 
@@ -142,10 +141,7 @@ dotnet run
 
 ### Run LLM Benchmarks
 
-```bash
-cd tests/SentinelCollector.LlmBenchmark
-dotnet test --filter "Name~ExtractionAccuracy"
-```
+See `/LlmBenchmark` at the repo root for LLM accuracy benchmarks.
 
 ## Deployment
 

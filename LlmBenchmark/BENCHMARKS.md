@@ -1,6 +1,6 @@
 # LLM Extraction Benchmark Results
 
-Tracking extraction accuracy for SentinelCollector across models.
+Tracking LLM extraction accuracy across models for ATLAS services.
 
 ## Current Leaderboard (Best F1 per Model)
 
@@ -40,7 +40,7 @@ Tracking extraction accuracy for SentinelCollector across models.
 ## Running Benchmarks
 
 ```bash
-cd SentinelCollector/tests/SentinelCollector.LlmBenchmark
+cd LlmBenchmark
 ./run-benchmarks.sh
 ```
 
