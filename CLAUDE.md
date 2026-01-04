@@ -56,10 +56,23 @@ template_bad: "Error occurred"
 chain: log_good + err_good → test_less
 purpose: runtime_debug ¬ noise
 LEVELS:
-  LogInformation: routine_ops | expected_retries | client_disconnect
-    rationale: filtered_in_prod, visible_in_dev
+  LogDebug: debug_sessions_only | dev_troubleshooting | never_in_prod
+    rationale: too_verbose_for_runtime, attach_debugger_instead
+  LogInformation: runtime_diagnostics | routine_ops | expected_retries | client_disconnect
+    rationale: operational_visibility, filtered_in_prod, visible_in_dev
   LogWarning: unexpected_but_recoverable | degraded_state
   LogError: failures | exceptions | requires_attention
+
+## DATETIME_FORMAT [always_iso8601]
+ToString: dateTime.ToString("O") # ISO 8601 round-trip format
+  output: "2024-01-15T10:30:00.0000000Z"
+  rationale: unambiguous | sortable | parseable | includes_timezone
+USE_CASES:
+  ✓ trace_tags: activity?.SetTag("time", dt.ToString("O"))
+  ✓ log_context: _logger.LogInfo("At {Time}", dt.ToString("O"))
+  ✓ diagnostic_strings: any manual DateTime → string
+  ✗ json_serialization: handled_by_serializer
+  ✗ database_storage: handled_by_ef_core
 
 ## DOC [selective]
 CLI → help(required)

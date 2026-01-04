@@ -201,9 +201,12 @@ Production default is `Warning`. Use levels correctly:
 
 | Level | Use For | Example |
 |-------|---------|---------|
-| Information | Routine ops, expected retries | "Collected 5 observations for UNRATE" |
+| Debug | Debug sessions only, dev troubleshooting | "Processing item 5 of 100" |
+| Information | Runtime diagnostics, routine ops | "Collected 5 observations for UNRATE" |
 | Warning | Unexpected but recoverable | "Rate limited, backing off" |
 | Error | Failures, exceptions | "Failed to connect to FRED API" |
+
+**LogDebug vs LogInformation**: LogDebug is only for debug sessions—attach a debugger, temporarily lower log level. LogInformation is for runtime diagnostics—operational visibility in production when needed.
 
 ### Structured Logging
 

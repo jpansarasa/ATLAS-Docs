@@ -89,6 +89,13 @@ report: file:line → assessment
 scope: {scope}
 
 MISCLASSIFIED:
+  LogInformation → LogDebug:
+    # PRINCIPLE: LogDebug = debug_sessions_only, LogInformation = runtime_diagnostics
+    grep: `LogInformation.*"(Processing|Checking|Iterating)"` → too_verbose
+    grep: `LogInformation.*"item \d+ of"` → loop_progress
+    grep: `LogInformation.*"[Ss]kipping.*already exists"` → duplicate_handling
+    grep: `LogInformation.*"[Dd]ebug"` → wrong_level
+
   LogWarning → LogInformation:
     grep: `LogWarning.*"(Client|User).*(subscribed|connected|started)"`
     grep: `LogWarning.*"Successfully"`
@@ -111,7 +118,10 @@ MISCLASSIFIED:
     grep: `LogError.*"next (item|query|record)"` → loop_continues
 
 RULES (CLAUDE.md:LOG_RULES):
-  LogInformation: routine_ops | expected_retries | client_disconnect
+  LogDebug: debug_sessions_only | dev_troubleshooting | never_in_prod
+    rationale: too_verbose_for_runtime, attach_debugger_instead
+  LogInformation: runtime_diagnostics | routine_ops | expected_retries | client_disconnect
+    rationale: operational_visibility, filtered_in_prod, visible_in_dev
   LogWarning: unexpected_but_recoverable | degraded_state | service_startup
   LogError: failures | exceptions | requires_attention
 
