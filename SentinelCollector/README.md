@@ -40,6 +40,7 @@ flowchart LR
 - **SearXNG Collection**: Scheduled news search across Google, Bing, and DuckDuckGo for economic indicator keywords
 - **Edge Sync**: Pulls content from Cloudflare edge workers for low-latency web capture
 - **Content Normalization**: Converts HTML/PDF to markdown via Markitdown MCP for consistent LLM input
+- **Specialized Source Prompts**: Source-specific extraction for structured reports (Challenger, BDI, ISM, ADP, Truflation)
 - **Chain of Verification (CoVe)**: Multi-pass LLM extraction with self-verification to reduce hallucinations
 - **Chain of Density (CoD)**: Progressive summarization for context-rich RAG embeddings
 - **Epistemic Classification**: Categorizes certainty (Definite, Expected, Speculative, Conditional)
@@ -108,7 +109,8 @@ SentinelCollector/
 │   ├── Services/              # HTTP clients (Ollama, SecMaster, SearXNG, EdgeSync, Markitdown)
 │   ├── Telemetry/             # OpenTelemetry meters and activity sources
 │   ├── Workers/               # Background workers (EdgeSyncWorker, ExtractionProcessor, SearxngCollectionScheduler)
-│   ├── prompts/               # LLM prompt templates (extraction, density)
+│   ├── prompts/               # LLM prompt templates
+│   │   └── sources/           # Source-specific prompts (challenger, bdi, ism, adp, truflation)
 │   ├── Program.cs             # Application entry point
 │   ├── DependencyInjection.cs # Service registration
 │   └── Containerfile          # Multi-stage container build
