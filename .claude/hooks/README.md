@@ -102,4 +102,3 @@ nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project src/
 ```
 
 **Blocked Pattern**: Any Write to `Migrations/[timestamp]_[Name].cs` that isn't a Designer.cs
-# Test PR Review Guard - 2026-01-11T23:31:57+00:00
