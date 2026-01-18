@@ -91,18 +91,15 @@ Query any stock symbol directly from Finnhub API (not limited to tracked series)
 ## Project Structure
 
 ```
-FinnhubMcp/
-├── src/
-│   ├── Client/
-│   │   ├── FinnhubCollectorClient.cs   # HTTP client for collector API
-│   │   ├── IFinnhubCollectorClient.cs  # Client interface
-│   │   └── Models/
-│   │       └── ClientModels.cs         # API response models
-│   ├── Tools/
-│   │   └── FinnhubTools.cs             # MCP tool definitions (27 tools)
-│   ├── Program.cs                       # Entry point, MCP server setup
-│   ├── Containerfile                    # Container image definition
-│   └── FinnhubMcp.csproj               # Project file
+FinnhubCollector/mcp/
+├── Client/
+│   ├── FinnhubCollectorClient.cs   # HTTP client for collector API
+│   └── IFinnhubCollectorClient.cs  # Client interface
+├── Tools/
+│   └── FinnhubTools.cs             # MCP tool definitions (27 tools)
+├── Program.cs                       # Entry point, MCP server setup
+├── Containerfile                    # Container image definition
+├── FinnhubMcp.csproj               # Project file
 └── README.md
 ```
 
@@ -116,13 +113,13 @@ FinnhubMcp/
 ### Build
 
 ```bash
-.devcontainer/compile.sh
+FinnhubCollector/.devcontainer/compile.sh
 ```
 
 ### Build Container
 
 ```bash
-.devcontainer/build.sh
+FinnhubCollector/.devcontainer/build.sh
 ```
 
 ## Deployment
@@ -170,6 +167,6 @@ Claude calls: get_earnings_calendar(days=7)
 
 ## See Also
 
-- [FinnhubCollector](../FinnhubCollector/README.md) - Backend service
-- [SecMasterMcp](../SecMasterMcp/README.md) - Instrument metadata and search
+- [FinnhubCollector](../README.md) - Backend service
+- [SecMasterMcp](../../SecMasterMcp/README.md) - Instrument metadata and search
 - [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification
