@@ -153,5 +153,5 @@ Claude calls: ollama_pull_model(model="mistral:7b", use_gpu=true)
 
 - [Ollama Documentation](https://github.com/ollama/ollama/tree/main/docs)
 - [MCP Specification](https://modelcontextprotocol.io/)
-- [SecMasterMcp](../SecMasterMcp/README.md) - Instrument search and metadata
-- [FredCollectorMcp](../FredCollectorMcp/README.md) - FRED data access
+- [SecMaster MCP](../SecMaster/mcp/README.md) - Instrument search and metadata
+- [FredCollector MCP](../FredCollector/mcp/README.md) - FRED data access

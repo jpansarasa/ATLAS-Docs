@@ -126,5 +126,5 @@ Response: Markdown text of FOMC minutes
 
 - [markitdown GitHub](https://github.com/microsoft/markitdown) - Official Python library
 - [MCP Protocol](https://modelcontextprotocol.io/) - Model Context Protocol specification
-- [SecMasterMcp](../SecMasterMcp/README.md) - Instrument metadata access
-- [FredCollectorMcp](../FredCollectorMcp/README.md) - Economic data access
+- [SecMaster MCP](../SecMaster/mcp/README.md) - Instrument metadata access
+- [FredCollector MCP](../FredCollector/mcp/README.md) - Economic data access

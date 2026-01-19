@@ -168,5 +168,5 @@ Claude calls: get_earnings_calendar(days=7)
 ## See Also
 
 - [FinnhubCollector](../README.md) - Backend service
-- [SecMasterMcp](../../SecMasterMcp/README.md) - Instrument metadata and search
+- [SecMaster MCP](../../SecMaster/mcp/README.md) - Instrument metadata and search
 - [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification

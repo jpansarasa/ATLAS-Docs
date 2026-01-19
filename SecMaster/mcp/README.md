@@ -1,4 +1,4 @@
-# SecMasterMcp
+# SecMaster MCP
 
 MCP server exposing ATLAS instrument metadata, semantic search, and data collector management to AI assistants.
 
@@ -83,22 +83,18 @@ flowchart LR
 ## Project Structure
 
 ```
-SecMasterMcp/
-├── .devcontainer/
-│   ├── build.sh           # Container build script
-│   ├── compile.sh         # Compile and test
-│   └── compose.yaml       # Dev container compose
-├── src/
-│   ├── Client/
-│   │   ├── ISecMasterClient.cs
-│   │   ├── SecMasterClient.cs
-│   │   └── Models/SecMasterModels.cs
+SecMaster/
+├── mcp/
 │   ├── Tools/
 │   │   └── SecMasterTools.cs
 │   ├── Program.cs
 │   ├── SecMasterMcp.csproj
-│   └── Containerfile
-└── README.md
+│   ├── Containerfile
+│   └── README.md
+├── src/
+│   └── ...
+└── tests/
+    └── ...
 ```
 
 ## Development
@@ -111,13 +107,13 @@ SecMasterMcp/
 ### Build
 
 ```bash
-.devcontainer/compile.sh
+SecMaster/.devcontainer/compile.sh
 ```
 
 ### Build Container
 
 ```bash
-.devcontainer/build.sh
+sudo nerdctl build -f SecMaster/mcp/Containerfile -t secmaster-mcp:latest .
 ```
 
 ## Deployment
@@ -177,7 +173,7 @@ Claude calls: add_finnhub_series(symbol="NDAQ", priority=10)
 
 ## See Also
 
-- [SecMaster](../SecMaster/README.md) - Backend service
-- [FredCollectorMcp](../FredCollectorMcp/README.md) - FRED data access
-- [FinnhubMcp](../FinnhubMcp/README.md) - Stock market data
-- [OfrMcp](../OfrCollector/mcp/README.md) - OFR financial stress data
+- [SecMaster](../README.md) - Backend service
+- [FredCollector MCP](../../FredCollector/mcp/README.md) - FRED data access
+- [FinnhubCollector MCP](../../FinnhubCollector/mcp/README.md) - Stock market data
+- [OfrCollector MCP](../../OfrCollector/mcp/README.md) - OFR financial stress data

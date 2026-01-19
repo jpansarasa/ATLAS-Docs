@@ -217,7 +217,7 @@ ansible-playbook playbooks/deploy.yml --tags secmaster
 
 ## See Also
 
-- [SecMasterMcp](../SecMasterMcp/README.md) - MCP server for Claude Code integration
+- [SecMaster MCP](mcp/README.md) - MCP server for Claude Code integration
 - [ThresholdEngine](../ThresholdEngine/README.md) - Primary consumer of resolution services
 - [FredCollector](../FredCollector/README.md) - Economic data collector
 - [FinnhubCollector](../FinnhubCollector/README.md) - Stock quotes and sentiment

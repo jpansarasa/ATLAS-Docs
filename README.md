@@ -730,12 +730,12 @@ ATLAS/
 ├── ThresholdEngine/        # Pattern evaluation & regime detection
 ├── AlertService/           # Notification dispatch
 ├── Events/                 # Shared gRPC event contracts
-├── OllamaMcp/              # Ollama MCP server (Claude Desktop)
-├── FredCollectorMcp/       # FRED data MCP server
+├── OllamaMCP/              # Ollama MCP server (Claude Desktop)
 ├── ThresholdEngineMcp/     # Pattern evaluation MCP server
-├── FinnhubMcp/             # Finnhub data MCP server
+├── FredCollector/mcp/      # FRED data MCP server
+├── FinnhubCollector/mcp/   # Finnhub data MCP server
 ├── OfrCollector/mcp/       # OFR data MCP server
-├── SecMasterMcp/           # SecMaster data MCP server
+├── SecMaster/mcp/          # SecMaster data MCP server
 ├── deployment/             # Ansible playbooks, compose templates, configs
 ├── CLAUDE.md               # AI assistant rules
 └── STATE.md                # Current system status
