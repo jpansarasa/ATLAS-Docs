@@ -1,4 +1,4 @@
-# ThresholdEngineMcp
+# ThresholdEngine MCP
 
 MCP server providing Claude Desktop and Claude Code direct access to ATLAS pattern evaluation and regime detection.
 
@@ -83,20 +83,23 @@ flowchart LR
 ## Project Structure
 
 ```
-ThresholdEngineMcp/
-  src/
-    Client/
-      IThresholdEngineClient.cs   # HTTP client interface
-      ThresholdEngineClient.cs    # HTTP client implementation
-      Models/
-        ClientModels.cs           # API response models
-    Tools/
-      ThresholdEngineTools.cs     # MCP tool definitions (8 tools)
-    Program.cs                    # Application entry point
-  .devcontainer/
-    devcontainer.json             # Dev container config
-    compile.sh                    # Build script
-    build.sh                      # Container build script
+ThresholdEngine/
+├── mcp/
+│   ├── Client/
+│   │   ├── IThresholdEngineClient.cs
+│   │   ├── ThresholdEngineClient.cs
+│   │   └── Models/
+│   │       └── ClientModels.cs
+│   ├── Tools/
+│   │   └── ThresholdEngineTools.cs
+│   ├── Program.cs
+│   ├── ThresholdEngineMcp.csproj
+│   ├── Containerfile
+│   └── README.md
+├── src/
+│   └── ...
+└── tests/
+    └── ...
 ```
 
 ## Development
@@ -109,19 +112,19 @@ ThresholdEngineMcp/
 ### Build
 
 ```bash
-.devcontainer/compile.sh
+ThresholdEngine/.devcontainer/compile.sh
 ```
 
 ### Build Container
 
 ```bash
-.devcontainer/build.sh
+sudo nerdctl build -f ThresholdEngine/mcp/Containerfile -t thresholdengine-mcp:latest .
 ```
 
 ## Deployment
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags threshold-engine-mcp
+ansible-playbook playbooks/deploy.yml --tags thresholdengine-mcp
 ```
 
 ## Claude Desktop Integration
@@ -168,6 +171,6 @@ Response: "Pattern triggered: signal -1.5, high confidence"
 
 ## See Also
 
-- [ThresholdEngine](../ThresholdEngine/README.md) - Backend service documentation
-- [FredCollectorMcp](../FredCollectorMcp/README.md) - Economic data access
+- [ThresholdEngine](../README.md) - Backend service documentation
+- [FredCollector MCP](../../FredCollector/mcp/README.md) - Economic data access
 - [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification

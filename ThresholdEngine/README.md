@@ -151,4 +151,4 @@ Note: ThresholdEngine has no external port mapping. Access via ThresholdEngineMc
 - [AlphaVantageCollector](../AlphaVantageCollector/README.md) - Commodities, forex, crypto collector
 - [FinnhubCollector](../FinnhubCollector/README.md) - Stock quotes, calendars, sentiment collector
 - [OfrCollector](../OfrCollector/README.md) - Financial stability data collector
-- [ThresholdEngineMcp](../ThresholdEngineMcp/README.md) - MCP server for Claude Code integration
+- [ThresholdEngine MCP](mcp/README.md) - MCP server for Claude Code integration

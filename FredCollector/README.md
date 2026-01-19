@@ -149,4 +149,4 @@ ansible-playbook playbooks/deploy.yml --tags fred-collector
 - [ThresholdEngine](../ThresholdEngine/README.md) - Consumes FRED observation events
 - [SecMaster](../SecMaster/README.md) - Instrument registration
 - [Events](../Events/README.md) - Shared gRPC event contracts
-- [FredCollectorMcp](../FredCollectorMcp/README.md) - MCP server for AI assistants
+- [FredCollector MCP](mcp/README.md) - MCP server for AI assistants

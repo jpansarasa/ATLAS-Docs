@@ -182,4 +182,4 @@ ansible-playbook playbooks/deploy.yml --tags finnhub-collector
 - [ThresholdEngine](../ThresholdEngine/README.md) - Consumes observation events
 - [SecMaster](../SecMaster/README.md) - Instrument registration
 - [Events](../Events/README.md) - Shared gRPC event contracts
-- [FinnhubMcp](../FinnhubMcp/README.md) - MCP server for AI assistants
+- [FinnhubMcp](mcp/README.md) - MCP server for AI assistants

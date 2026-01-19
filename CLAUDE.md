@@ -325,7 +325,7 @@ processing: ThresholdEngine
 alerting: AlertService
 calendar: CalendarService
 metadata: SecMaster
-mcp: FredCollectorMcp, ThresholdEngineMcp, FinnhubMcp, OfrMcp, SecMasterMcp
+mcp: FredCollector/mcp, ThresholdEngine/mcp, FinnhubCollector/mcp, OfrCollector/mcp, SecMaster/mcp
 shared: Events/, deployment/, docs/
 
 ## DATA_FLOW

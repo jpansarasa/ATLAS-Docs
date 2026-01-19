@@ -59,21 +59,17 @@ flowchart LR
 ## Project Structure
 
 ```
-FredCollectorMcp/
-├── .devcontainer/
-│   ├── compile.sh         # Build script
-│   └── devcontainer.json  # VS Code dev container config
-├── src/
-│   ├── Client/
-│   │   ├── FredCollectorClient.cs   # HTTP client implementation
-│   │   ├── IFredCollectorClient.cs  # Client interface
-│   │   └── Models/
-│   │       └── ClientModels.cs      # DTO models
-│   ├── Tools/
-│   │   └── FredCollectorTools.cs    # MCP tool definitions
-│   ├── Containerfile                # Container build
-│   ├── FredCollectorMcp.csproj      # Project file
-│   └── Program.cs                   # Entry point
+FredCollector/mcp/
+├── Client/
+│   ├── FredCollectorClient.cs   # HTTP client implementation
+│   ├── IFredCollectorClient.cs  # Client interface
+│   └── Models/
+│       └── ClientModels.cs      # DTO models
+├── Tools/
+│   └── FredCollectorTools.cs    # MCP tool definitions
+├── Containerfile                # Container build
+├── FredCollectorMcp.csproj      # Project file
+├── Program.cs                   # Entry point
 └── README.md
 ```
 
@@ -146,6 +142,6 @@ Response: "ATLAS is tracking 2 housing series: HOUST, PERMIT"
 
 ## See Also
 
-- [FredCollector](../FredCollector/README.md) - Backend service documentation
-- [ThresholdEngineMcp](../ThresholdEngineMcp/README.md) - Pattern evaluation and macro scoring
+- [FredCollector](../README.md) - Backend service documentation
+- [ThresholdEngine MCP](../../ThresholdEngine/mcp/README.md) - Pattern evaluation and macro scoring
 - [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification

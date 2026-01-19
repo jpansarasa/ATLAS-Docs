@@ -731,7 +731,7 @@ ATLAS/
 ├── AlertService/           # Notification dispatch
 ├── Events/                 # Shared gRPC event contracts
 ├── OllamaMCP/              # Ollama MCP server (Claude Desktop)
-├── ThresholdEngineMcp/     # Pattern evaluation MCP server
+├── ThresholdEngine/mcp/    # Pattern evaluation MCP server
 ├── FredCollector/mcp/      # FRED data MCP server
 ├── FinnhubCollector/mcp/   # Finnhub data MCP server
 ├── OfrCollector/mcp/       # OFR data MCP server
