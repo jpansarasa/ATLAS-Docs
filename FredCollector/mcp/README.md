@@ -11,34 +11,18 @@ Exposes FredCollector REST API as MCP tools, enabling Claude Desktop and Claude 
 ```mermaid
 flowchart LR
     AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[FredCollectorMcp<br/>:3103]
-    MCP -->|HTTP| API[fred-api<br/>:8080]
+    MCP -->|HTTP| API[fred-collector<br/>:8080]
     API -->|SQL| DB[(TimescaleDB)]
 ```
 
-## MCP Tools
+AI assistants connect via SSE transport. The MCP server translates tool calls to FredCollector REST API requests, returning formatted responses.
 
-### Data Query Tools
+## Features
 
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `list_series` | List all configured FRED series in ATLAS | `category` (optional) |
-| `get_latest` | Get most recent observation for a series | `series_id` |
-| `get_observations` | Get historical observations for a series | `series_id`, `start_date`, `end_date`, `limit` |
-| `search` | Search FRED for series by keyword | `query`, `limit` |
-| `categories` | List all available data categories and series counts | None |
-| `health` | Get FredCollector service health and data freshness | None |
-| `api_schema` | Get OpenAPI specification for FredCollector API | `format` |
-
-### Admin Tools
-
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `add_series` | Add new FRED series to collect | `seriesId`, `category`, `backfill` |
-| `get_all_series_admin` | Get all configured series including inactive | None |
-| `toggle_series` | Enable or disable series for collection | `seriesId` |
-| `delete_series` | Delete series and all observations | `seriesId` |
-| `trigger_collection` | Trigger immediate data collection | `seriesId` |
-| `trigger_backfill` | Trigger historical data backfill | `seriesId`, `months` |
+- **Data Query Tools**: Get latest values, historical observations, search series
+- **Admin Tools**: Add/remove series, trigger collection and backfill
+- **SSE Transport**: HTTP-based transport for remote access
+- **Claude Desktop Integration**: Works with mcp-proxy for stdio bridging
 
 ## Configuration
 
@@ -48,13 +32,30 @@ flowchart LR
 | `FREDCOLLECTOR_MCP_LOG_LEVEL` | `Warning` | Logging level |
 | `FREDCOLLECTOR_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
 
-### Port Mapping
+## MCP Tools
 
-| Port | Purpose |
-|------|---------|
-| 8080 | Internal container port |
-| 3103 | External host port |
-| `http://mercury:3103/sse` | SSE endpoint |
+### Data Query Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `list_series` | List all configured FRED series | `category` (optional) |
+| `get_latest` | Get most recent observation | `series_id` |
+| `get_observations` | Get historical observations | `series_id`, `start_date`, `end_date`, `limit` |
+| `search` | Search FRED for series | `query`, `limit` |
+| `categories` | List categories and series counts | None |
+| `health` | Service health and data freshness | None |
+| `api_schema` | OpenAPI specification | `format` |
+
+### Admin Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `add_series` | Add new series to collect | `seriesId`, `category`, `backfill` |
+| `get_all_series_admin` | Get all series including inactive | None |
+| `toggle_series` | Enable/disable series collection | `seriesId` |
+| `delete_series` | Delete series and observations | `seriesId` |
+| `trigger_collection` | Trigger immediate collection | `seriesId` |
+| `trigger_backfill` | Trigger historical backfill | `seriesId`, `months` |
 
 ## Project Structure
 
@@ -69,15 +70,14 @@ FredCollector/mcp/
 │   └── FredCollectorTools.cs    # MCP tool definitions
 ├── Containerfile                # Container build
 ├── FredCollectorMcp.csproj      # Project file
-├── Program.cs                   # Entry point
-└── README.md
+└── Program.cs                   # Entry point
 ```
 
 ## Development
 
 ### Prerequisites
 
-- .NET 9.0 SDK (via devcontainer)
+- VS Code with Dev Containers extension
 - FredCollector backend running
 
 ### Build
@@ -89,10 +89,8 @@ FredCollector/mcp/
 ### Build Container
 
 ```bash
-sudo nerdctl build -t fred-collector-mcp:latest -f src/Containerfile .
+.devcontainer/build.sh
 ```
-
-Run from monorepo root (`/home/james/ATLAS`).
 
 ## Deployment
 
@@ -100,9 +98,18 @@ Run from monorepo root (`/home/james/ATLAS`).
 ansible-playbook playbooks/deploy.yml --tags fred-collector-mcp
 ```
 
+## Ports
+
+| Port | Description |
+|------|-------------|
+| 8080 | REST API (internal) |
+| 3103 | Host-mapped SSE endpoint |
+
+SSE endpoint: `http://mercury:3103/sse`
+
 ## Claude Desktop Integration
 
-Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+Add to `~/.config/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -116,29 +123,6 @@ Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Appli
 ```
 
 Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
-
-## Usage Examples
-
-**Check current VIX:**
-```
-User: "What's VIX at?"
-Claude calls: get_latest("VIXCLS")
-Response: "VIX closed at 14.23 yesterday."
-```
-
-**Review unemployment trend:**
-```
-User: "Show me unemployment for the past year"
-Claude calls: get_observations("UNRATE", limit=12)
-Response: "Unemployment rate over past 12 months: Nov: 4.1%, Oct: 4.1%..."
-```
-
-**Find housing series:**
-```
-User: "What series do you have for housing?"
-Claude calls: search("housing")
-Response: "ATLAS is tracking 2 housing series: HOUST, PERMIT"
-```
 
 ## See Also
 

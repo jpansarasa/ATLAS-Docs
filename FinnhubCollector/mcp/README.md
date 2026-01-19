@@ -1,10 +1,10 @@
 # FinnhubMcp
 
-MCP server providing Claude Desktop and Claude Code direct access to ATLAS stock market data and economic calendar events from Finnhub.
+MCP server providing AI assistants direct access to ATLAS stock market data and economic calendar events from Finnhub.
 
 ## Overview
 
-Exposes FinnhubCollector REST API as MCP tools, enabling AI assistants to query real-time stock quotes, economic calendar events (FOMC, CPI, etc.), earnings calendars, news sentiment, and analyst data. Includes both tracked series and live API pass-through for ad-hoc queries on any stock symbol.
+Exposes FinnhubCollector REST API as MCP tools, enabling Claude Desktop and Claude Code to query real-time stock quotes, economic calendar events (FOMC, CPI, etc.), earnings calendars, news sentiment, and analyst data. Includes both tracked series and live API pass-through for ad-hoc queries on any stock symbol.
 
 ## Architecture
 
@@ -16,98 +16,87 @@ flowchart LR
     API -->|HTTP| Finnhub[Finnhub API]
 ```
 
+AI assistants connect via MCP protocol (SSE transport) to query stored market data or pass through to live Finnhub API.
+
+## Features
+
+- **Data Query Tools**: 15 tools for quotes, calendars, sentiment, recommendations, and price targets
+- **Live Data Tools**: 7 tools querying Finnhub API directly for any symbol (not limited to tracked series)
+- **Admin Tools**: 5 tools for managing tracked series and triggering collections
+- **Economic Calendar**: High-impact events (FOMC, CPI, NFP) with filtering
+- **Symbol Search**: Find symbols across exchanges
+
+## Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FINNHUB_API_URL` | Backend service URL | `http://finnhub-collector:8080` |
+| `FINNHUB_MCP_LOG_LEVEL` | Logging level | `Warning` |
+| `FINNHUB_MCP_TIMEOUT_SECONDS` | HTTP request timeout | `30` |
+
 ## MCP Tools
 
 ### Data Query Tools (15 tools)
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `health` | Get FinnhubCollector service health status | - |
-| `get_series` | List all configured Finnhub series | `type` (optional) |
-| `get_quote` | Get latest quote for a tracked symbol | `symbol` |
-| `get_quote_history` | Get historical quotes for a tracked symbol | `symbol`, `from`, `to` |
-| `get_economic_calendar` | Get upcoming economic calendar events | `days` |
-| `get_high_impact_events` | Get high-impact economic events only | `from`, `to` |
-| `get_earnings_calendar` | Get upcoming earnings announcements | `days` |
-| `get_ipo_calendar` | Get upcoming IPOs | `days` |
-| `get_news_sentiment` | Get news sentiment analysis | `symbol` |
-| `get_insider_sentiment` | Get insider buying/selling activity | `symbol` |
-| `get_recommendations` | Get analyst recommendations | `symbol` |
-| `get_price_target` | Get analyst price targets | `symbol` |
-| `get_company_profile` | Get company profile information | `symbol` |
-| `get_market_status` | Check if market is currently open | `exchange` |
-| `search_symbols` | Search for stock symbols | `query` |
+| `health` | Service health status | - |
+| `get_series` | List configured series | `type` (optional) |
+| `get_quote` | Latest quote for tracked symbol | `symbol` |
+| `get_quote_history` | Historical quotes | `symbol`, `from`, `to` |
+| `get_economic_calendar` | Upcoming economic events | `days` |
+| `get_high_impact_events` | High-impact events only | `from`, `to` |
+| `get_earnings_calendar` | Earnings announcements | `days` |
+| `get_ipo_calendar` | Upcoming IPOs | `days` |
+| `get_news_sentiment` | News sentiment analysis | `symbol` |
+| `get_insider_sentiment` | Insider buying/selling | `symbol` |
+| `get_recommendations` | Analyst recommendations | `symbol` |
+| `get_price_target` | Analyst price targets | `symbol` |
+| `get_company_profile` | Company information | `symbol` |
+| `get_market_status` | Market open/closed | `exchange` |
+| `search_symbols` | Search for symbols | `query` |
 
 ### Live Data Tools (7 tools)
 
-Query any stock symbol directly from Finnhub API (not limited to tracked series):
+Query any symbol directly from Finnhub API (not limited to tracked series):
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `get_live_quote` | Get live quote for any symbol | `symbol` |
-| `get_live_candles` | Get historical price candles | `symbol`, `resolution`, `days` |
-| `get_live_profile` | Get company profile for any symbol | `symbol` |
-| `get_live_recommendation` | Get analyst recommendations | `symbol` |
-| `get_live_price_target` | Get analyst price target | `symbol` |
-| `get_live_news_sentiment` | Get news sentiment | `symbol` |
-| `get_live_peers` | Get company peers | `symbol` |
+| `get_live_quote` | Live quote for any symbol | `symbol` |
+| `get_live_candles` | Historical price candles | `symbol`, `resolution`, `days` |
+| `get_live_profile` | Company profile | `symbol` |
+| `get_live_recommendation` | Analyst recommendations | `symbol` |
+| `get_live_price_target` | Analyst price target | `symbol` |
+| `get_live_news_sentiment` | News sentiment | `symbol` |
+| `get_live_peers` | Company peers | `symbol` |
 
 ### Admin Tools (5 tools)
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `get_all_series_admin` | Get all series including inactive | - |
-| `add_series` | Add new series to track | `symbol`, `type`, `category`, `poll_interval_seconds` |
-| `toggle_series` | Enable/disable series collection | `series_id` |
-| `delete_series` | Delete series (destructive) | `series_id` |
-| `trigger_collection` | Trigger immediate data collection | `series_id` |
-
-### Series Types
-
-- `Quote` - Real-time stock quotes
-- `Candle` - Historical price candles
-- `NewsSentiment` - News sentiment analysis
-- `Recommendation` - Analyst recommendations
-- `PriceTarget` - Analyst price targets
-- `CompanyProfile` - Company information
-- `EconomicCalendar` - Economic calendar events
-- `EarningsCalendar` - Earnings announcements
-- `IpoCalendar` - IPO events
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FINNHUB_API_URL` | `http://finnhub-collector:8080` | Backend service URL |
-| `FINNHUB_MCP_LOG_LEVEL` | `Warning` | Logging level |
-| `FINNHUB_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
-
-### Port Mapping
-
-- Internal: 8080
-- External (host): 3105
-- SSE endpoint: `http://mercury:3105/sse`
+| `get_all_series_admin` | All series including inactive | - |
+| `add_series` | Add new series | `symbol`, `type`, `category`, `poll_interval_seconds` |
+| `toggle_series` | Enable/disable collection | `series_id` |
+| `delete_series` | Delete series | `series_id` |
+| `trigger_collection` | Immediate data collection | `series_id` |
 
 ## Project Structure
 
 ```
 FinnhubCollector/mcp/
 ├── Client/
-│   ├── FinnhubCollectorClient.cs   # HTTP client for collector API
-│   └── IFinnhubCollectorClient.cs  # Client interface
+│   └── FinnhubCollectorClient.cs   # HTTP client for collector API
 ├── Tools/
 │   └── FinnhubTools.cs             # MCP tool definitions (27 tools)
 ├── Program.cs                       # Entry point, MCP server setup
-├── Containerfile                    # Container image definition
-├── FinnhubMcp.csproj               # Project file
-└── README.md
+└── Containerfile                    # Container image definition
 ```
 
 ## Development
 
 ### Prerequisites
 
-- .NET 9 SDK
+- VS Code with Dev Containers extension
 - Access to finnhub-collector service
 
 ### Build
@@ -128,6 +117,15 @@ FinnhubCollector/.devcontainer/build.sh
 ansible-playbook playbooks/deploy.yml --tags finnhub-mcp
 ```
 
+## Ports
+
+| Port | Description |
+|------|-------------|
+| 8080 | HTTP API (internal) |
+| 3105 | Host-mapped SSE endpoint |
+
+SSE endpoint: `http://mercury:3105/sse`
+
 ## Claude Desktop Integration
 
 Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
@@ -144,26 +142,6 @@ Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Appli
 ```
 
 Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
-
-## Usage Examples
-
-**Check stock price:**
-```
-User: "What's Apple trading at?"
-Claude calls: get_live_quote(symbol="AAPL")
-```
-
-**Economic calendar:**
-```
-User: "When's the next FOMC meeting?"
-Claude calls: get_high_impact_events()
-```
-
-**Earnings schedule:**
-```
-User: "Who reports earnings this week?"
-Claude calls: get_earnings_calendar(days=7)
-```
 
 ## See Also
 

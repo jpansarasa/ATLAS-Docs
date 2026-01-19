@@ -88,44 +88,34 @@ Requires `X-API-Key` header for authentication (except health endpoints).
 ```
 FredCollector/
 ├── src/
-│   ├── Api/                    # FRED API client
-│   ├── Data/                   # EF Core DbContext, repositories
-│   ├── Dto/                    # REST API data transfer objects
-│   ├── Endpoints/              # Minimal API endpoints (ApiEndpoints, AdminEndpoints)
-│   ├── Entities/               # Domain models (SeriesConfig, FredObservation, EventEntity)
-│   ├── Events/                 # Event channels
-│   ├── Grpc/                   # gRPC service and repositories
-│   ├── HealthChecks/           # Database health check
-│   ├── Middleware/             # API key authentication
-│   ├── Publishers/             # Event publisher
-│   ├── RateLimiting/           # Token bucket rate limiter
-│   ├── Services/               # Business logic (DataCollection, Backfill, SeriesManagement)
-│   ├── Telemetry/              # OpenTelemetry meters and activity sources
-│   ├── Workers/                # Background workers (MarketStatusWorker, InitialDataBackfillWorker)
-│   ├── Program.cs              # Application entry point
-│   ├── DependencyInjection.cs  # Service registration
-│   └── Containerfile           # Multi-stage container build
-├── config/                     # Configuration files
-└── .devcontainer/              # VS Code dev container
+│   ├── Api/              # FRED API client
+│   ├── Data/             # EF Core DbContext, repositories
+│   ├── Endpoints/        # Minimal API endpoints
+│   ├── Grpc/             # gRPC service implementation
+│   ├── Jobs/             # Quartz scheduled jobs
+│   ├── Services/         # Business logic
+│   ├── Workers/          # Background workers
+│   └── Program.cs
+├── mcp/                  # MCP server for AI assistants
+├── tests/                # Unit tests
+└── .devcontainer/        # Dev container config
 ```
 
 ## Development
 
-### Using Dev Container
+### Prerequisites
 
-```bash
-# Open in VS Code and select "Reopen in Container"
-cd /workspace/FredCollector/src
-dotnet run
-```
+- VS Code with Dev Containers extension
+- Access to shared infrastructure (PostgreSQL, observability stack)
 
-### Compile
+### Getting Started
 
-```bash
-.devcontainer/compile.sh
-```
+1. Open in VS Code: `code FredCollector/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Build: `.devcontainer/compile.sh`
+4. Run: `dotnet run --project src`
 
-### Build Container Image
+### Build Container
 
 ```bash
 .devcontainer/build.sh

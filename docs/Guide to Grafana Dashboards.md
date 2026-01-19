@@ -31,7 +31,7 @@ Every provisioned dashboard must include these fields:
 }
 ```
 
-The `id` must be `null` for new dashboards—Grafana assigns it on save. The `uid` should be **8-40 lowercase alphanumeric characters with hyphens**, enabling stable URLs across environments. Setting `schemaVersion: 41` (current as of late 2025) ensures compatibility with modern panel types.
+The `id` must be `null` for new dashboards—Grafana assigns it on save. The `uid` should be **8-40 lowercase alphanumeric characters with hyphens**, enabling stable URLs across environments. Setting `schemaVersion: 41` (current as of 2025/2026) ensures compatibility with modern panel types.
 
 ### Panel structure fundamentals
 

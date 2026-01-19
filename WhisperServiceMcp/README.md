@@ -1,4 +1,4 @@
-# WhisperService MCP Server
+# WhisperServiceMcp
 
 MCP server providing Claude Desktop and Claude Code direct access to video transcription via WhisperService.
 
@@ -16,46 +16,34 @@ flowchart LR
     WS -->|Transcribe| Whisper[faster-whisper]
 ```
 
-## MCP Tools
+AI assistants connect via MCP (SSE transport). The MCP server proxies requests to WhisperService, which downloads videos and transcribes using faster-whisper.
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
-| `health` | Get WhisperService health status including queue depth and model status | None |
-| `transcribe` | Submit a YouTube video URL for transcription | `url` (required), `language`, `priority` |
-| `backfill` | Submit multiple YouTube URLs for batch transcription | `urls` (comma-separated), `priority` |
-| `get_status` | Get the status of a transcription job | `job_id` (required) |
-| `get_transcript` | Get the completed transcript for a job | `job_id` (required), `include_segments` |
-| `transcribe_and_wait` | Submit and wait for completion, returns full transcript | `url`, `language`, `timeout_seconds` |
+## Features
 
-### Tool Details
-
-**transcribe**
-- Submits a single video and returns a job ID immediately
-- Use `get_status` to poll for completion
-
-**transcribe_and_wait**
-- Convenience tool that submits and polls until complete
-- Default timeout: 300 seconds (5 minutes)
-- Returns full transcript on completion
-
-**get_transcript**
-- Only works for completed jobs
-- Set `include_segments=true` for timestamped transcript segments
+- **Async Transcription**: Submit videos and poll for completion with job IDs
+- **Sync Transcription**: Convenience tool that waits for completion and returns full transcript
+- **Batch Processing**: Submit multiple URLs for bulk transcription
+- **Timestamped Segments**: Retrieve transcripts with per-segment timestamps
+- **Polly Resilience**: Retry and circuit breaker policies for backend communication
 
 ## Configuration
 
-### Environment Variables
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `WHISPER_API_URL` | Backend service URL | `http://whisper-service:8090` |
+| `WHISPER_MCP_TIMEOUT_SECONDS` | HTTP request timeout | `300` |
+| `WHISPER_MCP_LOG_LEVEL` | Logging level | `Warning` |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WHISPER_API_URL` | `http://whisper-service:8090` | Backend service URL |
-| `WHISPER_MCP_TIMEOUT_SECONDS` | `300` | HTTP request timeout |
-| `WHISPER_MCP_LOG_LEVEL` | `Warning` | Logging level |
+## API (MCP Tools)
 
-### Port Mapping
-
-- Internal: 8080
-- Transport: HTTP with SSE
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `health` | Service health, queue depth, model status | None |
+| `transcribe` | Submit video URL, returns job ID | `url`, `language`, `priority` |
+| `transcribe_and_wait` | Submit and wait for completion | `url`, `language`, `timeout_seconds` |
+| `get_status` | Get job transcription progress | `job_id` |
+| `get_transcript` | Get completed transcript | `job_id`, `include_segments` |
+| `backfill` | Batch submit multiple URLs | `urls` (comma-separated), `priority` |
 
 ## Project Structure
 
@@ -63,37 +51,34 @@ flowchart LR
 WhisperServiceMcp/
 ├── src/
 │   ├── Program.cs              # MCP server startup
-│   ├── DependencyInjection.cs  # HttpClient with Polly retry/circuit breaker
+│   ├── DependencyInjection.cs  # HttpClient with Polly
 │   ├── Tools/
 │   │   └── WhisperTools.cs     # MCP tool definitions
 │   └── Client/
-│       ├── IWhisperServiceClient.cs
 │       ├── WhisperServiceClient.cs
 │       └── Models/
-│           └── ClientModels.cs  # Request/response DTOs
-├── .devcontainer/
-│   ├── devcontainer.json
-│   └── compile.sh
-└── README.md
+└── .devcontainer/
+    ├── devcontainer.json
+    └── compile.sh
 ```
 
 ## Development
 
 ### Prerequisites
 
-- .NET 9.0 SDK
+- VS Code with Dev Containers extension
+- Access to shared infrastructure
 
-### Build
+### Getting Started
 
-```bash
-.devcontainer/compile.sh
-```
+1. Open in VS Code: `code WhisperServiceMcp/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Build: `.devcontainer/compile.sh`
 
 ### Build Container
 
 ```bash
-# From ATLAS root
-sudo nerdctl build -f WhisperServiceMcp/src/Containerfile -t whisper-service-mcp:latest .
+.devcontainer/build.sh
 ```
 
 ## Deployment
@@ -102,9 +87,15 @@ sudo nerdctl build -f WhisperServiceMcp/src/Containerfile -t whisper-service-mcp
 ansible-playbook playbooks/deploy.yml --tags whisper-mcp
 ```
 
+## Ports
+
+| Port | Description |
+|------|-------------|
+| 8080 | MCP server (internal, SSE transport) |
+
 ## Claude Desktop Integration
 
-Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+Add to `~/.config/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -117,31 +108,7 @@ Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Appli
 }
 ```
 
-Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
-
-## Usage Examples
-
-**Transcribe a video:**
-```
-User: "Transcribe this video: https://youtube.com/watch?v=..."
-Claude calls: transcribe_and_wait(url="https://youtube.com/watch?v=...")
-Response: "Transcription complete. Title: 'Video Title'. Duration: 5m 30s.
-Transcript: 'Hello and welcome to...'"
-```
-
-**Check transcription status:**
-```
-User: "What's the status of job abc123?"
-Claude calls: get_status(job_id="abc123")
-Response: "Job abc123 is 45% complete, currently transcribing. ETA: 60 seconds."
-```
-
-**Batch transcription:**
-```
-User: "Transcribe these videos: url1, url2, url3"
-Claude calls: backfill(urls="url1,url2,url3")
-Response: "Queued 3 videos for transcription. Job IDs: abc1, abc2, abc3"
-```
+Claude Desktop uses stdio transport; `mcp-proxy` bridges stdio to SSE.
 
 ## See Also
 

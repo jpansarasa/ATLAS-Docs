@@ -7,55 +7,78 @@ ATLAS uses gRPC server streaming to connect data collectors with ThresholdEngine
 ```mermaid
 graph LR
     subgraph Collectors
-        FC[FredCollector<br/>:5002]
-        AV[AlphaVantageCollector<br/>:5011]
-        FH[FinnhubCollector<br/>:5013]
-        OFR[OfrCollector<br/>:5017]
+        FC[FredCollector<br/>:5001]
+        AV[AlphaVantageCollector<br/>:5001]
+        FH[FinnhubCollector<br/>:5001]
+        OFR[OfrCollector<br/>:5001]
+        SC[SentinelCollector<br/>:5001]
     end
 
     subgraph ThresholdEngine
         MW[MultiCollectorEventConsumerWorker]
         MW --> EP[EventProcessor]
         EP --> PE[PatternEvaluator]
-        PE --> MS[MacroScoreCalculator]
-        MS --> RD[RegimeDetector]
+        TE[ThresholdEventStreamService<br/>:5001]
+    end
+
+    subgraph Metadata
+        SM[SecMaster<br/>:5001 gRPC + :8080 HTTP]
     end
 
     FC -->|gRPC stream| MW
     AV -->|gRPC stream| MW
     FH -->|gRPC stream| MW
     OFR -->|gRPC stream| MW
+    SC -->|gRPC stream| MW
 
-    RD -->|HTTP POST| AS[AlertService]
+    FC -.->|RegisterSeries| SM
+    AV -.->|RegisterSeries| SM
+    FH -.->|RegisterSeries| SM
+    OFR -.->|RegisterSeries| SM
+    SC -.->|RegisterSeries| SM
+
+    PE -->|ThresholdCrossedEvent| TE
+    TE -->|gRPC stream| Downstream[Downstream Consumers]
 ```
 
 ## Current Implementation
 
 ### Collectors (Event Producers)
 
-| Service | gRPC Port (Internal) | Event Types |
-|---------|---------------------|-------------|
-| FredCollector | 5001 | ObservationCollectedEvent |
-| AlphaVantageCollector | 5001 | ObservationCollectedEvent |
-| FinnhubCollector | 5001 | ObservationCollectedEvent |
-| OfrCollector | (no gRPC streaming) | N/A |
+| Service | gRPC Port (Internal) | HTTP Port (Internal) | Event Types |
+|---------|---------------------|---------------------|-------------|
+| FredCollector | 5001 | 8080 | SeriesCollectedEvent, CollectionFailedEvent |
+| AlphaVantageCollector | 5001 | 8080 | SeriesCollectedEvent, OhlcvCollectedEvent, CollectionFailedEvent |
+| FinnhubCollector | 5001 | 8080 | SeriesCollectedEvent, CollectionFailedEvent |
+| OfrCollector | 5001 | 8080 | SeriesCollectedEvent, CollectionFailedEvent |
+| SentinelCollector | 5001 | 8080 | SeriesCollectedEvent, CollectionFailedEvent |
+| NasdaqCollector | 5001 | 8080 | (currently disabled - WAF blocking) |
 
-All collectors implement the same `ObservationEventStream` gRPC service contract. All use internal port 5001 for consistency.
+All collectors implement the `ObservationEventStream` gRPC service contract from the shared `Events` library. All use internal port 5001 for gRPC and 8080 for HTTP/REST.
 
-### ThresholdEngine (Event Consumer)
+### ThresholdEngine (Event Consumer + Producer)
 
-- **MultiCollectorEventConsumerWorker**: Maintains connections to all collectors
-- **ObservationEventSubscriber**: Handles individual collector subscriptions
+**As Consumer:**
+- **MultiCollectorEventConsumerWorker**: Maintains parallel gRPC connections to all collectors
+- **ICollectorEventClient**: Per-collector client interface with health checks and streaming
 - **EventProcessor**: Routes events to pattern evaluation
-- **Checkpoint tracking**: Per-collector progress stored in TimescaleDB
+- **ProcessedEvent tracking**: Idempotency via event ID deduplication in TimescaleDB
+
+**As Producer:**
+- **ThresholdEventStreamService**: Exposes gRPC streaming for downstream consumers
+- Streams `ThresholdCrossedEvent` when patterns trigger
+- Used by SentinelCollector to react to regime changes
 
 ### SecMaster (Metadata Service)
 
 SecMaster provides gRPC services for instrument metadata management:
 
-| Service | gRPC Port | Purpose |
-|---------|-----------|---------|
-| SecMaster | 8080 | Instrument registration, search, metadata query |
+| gRPC Service | Port | Purpose |
+|--------------|------|---------|
+| SecMasterRegistry | 5001 | Instrument registration (fire-and-forget from collectors) |
+| SecMasterResolver | 5001 | Symbol resolution for ThresholdEngine routing |
+
+HTTP API is available on port 8080 for REST access and health checks.
 
 Collectors register instruments via gRPC on startup and during collection. SecMaster stores metadata in PostgreSQL for fast lookup and cross-source search.
 
@@ -73,10 +96,10 @@ Collectors register instruments via gRPC on startup and during collection. SecMa
 - Type-safe protobuf contracts
 
 **Trade-offs**:
-- ✅ Simple for 4-5 tightly coupled services
-- ✅ HTTP/2 multiplexing handles concurrent streams
-- ❌ Schema changes require coordinated deployments
-- ❌ No built-in consumer group management
+- Simple for 6+ tightly coupled services
+- HTTP/2 multiplexing handles concurrent streams
+- Schema changes require coordinated deployments (shared Events library mitigates this)
+- No built-in consumer group management (single consumer pattern works for current scale)
 
 ### 2. TimescaleDB as Event Log
 
@@ -100,52 +123,104 @@ Benefits:
 - Time-based retention policies
 - Single source of truth
 
-### 3. Client-Owned Checkpoints
+### 3. Event Deduplication and Checkpointing
 
-ThresholdEngine maintains per-collector checkpoints:
+ThresholdEngine uses a unified checkpoint based on the last processed event time:
 
 ```csharp
-// Each collector has independent progress tracking
-var checkpoint = await _repo.GetCheckpointAsync("FredCollector");
-await foreach (var evt in _client.GetEventsSince(checkpoint))
+// Global checkpoint across all collectors (events are naturally ordered by time)
+var lastProcessed = await _processedEventRepository.GetLastProcessedTimeAsync(ct)
+    ?? DateTime.UtcNow.AddMonths(-1);
+
+// Phase 1: Historical catch-up
+await foreach (var evt in client.GetEventsSinceAsync(lastProcessed, eventTypes, ct))
 {
-    await ProcessEventAsync(evt);
-    await _repo.UpdateCheckpointAsync("FredCollector", evt.OccurredAt);
+    await eventProcessor.ProcessEventAsync(evt, ct);
+}
+
+// Phase 2: Real-time streaming
+await foreach (var evt in client.SubscribeToEventsAsync(lastProcessed, eventTypes, ct))
+{
+    await eventProcessor.ProcessEventAsync(evt, ct);
 }
 ```
 
+**Idempotency**: Each event has a unique ULID. The `ProcessedEvent` table tracks processed event IDs to prevent duplicate processing.
+
 Benefits:
-- Stateless servers (collectors don't track consumers)
-- Independent catch-up rates
-- Automatic recovery on restart
+- Stateless collectors (don't track consumers)
+- Automatic recovery on restart via checkpoint
+- Event-level idempotency prevents duplicates during catch-up
 
-## Protobuf Contract
+## Protobuf Contracts
 
-**Location**: Each collector's `Grpc/Protos/` directory
+**Location**: `Events/src/Events/Protos/` (shared library)
+
+### ObservationEventStream (Collectors + ThresholdEngine)
 
 ```protobuf
 syntax = "proto3";
 package atlas.events;
 
 service ObservationEventStream {
-  rpc SubscribeToEvents(SubscriptionRequest) returns (stream ObservationEvent);
-  rpc GetEventsSince(TimestampRequest) returns (stream ObservationEvent);
-  rpc GetEventsBetween(TimeRangeRequest) returns (stream ObservationEvent);
-  rpc GetLatestEventTime(Empty) returns (TimestampResponse);
-  rpc GetHealth(Empty) returns (HealthResponse);
+  rpc SubscribeToEvents(SubscriptionRequest) returns (stream Event);
+  rpc GetEventsSince(TimeRangeRequest) returns (stream Event);
+  rpc GetEventsBetween(TimeRangeRequest) returns (stream Event);
+  rpc GetLatestEventTime(google.protobuf.Empty) returns (google.protobuf.Timestamp);
+  rpc GetHealth(google.protobuf.Empty) returns (HealthResponse);
 }
 
-message ObservationEvent {
-  string event_id = 1;
-  string series_id = 2;
-  google.protobuf.Timestamp date = 3;
-  double value = 4;
-  google.protobuf.Timestamp collected_at = 5;
-  string source = 6;
+message Event {
+  string event_id = 1;                          // Unique ULID
+  google.protobuf.Timestamp occurred_at = 2;
+  string source_service = 3;                    // e.g., "FredCollector"
+
+  oneof payload {
+    SeriesCollectedEvent series_collected = 10;
+    OhlcvCollectedEvent ohlcv_collected = 12;
+    CollectionFailedEvent collection_failed = 11;
+    ThresholdCrossedEvent threshold_crossed = 13;
+  }
+}
+
+message SeriesCollectedEvent {
+  string series_id = 1;
+  repeated DataPoint data_points = 2;
+  google.protobuf.Timestamp collected_at = 3;
+}
+
+message ThresholdCrossedEvent {
+  string pattern_id = 1;
+  string pattern_name = 2;
+  string category = 3;
+  double signal = 4;
+  double current_value = 5;
+  map<string, string> metadata = 6;
+  google.protobuf.Timestamp evaluated_at = 7;
 }
 
 message SubscriptionRequest {
   google.protobuf.Timestamp start_from = 1;
+  repeated string event_types = 2;              // Filter by type
+  repeated string series_ids = 3;               // Filter by series
+}
+```
+
+### SecMaster Services
+
+```protobuf
+syntax = "proto3";
+package atlas.secmaster;
+
+service SecMasterRegistry {
+  rpc RegisterSeries(SeriesRegistration) returns (RegistrationResponse);
+  rpc RegisterSeriesBatch(stream SeriesRegistration) returns (BatchRegistrationResponse);
+}
+
+service SecMasterResolver {
+  rpc ResolveSymbol(ResolveRequest) returns (ResolveResponse);
+  rpc ResolveBatch(BatchResolveRequest) returns (stream ResolveResponse);
+  rpc LookupSource(SourceLookupRequest) returns (ResolveResponse);
 }
 ```
 
@@ -153,32 +228,34 @@ message SubscriptionRequest {
 
 ### Collector Side (EventStreamService)
 
+Each collector implements `ObservationEventStream.ObservationEventStreamBase`:
+
 ```csharp
-public override async Task SubscribeToEvents(
-    SubscriptionRequest request,
-    IServerStreamWriter<ObservationEvent> responseStream,
-    ServerCallContext context)
+public class EventStreamService : ObservationEventStream.ObservationEventStreamBase
 {
-    var startFrom = request.StartFrom.ToDateTimeOffset();
-
-    // Historical catch-up
-    var events = await _repository.GetEventsSinceAsync(startFrom);
-    foreach (var evt in events)
+    public override async Task SubscribeToEvents(
+        SubscriptionRequest request,
+        IServerStreamWriter<Event> responseStream,
+        ServerCallContext context)
     {
-        await responseStream.WriteAsync(MapToProto(evt));
-    }
+        var startFrom = request.StartFrom?.ToDateTimeOffset() ?? DateTimeOffset.UtcNow;
 
-    // Real-time streaming (poll for new events)
-    var lastTime = events.LastOrDefault()?.OccurredAt ?? startFrom;
-    while (!context.CancellationToken.IsCancellationRequested)
-    {
-        await Task.Delay(500, context.CancellationToken);
-
-        var newEvents = await _repository.GetEventsSinceAsync(lastTime);
-        foreach (var evt in newEvents)
+        // Phase 1: Historical catch-up
+        await foreach (var evt in _repository.StreamEventsSinceAsync(startFrom, ct))
         {
-            await responseStream.WriteAsync(MapToProto(evt));
+            await responseStream.WriteAsync(MapToProto(evt), ct);
             lastTime = evt.OccurredAt;
+        }
+
+        // Phase 2: Real-time polling
+        while (!context.CancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(500, context.CancellationToken);
+            await foreach (var evt in _repository.StreamEventsSinceAsync(lastTime, ct))
+            {
+                await responseStream.WriteAsync(MapToProto(evt), ct);
+                lastTime = evt.OccurredAt;
+            }
         }
     }
 }
@@ -186,43 +263,44 @@ public override async Task SubscribeToEvents(
 
 ### Consumer Side (MultiCollectorEventConsumerWorker)
 
+ThresholdEngine runs parallel tasks for each collector with independent retry logic:
+
 ```csharp
-protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+public class MultiCollectorEventConsumerWorker : BackgroundService
 {
-    var collectors = new[]
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        ("FredCollector", _fredClient),
-        ("AlphaVantageCollector", _avClient),
-        ("FinnhubCollector", _finnhubClient)
-    };
+        // Start a consumer task for each collector
+        var tasks = _eventClients.Select(client =>
+            ConsumeFromCollectorAsync(client, stoppingToken));
+        await Task.WhenAll(tasks);
+    }
 
-    var tasks = collectors.Select(c =>
-        SubscribeToCollectorAsync(c.Item1, c.Item2, stoppingToken));
-
-    await Task.WhenAll(tasks);
-}
-
-private async Task SubscribeToCollectorAsync(
-    string name,
-    IEventStreamClient client,
-    CancellationToken ct)
-{
-    while (!ct.IsCancellationRequested)
+    private async Task ConsumeFromCollectorAsync(
+        ICollectorEventClient client,
+        CancellationToken ct)
     {
-        try
+        var retryDelay = TimeSpan.FromSeconds(5);
+
+        // Wait for collector to be healthy
+        while (!ct.IsCancellationRequested && !await client.IsHealthyAsync(ct))
         {
-            var checkpoint = await _repo.GetCheckpointAsync(name);
-
-            await foreach (var evt in client.SubscribeToEventsAsync(checkpoint, ct))
-            {
-                await _processor.ProcessAsync(evt);
-                await _repo.UpdateCheckpointAsync(name, evt.CollectedAt);
-            }
+            await Task.Delay(retryDelay, ct);
+            retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, 300));
         }
-        catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
+
+        while (!ct.IsCancellationRequested)
         {
-            _logger.LogWarning("Lost connection to {Collector}, reconnecting...", name);
-            await Task.Delay(5000, ct);
+            try
+            {
+                await ConsumeEventsAsync(client, ct);
+            }
+            catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
+            {
+                _logger.LogInformation("{Collector} unavailable, retrying...", client.CollectorName);
+                await Task.Delay(retryDelay, ct);
+                retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, 300));
+            }
         }
     }
 }
@@ -254,9 +332,10 @@ activity?.SetTag("series.id", evt.SeriesId);
 
 ### Health Checks
 
-Each collector exposes gRPC health:
+Each collector exposes gRPC health on internal port 5001:
 ```bash
-grpcurl -plaintext localhost:5002 atlas.events.ObservationEventStream/GetHealth
+# From inside the container (via nerdctl exec)
+grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetHealth
 ```
 
 ## Operational Procedures
@@ -265,40 +344,47 @@ grpcurl -plaintext localhost:5002 atlas.events.ObservationEventStream/GetHealth
 
 ```bash
 # Check each collector's gRPC endpoint (all on internal port 5001)
-nerdctl exec fred-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
-nerdctl exec alphavantage-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
-nerdctl exec finnhub-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
+sudo nerdctl exec fred-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
+sudo nerdctl exec alphavantage-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
+sudo nerdctl exec finnhub-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
+sudo nerdctl exec ofr-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
+sudo nerdctl exec sentinel-collector grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetLatestEventTime
 
-# Check SecMaster gRPC health
-nerdctl exec secmaster grpcurl -plaintext localhost:8080 grpc.health.v1.Health/Check
+# Check ThresholdEngine gRPC endpoint
+sudo nerdctl exec threshold-engine grpcurl -plaintext localhost:5001 atlas.events.ObservationEventStream/GetHealth
+
+# Check SecMaster gRPC services
+sudo nerdctl exec secmaster grpcurl -plaintext localhost:5001 list
 ```
 
-### Check Checkpoint Lag
+### Check Processed Events (Checkpoint)
 
 ```sql
--- View checkpoint status for each collector
-SELECT
-    collector_name,
-    last_processed_at,
-    NOW() - last_processed_at as lag
-FROM threshold_engine_checkpoints
-ORDER BY collector_name;
+-- View latest processed event time (global checkpoint)
+SELECT MAX(event_occurred_at) as last_checkpoint
+FROM processed_events;
+
+-- View recent processed events
+SELECT event_id, event_type, processed_at, event_occurred_at
+FROM processed_events
+ORDER BY processed_at DESC
+LIMIT 10;
 ```
 
 ### Reset Checkpoint (Recovery)
 
 ```sql
--- Reset a specific collector's checkpoint
-UPDATE threshold_engine_checkpoints
-SET last_processed_at = '2025-01-01 00:00:00+00'
-WHERE collector_name = 'FredCollector';
+-- Delete processed events to force reprocessing from a specific date
+-- WARNING: This will cause duplicate processing if patterns are not idempotent
+DELETE FROM processed_events
+WHERE event_occurred_at > '2025-01-01 00:00:00+00';
 ```
 
 ### Force Historical Replay
 
 ```bash
-# Environment variable to override checkpoint
-EVENTCONSUMER__BACKFILL_HOURS=24 ./threshold-engine
+# Restart ThresholdEngine - it automatically backfills from last checkpoint
+sudo nerdctl compose -f /opt/ai-inference/compose.yaml restart threshold-engine
 ```
 
 ## Performance Characteristics
@@ -313,14 +399,25 @@ EVENTCONSUMER__BACKFILL_HOURS=24 ./threshold-engine
 
 ## Adding a New Collector
 
-1. **Implement EventStreamService** in the collector
-2. **Register gRPC service** in Program.cs
-3. **Add client** to ThresholdEngine's MultiCollectorEventConsumerWorker
-4. **Configure connection** in appsettings.json
-5. **Add checkpoint** initialization
+1. **Add reference to Events library** - Contains shared protobuf contracts
+2. **Implement EventStreamService** - Extend `ObservationEventStream.ObservationEventStreamBase`
+3. **Register gRPC service** in Program.cs:
+   ```csharp
+   app.MapGrpcService<EventStreamService>();
+   app.MapGrpcReflectionService();
+   ```
+4. **Configure Kestrel** for dual ports (8080 HTTP, 5001 gRPC)
+5. **Add collector config** to ThresholdEngine's compose.yaml:
+   ```yaml
+   - Collectors__Items__N__Name=NewCollector
+   - Collectors__Items__N__ServiceUrl=http://new-collector:5001
+   - Collectors__Items__N__Enabled=true
+   ```
+6. **Register with SecMaster** (optional) - Call `SecMasterRegistry.RegisterSeries` on startup
 
 No changes needed to:
-- Event contracts (shared proto)
+- Event contracts (shared Events library)
+- ThresholdEngine code (auto-discovers from config)
 - Pattern definitions
 - AlertService
 
@@ -329,3 +426,4 @@ No changes needed to:
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System overview
 - [ThresholdEngine](../ThresholdEngine/README.md) - Pattern evaluation
 - [FredCollector](../FredCollector/README.md) - Reference collector implementation
+- [Events](../Events/README.md) - Shared protobuf contracts

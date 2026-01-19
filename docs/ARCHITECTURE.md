@@ -29,7 +29,8 @@ flowchart LR
 
     subgraph AI["AI Services"]
         WS[WhisperService<br/>Transcription]
-        FB[FinBertSidecar<br/>Sentiment]
+        FB[FinBertSidecar<br/>Embeddings]
+        OL[Ollama GPU<br/>LLM Extraction]
     end
 
     subgraph MCP["MCP Servers (Claude)"]
@@ -49,7 +50,8 @@ flowchart LR
     FC -->|register series| SM
     FH -->|register symbols| SM
     OFR -->|register series| SM
-    SC -->|sentiment| FB
+    SC -->|extraction| OL
+    SM -->|embeddings| FB
     TE -->|HTTP POST| AS
     AS --> N[ntfy.sh]
     AS --> E[Email]
@@ -71,30 +73,38 @@ flowchart LR
 | FredCollector | 8080, 5001 | Federal Reserve | 47 economic series |
 | AlphaVantageCollector | 8080, 5001 | Alpha Vantage | Commodities, forex |
 | FinnhubCollector | 8080, 5001 | Finnhub | Stock quotes, earnings, sentiment |
-| OfrCollector | 8080 | OFR.gov | Financial Stress Index, repo rates |
-| SentinelCollector | 8080 | SearXNG | News aggregation, sentiment analysis |
+| OfrCollector | 8080, 5001 | OFR.gov | Financial Stress Index, STFM, HFM |
+| SentinelCollector | 8080, 5001 | SearXNG + Ollama | News aggregation, LLM extraction |
 | CalendarService | 8080 | Nager.Date, Finnhub | Market holidays, economic events |
 
-Note: All collectors expose 8080 (REST) and 5001 (gRPC) internally. No host port mapping.
+Note: All collectors expose 8080 (REST) and 5001 (gRPC) internally. CalendarService only exposes REST (no gRPC streaming). SentinelCollector additionally exposes 5091 (host) for the Review UI.
 
 ### Processing & Alerting
 
 | Service | Port | Responsibility |
 |---------|------|----------------|
-| ThresholdEngine | 8080 (internal) | Pattern evaluation, regime detection, macro scoring |
+| ThresholdEngine | 8080, 5001 (internal) | Pattern evaluation, regime detection, macro scoring |
 | AlertService | 8080 (internal) | Notification routing (ntfy, email) |
-| SecMaster | 8080 (internal) | Instrument metadata registry, series search |
+| SecMaster | 8080, 5001 (internal) | Instrument metadata registry, series search, gRPC registration |
 
 ### AI Services
 
 | Service | Port | Purpose |
 |---------|------|---------|
 | WhisperService | 8090 (host) | YouTube transcription via Whisper |
-| FinBertSidecar | 8080 (internal) | Financial sentiment analysis |
-| Ollama GPU | 11434 (host) | LLM inference (GPU) |
-| Ollama CPU | 11435 (host) | LLM inference (CPU fallback) |
+| FinBertSidecar | 8080 (internal) | Financial text embeddings for SecMaster |
+| Ollama GPU | 11434 (host) | LLM inference (GPU) - SentinelCollector extraction, SecMaster queries |
+| Ollama CPU | 11435 (host) | LLM inference (CPU fallback) - embeddings |
 
 ### MCP Servers
+
+MCP servers are consolidated into their parent service directories where applicable:
+- `FredCollector/mcp/` - FredCollectorMcp
+- `ThresholdEngine/mcp/` - ThresholdEngineMcp
+- `FinnhubCollector/mcp/` - FinnhubMcp
+- `OfrCollector/mcp/` - OfrMcp
+- `SecMaster/mcp/` - SecMasterMcp
+- `WhisperServiceMcp/` - Standalone (Python WhisperService uses different stack)
 
 | Service | Port (Host) | Purpose |
 |---------|-------------|---------|
@@ -109,14 +119,15 @@ Note: All collectors expose 8080 (REST) and 5001 (gRPC) internally. No host port
 
 ### Infrastructure
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| TimescaleDB | 5432 | Time-series database |
-| Prometheus | 9090 | Metrics storage |
-| Grafana | 3000 | Dashboards |
-| Loki | 3100 | Log aggregation |
-| Tempo | 3200 | Distributed tracing |
-| otel-collector | (internal) | OpenTelemetry pipeline |
+| Service | Port | Access | Purpose |
+|---------|------|--------|---------|
+| TimescaleDB | 5432 | Host | Time-series database |
+| Prometheus | 9090 | Internal | Metrics storage (Grafana proxy) |
+| Grafana | 3000 | Host | Dashboards |
+| Loki | 3100 | Internal | Log aggregation (Grafana proxy) |
+| Tempo | 3200 | Internal | Distributed tracing (Grafana proxy) |
+| otel-collector | 4317 | Internal | OpenTelemetry pipeline |
+| Alertmanager | 9093 | Internal | Alert routing |
 
 ## Design Principles
 
@@ -280,9 +291,11 @@ MCP servers let Claude directly query financial data and evaluate patterns.
 - [AlphaVantageCollector](../AlphaVantageCollector/README.md) - Commodities data
 - [FinnhubCollector](../FinnhubCollector/README.md) - Market data
 - [OfrCollector](../OfrCollector/README.md) - OFR financial stress data
-- [SentinelCollector](../SentinelCollector/README.md) - News aggregation
+- [SentinelCollector](../SentinelCollector/README.md) - News aggregation with LLM extraction
+- [CalendarService](../CalendarService/README.md) - Market holidays and economic events
 - [ThresholdEngine](../ThresholdEngine/README.md) - Pattern evaluation
 - [SecMaster](../SecMaster/README.md) - Instrument metadata
 - [AlertService](../AlertService/README.md) - Notifications
-- [WhisperService](../WhisperService/README.md) - Transcription
+- [WhisperService](../WhisperService/README.md) - YouTube transcription
+- [FinBertSidecar](../FinBertSidecar/README.md) - Financial sentiment embeddings
 - [Deployment](../deployment/README.md) - Infrastructure setup

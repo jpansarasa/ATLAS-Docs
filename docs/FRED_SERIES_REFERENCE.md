@@ -1,7 +1,7 @@
 # ATLAS Indicators → FRED Series Mapping
 
-**Status**: ✅ Implemented (47 series configured)
-**Last Updated**: 2025-12-14
+**Status**: ✅ Implemented (66 series configured)
+**Last Updated**: 2026-01-19
 
 This file maps ATLAS framework indicators to specific FRED series IDs for automated collection.
 
@@ -18,7 +18,7 @@ This file maps ATLAS framework indicators to specific FRED series IDs for automa
 - Commodity: 5 patterns
 - OFR: 3 patterns
 
-**Total: 47 FRED series configured in FredCollector**
+**Total: 66 FRED series configured in FredCollector**
 
 ---
 
@@ -239,8 +239,8 @@ GDP, production, consumption, and housing activity:
 
 ### 17. Retail Sales (Monthly)
 
-- **ATLAS Name**: Retail Sales
-- **FRED Series ID**: `RSXFS`
+- **ATLAS Name**: Retail Sales (Total)
+- **FRED Series ID**: `RSAFS`
 - **Full Name**: Advance Retail Sales: Retail Trade and Food Services (SA)
 - **Frequency**: Monthly (mid-month, ~13th, 8:30 AM ET)
 - **Units**: Millions of Dollars
@@ -248,6 +248,17 @@ GDP, production, consumption, and housing activity:
 - **Alert Direction**: Below (trend)
 - **Category**: Growth
 - **Cron**: `0 0 11 13-15 * ?` (13-15th of month)
+- **Note**: RSXFS (Retail Trade only, excluding Food Services) also collected
+
+### 17b. Retail Sales Ex-Food Services (Monthly)
+
+- **ATLAS Name**: Retail Sales (Ex-Food)
+- **FRED Series ID**: `RSXFS`
+- **Full Name**: Advance Retail Sales: Retail Trade (SA)
+- **Frequency**: Monthly (mid-month, ~13th, 8:30 AM ET)
+- **Units**: Millions of Dollars
+- **Category**: Growth
+- **Note**: Excludes food services, useful for core retail analysis
 
 ### 18. Personal Consumption Expenditures (Monthly)
 
@@ -447,7 +458,35 @@ Commodity prices for Cu/Au ratio calculation:
 25-28: Valuation & Context (S&P 500, Wilshire 5000, GDP, Recession Probability)
 29-30: Commodities (Copper, Gold)
 
-**Total: 30 series from FRED for complete ATLAS coverage**
+**Total: 66 series from FRED for complete ATLAS coverage**
+
+**Additional Series Collected (Phase 2 Expansion):**
+- `BAMLC0A0CM` - Investment Grade Corporate Bond Spread
+- `BOGZ1LM193064005Q` - Household Net Worth
+- `CBBTCUSD` - Bitcoin Price
+- `CIVPART` - Labor Force Participation Rate
+- `CPIAUCSL` - All Items CPI
+- `DCOILBRENTEU` - Brent Crude Oil
+- `DCOILWTICO` - WTI Crude Oil
+- `DEXCHUS` - Chinese Yuan Exchange Rate
+- `DEXJPUS` - Japanese Yen Exchange Rate
+- `DEXUSEU` - Euro Exchange Rate
+- `DFII10` - 10-Year TIPS Rate
+- `DGORDER` - Durable Goods Orders
+- `DGS2` - 2-Year Treasury Yield
+- `DPRIME` - Prime Rate
+- `M2SL` - M2 Money Stock (monthly)
+- `MORTGAGE30US` - 30-Year Mortgage Rate
+- `MSPUS` - Median Home Sale Price
+- `NCBEILQ027S` - Corporate Profits
+- `PCEDG` - PCE Durable Goods
+- `PERMIT` - Building Permits
+- `PI` - Personal Income
+- `PRFI` - Private Residential Fixed Investment
+- `PSAVERT` - Personal Savings Rate
+- `SAHMCURRENT` - Sahm Rule Recession Indicator
+- `TCU` - Total Capacity Utilization
+- `Y033RC1Q027SBEA` - Private Nonresidential Fixed Investment
 
 ---
 
@@ -540,7 +579,7 @@ All items verified during implementation:
 - [x] Verify `NAPM` is correct series for ISM Manufacturing - Using IPMAN instead (more reliable)
 - [x] Verify `VIXCLS` exists in FRED - ✅ Confirmed, daily updates available
 - [x] Confirm FRED publication times match cron schedules - ✅ Verified
-- [x] Test FRED API with each series ID to ensure they return data - ✅ All 30 series tested
+- [x] Test FRED API with each series ID to ensure they return data - ✅ All 66 series tested
 - [x] Document any series that need alternative sources - Baltic Dry, Shiller CAPE deferred
 
 **API Test Command**:
@@ -551,7 +590,13 @@ curl "https://api.stlouisfed.org/fred/series/observations?series_id=ICSA&api_key
 
 ---
 
-**Last Updated**: 2025-12-14
-**Status**: ✅ Implemented - 47 series configured and collecting
+**Last Updated**: 2026-01-19
+**Status**: ✅ Implemented - 66 series configured and collecting
 **Owner**: James
-**Implementation**: FredCollector service (378 tests passing)
+**Implementation**: FredCollector service + FredCollector MCP server
+
+## FredCollector Architecture
+
+The FRED data collection system consists of two components:
+- **FredCollector** (`FredCollector/src/`) - Core data collection service
+- **FredCollector MCP** (`FredCollector/mcp/`) - MCP server for AI-assisted data access

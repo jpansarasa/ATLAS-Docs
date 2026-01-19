@@ -11,6 +11,7 @@ flowchart LR
         AV[AlphaVantageCollector]
         FH[FinnhubCollector]
         OFR[OfrCollector]
+        SC[SentinelCollector]
         TE[ThresholdEngine]
         AS[AlertService]
         SM[SecMaster]
@@ -20,6 +21,7 @@ flowchart LR
     AV --> OC
     FH --> OC
     OFR --> OC
+    SC --> OC
     TE --> OC
     AS --> OC
     SM --> OC
@@ -67,11 +69,11 @@ builder.Services.AddOpenTelemetry()
         .AddOtlpExporter());
 ```
 
-**Environment Variables**:
+**Environment Variables** (configured in compose.yaml):
 ```yaml
-OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
-OTEL_SERVICE_NAME: fred-collector
-OTEL_RESOURCE_ATTRIBUTES: deployment.environment=production
+OpenTelemetry__OtlpEndpoint: http://otel-collector:4317
+OpenTelemetry__ServiceName: fred-collector
+OpenTelemetry__ServiceVersion: 1.0.0
 ```
 
 ## Metrics
@@ -83,56 +85,93 @@ OTEL_RESOURCE_ATTRIBUTES: deployment.environment=production
 ```
 
 Examples:
-- `fredcollector.api.requests_total`
-- `thresholdengine.patterns.evaluated_total`
-- `ofrcollector.fsi.collection_duration_seconds`
+- `fredcollector.fred_api.requests.total`
+- `thresholdengine.events.received`
+- `ofrcollector.collection.duration`
 
-### Common Metrics (All Services)
-
-| Metric | Type | Tags | Description |
-|--------|------|------|-------------|
-| `*.api.requests_total` | Counter | endpoint, method, status | HTTP requests |
-| `*.api.request_duration_seconds` | Histogram | endpoint, method | Request latency |
-| `*.grpc.requests_total` | Counter | method, status | gRPC calls |
-| `*.database.query_duration_seconds` | Histogram | operation | DB query time |
-
-### Collector Metrics
+### FredCollector Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `*.observations.collected_total` | Counter | Observations ingested |
-| `*.collection.duration_seconds` | Histogram | Collection job duration |
-| `*.api.errors_total` | Counter | External API errors |
-| `*.events.published_total` | Counter | gRPC events streamed |
+| `fredcollector.fred_api.request.duration` | Histogram | FRED API request duration (ms) |
+| `fredcollector.fred_api.requests.total` | Counter | Total FRED API requests |
+| `fredcollector.fred_api.errors.total` | Counter | FRED API errors |
+| `fredcollector.observations.collected.total` | Counter | Observations collected |
+| `fredcollector.data_collection.duration` | Histogram | Collection operation duration |
+| `fredcollector.backfill.duration` | Histogram | Backfill operation duration |
+| `fredcollector.api.requests.total` | Counter | REST API requests |
+| `fredcollector.repository.operation.duration` | Histogram | Repository operation duration |
 
 ### ThresholdEngine Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `thresholdengine.patterns.evaluated_total` | Counter | Pattern evaluations |
-| `thresholdengine.patterns.triggered_total` | Counter | Patterns that fired |
-| `thresholdengine.macro_score` | Gauge | Current macro score |
-| `thresholdengine.regime` | Gauge | Current regime (0-3) |
-| `thresholdengine.events.received_total` | Counter | Events from collectors |
+| `thresholdengine.events.received` | Counter | Events received from collectors |
+| `thresholdengine.events.processed` | Counter | Events successfully processed |
+| `thresholdengine.patterns.triggered` | Counter | Patterns that fired |
+| `thresholdengine.streaming.events_processed` | Counter | Real-time streaming events |
+| `thresholdengine.grpc.call_duration_seconds` | Histogram | gRPC call duration |
+| `thresholdengine.warmup.duration_ms` | Histogram | Cache warm-up duration |
+| `thresholdengine.regime.transitions` | Counter | Confirmed regime transitions |
+| `thresholdengine.regime.update_duration_ms` | Histogram | Regime update processing time |
+
+### OfrCollector Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `ofrcollector.fsi.collections` | Counter | FSI collection runs |
+| `ofrcollector.stfm.collections` | Counter | STFM collection runs |
+| `ofrcollector.hfm.collections` | Counter | HFM collection runs |
+| `ofrcollector.api.requests` | Counter | External API requests |
+| `ofrcollector.api.errors` | Counter | API errors |
+| `ofrcollector.collection.duration` | Histogram | Collection duration |
+| `ofrcollector.observations.collected` | Counter | Observations collected |
+
+### AlertService Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `alertservice.alerts.received` | Counter | Alerts received from Alertmanager |
+| `alertservice.alerts.dispatched` | Counter | Alerts dispatched to channels |
+| `alertservice.alerts.sent` | Counter | Alerts successfully sent |
+| `alertservice.alerts.failed` | Counter | Failed alert deliveries |
+| `alertservice.channel.send_duration` | Histogram | Channel send duration |
 
 ## Tracing
 
 ### ActivitySource Pattern
 
-Each service defines its own ActivitySource:
+Each service defines its own ActivitySource in a `Telemetry` namespace:
 
 ```csharp
-public static class ServiceActivitySource
+// FredCollector/src/Telemetry/FredCollectorActivitySource.cs
+public static class FredCollectorActivitySource
 {
     public const string Name = "FredCollector";
-    public static readonly ActivitySource Source = new(Name, "1.0.0");
+    public const string Version = "1.0.0";
+    public static readonly ActivitySource Instance = new(Name, Version);
+
+    public static Activity? StartActivity(string name, ActivityKind kind = ActivityKind.Internal)
+        => Instance.StartActivity(name, kind);
 }
 ```
+
+**Service ActivitySource Names**:
+| Service | ActivitySource Name |
+|---------|---------------------|
+| FredCollector | `FredCollector` |
+| ThresholdEngine | `ThresholdEngine` |
+| OfrCollector | `OfrCollector` |
+| FinnhubCollector | `FinnhubCollector` |
+| AlphaVantageCollector | `AlphaVantageCollector` |
+| SentinelCollector | `SentinelCollector` |
+| SecMaster | `SecMaster` |
+| AlertService | `AlertService` |
 
 ### Span Creation
 
 ```csharp
-using var activity = ServiceActivitySource.Source.StartActivity("CollectSeries");
+using var activity = FredCollectorActivitySource.StartActivity("CollectSeries");
 activity?.SetTag("series.id", seriesId);
 activity?.SetTag("source", "FRED");
 
@@ -230,6 +269,8 @@ Located in `deployment/artifacts/monitoring/alerts/`:
 | `service-health.yml` | All services | Container restarts, memory, CPU |
 | `fredcollector.yml` | FredCollector | API errors, collection failures |
 | `thresholdengine.yml` | ThresholdEngine | Pattern load failures, event processing |
+| `calendarservice.yml` | CalendarService | Calendar sync failures |
+| `sentinel.yml` | SentinelCollector | Extraction failures, edge sync issues |
 
 ### Alert Routing
 
@@ -267,18 +308,26 @@ AlertService receives webhooks and routes by severity:
 
 ### Available Dashboards
 
-| Dashboard | Purpose |
-|-----------|---------|
-| ATLAS Overview | System health, all services |
-| FredCollector | FRED API, collection metrics |
-| ThresholdEngine | Pattern evaluation, regime status |
-| OfrCollector | FSI trends, STFM/HFM collection |
-| FinnhubCollector | Quote collection, calendar sync |
-| SecMaster | Instrument registration, search performance |
+| Dashboard | File | Purpose |
+|-----------|------|---------|
+| ATLAS Home | `atlas-home.json` | High-level system overview, regime status |
+| ATLAS Observability | `atlas-observability.json` | Cross-service health metrics |
+| Infrastructure | `infrastructure.json` | Container resources, system metrics |
+| FredCollector | `fredcollector.json` | FRED API, collection metrics |
+| ThresholdEngine | `thresholdengine.json` | Pattern evaluation, regime transitions |
+| OfrCollector | `ofrcollector.json` | FSI trends, STFM/HFM collection |
+| Calendar | `atlas-calendar.json` | Economic calendar, market events |
+| Sentinel | `sentinel.json` | News extraction, sentiment analysis |
 
 ### Dashboard Location
 
 Provisioned dashboards: `deployment/artifacts/monitoring/dashboards/`
+
+Deploy dashboard changes:
+```bash
+ansible-playbook playbooks/deploy.yml --tags dashboards
+```
+Grafana automatically reloads provisioned dashboards.
 
 ## Best Practices
 
@@ -389,8 +438,8 @@ _counter.Add(count);  // Hours of no data
 ### No Metrics in Prometheus
 
 1. Check OTLP endpoint: `curl http://otel-collector:4317`
-2. Verify service config: `OTEL_EXPORTER_OTLP_ENDPOINT`
-3. Check OTel Collector logs: `nerdctl logs otel-collector`
+2. Verify service config: `OpenTelemetry__OtlpEndpoint` environment variable
+3. Check OTel Collector logs: `sudo nerdctl logs otel-collector`
 
 ### Missing Traces
 
@@ -414,8 +463,17 @@ _counter.Add(count);  // Hours of no data
 | Tempo | http://mercury:3200 |
 | Loki | http://mercury:3101 |
 
+## Services Without Full Observability
+
+The following services are not yet fully instrumented with OpenTelemetry:
+
+| Service | Status |
+|---------|--------|
+| CalendarService | No OTEL config (basic health checks only) |
+| WhisperService | Python service with basic OTEL via env vars |
+| MCP servers | Lightweight proxies, rely on parent service telemetry |
+
 ## See Also
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System overview
 - [Deployment](../deployment/README.md) - Infrastructure setup
-- [AlertService](../AlertService/README.md) - Notification routing

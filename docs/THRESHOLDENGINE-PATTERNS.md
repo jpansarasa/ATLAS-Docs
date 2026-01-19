@@ -1,7 +1,7 @@
 # ThresholdEngine Pattern Reference
 
 **Status**: Production
-**Updated**: 2025-12-16
+**Updated**: 2026-01-19
 
 Comprehensive reference for ThresholdEngine pattern configuration, expression API, weighting, and signal freshness decay.
 
@@ -23,16 +23,19 @@ Comprehensive reference for ThresholdEngine pattern configuration, expression AP
 ThresholdEngine evaluates economic patterns to produce a weighted macro score for regime detection. Each pattern:
 
 1. **Evaluates** a condition using C# expressions against time-series data
-2. **Produces** a signal (-2 to +2) indicating directional strength
+2. **Produces** a signal (-3 to +3) indicating directional strength
 3. **Applies** weighting based on reliability, freshness, and temporal relevance
 4. **Contributes** to category and macro scores
 
 **Weighted Scoring Formula**:
 ```
-weightedSignal = signal × weight × freshnessFactor × temporalMultiplier
-categoryScore = Σ(weightedSignals) / Σ(weights)
+weightedSignal = signal × weight × freshnessFactor × temporalMultiplier × confidence
+effectiveWeight = weight × freshnessFactor × temporalMultiplier × confidence
+categoryScore = Σ(weightedSignals) / Σ(effectiveWeights)
 macroScore = Σ(categoryScore × categoryWeight)
 ```
+
+Signal range: -3 to +3. Macro score range: approximately -3 to +3.
 
 ---
 
@@ -46,7 +49,7 @@ Pattern expressions are C# code snippets compiled at runtime using Roslyn. They 
 |----------|------|-------------|
 | `ctx.CurrentDate` | `DateTimeOffset` | Evaluation timestamp |
 | `ctx.CurrentRegime` | `MacroRegime` | Current economic regime |
-| `ctx.MacroScore` | `decimal` | Composite macro score (-100 to +100) |
+| `ctx.MacroScore` | `decimal` | Composite macro score (approximately -3 to +3) |
 | `ctx.MacroScoreTrend` | `decimal` | Rate of change in macro score |
 
 ### Data Access Methods
@@ -110,15 +113,17 @@ public enum MacroRegime
 ctx.GetLatest("VIXCLS") > 22m
 ```
 
-**Signal Expression** - Returns `decimal` in [-2, +2]:
+**Signal Expression** - Returns `decimal` in [-3, +3]:
 
 | Signal | Interpretation |
 |--------|----------------|
+| +3.0 | Extreme offensive (maximum risk-on) |
 | +2.0 | Strong offensive (deploy cash, increase equity) |
 | +1.0 | Moderate offensive (gradual risk increase) |
 | 0.0 | Neutral (maintain allocation) |
 | -1.0 | Moderate defensive (gradual risk reduction) |
 | -2.0 | Strong defensive (raise cash, reduce equity) |
+| -3.0 | Extreme defensive (maximum risk-off) |
 
 ### Expression Examples
 
@@ -131,9 +136,9 @@ ctx.GetLatest("VIXCLS") > 22m
 var vix = ctx.GetLatest("VIXCLS") ?? 0m;
 var score = ctx.MacroScore;
 if (vix <= 22m) return 0m;
-if (score < -10m) return vix > 30m ? 2m : 1m;   // Recession: VIX spike = deploy
-if (score > 10m) return vix > 30m ? -2m : -1m;  // Growth: VIX spike = reduce
-return vix > 30m ? -1m : -0.5m;                  // Neutral: moderate defensive
+if (score < -1.0m) return vix > 30m ? 2m : 1m;   // Recession: VIX spike = deploy
+if (score > 1.0m) return vix > 30m ? -2m : -1m;  // Growth: VIX spike = reduce
+return vix > 30m ? -1m : -0.5m;                   // Neutral: moderate defensive
 ```
 
 **Sahm Rule (Moving Average)**:
@@ -308,7 +313,7 @@ Where:
 
 ### Temporal Multipliers
 
-Applied during regime transitions (MacroScoreTrend > ±0.5):
+Applied during regime transitions (|MacroScoreTrend| >= 0.3):
 
 | Temporal Type | Stable | Transitioning |
 |---------------|--------|---------------|
@@ -337,10 +342,13 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
 {
   "patternId": "string",
   "name": "string",
+  "description": "string",
   "category": "Recession|Liquidity|Growth|NBFI|Inflation|Currency|Valuation|Commodity",
   "expression": "C# condition expression",
-  "signalExpression": "C# signal expression",
+  "signalExpression": "C# signal expression (-3 to +3)",
+  "applicableRegimes": ["Crisis", "Recession", "LateCycle", "Neutral", "Recovery", "Growth"],
   "requiredSeries": ["SERIES1", "SERIES2"],
+  "maxLookbackDays": 365,
   "enabled": true,
 
   "weight": 0.85,
@@ -354,14 +362,32 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
 
 ### Field Descriptions
 
+**Required Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `patternId` | string | Unique identifier (lowercase, hyphens only) |
+| `name` | string | Human-readable name |
+| `description` | string | Explanation of what the pattern detects |
+| `category` | enum | Pattern category for grouping |
+| `expression` | string | C# condition expression returning bool |
+| `signalExpression` | string | C# signal expression returning decimal (-3 to +3) |
+| `applicableRegimes` | array | Macro regimes where pattern is applicable |
+| `requiredSeries` | array | FRED/data series IDs required for evaluation |
+
+**Optional Fields:**
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `maxLookbackDays` | int | 0 | Maximum historical data required (days) |
+| `enabled` | bool | true | Whether pattern is active |
 | `weight` | decimal | 1.0 | Reliability weight (0.0-1.0) |
 | `temporalType` | enum | Coincident | Signal timing relative to events |
 | `leadTimeMonths` | int | 0 | Months ahead (+) or behind (-) |
 | `publicationFrequencyDays` | int | 30 | Expected days between publications |
 | `signalDecayDays` | int | 30 | Decay constant after overdue |
 | `confidence` | decimal | 0.75 | Historical accuracy (informational) |
+| `metadata` | object | {} | Arbitrary key-value pairs |
 
 ### Example Pattern
 
@@ -369,32 +395,44 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
 {
   "patternId": "ism-contraction",
   "name": "ISM Manufacturing Below 50",
+  "description": "ISM Manufacturing PMI below 50 indicates economic contraction in the manufacturing sector.",
   "category": "Recession",
   "expression": "ctx.GetLatest(\"NAPM\") < 50m",
   "signalExpression": "var ism = ctx.GetLatest(\"NAPM\") ?? 50m; return ism < 45m ? -2m : ism < 50m ? -1m : 0m;",
+  "applicableRegimes": ["Neutral", "LateCycle", "Recession", "Crisis"],
   "requiredSeries": ["NAPM"],
+  "maxLookbackDays": 30,
   "enabled": true,
   "weight": 0.85,
   "temporalType": "Coincident",
   "leadTimeMonths": 0,
   "publicationFrequencyDays": 30,
   "signalDecayDays": 30,
-  "confidence": 0.85
+  "confidence": 0.85,
+  "metadata": {
+    "source": "ISM Manufacturing PMI"
+  }
 }
 ```
 
 ### Category Weights
 
-| Category | Weight | Purpose |
-|----------|--------|---------|
-| Recession | 30% | Downturn detection |
-| Liquidity | 20% | Market stress |
-| Growth | 20% | Expansion signals |
-| NBFI | 10% | Shadow banking risk |
-| Currency | 10% | FX risk-off |
-| Inflation | 10% | Price pressure |
-| Valuation | 0% | Informational |
-| Commodity | 0% | Informational |
+Configured in `ThresholdEngine/src/appsettings.json` under `MacroScoring.CategoryWeights`:
+
+| Category | Weight | Purpose | Pattern Count |
+|----------|--------|---------|---------------|
+| Recession | 30% | Downturn detection | 16 |
+| Liquidity | 20% | Market stress | 8 |
+| Growth | 20% | Expansion signals | 8 |
+| NBFI | 10% | Shadow banking risk | 15 (includes OFR patterns) |
+| Currency | 10% | FX risk-off | 3 |
+| Inflation | 10% | Price pressure | 9 |
+| Valuation | 0% | Informational | 6 |
+| Commodity | 0% | Informational | 1 |
+
+**Total**: 66 patterns across 8 categories.
+
+**Note**: OFR (Office of Financial Research) patterns are stored in `config/patterns/ofr/` but categorized as NBFI for scoring purposes.
 
 ---
 
@@ -406,7 +444,12 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
 GetWeightedSignal(pattern, rawSignal):
     freshness = CalculateFreshnessFactor(pattern)
     temporalMultiplier = GetTemporalMultiplier(pattern)
-    return rawSignal × pattern.weight × freshness × temporalMultiplier
+    return rawSignal × pattern.weight × freshness × temporalMultiplier × pattern.confidence
+
+CalculateEffectiveWeight(pattern):
+    freshness = CalculateFreshnessFactor(pattern)
+    temporalMultiplier = GetTemporalMultiplier(pattern)
+    return pattern.weight × freshness × temporalMultiplier × pattern.confidence
 
 CalculateFreshnessFactor(pattern):
     // Find oldest observation across all required series
@@ -422,14 +465,16 @@ CalculateFreshnessFactor(pattern):
 
     if daysOverdue == 0: return 1.0            // Still current
 
-    return exp(-daysOverdue / pattern.signalDecayDays)
+    freshness = exp(-daysOverdue / pattern.signalDecayDays)
+    return max(0.10, freshness)                // Floor at 10%
 
 GetTemporalMultiplier(pattern):
-    if not isRegimeTransitioning: return 1.0
+    isTransitioning = abs(macroScoreTrend) >= 0.3
+    if not isTransitioning: return 1.0
 
-    if pattern.temporalType == Leading:    return 1.3
+    if pattern.temporalType == Leading:    return 1.30
     if pattern.temporalType == Coincident: return 1.0
-    if pattern.temporalType == Lagging:    return 0.7
+    if pattern.temporalType == Lagging:    return 0.70
     return 1.0
 ```
 
@@ -459,14 +504,30 @@ GetTemporalMultiplier(pattern):
 **GET /api/patterns/health**
 ```json
 {
+  "timestamp": "2026-01-19T12:00:00Z",
+  "totalPatterns": 66,
+  "enabledPatterns": 66,
   "healthStatus": "Healthy",
-  "totalPatterns": 57,
+  "issues": [],
   "summary": {
-    "current": 52,
-    "slightlyOverdue": 4,
+    "current": 60,
+    "slightlyOverdue": 5,
     "severelyOverdue": 1,
     "noData": 0
   }
+}
+```
+
+**POST /api/patterns/backfill?days=60**
+```json
+{
+  "daysProcessed": 60,
+  "daysWithData": 58,
+  "startDate": "2025-11-20T00:00:00Z",
+  "endDate": "2026-01-19T00:00:00Z",
+  "finalRegime": "Neutral",
+  "finalScore": 0.15,
+  "durationMs": 1234
 }
 ```
 

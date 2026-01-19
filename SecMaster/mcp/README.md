@@ -16,104 +16,87 @@ flowchart LR
     SM -->|HTTP| Collectors[FRED/Finnhub<br/>OFR/AlphaVantage]
 ```
 
+AI assistants connect via SSE, SecMasterMcp proxies requests to the SecMaster backend, which queries TimescaleDB (with pgvector for embeddings) and routes collector operations to the appropriate services.
+
+## Features
+
+- **Instrument Search**: SQL, fuzzy (pg_trgm), and semantic (pgvector) search modes
+- **Symbol Resolution**: Resolve symbols to optimal data sources by frequency and lag
+- **RAG Q&A**: Natural language questions answered via retrieval-augmented generation
+- **Collector Gateway**: Unified interface to manage series across all collectors
+- **Hybrid Resolution**: Cascading strategy from exact match to semantic to RAG
+
+## Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SECMASTER_API_URL` | Backend service URL | `http://secmaster:8080` |
+| `SECMASTER_MCP_LOG_LEVEL` | Logging level | `Warning` |
+| `SECMASTER_MCP_TIMEOUT_SECONDS` | HTTP request timeout | `30` |
+
 ## MCP Tools
 
-### Basic Search and Resolution
+### Search and Resolution
 
-| Tool | Description | Key Parameters |
-|------|-------------|----------------|
-| `search_instruments` | Search by name, symbol, description | `query`, `asset_class`, `limit` |
-| `search_catalog` | Search with optional upstream discovery | `query`, `discover`, `asset_class` |
-| `get_instrument` | Get instrument details by symbol/ID | `identifier` |
-| `resolve_source` | Resolve symbol to best data source | `symbol`, `frequency`, `max_lag` |
-| `resolve_batch` | Resolve multiple symbols | `symbols`, `frequency` |
-| `list_sources` | List all sources for an instrument | `symbol` |
-| `lookup_by_collector_id` | Reverse lookup by collector ID | `collector`, `source_id` |
-| `promote_instrument` | Promote discovered to active collection | `instrument_id`, `collector` |
+| Tool | Description |
+|------|-------------|
+| `search_instruments` | Search by name, symbol, description |
+| `search_catalog` | Search with optional upstream discovery |
+| `get_instrument` | Get instrument details by symbol/ID |
+| `resolve_source` | Resolve symbol to best data source |
+| `resolve_batch` | Resolve multiple symbols |
+| `list_sources` | List all sources for an instrument |
+| `lookup_by_collector_id` | Reverse lookup by collector ID |
+| `promote_instrument` | Promote discovered to active collection |
 
-### Semantic Search (Vector-based)
+### Semantic Search
 
-| Tool | Description | Key Parameters |
-|------|-------------|----------------|
-| `semantic_search` | Search via 768-dim embeddings | `query`, `min_score`, `limit`, `discover` |
-| `ask_secmaster` | Natural language Q&A with RAG | `question` |
-| `hybrid_resolve` | SQL -> Fuzzy -> Vector -> RAG | `query`, `enable_rag`, `min_score` |
-
-**Hybrid resolve strategy:**
-1. SQL exact symbol match
-2. pg_trgm fuzzy text similarity
-3. pgvector semantic similarity
-4. RAG synthesis via llama3.2:3b
+| Tool | Description |
+|------|-------------|
+| `semantic_search` | Search via 768-dim embeddings |
+| `ask_secmaster` | Natural language Q&A with RAG |
+| `hybrid_resolve` | SQL -> Fuzzy -> Vector -> RAG cascade |
 
 ### Collector Gateway
 
 | Tool | Description |
 |------|-------------|
 | `search_collectors` | Smart-routed search across all collectors |
-| `list_fred_series` | List active FRED series |
-| `list_finnhub_series` | List active Finnhub series |
-| `list_ofr_stfm_series` | List OFR Short-term Funding series |
-| `list_ofr_hfm_series` | List OFR Hedge Fund Monitor series |
-| `list_alphavantage_series` | List active AlphaVantage series |
-| `add_fred_series` | Add FRED series |
-| `add_finnhub_series` | Add Finnhub series |
-| `add_alphavantage_series` | Add AlphaVantage series |
-| `toggle_fred_series` | Toggle FRED series active/inactive |
-| `toggle_finnhub_series` | Toggle Finnhub series |
-| `toggle_alphavantage_series` | Toggle AlphaVantage series |
-| `remove_fred_series` | Remove FRED series |
-| `remove_finnhub_series` | Remove Finnhub series |
-| `remove_alphavantage_series` | Remove AlphaVantage series |
+| `list_{collector}_series` | List active series (FRED, Finnhub, AlphaVantage, OFR STFM/HFM) |
+| `add_{collector}_series` | Add series to collection |
+| `toggle_{collector}_series` | Toggle series active/inactive |
+| `remove_{collector}_series` | Remove series from collection |
 | `health` | Service health status |
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SECMASTER_API_URL` | `http://secmaster:8080` | Backend service URL |
-| `SECMASTER_MCP_LOG_LEVEL` | `Warning` | Logging level |
-| `SECMASTER_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
-
-### Port Mapping
-
-- Internal: 8080
-- External (host): 3107
-- SSE endpoint: `http://mercury:3107/sse`
 
 ## Project Structure
 
 ```
-SecMaster/
-├── mcp/
-│   ├── Tools/
-│   │   └── SecMasterTools.cs
-│   ├── Program.cs
-│   ├── SecMasterMcp.csproj
-│   ├── Containerfile
-│   └── README.md
-├── src/
-│   └── ...
-└── tests/
-    └── ...
+SecMaster/mcp/
+├── Tools/
+│   └── SecMasterTools.cs   # MCP tool definitions
+├── Program.cs              # Entry point
+├── SecMasterMcp.csproj
+├── Containerfile
+└── README.md
 ```
 
 ## Development
 
 ### Prerequisites
 
-- .NET 9 SDK
 - VS Code with Dev Containers extension
+- Access to shared infrastructure (PostgreSQL, observability stack)
 
-### Build
+### Getting Started
 
-```bash
-SecMaster/.devcontainer/compile.sh
-```
+1. Open in VS Code: `code SecMaster/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Build: `dotnet build mcp/SecMasterMcp.csproj`
 
 ### Build Container
 
 ```bash
-sudo nerdctl build -f SecMaster/mcp/Containerfile -t secmaster-mcp:latest .
+SecMaster/.devcontainer/build.sh
 ```
 
 ## Deployment
@@ -122,9 +105,16 @@ sudo nerdctl build -f SecMaster/mcp/Containerfile -t secmaster-mcp:latest .
 ansible-playbook playbooks/deploy.yml --tags secmaster-mcp
 ```
 
+## Ports
+
+| Port | Description |
+|------|-------------|
+| 8080 | HTTP API (internal) |
+| 3107 | SSE endpoint (host-mapped) |
+
 ## Claude Desktop Integration
 
-Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+Add to `~/.config/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -141,34 +131,18 @@ Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
 
 ## Usage Examples
 
-**Basic search:**
 ```
-User: "Search for unemployment data"
-Claude calls: search_instruments(query="unemployment", asset_class="Economic")
-```
+# Basic search
+search_instruments(query="unemployment", asset_class="Economic")
 
-**Semantic search:**
-```
-User: "What instruments measure job market health?"
-Claude calls: semantic_search(query="job market health", min_score=0.6)
-```
+# Semantic search
+semantic_search(query="job market health", min_score=0.6)
 
-**Natural language Q&A:**
-```
-User: "What inflation data is available?"
-Claude calls: ask_secmaster(question="What inflation data is available?")
-```
+# Natural language Q&A
+ask_secmaster(question="What inflation data is available?")
 
-**Smart collector search:**
-```
-User: "Find repo rate data"
-Claude calls: search_collectors(query="repo rates")
-```
-
-**Manage series:**
-```
-User: "Add NASDAQ to tracking"
-Claude calls: add_finnhub_series(symbol="NDAQ", priority=10)
+# Manage series
+add_finnhub_series(symbol="NDAQ", priority=10)
 ```
 
 ## See Also

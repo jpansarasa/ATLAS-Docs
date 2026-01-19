@@ -9,52 +9,70 @@ AlphaVantageCollector fetches financial and economic data from Alpha Vantage, in
 ## Architecture
 
 ```mermaid
-flowchart LR
-    AV[Alpha Vantage API<br/>alphavantage.co] -->|HTTP/JSON| AC[AlphaVantageCollector]
-    AC -->|Store| DB[(TimescaleDB)]
-    AC -->|gRPC Stream| TE[ThresholdEngine]
-    AC -->|Register| SM[SecMaster]
-    AC -->|Metrics/Traces| OTEL[OpenTelemetry<br/>Collector]
-    CAL[CalendarService] -->|CME Holidays| AC
+flowchart TD
+    subgraph Inputs
+        AV[Alpha Vantage API]
+        CAL[CalendarService]
+    end
+
+    subgraph AlphaVantageCollector
+        SCHED[Scheduler]
+        API[API Client]
+        REPO[Repository]
+    end
+
+    subgraph Outputs
+        DB[(TimescaleDB)]
+        TE[ThresholdEngine]
+        SM[SecMaster]
+        OTEL[OpenTelemetry]
+    end
+
+    AV -->|HTTP/JSON| API
+    CAL -->|CME Holidays| SCHED
+    SCHED --> API --> REPO
+    REPO -->|Store| DB
+    REPO -->|gRPC Stream| TE
+    API -->|Register| SM
+    SCHED -->|Metrics/Traces| OTEL
 ```
+
+The scheduler prioritizes series collection within the daily API limit, skipping market holidays. New observations are stored in TimescaleDB and streamed to ThresholdEngine for real-time analysis.
 
 ## Features
 
-- **Multi-Asset Support**: Commodities, economic indicators, equities (OHLCV), forex, cryptocurrencies, technical indicators
-- **Priority Scheduling**: High-priority series collected more frequently based on urgency and configurable intervals
+- **Multi-Asset Support**: Commodities, economic indicators, equities (OHLCV), forex, crypto, technical indicators
+- **Priority Scheduling**: High-priority series collected more frequently based on configurable intervals
 - **Rate Limiting**: Enforces 25 requests/day limit with intelligent scheduling
-- **Market Calendar Integration**: Skips collection on CME market holidays via CalendarService
+- **Market Calendar**: Skips collection on CME market holidays via CalendarService
 - **Real-time Streaming**: gRPC event stream for downstream consumers (ThresholdEngine)
 - **SecMaster Integration**: Automatic instrument registration via gRPC
 - **Admin API**: Dynamic series management without service restart
 - **Symbol Discovery**: Search upstream Alpha Vantage API for new instruments
-- **Full Observability**: OpenTelemetry instrumentation (metrics, traces, logs to OTLP)
 
 ## Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | **Required** |
-| `AlphaVantage__ApiKey` | API key from alphavantage.co | **Required** |
+| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | Required |
+| `AlphaVantage__ApiKey` | API key from alphavantage.co | Required |
 | `AlphaVantage__DailyLimit` | Max requests per day | `25` |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry | `alphavantage-collector` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
 
 ## API Endpoints
 
-### REST API
+### REST API (Port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/series` | GET | List all active series |
 | `/api/series/{seriesId}` | GET | Get specific series details |
-| `/api/series/{seriesId}/observations` | GET | Get observations (query: startDate, endDate, limit) |
+| `/api/series/{seriesId}/observations` | GET | Get observations with date filtering |
 | `/api/series/{seriesId}/latest` | GET | Get latest observation |
-| `/api/search` | GET | Unified search for SecMaster gateway (query: q, limit) |
-| `/api/discover` | GET | Search upstream Alpha Vantage API (query: q, limit) |
-| `/api/health` | GET | Health check |
-| `/health` | GET | Full health check with database status |
+| `/api/search` | GET | Unified search for SecMaster gateway |
+| `/api/discover` | GET | Search upstream Alpha Vantage API |
+| `/health` | GET | Health check with database status |
 | `/health/ready` | GET | Readiness probe |
 | `/health/live` | GET | Liveness probe |
 
@@ -63,57 +81,54 @@ flowchart LR
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/admin/series` | GET | List all configured series |
-| `/api/admin/series` | POST | Add new series (body: {symbol, type, title, priority}) |
+| `/api/admin/series` | POST | Add new series |
 | `/api/admin/series/{id}/toggle` | PUT | Enable/disable series |
 | `/api/admin/series/{id}` | DELETE | Delete series |
 
-### gRPC API
+### gRPC Services (Port 5001)
 
-**Service**: `ObservationEventStream` (port 5001)
-
-| Method | Description |
-|--------|-------------|
-| `SubscribeToEvents` | Stream observation events in real-time |
+| Service | Method | Description |
+|---------|--------|-------------|
+| `ObservationEventStream` | `SubscribeToEvents` | Stream observation events in real-time |
 
 ## Project Structure
 
 ```
 AlphaVantageCollector/
 ├── src/
-│   ├── Api/                    # Alpha Vantage API client
-│   ├── Data/                   # EF Core DbContext and repository
-│   ├── Grpc/                   # gRPC event stream service
-│   ├── HealthChecks/           # Database health check
-│   ├── Interfaces/             # Service contracts
-│   ├── Models/                 # Domain models (AlphaSeries, AlphaObservation)
-│   ├── Services/               # Scheduler, series management
-│   ├── Telemetry/              # OpenTelemetry metrics and traces
-│   ├── Workers/                # Background collection worker
-│   └── Program.cs              # Service host
-├── tests/                      # Unit tests
-├── migrations/                 # Database migrations
-└── .devcontainer/              # VS Code dev container
+│   ├── Api/           # Alpha Vantage API client
+│   ├── Data/          # EF Core DbContext and repository
+│   ├── Grpc/          # gRPC event stream service
+│   ├── Models/        # Domain models
+│   ├── Services/      # Scheduler, series management
+│   ├── Telemetry/     # OpenTelemetry instrumentation
+│   └── Workers/       # Background collection worker
+├── tests/             # Unit tests
+├── migrations/        # Database migrations
+└── .devcontainer/     # Dev container config
 ```
 
 ## Development
 
-### Using Dev Container
+### Prerequisites
+
+- VS Code with Dev Containers extension
+- Access to shared infrastructure (PostgreSQL, observability stack)
+
+### Getting Started
+
+1. Open in VS Code: `code AlphaVantageCollector/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P → "Dev Containers: Reopen in Container")
+3. Build: `dotnet build`
+4. Run: `dotnet run`
+
+### Build Scripts
 
 ```bash
-# Open in VS Code and select "Reopen in Container"
-cd /workspace/AlphaVantageCollector/src
-dotnet run
-```
-
-### Compile
-
-```bash
+# Compile and test
 .devcontainer/compile.sh
-```
 
-### Build Container Image
-
-```bash
+# Build container image
 .devcontainer/build.sh
 ```
 
@@ -125,10 +140,10 @@ ansible-playbook playbooks/deploy.yml --tags alphavantage-collector
 
 ## Ports
 
-| Port | Type | Description |
-|------|------|-------------|
-| 8080 | HTTP (internal) | REST API, health checks |
-| 5001 | HTTP/2 (internal) | gRPC event stream |
+| Port | Description |
+|------|-------------|
+| 8080 | REST API (internal) |
+| 5001 | gRPC event streaming (internal) |
 
 No host port mapping - internal service only.
 

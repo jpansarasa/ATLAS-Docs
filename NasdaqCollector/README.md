@@ -130,12 +130,12 @@ Note: Service is currently disabled in compose.yaml. Uncomment when IP whitelist
 
 ## Ports
 
-| Port | Type | Description |
-|------|------|-------------|
-| 5004 | HTTP (container) | REST API, health checks |
-| 5005 | HTTP/2 (container) | gRPC event stream |
-| 5008 | Host | Mapped to container port 5004 |
-| 5009 | Host | Mapped to container port 5005 |
+| Port | Protocol | Description |
+|------|----------|-------------|
+| 8080 | HTTP | REST API, health checks (internal) |
+| 5001 | HTTP/2 | gRPC event stream (internal) |
+
+No host-mapped ports - internal container-to-container communication only.
 
 ## See Also
 

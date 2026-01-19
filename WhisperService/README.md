@@ -48,7 +48,7 @@ flowchart LR
 
 ## API Endpoints
 
-### REST API
+### REST API (Port 8090)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -149,4 +149,5 @@ ansible-playbook playbooks/deploy.yml --tags whisper-service
 
 ## See Also
 
-- [WhisperServiceMcp](../WhisperServiceMcp/README.md) - MCP server for AI assistants
+- [WhisperServiceMcp](../WhisperServiceMcp/README.md) - MCP server for AI assistant integration
+- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System architecture

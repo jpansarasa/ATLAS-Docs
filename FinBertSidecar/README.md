@@ -145,3 +145,4 @@ ansible-playbook playbooks/deploy.yml --tags finbert-sidecar
 ## See Also
 
 - [SecMaster](../SecMaster/README.md) - Primary consumer for semantic search embeddings
+- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System design

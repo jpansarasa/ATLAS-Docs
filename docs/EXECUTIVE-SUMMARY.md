@@ -1,11 +1,11 @@
 # ATLAS Platform - Executive Summary
 
 **Status:** Production Ready
-**Updated:** 2026-01-01
+**Updated:** 2026-01-19
 
 ## Overview
 
-ATLAS is a real-time macroeconomic monitoring platform that ingests data from multiple sources (FRED, Alpha Vantage, Finnhub, OFR, Nasdaq), evaluates 62 pattern-based signals, detects regime transitions, and delivers actionable alerts for portfolio allocation decisions.
+ATLAS is a real-time macroeconomic monitoring platform that ingests data from multiple sources (FRED, Alpha Vantage, Finnhub, OFR, Nasdaq), evaluates 68 pattern-based signals, detects regime transitions, and delivers actionable alerts for portfolio allocation decisions.
 
 ## Architecture
 
@@ -56,7 +56,7 @@ flowchart LR
 
 | Service | Status | Description |
 |---------|--------|-------------|
-| FredCollector | :white_check_mark: | 47 FRED economic series |
+| FredCollector | :white_check_mark: | 68 FRED economic series |
 | AlphaVantageCollector | :white_check_mark: | Commodities (WTI, Brent, Natural Gas) |
 | NasdaqCollector | :warning: | LBMA gold prices (disabled - IP whitelist pending) |
 | FinnhubCollector | :white_check_mark: | Stock quotes, sentiment, analyst ratings |
@@ -64,28 +64,28 @@ flowchart LR
 | SentinelCollector | :white_check_mark: | News aggregation, sentiment analysis |
 | CalendarService | :white_check_mark: | Market status, trading day validation |
 | SecMaster | :white_check_mark: | Instrument metadata, source resolution, fuzzy search |
-| ThresholdEngine | :white_check_mark: | 62 patterns, regime detection |
+| ThresholdEngine | :white_check_mark: | 68 patterns, regime detection |
 | AlertService | :white_check_mark: | ntfy.sh + email notification channels |
 | WhisperService | :white_check_mark: | YouTube transcription via Whisper |
 | FinBertSidecar | :white_check_mark: | Financial sentiment analysis |
 
-**Total:** 35+ containers
+**Total:** 30 containers
 
 ## Pattern Library
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Recession | 13 | Sahm Rule, yield curve inversion, initial claims |
+| Recession | 16 | Sahm Rule, yield curve inversion, initial claims |
+| NBFI Stress | 10 | HY spreads, repo facility, Chicago NFCI |
+| Inflation | 9 | CPI, breakevens, commodity prices |
 | Growth | 8 | GDP acceleration, industrial production, ISM |
 | Liquidity | 8 | VIX L1/L2, credit spreads, Fed liquidity |
-| NBFI Stress | 8 | HY spreads, repo facility, Chicago NFCI |
-| Inflation | 8 | CPI, breakevens, commodity prices |
 | OFR | 7 | FSI components, STFM repo, HFM leverage |
 | Valuation | 6 | CAPE, Buffett indicator |
 | Currency | 3 | DXY, EM FX, carry trades |
 | Commodity | 1 | Copper/Gold ratio |
 
-**Total:** 62 patterns across 9 categories
+**Total:** 68 patterns across 9 categories
 
 ## Regime Detection
 
@@ -107,12 +107,15 @@ All services use internal ports (8080 REST, 5001 gRPC). Only services requiring 
 | Service | Port (Host) | Purpose |
 |---------|-------------|---------|
 | grafana | 3000 | Dashboards |
+| sentinel-collector | 5091 | Extraction review UI |
 | timescaledb | 5432 | Database |
 | whisper-service | 8090 | YouTube transcription |
 | ollama-gpu | 11434 | LLM inference (GPU) |
 | ollama-cpu | 11435 | LLM inference (CPU) |
 
 ## MCP Servers (Claude Desktop)
+
+MCP servers are consolidated into their parent service directories (e.g., `FredCollector/mcp/`, `SecMaster/mcp/`).
 
 | Server | Port | Purpose |
 |--------|------|---------|
@@ -123,7 +126,7 @@ All services use internal ports (8080 REST, 5001 gRPC). Only services requiring 
 | finnhub-mcp | 3105 | Market data, calendars |
 | ofr-mcp | 3106 | OFR financial stress data |
 | secmaster-mcp | 3107 | Instrument metadata search |
-| whisper-mcp | 3108 | YouTube transcription |
+| whisper-service-mcp | 3108 | YouTube transcription |
 
 ## Infrastructure
 

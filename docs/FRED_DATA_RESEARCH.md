@@ -4,7 +4,7 @@ Research on FRED series availability for ATLAS indicators.
 
 ## Summary
 
-**39 FRED series** configured in FredCollector, supporting **31 patterns** in ThresholdEngine.
+**66 FRED series** configured in FredCollector, supporting **38 patterns** (33 enabled, 5 disabled) in ThresholdEngine.
 
 ## Series by Category
 
@@ -52,6 +52,17 @@ Research on FRED series availability for ATLAS indicators.
 | NASDAQNQUSBLM | Large Mid Cap Index | buffett-indicator |
 | NASDAQNDXSE | Nasdaq-100 Equal Weight | equal-weight-indicator |
 
+### Inflation
+| Series | Description | Used By Pattern |
+|--------|-------------|-----------------|
+| CPIAUCSL | Consumer Price Index | cpi-acceleration |
+| CPILFESL | Core CPI | core-cpi-sticky |
+| PCEPI | PCE Price Index | pce-acceleration |
+| PCEPILFE | Core PCE | pce-above-target |
+| T5YIE | 5-Year Breakeven | breakeven-5y-elevated |
+| T10YIE | 10-Year Breakeven | breakeven-10y-elevated |
+| T5YIFR | 5Y5Y Forward | breakeven-5y5y-forward |
+
 ## Series NOT in FRED
 
 These indicators require external data sources (patterns disabled):
@@ -73,7 +84,8 @@ These indicators require external data sources (patterns disabled):
 | Growth | 5 | 5 | 0 |
 | NBFI | 8 | 6 | 2 |
 | Valuation | 5 | 2 | 3 |
-| **Total** | **31** | **26** | **5** |
+| Inflation | 7 | 7 | 0 |
+| **Total** | **38** | **33** | **5** |
 
 ## Future Data Sources
 
@@ -96,3 +108,4 @@ curl "https://api.stlouisfed.org/fred/series?series_id=VIXCLS&api_key=YOUR_KEY&f
 
 - [Pattern READMEs](../ThresholdEngine/config/patterns/) - Pattern definitions
 - [FredCollector](../FredCollector/) - Data collection service
+- [FredCollector MCP](../FredCollector/mcp/) - MCP server for FRED data access

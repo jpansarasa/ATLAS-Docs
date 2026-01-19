@@ -46,30 +46,30 @@ flowchart LR
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OpenTelemetry__OtlpEndpoint` | `http://otel-collector:4317` | OTLP collector endpoint |
-| `OpenTelemetry__ServiceName` | `alert-service` | Service name for telemetry |
-| `Channels__Ntfy__Enabled` | `true` | Enable Ntfy channel |
-| `Channels__Ntfy__Endpoint` | `https://ntfy.sh` | Ntfy server endpoint |
-| `Channels__Ntfy__Topic` | `atlas-alerts` | Ntfy topic for push notifications |
-| `Channels__Email__Enabled` | `false` | Enable Email channel |
-| `Channels__Email__SmtpHost` | Required if enabled | SMTP server hostname |
-| `Channels__Email__SmtpPort` | `587` | SMTP server port |
-| `Channels__Email__FromAddress` | `alerts@atlas.local` | From email address |
-| `Channels__Email__ToAddresses` | Required if enabled | Array of recipient addresses |
-| `Routing__SeverityRoutes__critical` | `["ntfy", "email"]` | Channels for critical alerts |
-| `Routing__SeverityRoutes__warning` | `["ntfy"]` | Channels for warning alerts |
-| `Routing__SeverityRoutes__info` | `["ntfy"]` | Channels for info alerts |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry__ServiceName` | Service name for telemetry | `alert-service` |
+| `Channels__Ntfy__Enabled` | Enable Ntfy channel | `true` |
+| `Channels__Ntfy__Endpoint` | Ntfy server endpoint | `https://ntfy.sh` |
+| `Channels__Ntfy__Topic` | Ntfy topic for push notifications | `atlas-alerts` |
+| `Channels__Email__Enabled` | Enable Email channel | `false` |
+| `Channels__Email__SmtpHost` | SMTP server hostname | Required if enabled |
+| `Channels__Email__SmtpPort` | SMTP server port | `587` |
+| `Channels__Email__FromAddress` | From email address | `alerts@atlas.local` |
+| `Channels__Email__ToAddresses` | Array of recipient addresses | Required if enabled |
+| `Routing__SeverityRoutes__critical` | Channels for critical alerts | `["ntfy", "email"]` |
+| `Routing__SeverityRoutes__warning` | Channels for warning alerts | `["ntfy"]` |
+| `Routing__SeverityRoutes__info` | Channels for info alerts | `["ntfy"]` |
 
 ## API Endpoints
 
 ### REST API (Port 8080)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/alerts` | Ingest alerts (direct JSON or Alertmanager webhook format) |
-| GET | `/health` | Health check endpoint |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/alerts` | POST | Ingest alerts (direct JSON or Alertmanager webhook format) |
+| `/health` | GET | Health check endpoint |
 
 ### Alert Payload Formats
 
@@ -100,27 +100,30 @@ flowchart LR
 ```
 AlertService/
 ├── src/
-│   ├── Program.cs                   # Application entry point
-│   ├── appsettings.json             # Configuration
-│   ├── Channels/                    # INotificationChannel (Ntfy, Email)
-│   ├── Endpoints/                   # API route handlers
-│   ├── Models/                      # Alert, AlertRequest, Severity
-│   ├── Services/                    # AlertQueue, NotificationDispatcher
-│   └── Telemetry/                   # OpenTelemetry metrics and traces
-├── tests/
-│   └── AlertService.Tests/          # Unit tests
-└── .devcontainer/
-    ├── build.sh                     # Container image build
-    ├── compile.sh                   # Compile and test
-    └── devcontainer.json            # VS Code dev container
+│   ├── Program.cs           # Application entry point
+│   ├── appsettings.json     # Configuration
+│   ├── Channels/            # INotificationChannel (Ntfy, Email)
+│   ├── Endpoints/           # API route handlers
+│   ├── Models/              # Alert, AlertRequest, Severity
+│   ├── Services/            # AlertQueue, NotificationDispatcher
+│   └── Telemetry/           # OpenTelemetry metrics and traces
+├── tests/                   # Unit tests
+└── .devcontainer/           # Dev container config
 ```
 
 ## Development
 
 ### Prerequisites
 
-- .NET 9 SDK (via devcontainer)
+- VS Code with Dev Containers extension
 - Docker/nerdctl for container builds
+
+### Getting Started
+
+1. Open in VS Code: `code AlertService/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Build: `dotnet build`
+4. Run: `dotnet run`
 
 ### Compile and Test
 
@@ -145,10 +148,11 @@ ansible-playbook playbooks/deploy.yml --tags alert-service
 
 | Port | Description |
 |------|-------------|
-| 8080 | Container internal (HTTP REST) |
-| N/A | No host port (internal service only) |
+| 8080 | REST API (internal) |
+| N/A | No host port mapping (internal service only) |
 
 ## See Also
 
-- [Prometheus Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) - Primary alert source
 - [ThresholdEngine](../ThresholdEngine/README.md) - Economic pattern evaluation service
+- [Prometheus Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) - Primary alert source
+- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System design

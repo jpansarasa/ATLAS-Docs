@@ -15,6 +15,21 @@ flowchart LR
     API -->|SQL| DB[(TimescaleDB)]
 ```
 
+## Features
+
+- **FSI Access**: Financial Stress Index with category/regional breakdowns
+- **STFM Data**: Repo rates, SOFR, T-bills, money market and commercial paper rates
+- **HFM Data**: Hedge fund leverage and risk indicators from SEC filings
+- **Admin Tools**: Collection triggers, series management, backfill operations
+- **SSE Transport**: Server-Sent Events for Claude Desktop integration
+
+## Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OFRCOLLECTOR_API_URL` | Backend service URL | `http://ofr-collector:8080` |
+| `OFRCOLLECTOR_MCP_TIMEOUT_SECONDS` | HTTP request timeout | `30` |
+
 ## MCP Tools
 
 ### FSI Tools (Financial Stress Index)
@@ -66,62 +81,48 @@ HFM tracks hedge fund leverage and risk indicators from SEC filings.
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `list_stfm_series_admin` | List all STFM series (including inactive) | None |
 | `add_stfm_series` | Add new STFM series | `mnemonic`, `backfill` |
 | `toggle_stfm_series` | Enable/disable STFM series | `mnemonic` |
 | `delete_stfm_series` | Delete STFM series and data | `mnemonic` |
 | `trigger_stfm_series_collection` | Trigger collection for specific series | `mnemonic` |
 | `trigger_stfm_series_backfill` | Trigger backfill for specific series | `mnemonic`, `start_date`, `end_date` |
-| `list_hfm_series_admin` | List all HFM series (including inactive) | None |
+| `list_stfm_series_admin` | List all STFM series (including inactive) | None |
 | `add_hfm_series` | Add new HFM series | `mnemonic`, `backfill` |
 | `toggle_hfm_series` | Enable/disable HFM series | `mnemonic` |
 | `delete_hfm_series` | Delete HFM series and data | `mnemonic` |
 | `trigger_hfm_series_collection` | Trigger collection for specific series | `mnemonic` |
 | `trigger_hfm_series_backfill` | Trigger backfill for specific series | `mnemonic`, `start_date`, `end_date` |
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OFRCOLLECTOR_API_URL` | `http://ofr-collector:8080` | Backend service URL |
-| `OFRCOLLECTOR_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
-
-### Port Mapping
-
-- Internal: 8080
-- External (host): 3106
-- SSE endpoint: `http://mercury:3106/sse`
+| `list_hfm_series_admin` | List all HFM series (including inactive) | None |
 
 ## Project Structure
 
 ```
 OfrCollector/
 ├── mcp/
-│   ├── README.md
-│   ├── Client/
-│   │   ├── IOfrCollectorClient.cs    # HTTP client interface
-│   │   ├── OfrCollectorClient.cs     # HTTP client implementation
-│   │   └── Models/
-│   │       └── OfrModels.cs          # API response models
-│   ├── Tools/
-│   │   └── OfrCollectorTools.cs      # MCP tool definitions
-│   ├── Program.cs                    # Application entry point
-│   ├── Containerfile                 # Container build definition
-│   └── OfrMcp.csproj                 # Project configuration
-├── src/                              # Main OfrCollector service
-├── tests/                            # Unit tests
-└── migrations/                       # Database migrations
+│   ├── Client/           # HTTP client for OfrCollector API
+│   ├── Tools/            # MCP tool definitions
+│   ├── Program.cs        # Application entry point
+│   └── Containerfile     # Container build definition
+├── src/                  # Main OfrCollector service
+├── tests/                # Unit tests
+└── migrations/           # Database migrations
 ```
 
 ## Development
 
-### Build
-```bash
-cd /home/james/ATLAS/OfrCollector/mcp
-dotnet build
-```
+### Prerequisites
+- VS Code with Dev Containers extension
+- Access to shared infrastructure (TimescaleDB, observability stack)
+
+### Getting Started
+
+1. Open in VS Code: `code OfrCollector/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Build: `dotnet build mcp/OfrMcp.csproj`
+4. Run: `dotnet run --project mcp/OfrMcp.csproj`
 
 ### Build Container
+
 ```bash
 cd /home/james/ATLAS
 nerdctl build -t ofr-mcp:latest -f OfrCollector/mcp/Containerfile .
@@ -132,6 +133,15 @@ nerdctl build -t ofr-mcp:latest -f OfrCollector/mcp/Containerfile .
 ```bash
 ansible-playbook playbooks/deploy.yml --tags ofr-mcp
 ```
+
+## Ports
+
+| Port | Description |
+|------|-------------|
+| 8080 | REST API (internal) |
+| 3106 | Host-mapped SSE endpoint |
+
+SSE endpoint: `http://mercury:3106/sse`
 
 ## Claude Desktop Integration
 
@@ -149,29 +159,6 @@ Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Appli
 ```
 
 Claude Desktop uses stdio transport; `mcp-proxy` bridges stdio to SSE.
-
-## Usage Examples
-
-**Check financial stress:**
-```
-User: "What's the current financial stress level?"
-Claude calls: get_fsi_latest()
-Response: "FSI at 0.3 (elevated). Credit stress +0.4, driven by EM spreads."
-```
-
-**Review repo rates:**
-```
-User: "Show me repo rates"
-Claude calls: get_stfm_latest("REPO-DVP-AR-TOT-P")
-Response: "DVP repo rate: 5.32% (up 5bp from last week)"
-```
-
-**SOFR history:**
-```
-User: "What's SOFR been doing?"
-Claude calls: get_stfm_observations("SOFR-AVG-30", start_date="2024-12-01")
-Response: "30-day avg SOFR ranged 4.85-4.92% in December"
-```
 
 ## See Also
 

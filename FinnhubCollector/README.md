@@ -44,46 +44,38 @@ flowchart LR
 
 ## API Endpoints
 
-### Health Checks
+### REST API (Port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Full health check with database validation |
-| `/health/ready` | GET | Readiness probe (database) |
+| `/health` | GET | Full health check |
+| `/health/ready` | GET | Readiness probe |
 | `/health/live` | GET | Liveness probe |
-
-### Data API
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/series` | GET | Get active series (optionally filter by type) |
+| `/api/series` | GET | Get active series |
 | `/api/series/{seriesId}` | GET | Get specific series |
 | `/api/quotes/{symbol}` | GET | Get latest quote |
 | `/api/quotes/{symbol}/history` | GET | Get quote history |
-| `/api/calendar/economic` | GET | Get upcoming economic events |
-| `/api/calendar/economic/high-impact` | GET | Get high-impact economic events |
-| `/api/calendar/earnings` | GET | Get upcoming earnings |
-| `/api/calendar/ipo` | GET | Get upcoming IPOs |
-| `/api/sentiment/{symbol}/news` | GET | Get news sentiment |
-| `/api/sentiment/{symbol}/insider` | GET | Get insider sentiment |
-| `/api/analyst/{symbol}/recommendations` | GET | Get analyst recommendations |
-| `/api/analyst/{symbol}/price-target` | GET | Get price target |
-| `/api/company/{symbol}` | GET | Get company profile |
-| `/api/market/status` | GET | Get market status |
-| `/api/symbols/search` | GET | Search symbols (query: q) |
-| `/api/search` | GET | Unified search for SecMaster gateway |
-| `/api/discover` | GET | Upstream discovery for SecMaster catalog |
+| `/api/calendar/economic` | GET | Economic calendar events |
+| `/api/calendar/economic/high-impact` | GET | High-impact economic events |
+| `/api/calendar/earnings` | GET | Earnings calendar |
+| `/api/calendar/ipo` | GET | IPO calendar |
+| `/api/sentiment/{symbol}/news` | GET | News sentiment |
+| `/api/sentiment/{symbol}/insider` | GET | Insider sentiment |
+| `/api/analyst/{symbol}/recommendations` | GET | Analyst recommendations |
+| `/api/analyst/{symbol}/price-target` | GET | Price target |
+| `/api/company/{symbol}` | GET | Company profile |
+| `/api/market/status` | GET | Market status |
+| `/api/symbols/search` | GET | Symbol search |
+| `/swagger` | GET | API documentation |
 
-### Live Data API
-
-Direct Finnhub API queries (bypasses local storage):
+### Live Data API (Direct Finnhub Queries)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/live/quote/{symbol}` | GET | Live quote |
 | `/api/live/candles/{symbol}` | GET | Live OHLCV candles |
 | `/api/live/profile/{symbol}` | GET | Live company profile |
-| `/api/live/recommendation/{symbol}` | GET | Live analyst recommendations |
+| `/api/live/recommendation/{symbol}` | GET | Live recommendations |
 | `/api/live/price-target/{symbol}` | GET | Live price target |
 | `/api/live/news-sentiment/{symbol}` | GET | Live news sentiment |
 | `/api/live/peers/{symbol}` | GET | Live company peers |
@@ -96,26 +88,17 @@ Direct Finnhub API queries (bypasses local storage):
 | `/api/admin/series` | POST | Add new series |
 | `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable series |
 | `/api/admin/series/{seriesId}` | DELETE | Delete series |
-| `/api/admin/series/{seriesId}/collect` | POST | Trigger immediate collection |
-| `/api/admin/series/{seriesId}/collect/status` | GET | Get collection status |
+| `/api/admin/series/{seriesId}/collect` | POST | Trigger collection |
 
-### Documentation
+### gRPC Services (Port 5001)
 
-| Endpoint | Description |
-|----------|-------------|
-| `/swagger` | Interactive API documentation |
-
-### gRPC API
-
-Service: `ObservationEventStream` (port 5001)
-
-| Method | Type | Description |
-|--------|------|-------------|
-| `SubscribeToEvents` | Server streaming | Real-time event subscription from checkpoint |
-| `GetEventsSince` | Server streaming | Historical events since timestamp |
-| `GetEventsBetween` | Server streaming | Historical events within time range |
-| `GetLatestEventTime` | Unary | Get timestamp of most recent event |
-| `GetHealth` | Unary | Service health with event statistics |
+| Service | Method | Description |
+|---------|--------|-------------|
+| `ObservationEventStream` | `SubscribeToEvents` | Real-time event subscription |
+| `ObservationEventStream` | `GetEventsSince` | Historical events since timestamp |
+| `ObservationEventStream` | `GetEventsBetween` | Events within time range |
+| `ObservationEventStream` | `GetLatestEventTime` | Most recent event timestamp |
+| `ObservationEventStream` | `GetHealth` | Service health with statistics |
 
 ## Project Structure
 

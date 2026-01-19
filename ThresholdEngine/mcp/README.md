@@ -15,37 +15,17 @@ flowchart LR
     TE -->|gRPC| FC[fred-collector<br/>:5001]
 ```
 
-## MCP Tools
+Data flows from AI assistant requests through MCP to ThresholdEngine, which evaluates patterns using economic data from FredCollector.
 
-### Evaluation Tools
+## Features
 
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `evaluate` | Evaluate ALL enabled patterns and return complete system state | None |
-| `evaluate_pattern` | Evaluate a specific pattern on-demand | `pattern_id` (required) |
+- **Pattern Evaluation**: Evaluate all enabled patterns or specific patterns on-demand
+- **Regime Detection**: Determine macro regime (Crisis/Recession/LateCycle/Neutral/Recovery/Growth)
+- **Pattern Discovery**: List and inspect pattern configurations by category
+- **Hot Reload**: Reload pattern configurations without service restart
+- **Health Monitoring**: Service health and API schema access
 
-### Pattern Discovery Tools
-
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `list_patterns` | List all pattern configurations with filtering | `category`, `enabled_only` |
-| `get_pattern` | Get detailed configuration for a specific pattern | `pattern_id` (required) |
-| `categories` | List pattern categories with counts | None |
-
-### Administrative Tools
-
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `reload` | Hot-reload pattern configurations from disk | None |
-
-### Diagnostics Tools
-
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `health` | Get ThresholdEngine service health status | None |
-| `api_schema` | Get OpenAPI specification for ThresholdEngine API | `format`: "full" or "summary" |
-
-## Signal Interpretation
+### Signal Interpretation
 
 | Signal | Meaning |
 |--------|---------|
@@ -55,7 +35,7 @@ flowchart LR
 | +1.0 | Moderately bullish |
 | +2.0 | Strongly bullish |
 
-## Regime Interpretation
+### Regime Interpretation
 
 | Regime | Score Range | Deployment Level |
 |--------|-------------|------------------|
@@ -68,52 +48,64 @@ flowchart LR
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `THRESHOLDENGINE_API_URL` | `http://threshold-engine:8080` | Backend service URL |
-| `THRESHOLDENGINE_MCP_LOG_LEVEL` | `Warning` | Logging level |
-| `THRESHOLDENGINE_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `THRESHOLDENGINE_API_URL` | Backend service URL | `http://threshold-engine:8080` |
+| `THRESHOLDENGINE_MCP_LOG_LEVEL` | Logging level | `Warning` |
+| `THRESHOLDENGINE_MCP_TIMEOUT_SECONDS` | HTTP request timeout | `30` |
 
-### Port Mapping
+## MCP Tools
 
-- Internal: 8080
-- External (host): 3104
-- SSE endpoint: `http://mercury:3104/sse`
+### Evaluation
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `evaluate` | Evaluate ALL enabled patterns and return complete system state | None |
+| `evaluate_pattern` | Evaluate a specific pattern on-demand | `pattern_id` (required) |
+
+### Pattern Discovery
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `list_patterns` | List all pattern configurations with filtering | `category`, `enabled_only` |
+| `get_pattern` | Get detailed configuration for a specific pattern | `pattern_id` (required) |
+| `categories` | List pattern categories with counts | None |
+
+### Administrative
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `reload` | Hot-reload pattern configurations from disk | None |
+| `health` | Get ThresholdEngine service health status | None |
+| `api_schema` | Get OpenAPI specification | `format`: "full" or "summary" |
 
 ## Project Structure
 
 ```
-ThresholdEngine/
-├── mcp/
-│   ├── Client/
-│   │   ├── IThresholdEngineClient.cs
-│   │   ├── ThresholdEngineClient.cs
-│   │   └── Models/
-│   │       └── ClientModels.cs
-│   ├── Tools/
-│   │   └── ThresholdEngineTools.cs
-│   ├── Program.cs
-│   ├── ThresholdEngineMcp.csproj
-│   ├── Containerfile
-│   └── README.md
-├── src/
-│   └── ...
-└── tests/
-    └── ...
+ThresholdEngine/mcp/
+├── Client/
+│   ├── IThresholdEngineClient.cs
+│   ├── ThresholdEngineClient.cs
+│   └── Models/
+├── Tools/
+│   └── ThresholdEngineTools.cs
+├── Program.cs
+├── ThresholdEngineMcp.csproj
+└── Containerfile
 ```
 
 ## Development
 
 ### Prerequisites
 
-- .NET 9.0 SDK
+- VS Code with Dev Containers extension
 - Access to threshold-engine service
 
-### Build
+### Getting Started
 
-```bash
-ThresholdEngine/.devcontainer/compile.sh
-```
+1. Open in VS Code: `code ThresholdEngine/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Build: `ThresholdEngine/.devcontainer/compile.sh`
 
 ### Build Container
 
@@ -127,7 +119,7 @@ sudo nerdctl build -f ThresholdEngine/mcp/Containerfile -t thresholdengine-mcp:l
 ansible-playbook playbooks/deploy.yml --tags thresholdengine-mcp
 ```
 
-## Claude Desktop Integration
+### Claude Desktop Integration
 
 Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
@@ -143,6 +135,15 @@ Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Appli
 ```
 
 Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
+
+## Ports
+
+| Port | Description |
+|------|-------------|
+| 8080 | REST API (internal) |
+| 3104 | Host-mapped SSE endpoint |
+
+SSE endpoint: `http://mercury:3104/sse`
 
 ## Usage Examples
 

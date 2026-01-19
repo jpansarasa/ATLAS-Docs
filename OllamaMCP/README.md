@@ -15,39 +15,16 @@ flowchart LR
     MCP -->|use_gpu=false| CPU[ollama-cpu<br/>:11435<br/>CPU Only]
 ```
 
-## MCP Tools
+Requests are routed to GPU or CPU instance based on the `use_gpu` parameter (defaults to GPU).
 
-### Generation Tools
+## Features
 
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
-| `ollama_generate` | Generate text completion | `model`, `prompt`, `system`, `temperature`, `use_gpu` |
-| `ollama_chat` | Multi-turn chat with context | `model`, `messages`, `temperature`, `use_gpu` |
-
-### Model Management Tools
-
-| Tool Name | Description | Key Parameters |
-|-----------|-------------|----------------|
-| `ollama_list_models` | List available models on instance | `use_gpu` |
-| `ollama_pull_model` | Download model from Ollama library | `model`, `use_gpu` |
-| `ollama_model_info` | Get detailed model metadata | `model`, `use_gpu` |
-
-### Chat Message Format
-
-```json
-{
-  "messages": [
-    { "role": "system", "content": "You are a helpful assistant." },
-    { "role": "user", "content": "Hello!" },
-    { "role": "assistant", "content": "Hi there!" },
-    { "role": "user", "content": "What can you do?" }
-  ]
-}
-```
+- **Dual Instance Routing**: Dynamic GPU/CPU selection per request
+- **Text Generation**: Single-prompt completions via `ollama_generate`
+- **Multi-turn Chat**: Conversational context via `ollama_chat`
+- **Model Management**: List, pull, and inspect models
 
 ## Configuration
-
-### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -56,36 +33,58 @@ flowchart LR
 | `MCP_PORT` | `3100` | SSE server port |
 | `MCP_HOST` | `0.0.0.0` | Bind address |
 
-### Port Mapping
+## API (MCP Tools)
 
-- Internal: 3100
-- External (host): 3100
-- SSE endpoint: `http://mercury:3100/sse`
+### Generation Tools
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `ollama_generate` | Text completion | `model`, `prompt`, `system`, `temperature`, `use_gpu` |
+| `ollama_chat` | Multi-turn chat | `model`, `messages`, `temperature`, `use_gpu` |
+
+### Model Management Tools
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `ollama_list_models` | List available models | `use_gpu` |
+| `ollama_pull_model` | Download model | `model`, `use_gpu` |
+| `ollama_model_info` | Model metadata | `model`, `use_gpu` |
+
+### Chat Message Format
+
+```json
+{
+  "messages": [
+    { "role": "system", "content": "You are a helpful assistant." },
+    { "role": "user", "content": "Hello!" }
+  ]
+}
+```
 
 ## Project Structure
 
 ```
 OllamaMCP/
-  Program.cs           # MCP server, tool definitions, Ollama client
-  OllamaMcp.csproj     # .NET 9 project file
-  Containerfile        # Container build definition
-  .devcontainer/
-    compile.sh         # Build script
-    build.sh           # Container build script
+├── Program.cs           # MCP server, tool definitions, Ollama client
+├── OllamaMcp.csproj     # .NET 9 project file
+├── Containerfile        # Container build definition
+└── .devcontainer/
+    ├── compile.sh       # Build script
+    └── build.sh         # Container build script
 ```
 
 ## Development
 
 ### Prerequisites
 
-- .NET 9 SDK
-- nerdctl/containerd
+- VS Code with Dev Containers extension
+- Access to Ollama instances (GPU/CPU)
 
-### Build
+### Getting Started
 
-```bash
-.devcontainer/compile.sh
-```
+1. Open in VS Code: `code OllamaMCP/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Build: `.devcontainer/compile.sh`
 
 ### Build Container
 
@@ -99,9 +98,17 @@ OllamaMCP/
 ansible-playbook playbooks/deploy.yml --tags ollama-mcp
 ```
 
+## Ports
+
+| Port | Description |
+|------|-------------|
+| 3100 | SSE server (internal and host-mapped) |
+
+SSE endpoint: `http://mercury:3100/sse`
+
 ## Claude Desktop Integration
 
-Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+Add to `~/.config/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -114,40 +121,7 @@ Add to `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Appli
 }
 ```
 
-Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
-
-## Usage Examples
-
-**Quick generation:**
-```
-User: "Generate a haiku about coding"
-Claude calls: ollama_generate(model="llama3.2:3b", prompt="Write a haiku about coding")
-```
-
-**Multi-turn chat:**
-```
-User: "Review this function using the local model"
-Claude calls: ollama_chat(
-  model="codellama:13b",
-  messages=[
-    {"role": "system", "content": "You are a senior code reviewer."},
-    {"role": "user", "content": "Review: function add(a,b){return a+b}"}
-  ],
-  use_gpu=true
-)
-```
-
-**List available models:**
-```
-User: "What models do I have locally?"
-Claude calls: ollama_list_models(use_gpu=true)
-```
-
-**Download new model:**
-```
-User: "Pull the Mistral model"
-Claude calls: ollama_pull_model(model="mistral:7b", use_gpu=true)
-```
+Claude Desktop uses stdio transport; `mcp-proxy` bridges stdio to SSE.
 
 ## See Also
 

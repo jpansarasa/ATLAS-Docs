@@ -24,6 +24,10 @@ ATLAS is a systematic macro regime identification framework designed to optimize
   - [NasdaqCollector - LBMA Gold Prices](#1c-nasdaqcollector---lbma-gold-price-collection)
   - [FinnhubCollector - Equity & Sentiment](#1d-finnhubcollector---equity--sentiment-collection)
   - [CalendarService - Market & Economic Schedules](#1e-calendarservice---market--economic-schedules)
+  - [SecMaster - Security Master & Instrument Metadata](#1f-secmaster---security-master--instrument-metadata)
+  - [OfrCollector - OFR Financial Stability Data](#1g-ofrcollector---ofr-financial-stability-data)
+  - [SentinelCollector - LLM-Based Document Extraction](#1h-sentinelcollector---llm-based-document-extraction)
+  - [WhisperService - Audio Transcription](#1i-whisperservice---audio-transcription)
   - [ThresholdEngine - Pattern Evaluation & Regime Detection](#2-thresholdengine---pattern-evaluation--regime-detection)
   - [AlertService - Notification Delivery](#3-alertservice---notification-delivery)
   - [Analysis Tools](#4-analysis-tools-planned---q1-q2-2026)
@@ -467,10 +471,56 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 [Technical documentation](./SecMaster/README.md)
 
+### 1g. OfrCollector - OFR Financial Stability Data
+
+**Purpose**: Automated collection of financial stability data from Office of Financial Research APIs
+**Status**: ✅ Complete
+**Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
+
+**Data Coverage**:
+- Short-term Funding Monitor (STFM): Repo rates, SOFR metrics
+- Hedge Fund Monitor (HFM): Leverage ratios, AUM, systemic risk metrics
+
+**Core Capabilities**:
+- Daily STFM collection (SOFR percentiles, repo volumes)
+- Quarterly HFM collection (hedge fund leverage, concentration)
+- gRPC event streaming (shared `ObservationEventStream` contract)
+- Full OpenTelemetry observability (traces, metrics, logs)
+
+[Technical documentation](./OfrCollector/README.md)
+
+### 1h. SentinelCollector - LLM-Based Document Extraction
+
+**Purpose**: Automated extraction of financial data from unstructured documents using LLMs
+**Status**: ✅ Complete
+**Technology**: .NET 9, C# 13, Ollama, TimescaleDB, Linux containers
+
+**Core Capabilities**:
+- LLM-powered extraction from PDFs and documents
+- Configurable extraction prompts and schemas
+- Support for large models (30B+ parameters for quality)
+- gRPC event streaming to ThresholdEngine
+
+[Technical documentation](./SentinelCollector/README.md)
+
+### 1i. WhisperService - Audio Transcription
+
+**Purpose**: Audio transcription service using OpenAI Whisper models
+**Status**: ✅ Complete
+**Technology**: Python, faster-whisper, Linux containers
+
+**Core Capabilities**:
+- Audio file transcription (MP3, WAV, M4A)
+- Multiple model sizes (tiny to large-v3)
+- REST API for transcription requests
+- GPU acceleration support
+
+[Technical documentation](./WhisperService/README.md)
+
 ### 2. ThresholdEngine - Pattern Evaluation & Regime Detection
 
 **Purpose**: Evaluate configurable C# expressions against economic data to detect regime transitions and generate allocation signals
-**Status**: ✅ Production Ready | **Tests**: 153 passing | **Patterns**: 40 configured
+**Status**: ✅ Production Ready | **Tests**: 153 passing | **Patterns**: 66 configured
 **Technology**: .NET 9, C# 13, Roslyn, TimescaleDB, Linux containers
 
 **Core Capabilities**:
@@ -480,13 +530,13 @@ The system tracks multiple dimensions to assess where the economy is within the 
 - **Regime Detection**: Six-state machine (Crisis → Growth) with hysteresis
 - **Hot Reload**: Configuration changes without service restart
 
-**Pattern Categories** (40 patterns):
-- **Recession** (12): Sahm Rule, yield curve, claims, sentiment, freight
-- **NBFI Stress** (9): HY spreads, KRE, bankruptcy, repo facilities, stress indices
-- **Liquidity** (8): VIX L1/L2, DXY, credit spreads, Fed liquidity, M2
-- **Growth** (5): GDP, industrial production, retail, housing
-- **Valuation** (5): CAPE, Buffett indicator, forward P/E, equity risk premium
-- **Commodity** (1): Copper/Gold ratio
+**Pattern Categories** (66 patterns):
+- **Recession**: Sahm Rule, yield curve, claims, sentiment, freight
+- **NBFI Stress**: HY spreads, KRE, bankruptcy, repo facilities, stress indices, OFR metrics
+- **Liquidity**: VIX L1/L2, DXY, credit spreads, Fed liquidity, M2
+- **Growth**: GDP, industrial production, retail, housing
+- **Valuation**: CAPE, Buffett indicator, forward P/E, equity risk premium
+- **Commodity**: Copper/Gold ratio
 
 [Technical documentation](./ThresholdEngine/README.md)
 
@@ -671,6 +721,9 @@ flowchart TB
         FC[FredCollector]
         AV[AlphaVantageCollector]
         NC[NasdaqCollector]
+        FH[FinnhubCollector]
+        OFR[OfrCollector]
+        SC[SentinelCollector]
     end
 
     subgraph Processing
@@ -693,20 +746,23 @@ flowchart TB
     FC -->|gRPC events| TE
     AV -->|gRPC events| TE
     NC -->|gRPC events| TE
+    FH -->|gRPC events| TE
+    OFR -->|gRPC events| TE
+    SC -->|gRPC events| TE
     TE -->|threshold breaches| PROM
     PROM -->|alerts| AM[Alertmanager]
     AM -->|POST /alerts| AS
     AS --> NTFY
     AS --> EMAIL
 
-    FC & AV & NC & TE & AS -.->|traces| TEMPO
-    FC & AV & NC & TE & AS -.->|logs| LOKI
-    FC & AV & NC & TE & AS -.->|metrics| PROM
+    FC & AV & NC & FH & OFR & SC & TE & AS -.->|traces| TEMPO
+    FC & AV & NC & FH & OFR & SC & TE & AS -.->|logs| LOKI
+    FC & AV & NC & FH & OFR & SC & TE & AS -.->|metrics| PROM
     PROM & TEMPO & LOKI --> GRAF
 ```
 
 **Key Architectural Principles**:
-- **Data Collectors** (FredCollector, AlphaVantageCollector, NasdaqCollector, FinnhubCollector, OfrCollector): Poll sources, publish events
+- **Data Collectors** (FredCollector, AlphaVantageCollector, NasdaqCollector, FinnhubCollector, OfrCollector, SentinelCollector): Poll sources, publish events
 - **SecMaster**: Centralized metadata registry, intelligent source resolution
 - **ThresholdEngine**: Subscribes to all events, evaluates rules, publishes breaches
 - **AlertService**: Delivers notifications (email, push, etc.)
@@ -721,21 +777,26 @@ ATLAS/
 │   ├── ARCHITECTURE.md
 │   └── GRPC-ARCHITECTURE.md
 ├── FredCollector/          # FRED API data collection
+│   └── mcp/                # FRED data MCP server (integrated)
 ├── AlphaVantageCollector/  # Commodity prices (WTI, Brent, NatGas)
 ├── NasdaqCollector/        # LBMA gold prices
 ├── FinnhubCollector/       # Stock quotes, sentiment
+│   └── mcp/                # Finnhub data MCP server (integrated)
 ├── OfrCollector/           # OFR financial stability data
+│   └── mcp/                # OFR data MCP server (integrated)
+├── SentinelCollector/      # LLM-based document extraction
 ├── CalendarService/        # Market status, trading days
 ├── SecMaster/              # Instrument metadata & source resolution
+│   └── mcp/                # SecMaster data MCP server (integrated)
 ├── ThresholdEngine/        # Pattern evaluation & regime detection
+│   └── mcp/                # Pattern evaluation MCP server (integrated)
 ├── AlertService/           # Notification dispatch
+├── WhisperService/         # Audio transcription service
+├── WhisperServiceMcp/      # Whisper MCP server (standalone)
+├── OllamaMCP/              # Ollama LLM MCP server (standalone)
+├── markitdownMCP/          # Document conversion MCP server (standalone)
+├── FinBertSidecar/         # FinBERT sentiment analysis sidecar
 ├── Events/                 # Shared gRPC event contracts
-├── OllamaMCP/              # Ollama MCP server (Claude Desktop)
-├── ThresholdEngine/mcp/    # Pattern evaluation MCP server
-├── FredCollector/mcp/      # FRED data MCP server
-├── FinnhubCollector/mcp/   # Finnhub data MCP server
-├── OfrCollector/mcp/       # OFR data MCP server
-├── SecMaster/mcp/          # SecMaster data MCP server
 ├── deployment/             # Ansible playbooks, compose templates, configs
 ├── CLAUDE.md               # AI assistant rules
 └── STATE.md                # Current system status
@@ -828,16 +889,17 @@ See service-specific README files for detailed setup:
 
 ## Project Timeline
 
-### Current Status (2025-12-14)
+### Current Status (2026-01-19)
 
 **Phase 1-3: Complete** - All core services production-ready
-- 5 data collectors (FRED, Alpha Vantage, Nasdaq, Finnhub, OFR)
+- 6 data collectors (FRED, Alpha Vantage, Nasdaq, Finnhub, OFR, Sentinel)
 - SecMaster security master with intelligent source resolution
-- ThresholdEngine with 50+ patterns and regime detection
+- ThresholdEngine with 66 patterns and regime detection
 - AlertService with ntfy + email notifications
 - CalendarService for market status and trading day validation
+- WhisperService for audio transcription
 - Full observability stack (Prometheus, Loki, Tempo, Grafana)
-- 6 MCP servers for Claude Desktop integration (FRED, ThresholdEngine, Finnhub, OFR, SecMaster, Ollama)
+- 8 MCP servers for Claude Desktop integration (FRED, ThresholdEngine, Finnhub, OFR, SecMaster, Whisper, Ollama, Markitdown)
 
 ### Future Phases
 
@@ -909,4 +971,4 @@ Proprietary - Personal use only
 
 ---
 
-**Last Updated**: 2025-12-14 | **Status**: ✅ Production Ready | **Tests**: 640+ passing | **Patterns**: 50+ configured | **Services**: 18 total (5 collectors, SecMaster, ThresholdEngine, AlertService, CalendarService, 6 MCP servers, 4 observability)
+**Last Updated**: 2026-01-19 | **Status**: ✅ Production Ready | **Tests**: 700+ passing | **Patterns**: 66 configured | **Services**: 21 total (6 collectors, SecMaster, ThresholdEngine, AlertService, CalendarService, WhisperService, 8 MCP servers, 4 observability)

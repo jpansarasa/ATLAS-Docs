@@ -59,26 +59,23 @@ flowchart LR
 
 ### Admin API
 
+**FSI Admin**: `/api/admin/fsi/`
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/admin/fsi/collect` | POST | Trigger FSI collection |
-| `/api/admin/fsi/backfill` | POST | Backfill FSI history (query: months) |
-| `/api/admin/stfm/{dataset}/collect` | POST | Trigger STFM dataset collection |
-| `/api/admin/stfm/priority/collect` | POST | Collect priority STFM series |
-| `/api/admin/stfm/series` | GET | List all STFM series |
-| `/api/admin/stfm/series` | POST | Add new STFM series |
-| `/api/admin/stfm/series/{mnemonic}/toggle` | PUT | Toggle series active status |
-| `/api/admin/stfm/series/{mnemonic}` | DELETE | Delete series |
-| `/api/admin/stfm/series/{mnemonic}/collect` | POST | Collect specific series |
-| `/api/admin/stfm/series/{mnemonic}/backfill` | POST | Backfill series history |
-| `/api/admin/hfm/{dataset}/collect` | POST | Trigger HFM dataset collection |
-| `/api/admin/hfm/all/collect` | POST | Collect all HFM datasets |
-| `/api/admin/hfm/series` | GET | List all HFM series |
-| `/api/admin/hfm/series` | POST | Add new HFM series |
-| `/api/admin/hfm/series/{mnemonic}/toggle` | PUT | Toggle series active status |
-| `/api/admin/hfm/series/{mnemonic}` | DELETE | Delete series |
-| `/api/admin/hfm/series/{mnemonic}/collect` | POST | Collect specific series |
-| `/api/admin/hfm/series/{mnemonic}/backfill` | POST | Backfill series history |
+| `collect` | POST | Trigger collection |
+| `backfill` | POST | Backfill history (query: months) |
+
+**STFM/HFM Admin**: `/api/admin/{stfm,hfm}/` (same pattern for both)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `{dataset}/collect` | POST | Trigger dataset collection |
+| `series` | GET/POST | List or add series |
+| `series/{mnemonic}` | DELETE | Delete series |
+| `series/{mnemonic}/toggle` | PUT | Toggle active status |
+| `series/{mnemonic}/collect` | POST | Collect specific series |
+| `series/{mnemonic}/backfill` | POST | Backfill series history |
 
 ### Health Checks
 

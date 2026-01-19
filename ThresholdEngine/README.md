@@ -111,39 +111,35 @@ ThresholdEngine/
 ### Prerequisites
 
 - VS Code with Dev Containers extension
-- Docker or nerdctl/containerd
+- Access to shared infrastructure (PostgreSQL, observability stack)
 
 ### Getting Started
 
+1. Open in VS Code: `code ThresholdEngine/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P → "Dev Containers: Reopen in Container")
+3. Build: `dotnet build`
+4. Run: `dotnet run`
+
+### Build Container
+
 ```bash
-# Open in VS Code and select "Reopen in Container"
-cd /workspace/ThresholdEngine/src
-dotnet run
-```
-
-### Build Commands
-
-```bash
-# Compile and test
-.devcontainer/compile.sh
-
-# Build container image
 .devcontainer/build.sh
 ```
 
 ## Deployment
 
 ```bash
+cd deployment/ansible
 ansible-playbook playbooks/deploy.yml --tags thresholdengine
 ```
 
 ## Ports
 
-| Port | Type | Description |
-|------|------|-------------|
-| 8080 | HTTP (container) | REST API, health checks (internal only) |
+| Port | Description |
+|------|-------------|
+| 8080 | REST API, health checks (internal only) |
 
-Note: ThresholdEngine has no external port mapping. Access via ThresholdEngineMcp (port 3104) for AI assistant integration.
+ThresholdEngine has no external host port mapping. Access via ThresholdEngineMcp (port 3104) for AI assistant integration.
 
 ## See Also
 

@@ -49,12 +49,12 @@ flowchart TD
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ConnectionStrings__Calendar` | Required | PostgreSQL connection string |
-| `FRED_API_KEY` | Required | FRED API key for economic release dates |
-| `FINNHUB_API_KEY` | Optional | Finnhub API key (economic calendar, paid subscription) |
-| `ASPNETCORE_URLS` | `http://+:8080` | Listen address |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ConnectionStrings__Calendar` | PostgreSQL connection string | Required |
+| `FRED_API_KEY` | FRED API key for economic release dates | Required |
+| `FINNHUB_API_KEY` | Finnhub API key (economic calendar, paid subscription) | Optional |
+| `ASPNETCORE_URLS` | Listen address | `http://+:8080` |
 
 ## API Endpoints
 
@@ -109,32 +109,26 @@ CalendarService/
 
 ### Prerequisites
 
-- .NET 9 SDK
-- PostgreSQL/TimescaleDB
-- FRED API key
+- VS Code with Dev Containers extension
+- Access to shared infrastructure (PostgreSQL, FRED API key)
 
 ### Getting Started
 
-```bash
-# Open in dev container
-cd CalendarService
-code .
-# Select "Reopen in Container"
-```
+1. Open in VS Code: `code CalendarService/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P → "Dev Containers: Reopen in Container")
+3. Build: `dotnet build`
+4. Run: `dotnet run`
 
-### Build Commands
+### Build Container
 
 ```bash
-# Compile and test
-.devcontainer/compile.sh
-
-# Build container image
 .devcontainer/build.sh
 ```
 
 ## Deployment
 
 ```bash
+cd deployment/ansible
 ansible-playbook playbooks/deploy.yml --tags calendar-service
 ```
 
