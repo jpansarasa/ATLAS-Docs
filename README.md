@@ -360,7 +360,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Automated collection system for Federal Reserve Economic Data (FRED) API
 **Status**: ✅ Production Ready | **Tests**: 378 passing
-**Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
+**Technology**: .NET 10, C# 14, TimescaleDB, Linux containers
 **Coverage**: 25 series configured, 800,000+ searchable FRED series
 
 **Core Capabilities**:
@@ -380,7 +380,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Automated collection of commodity prices from Alpha Vantage API
 **Status**: ✅ Complete
-**Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
+**Technology**: .NET 10, C# 14, TimescaleDB, Linux containers
 
 **Data Coverage**:
 - WTI Crude Oil (daily prices)
@@ -399,7 +399,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Automated collection of LBMA gold prices from Nasdaq Data Link
 **Status**: ✅ Complete
-**Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
+**Technology**: .NET 10, C# 14, TimescaleDB, Linux containers
 
 **Data Coverage**:
 - LBMA Gold Price AM (London AM fixing)
@@ -418,7 +418,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Automated collection of equity prices, news sentiment, and economic events from Finnhub API
 **Status**: ✅ Complete
-**Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
+**Technology**: .NET 10, C# 14, TimescaleDB, Linux containers
 
 **Core Capabilities**:
 - Real-time stock quote collection
@@ -433,7 +433,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Unified source of truth for market holidays, trading hours, and economic events
 **Status**: ✅ Complete
-**Technology**: .NET 9, C# 13, PostgreSQL, Linux containers
+**Technology**: .NET 10, C# 14, PostgreSQL, Linux containers
 
 **Core Capabilities**:
 - Trading day validation (is market open?)
@@ -447,7 +447,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Centralized instrument metadata and intelligent source resolution for the ATLAS ecosystem
 **Status**: ✅ Complete
-**Technology**: .NET 9, C# 13, TimescaleDB, gRPC, Linux containers
+**Technology**: .NET 10, C# 14, TimescaleDB, gRPC, Linux containers
 
 **Core Capabilities**:
 - Single source of truth for financial instrument definitions
@@ -475,7 +475,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Automated collection of financial stability data from Office of Financial Research APIs
 **Status**: ✅ Complete
-**Technology**: .NET 9, C# 13, TimescaleDB, Linux containers
+**Technology**: .NET 10, C# 14, TimescaleDB, Linux containers
 
 **Data Coverage**:
 - Short-term Funding Monitor (STFM): Repo rates, SOFR metrics
@@ -493,7 +493,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Automated extraction of financial data from unstructured documents using LLMs
 **Status**: ✅ Complete
-**Technology**: .NET 9, C# 13, Ollama, TimescaleDB, Linux containers
+**Technology**: .NET 10, C# 14, Ollama, TimescaleDB, Linux containers
 
 **Core Capabilities**:
 - LLM-powered extraction from PDFs and documents
@@ -521,7 +521,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Evaluate configurable C# expressions against economic data to detect regime transitions and generate allocation signals
 **Status**: ✅ Production Ready | **Tests**: 153 passing | **Patterns**: 66 configured
-**Technology**: .NET 9, C# 13, Roslyn, TimescaleDB, Linux containers
+**Technology**: .NET 10, C# 14, Roslyn, TimescaleDB, Linux containers
 
 **Core Capabilities**:
 - **Pattern Evaluation**: Roslyn-based compilation of C# expressions from JSON configuration
@@ -544,7 +544,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 
 **Purpose**: Receives alerts from Prometheus/Alertmanager and dispatches notifications
 **Status**: ✅ Production Ready | **Tests**: 15 passing
-**Technology**: .NET 9, ASP.NET Core, MailKit, OpenTelemetry
+**Technology**: .NET 10, ASP.NET Core, MailKit, OpenTelemetry
 
 **Core Capabilities**:
 - **Channels**: Ntfy push notifications, email (SMTP)
@@ -601,7 +601,7 @@ The system tracks multiple dimensions to assess where the economy is within the 
 ## Technical Stack
 
 **Data Collection**:
-- .NET 9 (C# 13) for service development
+- .NET 10 (C# 14) for service development
 - TimescaleDB (PostgreSQL + time-series extensions)
 - containerd/nerdctl for container orchestration
 - Multi-stage Dockerfiles (development + runtime)

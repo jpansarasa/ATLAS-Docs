@@ -336,7 +336,7 @@ gRPC: internal_only (container-to-container)
 HTTP: 8080 internal, 50xx host
 
 ## STACK
-.NET9/C#13 | TimescaleDB | nerdctl/containerd | OTEL→Loki/Prom/Tempo→Grafana | Serilog
+.NET10/C#14 | TimescaleDB | nerdctl/containerd | OTEL→Loki/Prom/Tempo→Grafana | Serilog
 
 ## EXECUTION_CONTEXT [HARD_STOP]
 YOU_ARE_ON: mercury # this machine, the production server

@@ -66,7 +66,7 @@ Requests are routed to GPU or CPU instance based on the `use_gpu` parameter (def
 ```
 OllamaMCP/
 ├── Program.cs           # MCP server, tool definitions, Ollama client
-├── OllamaMcp.csproj     # .NET 9 project file
+├── OllamaMcp.csproj     # .NET 10 project file
 ├── Containerfile        # Container build definition
 └── .devcontainer/
     ├── compile.sh       # Build script

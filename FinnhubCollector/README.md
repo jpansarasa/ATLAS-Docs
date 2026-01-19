@@ -125,7 +125,7 @@ FinnhubCollector/
 
 ### Prerequisites
 
-- .NET 9 SDK
+- .NET 10 SDK
 - VS Code with Dev Containers extension
 - Docker/nerdctl
 
