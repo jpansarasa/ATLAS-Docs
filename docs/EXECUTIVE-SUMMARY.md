@@ -121,7 +121,7 @@ All services use internal ports (8080 REST, 5001 gRPC). Only services requiring 
 | fredcollector-mcp | 3103 | FRED data access |
 | thresholdengine-mcp | 3104 | Pattern evaluation |
 | finnhub-mcp | 3105 | Market data, calendars |
-| ofrcollector-mcp | 3106 | OFR financial stress data |
+| ofr-mcp | 3106 | OFR financial stress data |
 | secmaster-mcp | 3107 | Instrument metadata search |
 | whisper-mcp | 3108 | YouTube transcription |
 

@@ -165,4 +165,4 @@ No external host port mapping - internal API only.
 - [ThresholdEngine](../ThresholdEngine/README.md) - Consumes observation events
 - [SecMaster](../SecMaster/README.md) - Instrument registration
 - [Events](../Events/README.md) - Shared gRPC event contracts
-- [OfrCollectorMcp](../OfrCollectorMcp/README.md) - MCP server for AI assistants
+- [OfrMcp](./mcp/README.md) - MCP server for AI assistants

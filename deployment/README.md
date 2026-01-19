@@ -97,7 +97,7 @@ Deploy specific services using tags:
 | `finnhub-collector` | FinnhubCollector |
 | `finnhub-mcp` | FinnhubMcp |
 | `ofr-collector` | OfrCollector |
-| `ofr-mcp` | OfrCollectorMcp |
+| `ofr-mcp` | OfrMcp |
 | `secmaster` | SecMaster |
 | `secmaster-mcp` | SecMasterMcp |
 | `alphavantage-collector` | AlphaVantageCollector |

@@ -734,7 +734,7 @@ ATLAS/
 ├── FredCollectorMcp/       # FRED data MCP server
 ├── ThresholdEngineMcp/     # Pattern evaluation MCP server
 ├── FinnhubMcp/             # Finnhub data MCP server
-├── OfrCollectorMcp/        # OFR data MCP server
+├── OfrCollector/mcp/       # OFR data MCP server
 ├── SecMasterMcp/           # SecMaster data MCP server
 ├── deployment/             # Ansible playbooks, compose templates, configs
 ├── CLAUDE.md               # AI assistant rules

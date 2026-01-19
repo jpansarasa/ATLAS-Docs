@@ -1,4 +1,4 @@
-# OfrCollectorMcp
+# OfrMcp
 
 MCP server providing Claude Desktop and Claude Code access to OFR financial stress and funding market data.
 
@@ -10,7 +10,7 @@ Exposes OfrCollector REST API as MCP tools, enabling AI assistants to query the 
 
 ```mermaid
 flowchart LR
-    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[OfrCollectorMcp<br/>:3106]
+    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[OfrMcp<br/>:3106]
     MCP -->|HTTP| API[ofr-collector<br/>:8080]
     API -->|SQL| DB[(TimescaleDB)]
 ```
@@ -95,39 +95,42 @@ HFM tracks hedge fund leverage and risk indicators from SEC filings.
 ## Project Structure
 
 ```
-OfrCollectorMcp/
-├── README.md
-└── src/
-    ├── Client/
-    │   ├── IOfrCollectorClient.cs    # HTTP client interface
-    │   ├── OfrCollectorClient.cs     # HTTP client implementation
-    │   └── Models/
-    │       └── OfrModels.cs          # API response models
-    ├── Tools/
-    │   └── OfrCollectorTools.cs      # MCP tool definitions
-    ├── Program.cs                    # Application entry point
-    ├── Containerfile                 # Container build definition
-    └── OfrCollectorMcp.csproj        # Project configuration
+OfrCollector/
+├── mcp/
+│   ├── README.md
+│   ├── Client/
+│   │   ├── IOfrCollectorClient.cs    # HTTP client interface
+│   │   ├── OfrCollectorClient.cs     # HTTP client implementation
+│   │   └── Models/
+│   │       └── OfrModels.cs          # API response models
+│   ├── Tools/
+│   │   └── OfrCollectorTools.cs      # MCP tool definitions
+│   ├── Program.cs                    # Application entry point
+│   ├── Containerfile                 # Container build definition
+│   └── OfrMcp.csproj                 # Project configuration
+├── src/                              # Main OfrCollector service
+├── tests/                            # Unit tests
+└── migrations/                       # Database migrations
 ```
 
 ## Development
 
 ### Build
 ```bash
-cd /home/james/ATLAS/OfrCollectorMcp/src
+cd /home/james/ATLAS/OfrCollector/mcp
 dotnet build
 ```
 
 ### Build Container
 ```bash
 cd /home/james/ATLAS
-nerdctl build -t ofr-collector-mcp:latest -f OfrCollectorMcp/src/Containerfile .
+nerdctl build -t ofr-mcp:latest -f OfrCollector/mcp/Containerfile .
 ```
 
 ## Deployment
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags ofr-collector-mcp
+ansible-playbook playbooks/deploy.yml --tags ofr-mcp
 ```
 
 ## Claude Desktop Integration
@@ -172,5 +175,5 @@ Response: "30-day avg SOFR ranged 4.85-4.92% in December"
 
 ## See Also
 
-- [OfrCollector](../OfrCollector/README.md) - Backend service documentation
+- [OfrCollector](../README.md) - Backend service documentation
 - [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification

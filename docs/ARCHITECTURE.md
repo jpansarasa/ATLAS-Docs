@@ -36,7 +36,7 @@ flowchart LR
         FM[FredCollectorMcp]
         TM[ThresholdEngineMcp]
         FHM[FinnhubMcp]
-        OM[OfrCollectorMcp]
+        OM[OfrMcp]
         SMM[SecMasterMcp]
         WSM[WhisperServiceMcp]
     end
@@ -103,7 +103,7 @@ Note: All collectors expose 8080 (REST) and 5001 (gRPC) internally. No host port
 | FredCollectorMcp | 3103 | FRED data query and admin |
 | ThresholdEngineMcp | 3104 | Pattern evaluation and regime status |
 | FinnhubMcp | 3105 | Market data, calendars, live quotes |
-| OfrCollectorMcp | 3106 | FSI, funding markets, hedge fund data |
+| OfrMcp | 3106 | FSI, funding markets, hedge fund data |
 | SecMasterMcp | 3107 | Instrument search, metadata query |
 | WhisperServiceMcp | 3108 | YouTube transcription |
 
@@ -223,7 +223,7 @@ flowchart LR
     SM --> PG[(PostgreSQL)]
 
     FC -.-> FM[FredCollectorMcp]
-    OC -.-> OM[OfrCollectorMcp]
+    OC -.-> OM[OfrMcp]
     FHC -.-> FHM[FinnhubMcp]
     SM -.-> SMM[SecMasterMcp]
 
@@ -246,7 +246,7 @@ flowchart TB
     CD --> FM["fredcollector-mcp<br/>SSE :3103"]
     CD --> TM["thresholdengine-mcp<br/>SSE :3104"]
     CD --> FHM["finnhub-mcp<br/>SSE :3105"]
-    CD --> OFM["ofrcollector-mcp<br/>SSE :3106"]
+    CD --> OFM["ofr-mcp<br/>SSE :3106"]
     CD --> SMM["secmaster-mcp<br/>SSE :3107"]
     CD --> WSM["whisper-mcp<br/>SSE :3108"]
 

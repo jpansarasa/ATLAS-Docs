@@ -180,4 +180,4 @@ Claude calls: add_finnhub_series(symbol="NDAQ", priority=10)
 - [SecMaster](../SecMaster/README.md) - Backend service
 - [FredCollectorMcp](../FredCollectorMcp/README.md) - FRED data access
 - [FinnhubMcp](../FinnhubMcp/README.md) - Stock market data
-- [OfrCollectorMcp](../OfrCollectorMcp/README.md) - OFR financial stress data
+- [OfrMcp](../OfrCollector/mcp/README.md) - OFR financial stress data
