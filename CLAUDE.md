@@ -312,12 +312,16 @@ deploy: ansible-playbook playbooks/deploy.yml --tags {service}
 dashboards: ansible-playbook playbooks/deploy.yml --tags dashboards # grafana_auto_reloads
 filter_test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'Name~{Test}'
 
-## SENTINEL [llm_extraction]
-MODEL_SIZE: ≥30B parameters required # small_models_not_allowed
+## SENTINEL [llm_extraction] [arxiv:2512.24601]
+MODEL_SIZE: ≥30B parameters required # RLM needs coding ability
   rationale: extraction_quality_requires_large_models
   ✓ qwen2.5:32b-instruct, qwen3:32b, sentinel-extraction-v5
   ✗ 7b, 8b, 14b models # insufficient_quality
-GPU_OOM: restart_ollama_first ¬ downgrade_model
+CONTEXT: 32K required # RLM full-document decomposition
+  ✗ reduce_context # breaks extraction, causes context_rot
+OLLAMA: NUM_PARALLEL=1 # fits 32K context + model on GPU
+  ✗ NUM_PARALLEL>1 # forces CPU offload, degrades performance
+GPU_OOM: restart_ollama_first ¬ downgrade_model ¬ reduce_context
 
 ## SERVICES [monorepo]
 collectors: FredCollector, AlphaVantageCollector, NasdaqCollector, FinnhubCollector, OfrCollector
