@@ -310,6 +310,7 @@ compile: {Project}/.devcontainer/compile.sh [--no-test]
 image: {Project}/.devcontainer/build.sh [--no-cache]
 deploy: ansible-playbook playbooks/deploy.yml --tags {service}
 dashboards: ansible-playbook playbooks/deploy.yml --tags dashboards # grafana_auto_reloads
+patterns: ansible-playbook playbooks/deploy.yml --tags patterns # hot_reload_no_rebuild
 filter_test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'Name~{Test}'
 
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]
