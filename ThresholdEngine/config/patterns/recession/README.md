@@ -6,6 +6,7 @@ Patterns detecting economic contraction and recession signals.
 
 | Pattern ID | Name | Trigger | Signal Range |
 |------------|------|---------|--------------|
+| beveridge-curve-divergence | Beveridge Curve Divergence (Flat Beveridge) | JTSJOL <7.5M + UNRATE <4.5% + V/U <1.2 | -1.5 to -3 |
 | consumer-confidence-collapse | Consumer Sentiment Collapse | UMCSENT <70 | -1 to -2 |
 | continuing-claims-warning | Continuing Claims Escalation | CCSA >2M | -1.5 to -2 |
 | freight-recession | Freight Transportation Decline | TSIFRGHT <-3% YoY | -1.5 to -2 |
@@ -21,6 +22,12 @@ Patterns detecting economic contraction and recession signals.
 - **Historical Accuracy**: 100% recession prediction since 1970
 - **Trigger**: 3-month unemployment MA exceeds 12-month low by 0.5+ percentage points
 
+### Beveridge Curve Divergence (NEW)
+- **Leading Indicator**: 6+ months ahead of unemployment spike
+- **Trigger**: Job openings <7.5M AND unemployment <4.5% AND V/U ratio <1.2
+- **Framework**: Snider/Eurodollar University analysis of "flat Beveridge" phenomenon
+- **Interpretation**: When openings decline but unemployment doesn't rise proportionally, it indicates unstable equilibrium. Unemployment typically snaps higher to restore historical Beveridge relationship.
+
 ### Yield Curve Inversion
 - **Leading Indicator**: Typically precedes recession by 12-18 months
 - **Trigger**: 10Y-2Y Treasury spread turns negative
@@ -28,6 +35,7 @@ Patterns detecting economic contraction and recession signals.
 ## FRED Series Used
 
 - `CCSA` - Continuing Claims
+- `JTSJOL` - Job Openings: Total Nonfarm
 - `ICSA` - Initial Claims
 - `INDPRO` - Industrial Production Index
 - `PAYEMS` - Nonfarm Payrolls
