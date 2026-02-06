@@ -1,6 +1,6 @@
 # FinnhubCollector
 
-Market data collector service for Finnhub API.
+Market data collector service for the Finnhub API.
 
 ## Overview
 
@@ -16,6 +16,8 @@ flowchart LR
     FC -->|Register| SM[SecMaster]
     FC -->|OTLP| OC[otel-collector]
 ```
+
+Data flows from the Finnhub API through scheduled background collection into TimescaleDB. Each collected observation is published to an internal channel, then streamed via gRPC to ThresholdEngine for threshold evaluation. Instruments are registered with SecMaster on first collection. Live data endpoints bypass storage and query Finnhub directly.
 
 ## Features
 
@@ -37,7 +39,7 @@ flowchart LR
 | `Finnhub__BaseUrl` | Finnhub API base URL | `https://finnhub.io/api/v1/` |
 | `RATE_LIMITER_CAPACITY` | Requests per minute | `60` |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry | `finnhub-collector` |
+| `OpenTelemetry__ServiceName` | Service name for telemetry | `finnhub-collector-service` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint (optional) | - |
 | `Kestrel__HttpPort` | HTTP API port | `8080` |
 | `Kestrel__GrpcPort` | gRPC streaming port | `5001` |
@@ -66,6 +68,8 @@ flowchart LR
 | `/api/company/{symbol}` | GET | Company profile |
 | `/api/market/status` | GET | Market status |
 | `/api/symbols/search` | GET | Symbol search |
+| `/api/search` | GET | Unified search (SecMaster gateway) |
+| `/api/discover` | GET | Upstream symbol discovery |
 | `/swagger` | GET | API documentation |
 
 ### Live Data API (Direct Finnhub Queries)
@@ -89,6 +93,7 @@ flowchart LR
 | `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable series |
 | `/api/admin/series/{seriesId}` | DELETE | Delete series |
 | `/api/admin/series/{seriesId}/collect` | POST | Trigger collection |
+| `/api/admin/series/{seriesId}/collect/status` | GET | Collection status |
 
 ### gRPC Services (Port 5001)
 
@@ -106,18 +111,19 @@ flowchart LR
 FinnhubCollector/
 ├── src/
 │   ├── Api/              # Finnhub HTTP client
-│   ├── Data/             # EF Core DbContext, repositories
+│   ├── Data/             # EF Core DbContext, repositories, migrations
 │   ├── Endpoints/        # REST endpoints (API, Live, Admin)
 │   ├── Events/           # Observation channel
 │   ├── Grpc/             # gRPC services and repositories
 │   ├── HealthChecks/     # Database health check
 │   ├── Interfaces/       # Service contracts
 │   ├── Models/           # Domain models
-│   ├── Services/         # Application services
+│   ├── Services/         # Application services, rate limiter
 │   ├── Telemetry/        # OpenTelemetry instrumentation
 │   ├── Workers/          # Background collection worker
 │   └── Program.cs        # Application entry point
-├── tests/                # Unit tests
+├── mcp/                  # MCP server for AI assistants
+├── tests/                # Unit and integration tests
 └── .devcontainer/        # Development container
 ```
 
@@ -125,22 +131,20 @@ FinnhubCollector/
 
 ### Prerequisites
 
-- .NET 10 SDK
 - VS Code with Dev Containers extension
-- Docker/nerdctl
+- Access to shared infrastructure (PostgreSQL, observability stack)
 
 ### Getting Started
 
-```bash
-# Open in VS Code and select "Reopen in Container"
-cd /workspace/FinnhubCollector/src
-dotnet run
-```
+1. Open in VS Code: `code FinnhubCollector/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Build: `dotnet build`
+4. Run: `dotnet run`
 
 ### Build Commands
 
 ```bash
-# Compile
+# Compile and test
 .devcontainer/compile.sh
 
 # Build container image

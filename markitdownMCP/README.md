@@ -4,16 +4,33 @@ MCP server providing document-to-markdown conversion for ATLAS AI workflows.
 
 ## Overview
 
-Wraps Microsoft's [markitdown](https://github.com/microsoft/markitdown) Python library as an MCP server, enabling AI assistants to convert PDFs, Office documents, and other file formats to markdown. Uses the official `mcp/markitdown` container image with SSE transport.
+Wraps Microsoft's [markitdown](https://github.com/microsoft/markitdown) Python library as an MCP server, enabling AI assistants to convert PDFs, Office documents, and other file formats to markdown. Uses the official `mcp/markitdown` container image with SSE transport. Consumed by SentinelCollector for document extraction and directly by Claude Desktop/Code for ad-hoc document conversion.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[markitdown-mcp<br/>:3102]
-    MCP -->|File I/O| Docs[/workdir<br/>Documents/]
-    MCP -->|File I/O| Raw[/opt/ai-inference<br/>raw-data/]
+    subgraph Consumers
+        AI[AI Assistant<br/>Claude Desktop/Code]
+        SC[SentinelCollector]
+    end
+
+    subgraph markitdownMCP
+        MCP[markitdown-mcp<br/>:3102<br/>SSE Transport]
+    end
+
+    subgraph Storage
+        Docs[/workdir<br/>documents/]
+        Raw[/opt/ai-inference<br/>raw-data/]
+    end
+
+    AI -->|MCP/SSE| MCP
+    SC -->|HTTP| MCP
+    MCP -->|File I/O| Docs
+    MCP -->|File I/O| Raw
 ```
+
+AI assistants connect via MCP/SSE on port 3102. SentinelCollector uses the HTTP endpoint for document extraction during its processing pipeline. The server reads documents from two read-only volume mounts.
 
 ## Features
 
@@ -37,6 +54,13 @@ flowchart LR
 | `/workdir` | `/opt/ai-inference/documents` | ro | Document storage |
 | `/opt/ai-inference/raw-data` | `/opt/ai-inference/raw-data` | ro | Sentinel raw data |
 
+### Resource Limits
+
+| Resource | Limit |
+|----------|-------|
+| Memory | 2G |
+| CPUs | 2.0 |
+
 ## API (MCP Tools)
 
 | Tool | Description | Parameters |
@@ -51,6 +75,9 @@ convert_to_markdown(uri="file:///workdir/statements/2024-Q4.pdf")
 
 # Convert web page
 convert_to_markdown(uri="https://federalreserve.gov/monetarypolicy/fomcminutes20241218.htm")
+
+# Convert from raw-data mount
+convert_to_markdown(uri="file:///opt/ai-inference/raw-data/filings/10-K.pdf")
 ```
 
 **Use Cases**: Brokerage PDFs, FOMC minutes, research reports, 10-K/10-Q filings
@@ -62,9 +89,11 @@ markitdownMCP/
 └── README.md    # No source code - uses official mcp/markitdown:latest image
 ```
 
+No custom source code. The service runs the official `mcp/markitdown:latest` container image directly.
+
 ## Development
 
-No local development required - uses official container image.
+No local development required -- uses official container image.
 
 ```bash
 # Test markitdown CLI directly
@@ -76,13 +105,16 @@ uvx markitdown-mcp --sse --port 3102
 
 ## Deployment
 
+No build step required. The container image is pulled directly from the registry.
+
 ```bash
-ansible-playbook playbooks/deploy.yml --tags markitdown-mcp
+# Full stack deployment (includes markitdown-mcp)
+ansible-playbook playbooks/deploy.yml
 ```
 
 ### Claude Desktop Integration
 
-Add to Claude Desktop config (`~/.config/Claude/claude_desktop_config.json`):
+Add to `~/.config/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -95,11 +127,13 @@ Add to Claude Desktop config (`~/.config/Claude/claude_desktop_config.json`):
 }
 ```
 
+Claude Desktop uses stdio transport; `mcp-proxy` bridges stdio to SSE.
+
 ## Ports
 
-| Port | Description |
-|------|-------------|
-| 3102 | SSE endpoint (internal and host-mapped) |
+| Port | Protocol | Description |
+|------|----------|-------------|
+| 3102 | HTTP/SSE | MCP SSE endpoint (internal and host-mapped) |
 
 SSE endpoint: `http://mercury:3102/sse`
 
@@ -107,5 +141,6 @@ SSE endpoint: `http://mercury:3102/sse`
 
 - [markitdown GitHub](https://github.com/microsoft/markitdown) - Official Python library
 - [MCP Protocol](https://modelcontextprotocol.io/) - Model Context Protocol specification
+- [OllamaMCP](../OllamaMCP/README.md) - Local LLM inference access
 - [SecMaster MCP](../SecMaster/mcp/README.md) - Instrument metadata access
 - [FredCollector MCP](../FredCollector/mcp/README.md) - Economic data access

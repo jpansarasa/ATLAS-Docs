@@ -17,31 +17,36 @@ flowchart LR
     OC -->|Metrics/Traces| OTEL[OpenTelemetry<br/>Collector]
 ```
 
+The service pulls data from three OFR sources (FSI via CSV, STFM and HFM via JSON API), persists observations in TimescaleDB, and streams events to ThresholdEngine over gRPC. New instruments are registered with SecMaster on discovery.
+
 ## Features
 
 - **Multi-source Collection**: FSI (Financial Stress Index), STFM (Short-term Funding Monitor), HFM (Hedge Fund Monitor)
-- **Scheduled Collection**: Automated retrieval with configurable intervals per dataset
-- **Smart Backfill**: Fill historical data gaps on-demand
-- **Event Streaming**: Real-time gRPC streams for downstream consumers
-- **Admin API**: Series management, toggle active status, trigger manual collection
-- **Search API**: Search across all OFR data types
-- **SecMaster Integration**: Automatic instrument registration via gRPC
-- **Full Observability**: OpenTelemetry instrumentation (metrics, traces, logs to OTLP)
+- **Scheduled Collection**: Background workers with configurable intervals per dataset
+- **Smart Backfill**: Fill historical data gaps on-demand with date range control
+- **Event Streaming**: Real-time gRPC streams for downstream consumers (ThresholdEngine)
+- **Series Management**: Admin API to add, delete, toggle, and trigger collection per series
+- **Search API**: Search across all OFR data types by keyword
+- **SecMaster Integration**: Automatic instrument registration via gRPC (fire-and-forget)
+- **Resilience**: Polly retry, circuit breaker, and timeout policies on all HTTP clients
+- **Full Observability**: OpenTelemetry instrumentation (metrics, traces, logs via OTLP)
 
 ## Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | **Required** |
+| `ConnectionStrings__AtlasDb` | PostgreSQL/TimescaleDB connection string | **Required** |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name | `ofr-collector` |
-| `OpenTelemetry__ServiceVersion` | Service version | `1.0.0` |
-| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
+| `OpenTelemetry__ServiceName` | Service name for telemetry | `ofr-collector-service` |
+| `OpenTelemetry__ServiceVersion` | Service version for telemetry | `1.0.0` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint (optional) | - |
 | `SeriesConfig__Directory` | Directory for series config files | `/app/config` |
+| `Kestrel__HttpPort` | HTTP listener port | `8080` |
+| `Kestrel__GrpcPort` | gRPC listener port | `5001` |
 
 ## API Endpoints
 
-### REST API
+### REST API (Port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -57,25 +62,26 @@ flowchart LR
 | `/api/search` | GET | Search all OFR data (query: q, type, limit) |
 | `/api/health` | GET | Service health |
 
-### Admin API
-
-**FSI Admin**: `/api/admin/fsi/`
+### Admin API (Port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `collect` | POST | Trigger collection |
-| `backfill` | POST | Backfill history (query: months) |
-
-**STFM/HFM Admin**: `/api/admin/{stfm,hfm}/` (same pattern for both)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `{dataset}/collect` | POST | Trigger dataset collection |
-| `series` | GET/POST | List or add series |
-| `series/{mnemonic}` | DELETE | Delete series |
-| `series/{mnemonic}/toggle` | PUT | Toggle active status |
-| `series/{mnemonic}/collect` | POST | Collect specific series |
-| `series/{mnemonic}/backfill` | POST | Backfill series history |
+| `/api/admin/fsi/collect` | POST | Trigger FSI collection |
+| `/api/admin/fsi/backfill` | POST | Backfill FSI history (query: months) |
+| `/api/admin/stfm/{dataset}/collect` | POST | Trigger STFM dataset collection |
+| `/api/admin/stfm/priority/collect` | POST | Trigger priority STFM series collection |
+| `/api/admin/stfm/series` | GET/POST | List or add STFM series |
+| `/api/admin/stfm/series/{mnemonic}` | DELETE | Delete STFM series |
+| `/api/admin/stfm/series/{mnemonic}/toggle` | PUT | Toggle STFM series active status |
+| `/api/admin/stfm/series/{mnemonic}/collect` | POST | Collect specific STFM series |
+| `/api/admin/stfm/series/{mnemonic}/backfill` | POST | Backfill STFM series history |
+| `/api/admin/hfm/{dataset}/collect` | POST | Trigger HFM dataset collection |
+| `/api/admin/hfm/all/collect` | POST | Trigger all HFM datasets collection |
+| `/api/admin/hfm/series` | GET/POST | List or add HFM series |
+| `/api/admin/hfm/series/{mnemonic}` | DELETE | Delete HFM series |
+| `/api/admin/hfm/series/{mnemonic}/toggle` | PUT | Toggle HFM series active status |
+| `/api/admin/hfm/series/{mnemonic}/collect` | POST | Collect specific HFM series |
+| `/api/admin/hfm/series/{mnemonic}/backfill` | POST | Backfill HFM series history |
 
 ### Health Checks
 
@@ -85,50 +91,51 @@ flowchart LR
 | `/health/ready` | Readiness probe (includes database check) |
 | `/health/live` | Liveness probe (always healthy) |
 
-### gRPC API
+### gRPC Services (Port 5001)
 
-**Service**: `ObservationEventStream`
-
-| Method | Description |
-|--------|-------------|
-| `SubscribeToEvents` | Stream events in real-time (long-running) |
-| `GetEventsSince` | Replay events from timestamp |
-| `GetEventsBetween` | Get events in time range |
-| `GetLatestEventTime` | Get timestamp of latest event |
-| `GetHealth` | Health check with event statistics |
+| Service | Method | Description |
+|---------|--------|-------------|
+| `ObservationEventStream` | `SubscribeToEvents` | Stream events in real-time (long-running) |
+| `ObservationEventStream` | `GetEventsSince` | Replay events from timestamp |
+| `ObservationEventStream` | `GetEventsBetween` | Get events in time range |
+| `ObservationEventStream` | `GetLatestEventTime` | Get timestamp of latest event |
+| `ObservationEventStream` | `GetHealth` | Health check with event statistics |
 
 ## Project Structure
 
 ```
 OfrCollector/
 ├── src/
-│   ├── Api/                    # OFR API clients (FSI, STFM, HFM)
+│   ├── Api/                    # OFR API clients (FSI CSV, STFM JSON, HFM JSON)
 │   ├── Configuration/          # Series configuration provider
 │   ├── Data/                   # EF Core DbContext, repositories
-│   ├── Endpoints/              # REST API endpoints
-│   ├── Grpc/                   # gRPC services and repositories
+│   ├── Endpoints/              # REST API and Admin endpoints
+│   ├── Enums/                  # Dataset and category enumerations
+│   ├── Grpc/                   # gRPC EventStreamService and repositories
 │   ├── HealthChecks/           # Database health check
-│   ├── Models/                 # Domain models
-│   ├── Services/               # Collection and management services
+│   ├── Models/                 # Domain models (FSI, STFM, HFM)
+│   ├── Services/               # Collection and series management services
 │   ├── Telemetry/              # OpenTelemetry meters and activity sources
-│   ├── Workers/                # Background collection workers
-│   ├── Program.cs              # Application entry point
-│   └── DependencyInjection.cs  # Service registration
-├── config/
-│   ├── stfm-series.json        # Priority STFM series configuration
-│   └── hfm-series.json         # Priority HFM series configuration
-└── .devcontainer/              # VS Code dev container
+│   └── Workers/                # Background collection workers (FSI, STFM, HFM)
+├── tests/                      # Unit and integration tests
+├── config/                     # Series configuration (stfm-series.json, hfm-series.json)
+├── mcp/                        # MCP server for AI assistants
+└── .devcontainer/              # Dev container config
 ```
 
 ## Development
 
-### Using Dev Container
+### Prerequisites
 
-```bash
-# Open in VS Code and select "Reopen in Container"
-cd /workspace/OfrCollector/src
-dotnet run
-```
+- VS Code with Dev Containers extension
+- Access to shared infrastructure (TimescaleDB, observability stack)
+
+### Getting Started
+
+1. Open in VS Code: `code OfrCollector/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Build: `dotnet build`
+4. Run: `cd /workspace/OfrCollector/src && dotnet run`
 
 ### Compile
 
@@ -155,11 +162,11 @@ ansible-playbook playbooks/deploy.yml --tags ofr-collector
 | 8080 | HTTP (container) | REST API, health checks |
 | 5001 | HTTP/2 (container) | gRPC event stream |
 
-No external host port mapping - internal API only.
+No external host port mapping -- internal API only.
 
 ## See Also
 
-- [ThresholdEngine](../ThresholdEngine/README.md) - Consumes observation events
+- [ThresholdEngine](../ThresholdEngine/README.md) - Consumes observation events via gRPC
 - [SecMaster](../SecMaster/README.md) - Instrument registration
 - [Events](../Events/README.md) - Shared gRPC event contracts
 - [OfrMcp](./mcp/README.md) - MCP server for AI assistants

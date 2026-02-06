@@ -4,37 +4,40 @@ Video transcription service using faster-whisper for speech-to-text conversion.
 
 ## Overview
 
-WhisperService downloads videos from YouTube and other platforms using yt-dlp, extracts audio, and transcribes it using faster-whisper. It provides an async job queue with status tracking, persists transcripts to disk, and exposes metrics/traces via OpenTelemetry.
+WhisperService downloads videos from YouTube and other platforms using yt-dlp, extracts audio via ffmpeg, and transcribes it using faster-whisper. It provides an async job queue with status tracking, persists transcripts as JSON to disk, and exports metrics and traces via OpenTelemetry. The companion WhisperServiceMcp exposes this service to AI assistants.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    YT[YouTube<br/>yt-dlp] -->|Download| WS[WhisperService]
+    YT[YouTube / yt-dlp] -->|Download| WS[WhisperService]
     WS -->|Extract Audio| FFmpeg[ffmpeg]
     FFmpeg -->|Transcribe| Whisper[faster-whisper]
     Whisper -->|Store| FS[(Filesystem<br/>/data/transcripts)]
-    WS -->|Metrics/Traces| OTEL[OpenTelemetry<br/>Collector]
+    WS -->|Metrics & Traces| OTEL[OpenTelemetry<br/>Collector]
     MCP[WhisperServiceMcp] -->|REST API| WS
 ```
+
+Videos are downloaded with yt-dlp, converted to 16kHz MP3 by ffmpeg, then transcribed by faster-whisper. Completed transcripts are persisted as JSON files and video/audio files are cleaned up automatically.
 
 ## Features
 
 - **Async Job Queue**: Submit videos for transcription and poll for completion
-- **Batch Backfill**: Submit multiple videos at once for batch processing
-- **Auto Language Detection**: Detects spoken language or accepts explicit language code
-- **Transcript Persistence**: Saves completed transcripts to JSON files with metadata
+- **Batch Backfill**: Submit multiple URLs at once for batch processing
+- **Auto Language Detection**: Detects spoken language or accepts an explicit language code
+- **Transcript Persistence**: Saves completed transcripts to JSON with full metadata
 - **Video Cleanup**: Automatically removes video/audio files after transcription
 - **Job TTL**: Cleans up old completed/failed jobs after 24 hours
-- **OpenTelemetry**: Full observability with metrics, traces, and structured logs
+- **OpenTelemetry**: Full observability with metrics, traces, and structured logging
+- **Retry with Backoff**: Downloads retry up to 3 times with exponential backoff
 
 ## Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `WHISPER_MODEL` | Whisper model size | `large-v3` |
-| `WHISPER_DEVICE` | Compute device | `cpu` |
-| `WHISPER_COMPUTE_TYPE` | Quantization type | `int8` |
+| `WHISPER_MODEL` | Whisper model size (tiny, base, small, medium, large-v3) | `large-v3` |
+| `WHISPER_DEVICE` | Compute device (`cpu` or `cuda`) | `cpu` |
+| `WHISPER_COMPUTE_TYPE` | Quantization type (`int8`, `float16`, `float32`) | `int8` |
 | `WHISPER_NUM_WORKERS` | Concurrent transcription threads | `8` |
 | `WHISPER_BEAM_SIZE` | Beam search size | `5` |
 | `WHISPER_DATA_DIR` | Video download directory | `/data/videos` |
@@ -52,82 +55,44 @@ flowchart LR
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/transcribe` | POST | Submit video URL for transcription |
+| `/transcribe` | POST | Submit a video URL for transcription |
 | `/backfill` | POST | Submit multiple URLs for batch transcription |
-| `/status/{job_id}` | GET | Get job status and progress |
-| `/transcript/{job_id}` | GET | Get completed transcript |
+| `/status/{job_id}` | GET | Get job status, progress, and ETA |
+| `/transcript/{job_id}` | GET | Get completed transcript with segments |
 | `/health` | GET | Health check with queue depth and model status |
-
-### Request/Response Examples
-
-**Submit Transcription**
-```json
-POST /transcribe
-{
-  "url": "https://www.youtube.com/watch?v=...",
-  "language": "en",
-  "priority": 5
-}
-
-Response:
-{
-  "job_id": "abc12345",
-  "status": "queued",
-  "message": "Queued at position 1"
-}
-```
-
-**Get Transcript**
-```json
-GET /transcript/abc12345
-
-Response:
-{
-  "job_id": "abc12345",
-  "url": "https://...",
-  "title": "Video Title",
-  "duration_seconds": 300.5,
-  "language": "en",
-  "transcript": "Full transcription text...",
-  "segments": [{"start": 0.0, "end": 2.5, "text": "..."}],
-  "completed_at": "2025-01-01T12:00:00Z"
-}
-```
 
 ## Project Structure
 
 ```
 WhisperService/
 ├── src/
-│   ├── main.py           # FastAPI app, job queue, endpoints
-│   ├── config.py         # Pydantic settings with WHISPER_ prefix
-│   ├── models.py         # Request/response models, job status enum
-│   ├── transcriber.py    # faster-whisper integration
-│   └── downloader.py     # yt-dlp video download, ffmpeg audio extraction
+│   ├── main.py           # FastAPI app, job queue, endpoints, telemetry
+│   ├── config.py          # Pydantic settings with WHISPER_ prefix
+│   ├── models.py          # Request/response models, job status enum
+│   ├── transcriber.py     # faster-whisper integration (thread pool)
+│   └── downloader.py      # yt-dlp download, ffmpeg audio extraction
 ├── config/
-│   └── whisper.yaml      # Default configuration
-├── requirements.txt      # Python dependencies
-└── .devcontainer/        # Dev container configuration
-    ├── Containerfile     # Container image build
-    ├── build.sh          # Build script
-    └── compose.dev.yaml  # Development compose
+│   └── whisper.yaml       # Default configuration reference
+├── requirements.txt       # Python dependencies
+└── .devcontainer/
+    ├── Containerfile      # Container image (python:3.12-slim)
+    ├── build.sh           # Build script
+    ├── compose.dev.yaml   # Development compose
+    └── devcontainer.json  # VS Code dev container config
 ```
 
 ## Development
 
 ### Prerequisites
 
-- Python 3.12+
-- ffmpeg
-- yt-dlp
+- VS Code with Dev Containers extension
+- Access to shared infrastructure (observability stack)
 
-### Using Dev Container
+### Getting Started
 
-```bash
-# Open in VS Code and select "Reopen in Container"
-cd /workspace
-python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8090
-```
+1. Open in VS Code: `code WhisperService/`
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
+3. Run: `python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8090`
 
 ### Build Container Image
 
@@ -145,7 +110,7 @@ ansible-playbook playbooks/deploy.yml --tags whisper-service
 
 | Port | Type | Description |
 |------|------|-------------|
-| 8090 | HTTP (container) | REST API, health checks |
+| 8090 | HTTP (container + host) | REST API, health checks |
 
 ## See Also
 

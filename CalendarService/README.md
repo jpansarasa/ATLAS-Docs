@@ -4,7 +4,7 @@ Market and economic calendar service providing temporal data for the ATLAS ecosy
 
 ## Overview
 
-CalendarService tracks trading days, market holidays, and scheduled economic events. It provides REST API endpoints for external access and a shared library (CalendarService.Core) for in-process calendar operations. Synchronizes holiday data and economic release schedules from FRED and Nager.Date APIs.
+CalendarService tracks trading days, market holidays, and scheduled economic events. It provides REST API endpoints for external access and a shared library (CalendarService.Core) for in-process calendar operations used by other services. Background workers synchronize holiday data and economic release schedules from FRED and Nager.Date APIs.
 
 ## Architecture
 
@@ -37,14 +37,15 @@ flowchart TD
     CORE --> APPS
 ```
 
+Background workers collect data on a schedule (FRED releases every 6 hours, market holidays every 24 hours) and persist to PostgreSQL. The REST API and Core library serve consumers from the database and static NYSE holiday data respectively.
+
 ## Features
 
 - **Market Calendar**: Trading day calculations accounting for weekends and NYSE holidays
 - **Real-Time Status**: Check if markets are currently open or closed
-- **Economic Events**: Track scheduled events (CPI, FOMC, NFP) with impact ratings
-- **Holiday Integration**: Sync US public holidays from Nager.Date API
-- **Shared Library**: CalendarService.Core for in-process high-performance calendar operations
-- **Background Sync**: Automated collection of holiday and economic event data
+- **Economic Events**: Track scheduled FRED releases with impact ratings
+- **Holiday Sync**: Automated collection of market holidays from static NYSE data and Nager.Date
+- **Shared Library**: CalendarService.Core for in-process calendar operations (Quartz integration, caching)
 - **Date Math**: Next/previous trading day, trading days in range, holiday lookups
 
 ## Configuration
@@ -86,23 +87,21 @@ flowchart TD
 |--------|----------|-------------|
 | GET | `/health` | Health check endpoint |
 
+API documentation available at `/scalar/v1` (Scalar UI) and `/openapi/v1.json` (OpenAPI spec).
+
 ## Project Structure
 
 ```
 CalendarService/
 ├── src/
-│   ├── Core/                       # Shared library (abstractions, models, providers)
-│   │   ├── Abstractions/           # IMarketCalendar, IEconomicCalendar interfaces
-│   │   ├── Models/                 # MarketHoliday, EconomicEvent, MarketStatus
-│   │   ├── Providers/              # NyseMarketCalendar, StaticNyseHolidays
-│   │   └── Quartz/                 # Quartz calendar integrations
-│   ├── Endpoints/                  # API endpoint handlers
-│   ├── External/                   # External API clients (FRED, Nager)
-│   ├── Persistence/                # Database context and repositories
-│   ├── Workers/                    # Background data collection workers
-│   └── Migrations/                 # EF Core database migrations
-├── tests/                          # Unit tests
-└── .devcontainer/                  # Dev container configuration
+│   ├── Core/              # Shared library (interfaces, models, providers, Quartz)
+│   ├── Endpoints/         # REST API endpoint handlers
+│   ├── External/          # External API clients (FRED, Finnhub, Nager.Date)
+│   ├── Persistence/       # EF Core DbContext, repositories, entities
+│   ├── Workers/           # Background data collection workers
+│   └── Migrations/        # EF Core database migrations
+├── tests/                 # Unit tests
+└── .devcontainer/         # Dev container configuration
 ```
 
 ## Development
@@ -115,20 +114,21 @@ CalendarService/
 ### Getting Started
 
 1. Open in VS Code: `code CalendarService/`
-2. Reopen in Container (Cmd/Ctrl+Shift+P → "Dev Containers: Reopen in Container")
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
 3. Build: `dotnet build`
 4. Run: `dotnet run`
 
-### Build Container
+### Build & Test
 
 ```bash
-.devcontainer/build.sh
+.devcontainer/compile.sh           # build + test
+.devcontainer/compile.sh --no-test # build only
+.devcontainer/build.sh             # container image
 ```
 
 ## Deployment
 
 ```bash
-cd deployment/ansible
 ansible-playbook playbooks/deploy.yml --tags calendar-service
 ```
 

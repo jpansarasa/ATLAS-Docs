@@ -4,7 +4,7 @@ Centralized alert routing and notification dispatch service for ATLAS.
 
 ## Overview
 
-AlertService receives alert webhooks from Prometheus Alertmanager and other monitoring systems, queues them for asynchronous processing, and dispatches notifications to configured channels (Ntfy, Email) based on severity routing rules. It decouples alert ingestion from delivery to ensure reliable notification handling under load.
+AlertService receives alert webhooks from Prometheus Alertmanager and other ATLAS services, queues them for asynchronous processing, and dispatches notifications to configured channels (Ntfy, Email, AutoFix) based on severity routing rules. It uses an in-memory channel-based queue to decouple ingestion from delivery, with fingerprint-based deduplication to suppress repeated alerts within a 30-minute window.
 
 ## Architecture
 
@@ -12,12 +12,12 @@ AlertService receives alert webhooks from Prometheus Alertmanager and other moni
 flowchart LR
     subgraph Sources
         AM[Alertmanager]
-        APPS[Other Services]
+        SVC[Other Services]
     end
 
     subgraph AlertService
         API[Webhook API :8080]
-        QUEUE[In-Memory Queue]
+        QUEUE[Channel Queue]
         DISPATCH[Background Dispatcher]
         ROUTER[Severity Router]
     end
@@ -25,24 +25,30 @@ flowchart LR
     subgraph Channels
         NTFY[Ntfy Push]
         EMAIL[Email SMTP]
+        AUTOFIX[AutoFix Queue]
     end
 
-    AM & APPS -->|POST /alerts| API
+    AM & SVC -->|POST /alerts| API
     API --> QUEUE
     QUEUE --> DISPATCH
     DISPATCH --> ROUTER
-    ROUTER -->|Critical/Warning| NTFY
+    ROUTER -->|Critical/Warning/Info| NTFY
     ROUTER -->|Critical| EMAIL
+    ROUTER -->|Critical/Warning| AUTOFIX
 ```
+
+Alerts arrive via POST webhook, get parsed (Alertmanager or direct format), enqueued into a `System.Threading.Channels` unbounded channel, then dispatched by a `BackgroundService` to the appropriate notification channels based on severity routing rules.
 
 ## Features
 
-- **Unified Ingestion**: Accepts both direct JSON alerts and Prometheus Alertmanager webhook format
-- **Async Processing**: Decouples ingestion from delivery using in-memory background queue
-- **Severity Routing**: Configurable rules map alert severities to notification channels
-- **Multi-Channel Support**: Ntfy (push notifications) and Email (SMTP) channels
-- **Graceful Degradation**: Failed deliveries logged without blocking queue processing
-- **Observability**: OpenTelemetry metrics for queue depth, delivery latency, success/failure rates
+- **Dual Format Ingestion**: Accepts both Prometheus Alertmanager webhook format and direct JSON alerts
+- **Async Queue Processing**: Decouples ingestion from delivery using `System.Threading.Channels`
+- **Severity-Based Routing**: Configurable rules map alert severities to notification channels
+- **Fingerprint Deduplication**: Suppresses duplicate alerts within a 30-minute window using fingerprint+status keys
+- **Multi-Channel Dispatch**: Ntfy (push), Email (SMTP via MailKit), and AutoFix (file-based queue for automated remediation)
+- **AutoFix Rate Limiting**: Configurable per-minute and daily session limits for automated fix attempts
+- **RFC 9457 Problem Details**: Structured error responses with trace correlation
+- **Observability**: OpenTelemetry metrics (queue depth, delivery latency, success/failure rates) and distributed tracing
 
 ## Configuration
 
@@ -51,15 +57,22 @@ flowchart LR
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
 | `OpenTelemetry__ServiceName` | Service name for telemetry | `alert-service` |
 | `Channels__Ntfy__Enabled` | Enable Ntfy channel | `true` |
-| `Channels__Ntfy__Endpoint` | Ntfy server endpoint | `https://ntfy.sh` |
-| `Channels__Ntfy__Topic` | Ntfy topic for push notifications | `atlas-alerts` |
+| `Channels__Ntfy__Endpoint` | Ntfy server URL | `https://ntfy.sh` |
+| `Channels__Ntfy__Topic` | Ntfy topic name | `atlas-alerts` |
+| `Channels__Ntfy__Username` | Ntfy basic auth username | _empty_ |
+| `Channels__Ntfy__Password` | Ntfy basic auth password | _empty_ |
 | `Channels__Email__Enabled` | Enable Email channel | `false` |
-| `Channels__Email__SmtpHost` | SMTP server hostname | Required if enabled |
+| `Channels__Email__SmtpHost` | SMTP server hostname | `smtp.example.com` |
 | `Channels__Email__SmtpPort` | SMTP server port | `587` |
-| `Channels__Email__FromAddress` | From email address | `alerts@atlas.local` |
-| `Channels__Email__ToAddresses` | Array of recipient addresses | Required if enabled |
-| `Routing__SeverityRoutes__critical` | Channels for critical alerts | `["ntfy", "email"]` |
-| `Routing__SeverityRoutes__warning` | Channels for warning alerts | `["ntfy"]` |
+| `Channels__Email__UseSsl` | Use StartTLS | `true` |
+| `Channels__Email__FromAddress` | Sender email address | `alerts@atlas.local` |
+| `Channels__Email__ToAddresses` | Recipient email addresses (array) | Required if enabled |
+| `Channels__AutoFix__Enabled` | Enable AutoFix channel | `true` |
+| `Channels__AutoFix__QueueDirectory` | Directory for autofix job files | `/opt/ai-inference/autofix-queue` |
+| `Channels__AutoFix__RateLimitMinutes` | Minimum minutes between autofix sessions | `30` |
+| `Channels__AutoFix__MaxSessionsPerDay` | Maximum autofix sessions per day | `3` |
+| `Routing__SeverityRoutes__critical` | Channels for critical alerts | `["ntfy", "email", "autofix"]` |
+| `Routing__SeverityRoutes__warning` | Channels for warning alerts | `["ntfy", "autofix"]` |
 | `Routing__SeverityRoutes__info` | Channels for info alerts | `["ntfy"]` |
 
 ## API Endpoints
@@ -68,8 +81,8 @@ flowchart LR
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/alerts` | POST | Ingest alerts (direct JSON or Alertmanager webhook format) |
-| `/health` | GET | Health check endpoint |
+| `/alerts` | POST | Ingest alerts (Alertmanager webhook or direct JSON format) |
+| `/health` | GET | Health check returning `{"status": "healthy"}` |
 
 ### Alert Payload Formats
 
@@ -79,7 +92,7 @@ flowchart LR
   "source": "custom-source",
   "severity": "critical",
   "title": "Alert Title",
-  "message": "Alert message describing the issue.",
+  "message": "Alert description.",
   "metadata": { "key": "value" }
 }
 ```
@@ -90,7 +103,8 @@ flowchart LR
   "alerts": [{
     "status": "firing",
     "labels": { "alertname": "HighCpu", "severity": "warning" },
-    "annotations": { "description": "CPU usage > 90%" }
+    "annotations": { "description": "CPU usage > 90%" },
+    "fingerprint": "abc123"
   }]
 }
 ```
@@ -100,14 +114,14 @@ flowchart LR
 ```
 AlertService/
 ├── src/
-│   ├── Program.cs           # Application entry point
-│   ├── appsettings.json     # Configuration
-│   ├── Channels/            # INotificationChannel (Ntfy, Email)
-│   ├── Endpoints/           # API route handlers
-│   ├── Models/              # Alert, AlertRequest, Severity
-│   ├── Services/            # AlertQueue, NotificationDispatcher
-│   └── Telemetry/           # OpenTelemetry metrics and traces
-├── tests/                   # Unit tests
+│   ├── Program.cs           # Entry point, DI, OTEL setup
+│   ├── appsettings.json     # Default configuration
+│   ├── Channels/            # INotificationChannel implementations (Ntfy, Email, AutoFix)
+│   ├── Endpoints/           # Minimal API route handlers
+│   ├── Models/              # Alert, AlertRequest, AlertmanagerAlert
+│   ├── Services/            # AlertQueue, NotificationDispatcher, RoutingOptions
+│   └── Telemetry/           # AlertServiceMeter, AlertServiceActivitySource
+├── tests/                   # Unit tests (parsing, queue, routing, dedup, channels)
 └── .devcontainer/           # Dev container config
 ```
 
@@ -116,7 +130,7 @@ AlertService/
 ### Prerequisites
 
 - VS Code with Dev Containers extension
-- Docker/nerdctl for container builds
+- Access to shared infrastructure (observability stack)
 
 ### Getting Started
 
@@ -140,7 +154,6 @@ AlertService/
 ## Deployment
 
 ```bash
-cd deployment/ansible
 ansible-playbook playbooks/deploy.yml --tags alert-service
 ```
 
@@ -148,11 +161,11 @@ ansible-playbook playbooks/deploy.yml --tags alert-service
 
 | Port | Description |
 |------|-------------|
-| 8080 | REST API (internal) |
-| N/A | No host port mapping (internal service only) |
+| 8080 | REST API (internal, container-to-container only) |
+
+No host port mapping. Alertmanager reaches AlertService via the internal container network.
 
 ## See Also
 
-- [ThresholdEngine](../ThresholdEngine/README.md) - Economic pattern evaluation service
-- [Prometheus Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) - Primary alert source
+- [ThresholdEngine](../ThresholdEngine/README.md) - Upstream pattern evaluation that triggers Alertmanager
 - [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System design

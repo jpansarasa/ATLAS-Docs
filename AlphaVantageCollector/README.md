@@ -58,7 +58,7 @@ The scheduler prioritizes series collection within the daily API limit, skipping
 | `AlphaVantage__ApiKey` | API key from alphavantage.co | Required |
 | `AlphaVantage__DailyLimit` | Max requests per day | `25` |
 | `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:8080` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:5001` |
 
 ## API Endpoints
 
@@ -82,30 +82,34 @@ The scheduler prioritizes series collection within the daily API limit, skipping
 |----------|--------|-------------|
 | `/api/admin/series` | GET | List all configured series |
 | `/api/admin/series` | POST | Add new series |
-| `/api/admin/series/{id}/toggle` | PUT | Enable/disable series |
-| `/api/admin/series/{id}` | DELETE | Delete series |
+| `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable series |
+| `/api/admin/series/{seriesId}` | DELETE | Delete series |
 
 ### gRPC Services (Port 5001)
 
 | Service | Method | Description |
 |---------|--------|-------------|
 | `ObservationEventStream` | `SubscribeToEvents` | Stream observation events in real-time |
+| `ObservationEventStream` | `GetEventsSince` | Get events from a specific time |
+| `ObservationEventStream` | `GetHealth` | gRPC health check |
 
 ## Project Structure
 
 ```
 AlphaVantageCollector/
 ├── src/
-│   ├── Api/           # Alpha Vantage API client
-│   ├── Data/          # EF Core DbContext and repository
-│   ├── Grpc/          # gRPC event stream service
-│   ├── Models/        # Domain models
-│   ├── Services/      # Scheduler, series management
-│   ├── Telemetry/     # OpenTelemetry instrumentation
-│   └── Workers/       # Background collection worker
-├── tests/             # Unit tests
-├── migrations/        # Database migrations
-└── .devcontainer/     # Dev container config
+│   ├── Api/              # Alpha Vantage API client
+│   ├── Data/             # EF Core DbContext and repository
+│   ├── Grpc/             # gRPC event stream service
+│   ├── HealthChecks/     # Database health check
+│   ├── Interfaces/       # Service contracts
+│   ├── Models/           # Domain models
+│   ├── Services/         # Scheduler, series management
+│   ├── Telemetry/        # OpenTelemetry instrumentation
+│   └── Workers/          # Background collection worker
+├── tests/                # Unit and integration tests
+├── migrations/           # Database migrations
+└── .devcontainer/        # Dev container config
 ```
 
 ## Development
@@ -118,7 +122,7 @@ AlphaVantageCollector/
 ### Getting Started
 
 1. Open in VS Code: `code AlphaVantageCollector/`
-2. Reopen in Container (Cmd/Ctrl+Shift+P → "Dev Containers: Reopen in Container")
+2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
 3. Build: `dotnet build`
 4. Run: `dotnet run`
 
