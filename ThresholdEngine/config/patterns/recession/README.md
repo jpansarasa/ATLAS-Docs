@@ -7,6 +7,7 @@ Patterns detecting economic contraction and recession signals.
 | Pattern ID | Name | Trigger | Signal Range |
 |------------|------|---------|--------------|
 | beveridge-curve-divergence | Beveridge Curve Divergence (Flat Beveridge) | JTSJOL <7.5M + UNRATE <4.5% + V/U <1.2 | -1.5 to -3 |
+| stagflation-warning | Stagflation Warning | UNRATE ≥4.5% + Core PCE YoY ≥2.8% | -1.5 to -3 |
 | consumer-confidence-collapse | Consumer Sentiment Collapse | UMCSENT <70 | -1 to -2 |
 | continuing-claims-warning | Continuing Claims Escalation | CCSA >2M | -1.5 to -2 |
 | freight-recession | Freight Transportation Decline | TSIFRGHT <-3% YoY | -1.5 to -2 |
@@ -28,6 +29,12 @@ Patterns detecting economic contraction and recession signals.
 - **Framework**: Snider/Eurodollar University analysis of "flat Beveridge" phenomenon
 - **Interpretation**: When openings decline but unemployment doesn't rise proportionally, it indicates unstable equilibrium. Unemployment typically snaps higher to restore historical Beveridge relationship.
 
+### Stagflation Warning (NEW)
+- **Coincident Indicator**: Detects active stagflation conditions
+- **Trigger**: Unemployment ≥4.5% AND Core PCE YoY ≥2.8%
+- **Interpretation**: Detects simultaneous elevation of BOTH unemployment AND inflation. Fed faces impossible tradeoff — cutting rates risks re-igniting inflation, holding rates risks deeper economic damage.
+- **Note**: This is NOT a Phillips Curve model (which failed in the 1970s). Simply detects when stagflationary conditions exist.
+
 ### Yield Curve Inversion
 - **Leading Indicator**: Typically precedes recession by 12-18 months
 - **Trigger**: 10Y-2Y Treasury spread turns negative
@@ -36,6 +43,7 @@ Patterns detecting economic contraction and recession signals.
 
 - `CCSA` - Continuing Claims
 - `JTSJOL` - Job Openings: Total Nonfarm
+- `PCEPILFE` - Core PCE Price Index (Fed's preferred inflation measure)
 - `ICSA` - Initial Claims
 - `INDPRO` - Industrial Production Index
 - `PAYEMS` - Nonfarm Payrolls
