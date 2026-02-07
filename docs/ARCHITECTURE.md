@@ -50,6 +50,7 @@ flowchart LR
     FC -->|register series| SM
     FH -->|register symbols| SM
     OFR -->|register series| SM
+    SC -->|register series| SM
     SC -->|extraction| OL
     SM -->|embeddings| FB
     TE -->|HTTP POST| AS
@@ -231,6 +232,7 @@ flowchart LR
     FC -->|gRPC| SM[SecMaster]
     OC -->|gRPC| SM
     FHC -->|gRPC| SM
+    SC -->|gRPC| SM
     SM --> PG[(PostgreSQL)]
 
     FC -.-> FM[FredCollectorMcp]
