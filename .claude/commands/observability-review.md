@@ -43,11 +43,20 @@ report: file:line → OK_boundary | VIOLATION_double_count
 scope: {scope}
 grep: `catch.*Exception` -C10
 
-RULE: activity_in_scope → require_both:
-  ✓ SetStatus(ActivityStatusCode.Error, ex.Message)
-  ✓ AddException(ex)
+RULE_1: explicit_activity_in_scope → require_both:
+  ✓ activity?.SetStatus(ActivityStatusCode.Error, ex.Message)
+  ✓ activity?.AddException(ex)
 
-report: file:line → missing SetStatus | missing AddException
+RULE_2: swallowed_exception_in_traced_caller → require_both:
+  # Catch blocks that return fallback values (return 0, return null, return [])
+  # in methods called from a traced parent (check callers for ActivitySource/StartActivity)
+  # must record on the ambient parent span via Activity.Current
+  ✓ Activity.Current?.SetStatus(ActivityStatusCode.Error, ex.Message)
+  ✓ Activity.Current?.AddException(ex)
+  DETECT: catch block returns default value ¬ rethrows
+  VERIFY: any caller in the project starts an activity that would be active
+
+report: file:line → missing SetStatus | missing AddException | missing Activity.Current
 ```
 
 **A3: Structured Logging**
@@ -187,7 +196,7 @@ Collect agent outputs → final report
 
 ## REFERENCE
 
-**catch_block_pattern:**
+**catch_block_pattern (explicit activity):**
 ```csharp
 catch (Exception ex)
 {
@@ -195,6 +204,17 @@ catch (Exception ex)
     activity?.AddException(ex);
     _logger.LogError(ex, "Message {Param}", param);
     throw;
+}
+```
+
+**catch_block_pattern (swallowed in traced caller):**
+```csharp
+catch (Exception ex)
+{
+    Activity.Current?.SetStatus(ActivityStatusCode.Error, ex.Message);
+    Activity.Current?.AddException(ex);
+    _logger.LogWarning(ex, "Message {Param}", param);
+    return fallbackValue;
 }
 ```
 
