@@ -7,13 +7,17 @@ Tracking LLM extraction accuracy across models for ATLAS sentinel extraction.
 | Model | Backend | F1 | census_retail | fed_fomc | Mean Time | Date |
 |-------|---------|---:|--------------:|---------:|----------:|------|
 | qwen2.5:32b-instruct | llama.cpp | **64.6%** | 77% | 46% | 102s | 2026-01-24 |
+| qwen3:30b-instruct | llama.cpp | 61.1% | 71% | 42% | 14s | 2026-04-03 |
 | qwen3:30b-instruct | Ollama | 61.1% | 71% | 42% | 16s | 2026-01-24 |
+| Gemma 4 31B (Q4_K_M) | llama.cpp | 59.7% | 69% | 43% | 193s | 2026-04-03 |
 | qwen2.5:32b-instruct | Ollama | 56.7% | 70% | 35% | 40s | 2026-01-24 |
 | qwen3:32b | Ollama | 54.8% | 68% | 26% | 89s | 2026-01-24 |
 | mistral-small:24b | Ollama | 52.1% | 54% | 48% | - | 2026-01-24 |
 | GLM-4.7-Flash (30B MoE) | llama.cpp | 48.0% | 65% | TIMEOUT | 213s | 2026-01-24 |
 | phi4:14b-q4_K_M | Ollama | 40.6% | 43% | 37% | 22s | 2026-01-24 |
 | deepseek-r1:32b | Ollama | 25.7% | 23% | 31% | - | 2026-01-24 |
+| EXAONE 4.0 32B (Q4_K_M) | llama.cpp | 0.0% | TIMEOUT | ERROR | FAIL | 2026-04-03 |
+| Command-R 35B (Q4_K_M) | llama.cpp | 0.0% | TIMEOUT | TIMEOUT | FAIL | 2026-04-03 |
 | Gemma 3 27B | llama.cpp | 0.0% | TIMEOUT | ERROR | FAIL | 2026-01-24 |
 | llama3.3:70b-instruct-q2_K | Ollama | CRASH | - | - | - | 2026-01-24 |
 
@@ -21,7 +25,8 @@ Tracking LLM extraction accuracy across models for ATLAS sentinel extraction.
 
 ### Backend Comparison (Same Model)
 
-- **llama.cpp outperforms Ollama** with identical Qwen 2.5 32B model (64.6% vs 56.7% F1)
+- **llama.cpp outperforms Ollama** with Qwen 2.5 32B (64.6% vs 56.7% F1)
+- **qwen3:30b-instruct identical on both backends** (61.1% F1, 14s vs 16s) - no llama.cpp advantage
 - llama.cpp uses grammar-free generation with JSON extraction fallback
 - Ollama uses structured output format parameter
 
@@ -32,8 +37,17 @@ Tracking LLM extraction accuracy across models for ATLAS sentinel extraction.
 - **qwen3:32b** (dense) underperforms instruct variants
 - **deepseek-r1:32b** reasoning model performs poorly on extraction (25.7%)
 
+### Gemma 4 vs Gemma 3
+
+- **Gemma 4 31B**: Massive improvement over Gemma 3 27B (59.7% F1 vs 0% - timeouts/errors)
+- 100% recall on census_retail (finds all expected values) but lower precision (53%)
+- Slower than Qwen models (193s mean vs 102s for qwen2.5 on llama.cpp) - near the 300s timeout on census_retail (291s)
+- Ran on llama.cpp with Q4_K_M quantization (18GB GGUF, 22.4GB VRAM with 32K context)
+
 ### Failed Models
 
+- **EXAONE 4.0 32B**: census_retail timeout, fed_fomc extraction errors after 4 retries. Model produces output but can't follow extraction format.
+- **Command-R 35B**: OOM at 32K context (35B model too large for KV cache). At 8K context both entries timeout.
 - **Gemma 3 27B**: Too slow, times out on both test cases
 - **GLM-4.7-Flash**: MoE architecture causes timeouts despite 30B parameter count
 - **llama3.3:70b-instruct-q2_K**: Crashes (insufficient VRAM at q2_K quantization)
