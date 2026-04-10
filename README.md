@@ -796,6 +796,7 @@ ATLAS/
 ├── OllamaMCP/              # Ollama LLM MCP server (standalone)
 ├── markitdownMCP/          # Document conversion MCP server (standalone)
 ├── FinBertSidecar/         # FinBERT sentiment analysis sidecar
+├── agent/                  # Tool-calling CLI agent for Qwen on vLLM
 ├── Events/                 # Shared gRPC event contracts
 ├── deployment/             # Ansible playbooks, compose templates, configs
 ├── CLAUDE.md               # AI assistant rules
@@ -971,4 +972,4 @@ Proprietary - Personal use only
 
 ---
 
-**Last Updated**: 2026-01-19 | **Status**: ✅ Production Ready | **Tests**: 700+ passing | **Patterns**: 66 configured | **Services**: 21 total (6 collectors, SecMaster, ThresholdEngine, AlertService, CalendarService, WhisperService, 8 MCP servers, 4 observability)
+**Last Updated**: 2026-04-10 | **Status**: ✅ Production Ready | **Tests**: 700+ passing | **Patterns**: 66 configured | **Services**: 21 total (6 collectors, SecMaster, ThresholdEngine, AlertService, CalendarService, WhisperService, 8 MCP servers, 4 observability) + tool-calling agent
