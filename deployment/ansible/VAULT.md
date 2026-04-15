@@ -14,6 +14,10 @@ Sensitive credentials encrypted in `group_vars/vault.yml`. Vault password: `~/.a
 - `finnhub_api_key` - Finnhub API key (FinnhubCollector)
 - `nasdaq_api_key` - Nasdaq Data Link API key (NasdaqCollector)
 
+### Grafana
+- `vault_grafana_admin_password` - Grafana admin password (replaces default)
+- `vault_grafana_google_client_id` - Google OAuth2 client ID
+- `vault_grafana_google_client_secret` - Google OAuth2 client secret
 ### Notifications (Optional)
 - `ntfy_password` - Ntfy push notification password
 - `email_password` - SMTP email password
