@@ -793,7 +793,6 @@ ATLAS/
 ├── AlertService/           # Notification dispatch
 ├── WhisperService/         # Audio transcription service
 ├── WhisperServiceMcp/      # Whisper MCP server (standalone)
-├── OllamaMCP/              # Ollama LLM MCP server (standalone)
 ├── markitdownMCP/          # Document conversion MCP server (standalone)
 ├── FinBertSidecar/         # FinBERT sentiment analysis sidecar
 ├── agent/                  # Tool-calling CLI agent for Qwen on vLLM

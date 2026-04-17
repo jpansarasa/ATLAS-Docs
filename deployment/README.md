@@ -79,7 +79,6 @@ Ansible renders `compose.yaml` from Jinja2 template with vault secrets, builds c
 | `calendar-service` | CalendarService |
 | `fredcollector-mcp` | FredCollectorMcp |
 | `thresholdengine-mcp` | ThresholdEngineMcp |
-| `ollama-mcp` | OllamaMcp |
 | `sentinel-collector` | SentinelCollector |
 | `whisper-service` | WhisperService |
 | `whisper-service-mcp` | WhisperServiceMcp |
@@ -93,7 +92,6 @@ Ansible renders `compose.yaml` from Jinja2 template with vault secrets, builds c
 | `snapshot` | ZFS snapshot tasks only |
 | `autofix` | AutoFix watcher/runner systemd timers and scripts |
 | `edge` | Cloudflare Workers deployment (requires explicit tag) |
-| `llama-server` | llama.cpp server with GPU (requires `-e deploy_llama_server=true`) |
 
 ## Configuration
 
