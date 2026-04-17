@@ -10,6 +10,8 @@ Context-aware hooks that inject patterns when working on specific file types.
 | `benchmark-context.sh` | Edit/Write `*Benchmark*.cs`, `*_bench.*` | Inject BenchmarkDotNet, Release mode |
 | `git-push-guard.sh` | Bash `git push*` | **BLOCK** - requires tests pass first |
 | `ef-migration-guard.sh` | Write `Migrations/*_*.cs` | **BLOCK** - prevents manual migration creation |
+| `ansible-gate-guard.sh` | Edit/Write on deployment/CI gate files | **ASK** - confirm intent before editing gates |
+| `deploy-smoke-reminder.sh` | Bash deploy/restart commands (PostToolUse) | **ADVISE** - inject smoke-test reminder |
 
 ## How It Works
 
@@ -102,3 +104,32 @@ nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project src/
 ```
 
 **Blocked Pattern**: Any Write to `Migrations/[timestamp]_[Name].cs` that isn't a Designer.cs
+
+## Ansible Gate Guard
+
+**Purpose**: Per `ARCH_PREF` — edits to deployment/CI gate files should prompt
+for explicit intent so gates are fixed at the root, not worked around.
+
+**Matched paths**: `deployment/inventory/*`, `playbooks/*`, any
+`.devcontainer/compile.sh`, `.claude/hooks/git-push-guard.sh`.
+
+**Decision**: `ask` (harness prompts user). Fail-open on missing jq or
+unparseable input (still asks).
+
+**Session bypass**: `touch $CLAUDE_PROJECT_DIR/.claude/.ansible-gate-confirmed`
+to skip the prompt for the rest of the session; delete when done.
+
+## Deploy Smoke Reminder
+
+**Purpose**: Per `VERIFY_TEST` — every deploy must be followed by an
+(unsolicited) smoke test. This `PostToolUse` hook injects a reminder into
+Claude's context whenever a real deploy/restart command completes.
+
+**Matched commands** (leading token after optional `sudo`):
+- `ansible-playbook ...deploy.yml`
+- `nerdctl|docker|podman compose up`
+- `compose up`
+- `systemctl restart|start`
+
+Substring matching on the full command was deliberately avoided to prevent
+false positives from `echo`, `grep`, `git log` etc.

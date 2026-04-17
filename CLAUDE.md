@@ -25,6 +25,32 @@ DEBUG_METHOD:
   observe → hypothesize → test → learn → iterate
   ¬pattern: try → fail → try_same → fail → revert → try_original
 IF stuck THEN reassess(understanding) ¬ retry(same_approach)
+EVIDENCE_GATE [debug]: ¬propose_hypothesis UNTIL shown:
+  1. log_lines(relevant) + timestamps
+  2. current(config | state)
+  3. reproduction | observation(failure)
+  rationale: theory_first → wrong_approach_friction (whisper/grafana/mcp incidents)
+  ¬PATTERN: theorize → user_pushback → check_evidence → reality_differs # cycle_waste
+
+## VERIFY_TEST [post_deploy] [PRIORITY_0]
+SMOKE: ∀deploy → smoke_test(unsolicited) # ¬wait_for_request
+ROOT_CAUSE: fix(ansible_gates | config_mechanism) ¬ workaround
+INVESTIGATE: logs/evidence FIRST → theory ¬ theory_first
+  rationale: evidence_grounds_hypothesis ¬ speculation
+COMPLETION_GATE [deploy | PR]: ¬declare_done UNTIL ALL:
+  1. smoke_tests(run) → report(pass/fail counts)
+  2. loki_query(errors, last_10min) → report(findings)
+  3. verify(root_cause_addressed) ¬ workaround
+  4. list(configs/gates touched)
+  ¬PATTERN: "looks obvious" → skip_gate # this_is_how_bugs_ship
+
+## ARCH_PREF [design_defaults]
+ISOLATION: privilege_isolation(sidecar | systemd) > in_process_sandbox
+SIMPLICITY: simplest_working FIRST ¬ over_engineer
+  ✗ persistent_http_server (unjustified)
+  ✗ --user flag (unjustified)
+  ✗ auth_module_switch (unjustified)
+SANDBOX_EXEC: respect(privilege_isolation_preference) # prior_decision
 
 ## TASK_MANAGEMENT [complex_work]
 IF complex THEN create(STATE.md) # compact_encoding
@@ -312,6 +338,19 @@ deploy: ansible-playbook playbooks/deploy.yml --tags {service}
 dashboards: ansible-playbook playbooks/deploy.yml --tags dashboards # grafana_auto_reloads
 patterns: ansible-playbook playbooks/deploy.yml --tags patterns # hot_reload_no_rebuild
 filter_test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'Name~{Test}'
+
+## DATA_ML_CONTEXT [project_specific]
+TRAINING_DATA: assume(≥500 good_docs available) ¬ lowball("30-50")
+  rationale: high_yield_sources_abundant → estimate_generously
+VLLM_STRUCTURED: response_format(openai_standard) ¬ guided_json
+  rationale: guided_json broken in vLLM 0.19
+PROMPTS: host_mount(/prompts) → edit_host_file ¬ container_only
+  rationale: container edits lost on restart
+ESTIMATE_GATE [data | vram | model_tradeoff]:
+  enumerate(repo + filesystem) FIRST → estimate
+  ¬anchor: generic_defaults ("30-50 docs", "LoRA hurts general quality")
+  check: prior_results(this_project) before claiming tradeoffs
+  rationale: conservative_defaults ≠ this_project_reality → wastes_correction_turn
 
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]
 MODEL_SIZE: ≥30B parameters required # RLM needs coding ability

@@ -1,6 +1,6 @@
 # Tool-calling agent
 
-Single-file Python CLI that connects to the local vLLM instance and gives the model four tools: `python_exec`, `web_search`, `file_read`, `file_write`.
+Single-file Python CLI that connects to the local vLLM instance and gives the model three tools: `python_exec` (persistent IPython kernel), `web_search`, `read_file`.
 
 ## Setup
 
@@ -16,8 +16,8 @@ agent/.venv/bin/python agent/agent.py
 ```
 
 Commands in the REPL:
-- `quit` — exit
-- `reset` — clear conversation history
+- `quit` — exit (tears down the sandbox container)
+- `reset` — clear conversation history AND tear down the sandbox. Next `python_exec` starts a fresh kernel in a new task dir.
 - `/model` — show current model
 - `/model <name>` — switch model (validates against `/v1/models`)
 
@@ -26,37 +26,46 @@ Commands in the REPL:
 | Variable | Default | Purpose |
 |---|---|---|
 | `VLLM_BASE_URL` | `http://localhost:8000/v1` | vLLM OpenAI-compatible endpoint |
-| `VLLM_MODEL` | `sentinel-cove` | Default model (the CoD/CoVe LoRA on Qwen2.5-32B-Instruct-AWQ). Use `sentinel-cove-v6.2` for the plain base. |
-| `SEARXNG_URL` | `https://searxng.elasticdevelopment.com` | SearXNG instance base URL |
-| `SANDBOX_IMAGE` | `python-sandbox:latest` | Container image for sandboxed `python_exec`. Set to empty string to fall back to local subprocess. |
-| `NERDCTL_BIN` | `sudo nerdctl` | Container runtime command. |
-| `PIP_CACHE_VOLUME` | `python-sandbox-pip-cache` | Named volume for pip download cache across ephemeral containers. |
-| `PYTHON_BIN` | `SentinelCollector/scripts/.venv/bin/python` if present, else current interpreter | Python binary for local fallback (when `SANDBOX_IMAGE` is empty). |
-| `PYTHON_TIMEOUT` | `120` | Default subprocess timeout in seconds |
-| `MAX_TOOL_ROUNDS` | `10` | Max tool-call round-trips per user message |
-| `WORKSPACE_DIR` | `/opt/ai-inference/agent-workspace` | Shared workspace for file I/O and `python_exec` cwd |
+| `VLLM_MODEL` | `sentinel-cove` | Default model (CoD/CoVe LoRA on Qwen2.5-32B-Instruct-AWQ) |
+| `SEARXNG_URL` | `https://searxng.elasticdevelopment.com` | SearXNG base URL |
+| `SANDBOX_IMAGE` | `sandbox-kernel:latest` | Container image for the persistent IPython kernel |
+| `SANDBOX_NETWORK` | `ai-inference` | nerdctl bridge network the sandbox joins |
+| `NERDCTL_BIN` | `sudo nerdctl` | Container runtime command |
+| `AGENT_USE_LOCAL_PYTHON` | unset | Set to `1` to bypass the sandbox and run each `python_exec` as a local subprocess (no kernel state, dev fallback only) |
+| `PYTHON_BIN` | Sentinel venv if present, else current interpreter | Python used by the local fallback |
+| `PYTHON_TIMEOUT` | `120` | Default `python_exec` timeout in seconds |
+| `MAX_TOOL_ROUNDS` | `12` | Max tool-call round-trips per user message |
+| `WORKSPACE_ROOT` | `/opt/ai-inference/agent-workspace` | Parent of per-task dirs |
 
-## Sandboxing
+## How the sandbox works
 
-`python_exec` runs code in **ephemeral containers** via `nerdctl run --rm`. Each call gets a fresh container — no state leaks between calls. The base image (`deployment/artifacts/python-sandbox/`) has numpy, pandas, and httpx pre-installed. Additional packages can be requested per-call via the `dependencies` parameter; a named pip cache volume avoids repeated downloads.
+One **long-lived container** per REPL session, running a FastAPI server around an IPython kernel (`deployment/artifacts/sandbox-kernel/`). The container is lazy-started on the first `python_exec` call.
 
-The workspace ZFS dataset (`sata-bulk/agent-workspace`) is mounted at `/workspace/` inside the container. The host filesystem is not accessible — only the workspace mount.
+Per-task directories under `WORKSPACE_ROOT/tasks/{task_id}/`:
 
-Set `SANDBOX_IMAGE=""` to fall back to local subprocess execution (for development/testing).
+| Host path | Container mount | Mode | Purpose |
+|---|---|---|---|
+| `…/input/`     | `/input`     | read-only | Inputs staged by the caller before starting the task |
+| `…/output/`    | `/output`    | read-write | Model writes final results here (convention: `/output/result.json`) |
+| `…/scratch/`   | `/workspace` | read-write | Kernel cwd, scratch files, intermediate artefacts |
 
-`file_read`/`file_write` still run on the host but resolve relative paths to `WORKSPACE_DIR`.
+The model is told about these paths in the system prompt. Because the kernel is persistent, variables/imports/open DataFrames survive across `python_exec` calls — the model can chain work naturally (load → clean → extract → validate → write) without re-parsing each turn.
+
+Packages beyond the pre-installed set (`numpy`, `pandas`, `httpx`, `jsonschema`) can be installed with `!pip install <pkg>` from inside `python_exec`.
+
+Hard caps: `--memory 2g --cpus 2 --pids-limit 512`. The server caps `/exec` output at 64 KB. Idle kernels exit after `KERNEL_IDLE_SECONDS` (default 900).
+
+## Output handoff
+
+The convention is: the model writes its final result to `/output/result.json` and replies with the single word `DONE`. For interactive REPL use this convention is loose — agents can also just answer in text. For Sentinel extraction, `/output/result.json` is the authoritative handoff (read from the C# side via the same host path).
 
 ## vLLM prerequisites
 
-vLLM must be launched with tool-calling support:
+vLLM must be launched with:
 
 ```
 --enable-auto-tool-choice
 --tool-call-parser hermes
 ```
 
-These are already set in `deployment/ansible/playbooks/deploy.yml` for the vllm-server task. `hermes` is the correct parser for Qwen2.5-Instruct's `<tool_call>...</tool_call>` format.
-
-## Reference implementation
-
-`tasks/agent.py` holds the original reference implementation from the design doc. The production version in this directory differs in: config defaults, exception handling in the agent loop, Ctrl+C handling in the REPL, binary-file detection in `file_read`, correct byte counts in `file_write`, directory-listing truncation indicator, message history cap, and the `/model` command.
+Already set in `deployment/ansible/playbooks/deploy.yml`. `hermes` is the correct parser for Qwen2.5-Instruct's `<tool_call>...</tool_call>` format.
