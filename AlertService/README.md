@@ -70,7 +70,7 @@ Alerts arrive via POST webhook, get parsed (Alertmanager or direct format), enqu
 | `Channels__AutoFix__Enabled` | Enable AutoFix channel | `true` |
 | `Channels__AutoFix__QueueDirectory` | Directory for autofix job files | `/opt/ai-inference/autofix-queue` |
 | `Channels__AutoFix__RateLimitMinutes` | Minimum minutes between autofix sessions | `30` |
-| `Channels__AutoFix__MaxSessionsPerDay` | Maximum autofix sessions per day | `3` |
+| `Channels__AutoFix__MaxSessionsPerDay` | Maximum autofix sessions per day | `10` |
 | `Routing__SeverityRoutes__critical` | Channels for critical alerts | `["ntfy", "email", "autofix"]` |
 | `Routing__SeverityRoutes__warning` | Channels for warning alerts | `["ntfy", "autofix"]` |
 | `Routing__SeverityRoutes__info` | Channels for info alerts | `["ntfy"]` |
