@@ -1,202 +1,148 @@
-# Sentinel Extraction Quality — Remediation Plan
+# OfrCollector — Single Source of Truth Migration
 
 ## GOAL
 
-Close the six gaps surfaced by reviewing all 14 pending items in the Sentinel review queue on 2026-04-20. Raise auto-approve-ready observation rate; make human review faster.
-
-**Accept criteria**
-- `unit=count` no longer assigned to USD amounts.
-- Analyst/forecast language no longer tagged `certainty=definite`.
-- `text_quote` populated on ≥95% of new extractions.
-- investing.com market-overview sidebar widgets no longer extracted as observations.
-- SecMaster resolver hits on common tickers (LGO, JKS, NRGV, MRK, FFIV) that fail today.
-- New items land in the queue with the above fixes in place, validated against a fresh sample of 14+ items.
-
-## ARCH
-
-Extraction pipeline: `RawContent → ContentNormalizer (trafilatura/markitdown) → ChainOfVerification (initial_extraction + verification via VllmClient structured output) → ExtractionResult → ExtractedObservation row → SecMaster resolution`.
-
-Observations route to review queue when `confidence < 1.0` and `ReviewStatus=Pending`. Current pending-to-approved ratio: 14 / 12363 ≈ 0.1%, which is fine — the pending items are the *interesting* ones where quality gaps show.
-
-**Prompts live at** `SentinelCollector/src/prompts/` and are host-mounted into the container per `deployment/artifacts/compose.yaml.j2` (edit host file, restart service, no rebuild).
-
-## STATUS
-
-- ✓ 1. Fix unit mislabeling (USD → `count`)
-- ✓ 2. Fix certainty=definite on forecasts
-- ✓ 3. Investigate + fix text_quote=null
-- ✓ 4. Strip investing.com market-overview sidebar widgets pre-extraction
-- ✓ 5. Deduplicate / investigate contradictory forecasts from same article
-- ✓ 6. SecMaster resolver debug (NRGV, MRK, FFIV should resolve trivially)
-
-## TASKS
-
-### 1. Units: USD amounts tagged `count` (items 8, 10, 11)
-**Symptom**: `value=-16950000, unit=count` for "Softbank sells $16.95M of NRGV"; same for F5 $294k, Strive $459k.
-**Investigate**:
-- Read `prompts/initial_extraction.txt` lines 25–28 — it already shows `"$73.8 billion" → billion_USD`. So prompt documents the convention; LLM adherence is the issue.
-- Sample failing extractions from raw LLM output (Loki trace for one of these observation ids) to confirm it's LLM not-following vs parser bug.
-**Fix (if prompt adherence)**:
-- Add a "NEVER" rule block: `✗ USD_value → unit:count   # use USD or billion_USD`.
-- Add 3 more ✓/✗ example pairs targeting insider-trade dollars and price-target dollars specifically.
-**Fix (if parser bug)**: update parser; unlikely but verify.
-
-### 2. Certainty on forecasts (items 1–5)
-**Symptom**: "analysts predict 51% revenue growth" → `certainty=definite`.
-**Investigate**: the prompt already shows `[{value: 150000, certainty: "definite"}, {value: 175000, certainty: "expected"}]` in a revision context. Check that the forecast/prediction signal words are listed under "expected".
-**Fix**: add an explicit rule in `prompts/initial_extraction.txt` — "analyst predicts/forecast/expects/projects/estimates" → `certainty: expected`. Worked example.
-
-### 3. text_quote=null across all 14 items
-**Investigate first** (EVIDENCE_GATE — theory-first gets us the wrong fix):
-- Query Loki for a raw LLM response for one of the 14 obs ids. Confirm whether `text_quote` is present in the model output.
-- Read `ExtractionResultParser.TryParse` — does it handle missing/null quote field silently?
-- Read VllmClient structured-output schema builder — is `text_quote` in the schema `required` list?
-**Fix depends on where it's dropping**:
-- LLM not emitting → schema `required: ["text_quote", ...]` fix.
-- Parser dropping → parser fix.
-- Prompt pass-through reminder (already says "verbatim sentence").
-
-### 4. investing.com ticker-widget noise (items 6–7, 12–14)
-**Symptom**: Extractions of Shanghai/CSI/Hang Seng/Nifty/Straits index moves from article pages that are *not about* those indices. LLM is picking them up from sidebar price tickers.
-**Investigate**:
-- Pull the raw HTML for one of the source URLs (already under `/opt/ai-inference/raw-data/sentinel/…`).
-- Check what trafilatura actually returns for these pages — is it stripping sidebars, or passing them through?
-- Confirm trafilatura's output contains the ticker snippet (root cause) vs. the LLM pulling from noise text (LLM hygiene).
-**Fix path A** (if trafilatura output is clean): add to prompt an explicit exclusion rule — do not extract sidebar quotes/tickers that are unrelated to the article body.
-**Fix path B** (if trafilatura leaks the sidebar): domain-specific pre-wash rule — strip known sidebar selectors for investing.com before trafilatura, or post-filter.
-Path B is more robust; path A is cheaper but more fragile.
-
-### 5. Duplicate/contradictory forecasts from one article (items 3–5)
-**Symptom**: Two different "JinkoSolar module shipment forecast" numbers (85 GW and 75 GW) from one article; same pattern for Largo items 1–2.
-**Investigate**:
-- Pull the source article. Are both numbers actually in the text (one for 2026, one for 2025)?
-- If yes, extractions are correct but lack period distinction — fix is `period` population.
-- If no, LLM hallucination — fix via verification pass in ChainOfVerification.
-**Fix depends on finding**: likely period-hygiene rule, not hallucination.
-
-### 6. SecMaster resolver failure (all 14)
-**Symptom**: `instrumentId=null` on every item despite clean tickers (MRK, JKS, NRGV, FFIV, LGO, FFIV).
-**Investigate**:
-- Call SecMaster `/resolve` directly for "MRK", "Merck", "NYSE:MRK" — which form fails?
-- Check resolver input — is the LLM-extracted `source_entity` blank or malformed, so SecMaster has nothing to match on?
-- Check ticker-extraction path in ChainOfVerification.
-**Fix depends on finding**. Separate from LLM quality; schedule after items 1–5.
-
-## CONTEXT
-
-- Branch: `fix/sentinel-extraction-quality`
-- Prompts host-mounted — edit + `nerdctl restart sentinel-collector` (no rebuild).
-- Review queue endpoint: `GET http://localhost:5091/admin/review/?limit=20` (JSON only).
-- Memory note: project prefers evidence-first per CLAUDE.md EVIDENCE_GATE — every task above starts with "Investigate" for that reason.
-- Order of work: 1, 2 first (prompt-only, trivial). 3 before 5 (both need LLM output inspection). 4 before broad re-validation. 6 last (separate subsystem).
-- Re-validation gate: after 1–5 ship, sample the review queue over a 24h window and confirm the failure classes listed above are absent.
-
-## ATTEMPTED
-
-- PR #183 (2026-04-20): shipped fixes for tasks 1–6 in STATE above. Ready to merge/deploy.
-
----
-
-# Architecture — Async Resolution Pipeline (follow-on, post-#183)
-
-## GOAL
-
-Pull SecMaster resolution OFF the synchronous extraction hot path. Resolution becomes eventually-consistent via a rate-limit-aware worker that drains a `resolution_pending` queue against upstream providers (Finnhub primary, AlphaVantage nightly sweep).
+Eliminate the dual-source-of-truth bug where `SeriesManagementService` (the MCP/admin path) writes series to the DB while `StfmCollectionService` and `HfmCollectionService` read series from a baked JSON file via `SeriesConfigurationProvider`. End state: DB is authoritative for active series; JSON files, the file watcher, and the Containerfile bake are all gone.
 
 **Accept criteria**
 
-- `ExtractionProcessor.ProcessBatchAsync` never calls a SecMaster upstream provider directly — only local SecMaster (ExactSQL + FuzzySQL + Vector+RAG hypothesis).
-- Extraction pipeline completes even if Finnhub and AlphaVantage are both unreachable.
-- Observations persist with one of three resolution states: `resolved`, `pending`, `no_resolution`.
-- Resolution worker respects Finnhub's 60/min quota (token bucket, ≤50/min sustained).
-- AlphaVantage's 25/day budget is spent on a nightly sweep of `no_resolution` rows ranked by mention frequency × confidence.
-- New metric `sentinel_resolution_latency_seconds` (histogram) tracks time from observation insert → `resolved`.
-- Existing behavior for already-resolved local hits unchanged (no latency regression).
+- `HfmCollectionService` and `StfmCollectionService` source their series list from the DB (same repository the MCP/admin layer writes to). No reference to `ISeriesConfigurationProvider`.
+- `SeriesConfigurationProvider`, `ISeriesConfigurationProvider`, and `SeriesConfigurationProviderTests` deleted.
+- `OfrCollector/config/{hfm,stfm}-series.json` deleted.
+- `OfrCollector/src/Containerfile:94` `COPY ... /src/OfrCollector/config ./config` removed.
+- Adding a series via MCP `add_hfm_series` results in that series being collected on the next worker tick (smoke-tested end-to-end after deploy).
+- Startup refuses to run if both `ofr_hfm_series` and `ofr_stfm_series` are empty (currently the JSON masks empty-DB).
+- A first-boot seeder populates the DB from the JSON's contents *only if* the tables are empty — preserves historical defaults for fresh installs without making the JSON load-bearing.
+- All existing OFR tests still pass; add tests for the seeder's empty-table-only behavior and the empty-table startup guard.
 
 ## ARCH
 
-Today (post-#183):
-`ExtractionProcessor → IDescriptionResolver (wraps ISecMasterClient.ResolveAsync) → SecMaster HybridResolutionService (ExactSQL | FuzzySQL | Vector+RAG | UpstreamDiscovery)` — all synchronous, all inline with extraction.
+Today:
+```
+[MCP add_hfm_series]
+   ↓
+SeriesManagementService → IHfmSeriesRepository → ofr_hfm_series (DB) [331 rows]
+                                                       ↑ DECORATIVE
+[Worker tick]
+   ↓
+HfmCollectionService → SeriesConfigurationProvider → /app/config/hfm-series.json [baked]
+                              ↑ FileSystemWatcher hot-reload
+```
+
+Two separate paths; the worker never reads what the admin API writes. Operator-added series silently never get polled.
 
 Target:
-- `ExtractionProcessor` calls a new `ILocalResolver` that returns `{resolution | rag_candidate | null}` using ONLY local steps (no upstream calls, no network I/O beyond the local embedding model).
-- A new `ResolutionWorker` (BackgroundService) drains rows where `resolution_state = pending` against Finnhub via `FinnhubClient` with a token-bucket rate limiter. On resolve: update row + `_catalog.AddAsync` + `_embedding.EmbedInstrumentAsync`.
-- A new scheduled job `AlphaVantageSweepJob` runs nightly, picks top-N `no_resolution` rows by mention frequency × extracted confidence, spends AV's daily budget on the ranked list.
+```
+[MCP add_hfm_series]
+   ↓
+SeriesManagementService → IHfmSeriesRepository → ofr_hfm_series (DB) [authoritative]
+                                                       ↑ READ
+[Worker tick]
+   ↓
+HfmCollectionService → IHfmSeriesRepository.GetActiveAsync()
+```
 
-Upstream providers:
-- Finnhub: hot enrichment path (60/min quota, ~1/sec sustained). Already wired in `FinnhubCollector`; reuse its client with rate-limit wrapper.
-- AlphaVantage: cold enrichment path (25/day). Reuse `AlphaVantageCollector` client; extend for single-symbol lookups if needed.
-- Explicit non-goal: no external provider is reached from the synchronous path.
+Single path. No JSON, no watcher, no provider, no bake. First-boot DB seeding handled by a one-shot startup seeder (per CLAUDE.md: `SEED_DATA: EF HasData() | app-level seeding on startup`).
 
 ## STATUS
 
-- ✓ 1. Schema: add `resolution_state` + `resolution_hypothesis` to `extracted_observations`
-- ✓ 2. Split `HybridResolutionService` into `LocalHybridResolutionService` (no upstream) + `UpstreamResolutionService` (Finnhub/AV)
-- ✓ 3. `ExtractionProcessor` calls local-only path; marks `resolution_state = pending` when RAG produces a hypothesis
-- ✓ 4. `ResolutionWorker` BackgroundService draining pending queue through Finnhub with token-bucket rate limiter
-- ✓ 5. `AlphaVantageSweepJob` scheduled daily against `no_resolution` backlog
-- ✓ 6. Observability: `sentinel_resolution_latency_seconds`, `sentinel_resolution_queue_depth`, method-tagged resolution counter
-- ✓ 7. Alert rule: `resolution_queue_depth` above sustained threshold → worker stuck / provider down
-- ✓ 8. Review-UI cosmetic: show `pending` / `no_resolution` states distinctly from `resolved`
+- ✓ 0. PR D (#188): drop FredCollector vestigial empty `config/` bake
+- ✓ 1. Audit: JSON has 23 canonical defaults; DB has 431 operator-added rows. 9 overlap. 14 JSON-only mnemonics are *currently being collected via the JSON path* and must be imported to DB or they'll stop being polled at cutover. 417 DB-only rows are ghosts the worker never sees today.
+- → 2. Build idempotent seeder: embed both JSON files as resources, upsert-if-missing on every boot (semantics revised from "seed only if empty" — see **AUDIT FINDINGS** below).
+- ◯ 3. Switch readers: `HfmCollectionService` + `StfmCollectionService` → `_repository.GetActive*Async()`; preserve priority ordering.
+- ◯ 4. Add startup guard: refuse to start if both series tables are empty *after* seeder runs.
+- ◯ 5. Delete legacy: `SeriesConfigurationProvider`, `ISeriesConfigurationProvider`, JSON files, FileSystemWatcher, DI registration, Containerfile `COPY config` line, related tests.
+- ◯ 6. Smoke: add a series via MCP, confirm it gets collected on next tick (Loki + DB row check).
+
+## AUDIT FINDINGS (2026-04-20)
+
+|            | JSON | DB  | Both | JSON-only | DB-only |
+|------------|-----:|----:|-----:|----------:|--------:|
+| HFM        |   9  | 331 |   4  |     **5** |   **327** |
+| STFM       |  14  | 100 |   5  |     **9** |    **95** |
+
+**Interpretation**: the JSON was the collector's runtime config (23 series being polled). MCP `add_*_series` writes lands in DB but never made it into JSON, so those 417 rows are "ghost series" — added successfully, one-shot backfilled, then never collected on schedule because the worker reads JSON only.
+
+**Cutover requirement**: the 14 JSON-only mnemonics need to exist in the DB *before* the reader switch, or we stop collecting them. Can't use "seed only when empty" semantics since the tables are already populated.
+
+**Revised seeder contract**: run on every boot, upsert-if-missing per mnemonic. DB-authoritative rows are untouched; any JSON defaults that aren't in the DB get inserted. Idempotent, self-healing if someone accidentally deletes a default row, and safe to re-run.
 
 ## TASKS
 
-### 1. Schema migration
-- New column `extracted_observations.resolution_state` (enum: `resolved | pending | no_resolution`) default `pending`.
-- New column `extracted_observations.resolution_hypothesis` (nullable string — the RAG-proposed ticker awaiting verification).
-- EF Core migration via `dotnet ef migrations add AddResolutionState` per CLAUDE.md DATABASE rules.
-- Backfill: existing rows where `instrument_id IS NOT NULL` → `resolved`; else → `no_resolution` (not `pending`; we don't want the worker re-enqueueing 10k historical misses on first boot).
+### 0. PR D — FredCollector vestigial bake removal (separate, trivial, do first)
 
-### 2. Service split
-- Extract interface `ILocalResolver` returning `LocalResolutionResult(Resolution?, Candidate?, VectorMatches, RagResponse)`.
-- `HybridResolutionService` implements local-only cascade (Exact → Fuzzy → Vector → RAG). Remove the STEP 6 upstream-discovery branch from this path.
-- New `UpstreamResolutionService` that takes a ticker string and queries Finnhub then (optionally) AV. Owns rate-limit state.
+Same shape as Sentinel #187 but smaller: the `config/` dir in `FredCollector/` is empty (just `.gitkeep`); nothing reads it; the `COPY` line in Containerfile is dead weight that ships with every build. Drop it. No code or tests touched.
 
-### 3. Hot-path rewrite
-- `ExtractionProcessor.ProcessBatchAsync` uses `ILocalResolver`:
-  - Resolution non-null → mark `resolved`, populate `instrument_id`.
-  - Candidate non-null, resolution null → mark `pending`, store `resolution_hypothesis`.
-  - Both null → mark `no_resolution`, no instrument_id.
-- Remove existing `DescriptionResolver` (its parenthetical-ticker logic moves into the hypothesis layer or stays as a pre-RAG normalization step — TBD; investigate before deciding).
-- Delete the `EnableDiscovery=true` flag from SentinelCollector's Finnhub calls — there's no upstream discovery on the hot path anymore.
+**Deliverables**:
+- `FredCollector/src/Containerfile:39` line removed
+- Verify image: `ls /app/config` returns "No such file or directory"
+- One commit, one PR, no behavioral change
 
-### 4. ResolutionWorker
-- BackgroundService that polls `extracted_observations WHERE resolution_state = 'pending' ORDER BY extracted_at ASC LIMIT N`.
-- Token-bucket rate limiter pre-configured to 50/min Finnhub (headroom for other callers of the same key).
-- For each row: try Finnhub with `resolution_hypothesis` first, then raw `description` as fallback.
-- On success: update row + catalog insert + embed.
-- On Finnhub not-found: mark `no_resolution` (AV sweep picks it up).
-- On Finnhub error (429/5xx): leave row `pending`, backoff, retry next tick. Structured log + span error per CLAUDE.md.
+### 1. Audit JSON vs DB
 
-### 5. AlphaVantageSweepJob
-- Quartz job, fires daily at 04:00 UTC (low-activity window).
-- Pulls top 25 rows where `resolution_state = 'no_resolution'`, ranked by `COUNT(*) OVER description × avg(confidence)`.
-- Spends AV's 25/day budget one lookup per top row.
-- Same success/failure handling as the worker.
+- Walk `OfrCollector/config/{hfm,stfm}-series.json` — they nest series under `datasets[<dataset_name>]`. Build a flat list of `{mnemonic, dataset, dataset-specific fields, priority, enabled, …}`.
+- Compare against `SELECT mnemonic, dataset FROM ofr_hfm_series` and same for stfm.
+- Report:
+  - JSON-only mnemonics (need import)
+  - DB-only mnemonics (operator-added, must not be lost)
+  - Mismatches in fields between JSON and DB rows for the same mnemonic (decide policy: DB wins, since that's where MCP writes land)
+- Output: a small markdown summary in this STATE for the import step to follow.
 
-### 6. Observability
-- `sentinel_resolution_latency_seconds` histogram, tagged `{method: local|finnhub|alphavantage}`.
-- `sentinel_resolution_queue_depth` gauge (runs every 30s, counts pending rows).
-- Resolution counter gains a `method` dimension consistent with the worker stages.
-- Grafana panel: stacked area of method breakdown over 24h — self-surfacing health signal.
+### 2. Idempotent seeder (revised)
 
-### 7. Alerting
-- `sentinel_resolution_queue_depth > 500 for 15m` → warning (worker falling behind).
-- `rate(sentinel_resolution_errors{provider=\"finnhub\"}[5m]) > 0.1` → warning.
-- Both route to alert-service + autofix per existing pipeline.
+- New class `OfrSeriesDbSeeder` in `OfrCollector/src/Data/`. Runs at startup before `IHostedService`s.
+- Behavior (per table, independently):
+  - Parse embedded-resource JSON for the table (`hfm-series.json` / `stfm-series.json`).
+  - For each mnemonic in the JSON: check DB; if missing, insert. If present, skip (do NOT overwrite — DB may have operator edits).
+  - Log counts: `Seeded {N} {table} series, skipped {M} already present`.
+- Embed the seed JSON as `<EmbeddedResource>` in `OfrCollector.csproj`, not `/app/config/`. Makes the seed code-versioned (defaults that ship with the binary), not config-in-disguise.
+- Tests:
+  - `OfrSeriesDbSeederTests`: `should_insert_mnemonic_when_missing`, `should_skip_mnemonic_when_present`, `should_preserve_existing_row_fields_when_mnemonic_present`, `should_seed_each_table_independently`.
+- Tests:
+  - `OfrSeriesDbSeederTests`: `should_seed_when_table_empty`, `should_skip_when_table_has_rows`, `should_seed_each_table_independently`.
 
-### 8. UI state
-- Review queue endpoint returns `resolution_state` alongside existing fields. Cosmetic; non-blocking for the rest of the work.
+### 3. Switch readers to DB
+
+- `HfmCollectionService:?` — find every `_configProvider.GetHfmConfig().*` call. Replace with `_hfmRepository.GetActiveAsync(ct)` (or whichever repo method already serves the MCP read path; check `SeriesManagementService` for the read shape).
+- Preserve ordering: if the JSON config exposes `priority` for scheduling, ensure the DB column / repository sort matches.
+- Same surgery on `StfmCollectionService`. Confirmed call site: `StfmCollectionService.cs:144`.
+- Drop the `_configProvider` constructor param and DI binding from these two classes.
+- Update unit tests to mock `IHfmSeriesRepository` / `IStfmSeriesRepository` instead of `ISeriesConfigurationProvider`. Existing tests that exercised the file-watcher behavior get deleted (no longer applicable).
+
+### 4. Empty-table startup guard
+
+- After the seeder runs, check counts. If both tables are still empty (e.g. seeder failed to populate, or someone deployed with empty seed JSON), throw `InvalidOperationException` with a readable message: `"OFR series tables empty after seed pass. Either the seed JSON is empty or the seeder failed. Check logs for OfrSeriesDbSeeder."` Container exits non-zero.
+- Distinguish from "operator deliberately disabled all series" — that's `enabled=false` rows, still present. The guard is *no rows at all*, which is unambiguously misconfig.
+
+### 5. Delete legacy
+
+- Files to delete:
+  - `OfrCollector/src/Configuration/SeriesConfigurationProvider.cs`
+  - `OfrCollector/src/Configuration/ISeriesConfigurationProvider.cs` (if it exists; may be inline)
+  - `OfrCollector/config/hfm-series.json`
+  - `OfrCollector/config/stfm-series.json` (after their content has been embedded as seed)
+  - `OfrCollector/config/` directory entirely
+  - any `SeriesConfigurationProviderTests*.cs`
+- Containerfile: drop `COPY --from=build --chown=appuser:appuser /src/OfrCollector/config ./config` (line 94).
+- DI registration: drop `services.AddSingleton<ISeriesConfigurationProvider, SeriesConfigurationProvider>()` (or however it's registered).
+- Verify with grep: zero references to `SeriesConfigurationProvider`, `ISeriesConfigurationProvider`, `hfm-series.json`, `stfm-series.json` across `OfrCollector/`.
+
+### 6. End-to-end smoke
+
+- Deploy.
+- Pick a mnemonic NOT in the seeded set. `mcp__ofr-collector__add_hfm_series mnemonic=<X> backfill=false`.
+- Wait one collection tick (check service config for cadence).
+- Verify: `ofr_hfm_observations` has new rows tagged with mnemonic `<X>` AND Loki shows the worker mentioning `<X>` in its collection log.
+- Then `mcp__ofr-collector__delete_hfm_series mnemonic=<X>`. Confirm the next tick stops collecting it.
 
 ## CONTEXT
 
-- Depends on PR #183 merged and deployed (cascade fix is the foundation; re-architecting a broken cascade would be silly).
-- Touches three services: `SentinelCollector`, `SecMaster`, and the resolution worker (probably lives in `SentinelCollector` since it's the owner of `extracted_observations`).
-- Potential collaborator bottleneck: `FinnhubCollector`'s existing rate-limit budget. Need to confirm a 50/min reservation doesn't starve its primary collection workload. Investigate before integration.
-- Deferred until after this: AV batch lookup optimization — AV supports batch `SYMBOL_SEARCH`, ~5× quota efficiency. Nice-to-have, not required.
-- Non-goals for this scope: multi-upstream conflict resolution (e.g. Finnhub says X, AV says Y), upstream caching layer, rate-limit sharing across services.
+- Branch (suggested): `fix/ofr-single-source-of-truth` for the migration; `fix/fred-vestigial-bake` for PR D
+- Per CLAUDE.md DATABASE rules: `SEED_DATA: EF HasData() | app-level seeding on startup`. The seeder approach is the app-level option; EF `HasData` would also work but ties the seed data to the migration, which isn't ideal here since the seed is a one-time historical import, not part of the schema's lifecycle.
+- DB connection for inspection: `sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data` per CLAUDE.md DATABASE.
+- Counts at start of work (2026-04-20): `ofr_hfm_series`=331, `ofr_stfm_series`=100. JSON datasets: HFM `{fpf, ficc}`, STFM `{fnyr, repo, mmf, nypd, tyld}`.
+- Don't try to split this into many small PRs in the middle. Steps 1-5 are tightly coupled — half-deleting the legacy path while collectors still call it would crash. One worktree, one PR, ordered commits inside it.
 
 ## ATTEMPTED
 
-- PR #184 (2026-04-20): shipped all 8 tasks for the async resolution pipeline — schema migration (`AddResolutionState`), local/upstream resolver split, hot-path rewrite in `ExtractionProcessor`, `ResolutionWorker` BackgroundService, nightly `AlphaVantageSweepJob`, metrics + queue-depth gauge, alert rules, and review-UI cosmetic state surfacing.
-- Follow-up commit (2026-04-20): review-driven narrow fixes for the Resolved/InstrumentId-null state-machine bug in ResolutionWorker + AlphaVantageSweepJob, AdminEndpoints backfill missing SetResolutionState, migration backfill race safety (BEGIN/COMMIT), plus happy-path parse tests and options-validator tests.
+- (none yet)
