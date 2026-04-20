@@ -22,12 +22,12 @@ Observations route to review queue when `confidence < 1.0` and `ReviewStatus=Pen
 
 ## STATUS
 
-- ◯ 1. Fix unit mislabeling (USD → `count`)
-- ◯ 2. Fix certainty=definite on forecasts
-- ◯ 3. Investigate + fix text_quote=null
-- ◯ 4. Strip investing.com market-overview sidebar widgets pre-extraction
-- ◯ 5. Deduplicate / investigate contradictory forecasts from same article
-- ◯ 6. SecMaster resolver debug (NRGV, MRK, FFIV should resolve trivially)
+- ✓ 1. Fix unit mislabeling (USD → `count`)
+- ✓ 2. Fix certainty=definite on forecasts
+- ✓ 3. Investigate + fix text_quote=null
+- ✓ 4. Strip investing.com market-overview sidebar widgets pre-extraction
+- ✓ 5. Deduplicate / investigate contradictory forecasts from same article
+- ✓ 6. SecMaster resolver debug (NRGV, MRK, FFIV should resolve trivially)
 
 ## TASKS
 
@@ -93,4 +93,110 @@ Path B is more robust; path A is cheaper but more fragile.
 
 ## ATTEMPTED
 
-*(empty — plan phase)*
+- PR #183 (2026-04-20): shipped fixes for tasks 1–6 in STATE above. Ready to merge/deploy.
+
+---
+
+# Architecture — Async Resolution Pipeline (follow-on, post-#183)
+
+## GOAL
+
+Pull SecMaster resolution OFF the synchronous extraction hot path. Resolution becomes eventually-consistent via a rate-limit-aware worker that drains a `resolution_pending` queue against upstream providers (Finnhub primary, AlphaVantage nightly sweep).
+
+**Accept criteria**
+
+- `ExtractionProcessor.ProcessBatchAsync` never calls a SecMaster upstream provider directly — only local SecMaster (ExactSQL + FuzzySQL + Vector+RAG hypothesis).
+- Extraction pipeline completes even if Finnhub and AlphaVantage are both unreachable.
+- Observations persist with one of three resolution states: `resolved`, `pending`, `no_resolution`.
+- Resolution worker respects Finnhub's 60/min quota (token bucket, ≤50/min sustained).
+- AlphaVantage's 25/day budget is spent on a nightly sweep of `no_resolution` rows ranked by mention frequency × confidence.
+- New metric `sentinel_resolution_latency_seconds` (histogram) tracks time from observation insert → `resolved`.
+- Existing behavior for already-resolved local hits unchanged (no latency regression).
+
+## ARCH
+
+Today (post-#183):
+`ExtractionProcessor → IDescriptionResolver (wraps ISecMasterClient.ResolveAsync) → SecMaster HybridResolutionService (ExactSQL | FuzzySQL | Vector+RAG | UpstreamDiscovery)` — all synchronous, all inline with extraction.
+
+Target:
+- `ExtractionProcessor` calls a new `ILocalResolver` that returns `{resolution | rag_candidate | null}` using ONLY local steps (no upstream calls, no network I/O beyond the local embedding model).
+- A new `ResolutionWorker` (BackgroundService) drains rows where `resolution_state = pending` against Finnhub via `FinnhubClient` with a token-bucket rate limiter. On resolve: update row + `_catalog.AddAsync` + `_embedding.EmbedInstrumentAsync`.
+- A new scheduled job `AlphaVantageSweepJob` runs nightly, picks top-N `no_resolution` rows by mention frequency × extracted confidence, spends AV's daily budget on the ranked list.
+
+Upstream providers:
+- Finnhub: hot enrichment path (60/min quota, ~1/sec sustained). Already wired in `FinnhubCollector`; reuse its client with rate-limit wrapper.
+- AlphaVantage: cold enrichment path (25/day). Reuse `AlphaVantageCollector` client; extend for single-symbol lookups if needed.
+- Explicit non-goal: no external provider is reached from the synchronous path.
+
+## STATUS
+
+- ✓ 1. Schema: add `resolution_state` + `resolution_hypothesis` to `extracted_observations`
+- ✓ 2. Split `HybridResolutionService` into `LocalHybridResolutionService` (no upstream) + `UpstreamResolutionService` (Finnhub/AV)
+- ✓ 3. `ExtractionProcessor` calls local-only path; marks `resolution_state = pending` when RAG produces a hypothesis
+- ✓ 4. `ResolutionWorker` BackgroundService draining pending queue through Finnhub with token-bucket rate limiter
+- ✓ 5. `AlphaVantageSweepJob` scheduled daily against `no_resolution` backlog
+- ✓ 6. Observability: `sentinel_resolution_latency_seconds`, `sentinel_resolution_queue_depth`, method-tagged resolution counter
+- ✓ 7. Alert rule: `resolution_queue_depth` above sustained threshold → worker stuck / provider down
+- ✓ 8. Review-UI cosmetic: show `pending` / `no_resolution` states distinctly from `resolved`
+
+## TASKS
+
+### 1. Schema migration
+- New column `extracted_observations.resolution_state` (enum: `resolved | pending | no_resolution`) default `pending`.
+- New column `extracted_observations.resolution_hypothesis` (nullable string — the RAG-proposed ticker awaiting verification).
+- EF Core migration via `dotnet ef migrations add AddResolutionState` per CLAUDE.md DATABASE rules.
+- Backfill: existing rows where `instrument_id IS NOT NULL` → `resolved`; else → `no_resolution` (not `pending`; we don't want the worker re-enqueueing 10k historical misses on first boot).
+
+### 2. Service split
+- Extract interface `ILocalResolver` returning `LocalResolutionResult(Resolution?, Candidate?, VectorMatches, RagResponse)`.
+- `HybridResolutionService` implements local-only cascade (Exact → Fuzzy → Vector → RAG). Remove the STEP 6 upstream-discovery branch from this path.
+- New `UpstreamResolutionService` that takes a ticker string and queries Finnhub then (optionally) AV. Owns rate-limit state.
+
+### 3. Hot-path rewrite
+- `ExtractionProcessor.ProcessBatchAsync` uses `ILocalResolver`:
+  - Resolution non-null → mark `resolved`, populate `instrument_id`.
+  - Candidate non-null, resolution null → mark `pending`, store `resolution_hypothesis`.
+  - Both null → mark `no_resolution`, no instrument_id.
+- Remove existing `DescriptionResolver` (its parenthetical-ticker logic moves into the hypothesis layer or stays as a pre-RAG normalization step — TBD; investigate before deciding).
+- Delete the `EnableDiscovery=true` flag from SentinelCollector's Finnhub calls — there's no upstream discovery on the hot path anymore.
+
+### 4. ResolutionWorker
+- BackgroundService that polls `extracted_observations WHERE resolution_state = 'pending' ORDER BY extracted_at ASC LIMIT N`.
+- Token-bucket rate limiter pre-configured to 50/min Finnhub (headroom for other callers of the same key).
+- For each row: try Finnhub with `resolution_hypothesis` first, then raw `description` as fallback.
+- On success: update row + catalog insert + embed.
+- On Finnhub not-found: mark `no_resolution` (AV sweep picks it up).
+- On Finnhub error (429/5xx): leave row `pending`, backoff, retry next tick. Structured log + span error per CLAUDE.md.
+
+### 5. AlphaVantageSweepJob
+- Quartz job, fires daily at 04:00 UTC (low-activity window).
+- Pulls top 25 rows where `resolution_state = 'no_resolution'`, ranked by `COUNT(*) OVER description × avg(confidence)`.
+- Spends AV's 25/day budget one lookup per top row.
+- Same success/failure handling as the worker.
+
+### 6. Observability
+- `sentinel_resolution_latency_seconds` histogram, tagged `{method: local|finnhub|alphavantage}`.
+- `sentinel_resolution_queue_depth` gauge (runs every 30s, counts pending rows).
+- Resolution counter gains a `method` dimension consistent with the worker stages.
+- Grafana panel: stacked area of method breakdown over 24h — self-surfacing health signal.
+
+### 7. Alerting
+- `sentinel_resolution_queue_depth > 500 for 15m` → warning (worker falling behind).
+- `rate(sentinel_resolution_errors{provider=\"finnhub\"}[5m]) > 0.1` → warning.
+- Both route to alert-service + autofix per existing pipeline.
+
+### 8. UI state
+- Review queue endpoint returns `resolution_state` alongside existing fields. Cosmetic; non-blocking for the rest of the work.
+
+## CONTEXT
+
+- Depends on PR #183 merged and deployed (cascade fix is the foundation; re-architecting a broken cascade would be silly).
+- Touches three services: `SentinelCollector`, `SecMaster`, and the resolution worker (probably lives in `SentinelCollector` since it's the owner of `extracted_observations`).
+- Potential collaborator bottleneck: `FinnhubCollector`'s existing rate-limit budget. Need to confirm a 50/min reservation doesn't starve its primary collection workload. Investigate before integration.
+- Deferred until after this: AV batch lookup optimization — AV supports batch `SYMBOL_SEARCH`, ~5× quota efficiency. Nice-to-have, not required.
+- Non-goals for this scope: multi-upstream conflict resolution (e.g. Finnhub says X, AV says Y), upstream caching layer, rate-limit sharing across services.
+
+## ATTEMPTED
+
+- PR #184 (2026-04-20): shipped all 8 tasks for the async resolution pipeline — schema migration (`AddResolutionState`), local/upstream resolver split, hot-path rewrite in `ExtractionProcessor`, `ResolutionWorker` BackgroundService, nightly `AlphaVantageSweepJob`, metrics + queue-depth gauge, alert rules, and review-UI cosmetic state surfacing.
+- Follow-up commit (2026-04-20): review-driven narrow fixes for the Resolved/InstrumentId-null state-machine bug in ResolutionWorker + AlphaVantageSweepJob, AdminEndpoints backfill missing SetResolutionState, migration backfill race safety (BEGIN/COMMIT), plus happy-path parse tests and options-validator tests.
