@@ -5,9 +5,31 @@
 > Contract: §5.2 of the plan.
 
 ## Current phase
-Phase 0 — Operating infrastructure (done; merged to main; tag `redesign-phase0-complete`)
-Next phase: Phase 1 — v2 architecture specification
-Last updated: 2026-04-24T16:45:00Z  <!-- refresh on every write -->
+Phase 0 — DONE (merged to main; tag `redesign-phase0-complete`)
+Phase 1 — starting (v2 architecture specification)
+Last updated: 2026-04-24T17:00:00Z  <!-- refresh on every write -->
+
+## VACATION AUTONOMOUS MODE (2026-04-24 → ~2026-05-01)
+User in Spain (Europe/Madrid, CEST UTC+2). Authorized ops:
+- ✓ `git push origin main` + tag push at phase boundaries (compile+tests green; guard enforces)
+- ✓ Azure Foundry spend — burn freely (ledger tracks)
+- ✓ DDL + ansible prod deploys — rollback image/snapshot must exist
+- ✓ vLLM restart for LoRA training (Phase 3.4) — no pre-notify
+- ✓ Self-schedule: 1200s active, 3600s waits, 4–6h routine progress ntfy
+- Quiet hours: 22:00–05:00 UTC (Madrid 00:00–07:00 local); silent unless RED_FLAG
+- Blocked / ambiguous → ntfy HIGH + wait + poll atlas-claude-reply each wake
+
+HARD STOPS (NEVER auto-execute, always require user approval):
+- ✗ Extraction__AutoApproveEnabled=true (Phase 4.5) — D9 rule, even if audit ≥49/50
+- ✗ Retire v1 code paths (Phase 5.1)
+- ✗ Promote new LoRA as production default
+- ✗ observation_events.proto change
+- ✗ ZFS rollback on live dataset (always clone+promote)
+- ✗ Force push to main
+
+User emergency overrides (ntfy atlas-claude-reply):
+- `HALT` → stop dispatches, freeze STATE.md, wait
+- `HALT AND ROLLBACK` → git reset to last `redesign-phaseN-complete` tag + restart services
 
 ## Last ntfy poll
 topic=atlas-claude-reply last_seen_ts=0 (fresh MCP install; no messages yet)
