@@ -5,9 +5,59 @@
 > Contract: §5.2 of the plan.
 
 ## Current phase
-Phase 0 — DONE (merged to main; tag `redesign-phase0-complete`)
-Phase 1 — starting (v2 architecture specification)
-Last updated: 2026-04-24T17:00:00Z  <!-- refresh on every write -->
+Phase 0 — DONE (tag `redesign-phase0-complete` pushed)
+Phase 1 — DONE (PR #196; tag `redesign-phase1-complete` pushed at 38a2af9)
+Phase 2 — DONE (PR #197; tag `redesign-phase2-complete` pushed at be79ab2; deployed + verified on mercury with flags OFF)
+Phase 3 — DONE (take2b LoRA r=8 alpha=16 with q/k/v/o + gate/up/down MLP layers; epoch-3 chosen; eval FAILED Symbol target but PASSED null-precision; ~half of misses traced to Phase 2.1 candidate-generator quality not LoRA)
+Phase 4.1 — LIVE on 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to extracted_observations_shadow, v6.2 keeps prod). 72h soak.
+Last updated: 2026-05-02T22:35:00Z
+
+## Controlled experiments 2026-05-02 (settle "is the LoRA broken or the pipeline broken?")
+
+User pushed back: "we changed too many variables, change one thing at a time." Set up A/B/C:
+
+- **Exp A** (LoRA-only A/B, no resolver, no schema): v6.2 emits subject_entity 0%, v7-e3 emits 100%, both ~100% JSON-valid. v7-e3 also faster (14s p50 vs 21s) and more selective (172 vs 319 extractions on 50 docs). LoRA training succeeded.
+- **Exp B** (Pipeline only, perfect Opus 4.7 inputs, my-script `q=subj|quote` shape): 56/59 = 95% resolved.
+- **Exp C** (LoRA + pipeline, my-script shape): 25/26 = 96%. Matched B → LoRA emits canonical names well enough.
+- **Production-shape diagnostic** (`q=subj` + `context=quote`, what `SecMasterClient.ResolveLocalFromQuoteAsync` actually sends): triggers RagSynthesis path. Returns `hypothesis="MCD"` (correct) but `instrumentId=null` and `symbol=null`. DeterministicResolver checks `instrumentId != null` and falls through to NoResolution. **This is why production eval showed 0% — the RAG hypothesis is being thrown away.**
+
+### Real bug to fix
+SecMaster's `RagSynthesis` returns the right ticker as `hypothesis` but doesn't materialize an `instrumentId`. Two-line fix candidates:
+1. **SentinelCollector side**: in `DeterministicResolver.TryHybridResolveAsync`, when response has `hypothesis` + null id, call `SecMasterClient.GetBySymbolAsync(hypothesis)` and use that. Cheap, scoped.
+2. **SecMaster side**: in the RagSynthesis branch, after producing the hypothesis, do the by-symbol lookup before returning. Better long-term.
+3. Note `/api/instruments/by-symbol?symbol=MCD` itself returns 404 even though MCD exists. Fix that lookup too or use a different SecMaster endpoint.
+
+### Outputs
+- /opt/ai-inference/training-data/exp-a-lora-ab.{jsonl,report.md}
+- /opt/ai-inference/training-data/exp-b-pipeline-ab-v2.{jsonl,report.md}
+- /opt/ai-inference/training-data/exp-c-end-to-end.{jsonl,report.md}
+- Scripts: SentinelCollector/scripts/experiment_{a,b,c}_*.py
+
+## Phase 3 summary (cumulative spend $447 Azure + ~70h GPU)
+- Take1 (q/k/v/o, r=16): epoch-3 Symbol 25.7% / null-prec 59% — HARD FAIL
+- Take2b (q/k/v/o + gate/up/down MLP, r=8 alpha=16): epoch-3 Symbol 34.5% / null-prec **100%** / JSON-valid 99.8% — Symbol still under 90% target but null-precision passes
+- Sample analysis: ~half the Symbol "misses" are not actual model failures — subject_entity wording differences matched too strictly; over-extraction relative to gold; Phase 2.1 candidate generator returning wrong top-10 (e.g. CMC vs CMCO)
+
+## Phase 4.1 shadow mode setup (live 2026-04-30)
+- New `Extraction__V2Model=sentinel-cove-v7-e3` env var added (lets v2 use a different LoRA than v1)
+- VllmClient + sibling clients (Ollama, CpuOllama, LlamaServer) accept `modelOverride` param
+- MergedExtractionService passes `_options.V2Model`
+- compose.yaml.j2 set: ShadowMode=true, V2EnabledSources__0=fed-rss, V2Model=sentinel-cove-v7-e3, UseV2Pipeline=false (v1 still owns prod), Model=sentinel-cove-v6.2 (unchanged)
+- AutoApproveEnabled stays false (D9 hard stop)
+- Image rollback tag: sentinel-collector:pre-shadow
+
+## Follow-up ideas surfaced 2026-04-30 (added to plan, not built yet)
+1. **RAG-based CandidateGenerator** (~1-2 days): replace SecMaster.SearchInstrumentsAsync bag-of-words text search with a vector embedding RAG over instrument name+aliases+sector. Would address ~half the Symbol misses (CMC vs CMCO type cases) directly without retraining LoRA. Build AFTER Phase 4.1 shadow numbers tell us how big the candidate-generator-quality gap is.
+2. **Gemini MCP fallback resolver** (~2 days): when local SecMaster lookup is low-confidence, ask Gemini (Google Finance grounded) to resolve subject -> ticker. Rule 2.5 in DeterministicResolver between hybrid_resolve and NoResolution. Per-call cost ~$0.001, monthly ~$8-15. Build AFTER Phase 4.1 shadow tells us how often we land in NoResolution.
+3. **Gemma 4 31B Dense pivot** (~3-4 days, fallback only): if all Qwen LoRA iterations fail. Native structured JSON output. New chat template + quant pipeline integration. Defer until shadow + RAG + Gemini all exhausted.
+
+Order: shadow -> data -> decide between (1), (2), (3) based on what shadow shows.
+
+## Phase 1 summary (Azure spend ~$5.30)
+- v7 prompt: 100% JSON-valid, 100% Symbol-correct (resolvable), 100% null-precision on golden corpus
+- Architecture doc: `docs/sentinel-v2-architecture.md` (3077w) + Opus 4.6 cross-review
+- Schema migration `AddV2ObservationFields` committed (unapplied); 6 nullable cols + 2 CONCURRENT indexes + shadow table
+- v7 prompt: `/opt/ai-inference/prompts/sentinel/extract_and_resolve_v7.txt` + variants for fed-speeches/searxng/rss
 
 ## VACATION AUTONOMOUS MODE (2026-04-24 → ~2026-05-01)
 User in Spain (Europe/Madrid, CEST UTC+2). Authorized ops:
