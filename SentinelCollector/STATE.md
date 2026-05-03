@@ -11,8 +11,37 @@ Phase 2 — DONE (PR #197; tag `redesign-phase2-complete` pushed at be79ab2; dep
 Phase 3 — DONE (take2b LoRA r=8 alpha=16 with q/k/v/o + gate/up/down MLP layers; epoch-3 chosen; eval FAILED Symbol target but PASSED null-precision; ~half of misses traced to Phase 2.1 candidate-generator quality not LoRA)
 Phase 4.1 — LIVE since 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to extracted_observations_shadow, v6.2 keeps prod). 72h soak passed.
 Phase 4.2 — DONE 2026-05-02 (PR #198 merged at e38f0c5; tag `redesign-phase4-rag-fix` pushed; RagSynthesis hypothesis materialization + 4 follow-up review fixes deployed; 539/539 tests green; 0 new errors in Loki post-deploy)
-Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). PR-1 DEPLOYED af343c2. PR-2 DEPLOYED 9c50421. PR-3 DEPLOYED eb09f41. PR-4 DEPLOYED 0c44d0d (Finnhub enrichment running — 57% error rate on foreign tickers; see "Foreign-ticker 403 retry loop"). Docs PR #207 merged at <pending>. **PR-4.1 IN PROGRESS — OpenFIGI sister enrichment worker for global coverage (free tier, fixes foreign-ticker loop, populates FIGI/CUSIP/SEDOL/ISIN columns).**
+Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). PR-1 DEPLOYED af343c2. PR-2 DEPLOYED 9c50421. PR-3 DEPLOYED eb09f41. PR-4 DEPLOYED 0c44d0d (Finnhub enrichment — 57% error rate on foreign tickers; see "Foreign-ticker 403 retry loop"). **PR-4.1 MERGED #208 (aafddcb) — pre-deploy: needs `openfigi_api_key` added to vault.yml.**
 Last updated: 2026-05-03T12:55:00Z
+
+## Foreign-ticker 403 retry loop (2026-05-03, post PR-4 deploy)
+
+**Symptom:** PR-4's `CatalogEnrichmentBackgroundService` shows 5 enriched / 8 errors / 1 no_data in first cycle. ~57% error rate.
+
+**Root cause:** Upstream Finnhub returns **403 Forbidden** for foreign-exchange tickers (paid-tier feature). FinnhubCollector's `EnsureSuccessStatusCode()` throws → ASP.NET wraps as 500 → SecMaster (post-PR-4-BLOCKER-fix) treats 500 as transient → retries every 5min forever.
+
+**Symbols affected (sample from logs):** `600809.SS` (Shanghai), `300627.SZ` (Shenzhen), `DXR.TO` (Toronto), `DXR.NE` (NEO Exchange). All non-US listings.
+
+**Trace:**
+```
+SecMaster.CatalogEnrichmentBackgroundService.RunEnrichmentCycleAsync
+  → FinnhubCollectorClient.GetCompanyProfileAsync(600809.SS)
+    → HTTP GET finnhub-collector:8080/api/live/profile/600809.SS
+      → FinnhubCollector.LiveDataEndpoints.GetLiveProfileAsync
+        → FinnhubApiClient.GetCompanyProfileAsync → upstream Finnhub → HTTP 403
+        → EnsureSuccessStatusCode() throws → ASP.NET 500
+      ← HTTP 500
+    ← HttpRequestException (re-thrown by SecMaster post-PR-4 BLOCKER fix)
+  ← per-row catch: LogWarning, no metadata writes (correct for transient!)
+  → next cycle re-attempts → forever
+```
+
+**Bounded by:** FinnhubCollector's 60-token/min rate limit caps the wasted load — but this consumes ~57% of the daily token budget on dead symbols. Useful enrichment throughput is correspondingly throttled.
+
+**Three resolution options (none chosen yet — user decision):**
+1. **Quick fix in SecMaster**: extend the stale-equity query to exclude symbols matching `%.SS|%.SZ|%.TO|%.NE|%.HK|%.SW|%.MX|%.VI|%.L|%.PA|%.DE` (non-US suffix list). Saves the call entirely. ~10 lines, ship today as PR-4.1.
+2. **Right fix in FinnhubCollector**: catch upstream 403 and map to 404 in `LiveDataEndpoints.GetLiveProfileAsync`. Distinguishes "permanent absence" (404) from "transient outage" (5xx) at the service contract layer. Benefits any client of FinnhubCollector. Separate PR, ~1 day.
+3. **Accept current behavior**: foreign tickers retry forever but bounded by rate limit. Useful enrichment still progresses on US-listed rows. Defer fix to post-Phase-4.5.
 
 ## Why PR-2 guards + Gemini aren't exercised in current production (2026-05-03)
 PR-2 deployed cleanly (env vars active, build green, 0 Loki errors). But `secmaster_rag_abstain_total{reason="guard_*"}` and `sentinel_gemini_resolver_calls_total` are at 0 because the new code paths in `DeterministicResolver.TryHybridResolveAsync` (Rule 2) and Rule 2.5 (Gemini) aren't being reached:
@@ -170,9 +199,9 @@ As of 2026-05-03T02:00:00Z:
 | PR-1 | redesign/phase4-precision-secmaster | SecMaster | A (server RAG hardening) + C-server (minScore 0.5→0.75 + endpoint passthrough + RagStrictMode kill switch) | **MERGED #200 @ af343c2 + DEPLOYED 2026-05-03T10:46:44Z. Smoke probes GREEN.** |
 | PR-2 | redesign/phase4-precision-collector | SentinelCollector | B (client guards) + C-client + D (Gemini flip) | **MERGED #202 @ 9c50421 + DEPLOYED 2026-05-03T11:22:40Z. Build green, 0 Loki errors. Guard + Gemini paths inactive until V2 cutover (see "Why PR-2 guards aren't exercised").** |
 | PR-3 | redesign/phase4-embedding-template | SecMaster | E foundation (prose template + schema migration) | **MERGED #204 @ eb09f41 + DEPLOYED 2026-05-03T12:01:51Z. Migration applied; re-embed cycle running.** |
-| PR-4 | redesign/phase4-catalog-enrichment | SecMaster | E body (Finnhub enrichment worker) | DEPLOYED 0c44d0d. 57% error rate on foreign tickers — see Foreign-ticker 403 retry loop section. |
-| PR-4.1 | redesign/phase4-openfigi-enrichment | SecMaster | OpenFIGI sister worker (global coverage; fixes foreign-ticker loop; populates FIGI/CUSIP/SEDOL/ISIN — currently 0%) | IN PROGRESS — implementation dispatched 2026-05-03 |
-| PR-5 | redesign/phase4-fred-dedupe | SecMaster + SentinelCollector | E completion (FRED-pollution remediation) | PENDING — ships after PR-4.1 |
+| PR-4 | redesign/phase4-catalog-enrichment | SecMaster | E body (Finnhub enrichment worker) | **MERGED #206 (0c44d0d) + DEPLOYED 2026-05-03T12:43:00Z. Cycle running: 5 enriched, 8 errors, 1 no_data in first ~5min. Industry 0→8, Sector 27→35, Exchange 42→50.** ⚠ **57% error rate on foreign tickers — see "Foreign-ticker 403 retry loop" below.** |
+| PR-4.1 | redesign/phase4-openfigi-enrichment | SecMaster | OpenFIGI sister worker (global coverage; closes foreign-ticker loop; populates FIGI/CompositeFigi/ShareClassFigi from /v3/mapping; CUSIP/ISIN/SEDOL deferred to PR-4.2) | **MERGED #208 (aafddcb) — pre-deploy: needs `openfigi_api_key` added to vault.yml first.** |
+| PR-5 | redesign/phase4-fred-dedupe | SecMaster + SentinelCollector | E completion (FRED-pollution remediation) | PENDING — ships after PR-4.1 deploy verified |
 
 ## PR-1 deploy verification (2026-05-03T10:48-10:52Z)
 **Smoke probes (via `mcp__secmaster-mcp__hybrid_resolve`):**
