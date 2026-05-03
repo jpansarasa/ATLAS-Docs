@@ -11,8 +11,8 @@ Phase 2 — DONE (PR #197; tag `redesign-phase2-complete` pushed at be79ab2; dep
 Phase 3 — DONE (take2b LoRA r=8 alpha=16 with q/k/v/o + gate/up/down MLP layers; epoch-3 chosen; eval FAILED Symbol target but PASSED null-precision; ~half of misses traced to Phase 2.1 candidate-generator quality not LoRA)
 Phase 4.1 — LIVE since 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to extracted_observations_shadow, v6.2 keeps prod). 72h soak passed.
 Phase 4.2 — DONE 2026-05-02 (PR #198 merged at e38f0c5; tag `redesign-phase4-rag-fix` pushed; RagSynthesis hypothesis materialization + 4 follow-up review fixes deployed; 539/539 tests green; 0 new errors in Loki post-deploy)
-Phase 4.3 — OPEN as of 2026-05-03 — V2 hybrid_subject precision problem (see "Live alert + open decision" below). User: "I need to think about this." No code changes pending.
-Last updated: 2026-05-03T02:00:00Z
+Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). PR-1 OPEN as #200 awaiting user review/merge.
+Last updated: 2026-05-03T10:42:00Z
 
 ## Live alert + open decision (2026-05-03)
 **Alert** SentinelLowResolutionRate (P4 warning) fired at 21:27 local. Alert rule: `sum(rate(sentinel_secmaster_resolution_total{status="resolved"}[5m])) / sum(rate(sentinel_secmaster_resolution_total[5m])) < 0.5 for 15m` (`deployment/artifacts/monitoring/alerts/sentinel.yml:80`).
@@ -138,9 +138,9 @@ persistent Monitor `bybnaj6r1` re-armed 2026-05-03 — fires per user message on
 
 ## Last-verified infra state
 As of 2026-05-03T02:00:00Z:
-- last commit on main: e38f0c5 fix(sentinel): materialize SecMaster RagSynthesis hypothesis into instrument_id (#198)
+- last commit on main: e38f0c5 fix(sentinel): materialize SecMaster RagSynthesis hypothesis into instrument_id (#198) — PR #199 (chore/state-phase4-rag-fix STATE.md update) merged 2026-05-03T09:26:50Z
 - tags: redesign-phase0-complete, redesign-phase1-complete, redesign-phase2-complete, redesign-phase4-rag-fix (all on main)
-- active feature branch: chore/state-phase4-rag-fix (PR #199 OPEN — STATE.md update only; docs-only push allowed)
+- active feature branch: redesign/phase4-precision-secmaster (PR-1 of 5 in progress — Lever A + Lever C-server)
 - vllm-server: UP, serving sentinel-cove-v6.2 + sentinel-cove-v7-e1/e2/e3 LoRAs (v7-e3 active in V2 shadow)
 - sentinel-collector: UP since 2026-05-02T22:59:57Z (fix-applied build)
 - secmaster + secmaster-mcp: UP (10.4.1.200:8080 internal-only; no host port)
@@ -152,7 +152,17 @@ As of 2026-05-03T02:00:00Z:
 - Phase 4 audit verdict (2026-04-24): RED — ~58% wrong Symbol on async Finnhub path. NOT yet re-audited post Phase 4.2; precision regression revealed 2026-05-03 (see "Live alert + open decision").
 
 ## Open PRs
-- #199 chore(sentinel): STATE.md — Phase 4.2 (RagSynthesis fix) DONE — branch chore/state-phase4-rag-fix; docs-only; awaiting user merge
+- #200 Sentinel V2 precision — PR-1: SecMaster RAG hardening + minScore raise (branch redesign/phase4-precision-secmaster) — awaiting user review
+
+## Phase 4.3 PR portfolio (5 PRs, plan approved 2026-05-03)
+
+| PR | Branch | Service | Levers | Status |
+|---|---|---|---|---|
+| PR-1 | redesign/phase4-precision-secmaster | SecMaster | A (server RAG hardening) + C-server (minScore 0.5→0.75 + endpoint passthrough + RagStrictMode kill switch) | OPEN as #200 — 179/179 tests, 0 errors/warnings; awaiting review |
+| PR-2 | redesign/phase4-precision-collector | SentinelCollector | B (client guards) + C-client + D (Gemini flip) | PENDING PR-1 merge + deploy |
+| PR-3 | redesign/phase4-embedding-template | SecMaster | E foundation (prose template + schema migration) | PENDING |
+| PR-4 | redesign/phase4-catalog-enrichment | SecMaster | E body (Finnhub enrichment worker) | PENDING |
+| PR-5 | redesign/phase4-fred-dedupe | SecMaster + SentinelCollector | E completion (FRED-pollution remediation) | PENDING |
 
 ## Phase 0 artifact audit
 | Artifact | Status |
@@ -176,6 +186,10 @@ As of 2026-05-03T02:00:00Z:
 | 2026-04-24T16:00:00Z | 0.4 | general-purpose | Sonnet | write azure_oracle_client.py + smoke Haiku 4.5 | done (3/3 lines; $0.000222) | SentinelCollector/scripts/azure_oracle_client.py (428 LoC) | (uncommitted) |
 | 2026-04-24T16:09:00Z | 0.5 | general-purpose | Opus | golden regression corpus (20 slugs) | done (awaiting user spot-check); 18 exact-spec, 2 deviations (slots 03, 08 — see report) | SentinelCollector/tests/Golden/01..20-*.json | (uncommitted) |
 | 2026-04-24T16:20:00Z | 0.5-fix | general-purpose | Opus | re-pick slots 03, 08 per user direction | done (03 → fed-press-monetary id=45 DPCREDIT/DFEDTARL/DFEDTARU; 08 → Challenger severance id=3516 pure skip) | SentinelCollector/tests/Golden/{03-fed-speech,08-historical-avg}.json | (uncommitted) |
+| 2026-05-03T10:30:00Z | 4.3.PR-1.impl | general-purpose | Sonnet | Implement Lever A + Lever C-server (RAG hardening, NameTokenizer, NO_MATCH, asset-class filter, minScore 0.5→0.75, RagStrictMode kill switch) | done — 179/179 tests, 0 errors, 0 warnings; agent flagged 2 follow-ups for PR-2 | SecMaster/src/Services/{NameTokenizer.cs,RagService.cs,HybridResolutionService.cs,LocalResolutionResult.cs,ILocalResolver.cs}; SecMaster/tests/Services/* | de4182c |
+| 2026-05-03T10:36:00Z | 4.3.PR-1.review | code-reviewer | Sonnet | Validate PR-1 implementation against plan + CLAUDE.md | done — FIX-REQUIRED: appsettings DefaultMinScore not raised; ILocalResolver default still 0.5f; LogDebug→LogInformation hot-path regression; 4th NIT noted | report inlined to supervisor | (review-only) |
+| 2026-05-03T10:40:00Z | 4.3.PR-1.fix | supervisor | Opus | Apply 4 validator-surfaced fixes directly (small + targeted) | done — appsettings.json, ILocalResolver.cs, RagService.cs, compose.yaml.j2 | 260830c | 260830c |
+| 2026-05-03T10:42:00Z | 4.3.PR-1.push | supervisor | Opus | Push branch + open PR #200 against main | done — PR #200 OPEN | https://github.com/jpansarasa/ATLAS/pull/200 | 260830c |
 
 ## Next action queue (ordered)
 1. Dispatch subagent: create Phase 0 agent-prompt templates (update_claude_md.md, preflight_backups.md, azure_oracle_client.md, curate_golden_corpus.md, generic_review.md, generic_compile_test.md) at SentinelCollector/scripts/agent-prompts/
