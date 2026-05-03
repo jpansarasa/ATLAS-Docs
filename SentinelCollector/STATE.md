@@ -13,8 +13,18 @@ Phase 4.1 — LIVE since 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to ex
 Phase 4.2 — DONE 2026-05-02 (PR #198 merged at e38f0c5; tag `redesign-phase4-rag-fix` pushed; RagSynthesis hypothesis materialization + 4 follow-up review fixes deployed; 539/539 tests green; 0 new errors in Loki post-deploy)
 Phase 4.3 — **DONE 2026-05-03** — V2 precision fix portfolio shipped. All 5 PRs (+ 1 hotfix) deployed and verified. Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. PR-1 af343c2 (RAG strict mode). PR-2 9c50421 (client guards + Gemini). PR-3 eb09f41 (prose template + schema; re-embed 100% v2). PR-4 0c44d0d (Finnhub enrichment). PR-4.1 aafddcb (OpenFIGI sister worker; vault entry added). PR-5 4941959 (FRED-pollution gating + dedupe endpoint). PR-5.1 hotfix abe80f7 (transaction-strategy fix); dedupe ran cleanly: **546 merged / 0 errors**, idempotency confirmed. 546 polluted rows soft-deleted; Finnhub+OpenFIGI workers re-registering them as fresh Equity rows.
 
-Phase 4.4 — IN PROGRESS as of 2026-05-03 — wire ResolutionWorker through DeterministicResolver so PR-2's client guards + Gemini fallback apply to V2 async resolution path (currently inactive on V2 shadow per "Why PR-2 guards aren't exercised" section). Last open follow-up before Phase 4.5 cutover.
-Last updated: 2026-05-03T12:55:00Z
+Phase 4.4 — **DONE 2026-05-03** — async ResolutionWorker token-overlap guard shipped (PR #212 merged 2148065). Real Finnhub false positives caught in production within minutes of deploy: MATCH.BK→"AI job cuts", 4447.T→"PBS layoffs", W7L.L→"ARPA". Metric label cardinality follow-up fix (commit e115e6a) aligned guard increments to existing 3-label convention `{status, resolution_state, method}`.
+
+Phase 4.5 — **NEXT** — V2 production cutover. Gates: fresh ≥49/50 audit (D9 hard stop), then `Extraction__UseV2Pipeline=true` env flip + rollback tag.
+
+## Catalog state (2026-05-03T18:00Z, post-Phase-4.4)
+- 8776 active instruments (9305 pre-dedupe; 546 soft-deleted, +17 net new equity re-registered)
+- Sector 2.5% / Industry 1.8% / Country 59.7% / Exchange 2.6% / Description 98.8% / FIGI 2.1% / CUSIP 0%
+- Embeddings: 9322 v2, 0 null/v1
+- OpenFIGI worker: 366 enriched / 34 no_data / **0 errors**
+- Finnhub worker: 0 enriched / **29 errors** (foreign-ticker 403 loop unfixed; deferred follow-up)
+
+Last updated: 2026-05-03T18:02:00Z
 
 ## Foreign-ticker 403 retry loop (2026-05-03, post PR-4 deploy)
 
