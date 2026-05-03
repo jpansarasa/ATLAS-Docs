@@ -11,8 +11,8 @@ Phase 2 — DONE (PR #197; tag `redesign-phase2-complete` pushed at be79ab2; dep
 Phase 3 — DONE (take2b LoRA r=8 alpha=16 with q/k/v/o + gate/up/down MLP layers; epoch-3 chosen; eval FAILED Symbol target but PASSED null-precision; ~half of misses traced to Phase 2.1 candidate-generator quality not LoRA)
 Phase 4.1 — LIVE since 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to extracted_observations_shadow, v6.2 keeps prod). 72h soak passed.
 Phase 4.2 — DONE 2026-05-02 (PR #198 merged at e38f0c5; tag `redesign-phase4-rag-fix` pushed; RagSynthesis hypothesis materialization + 4 follow-up review fixes deployed; 539/539 tests green; 0 new errors in Loki post-deploy)
-Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). **PR-1 MERGED + DEPLOYED 2026-05-03T10:46:44Z (commit af343c2). Smoke probes GREEN.**
-Last updated: 2026-05-03T10:52:00Z
+Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). PR-1 MERGED + DEPLOYED 2026-05-03T10:46:44Z (commit af343c2). Docs PR #201 merged at 0ca10cc. **PR-2 IN PROGRESS — implementation dispatched 2026-05-03.**
+Last updated: 2026-05-03T11:10:00Z
 
 ## Live alert + open decision (2026-05-03)
 **Alert** SentinelLowResolutionRate (P4 warning) fired at 21:27 local. Alert rule: `sum(rate(sentinel_secmaster_resolution_total{status="resolved"}[5m])) / sum(rate(sentinel_secmaster_resolution_total[5m])) < 0.5 for 15m` (`deployment/artifacts/monitoring/alerts/sentinel.yml:80`).
