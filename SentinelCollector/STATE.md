@@ -11,8 +11,8 @@ Phase 2 — DONE (PR #197; tag `redesign-phase2-complete` pushed at be79ab2; dep
 Phase 3 — DONE (take2b LoRA r=8 alpha=16 with q/k/v/o + gate/up/down MLP layers; epoch-3 chosen; eval FAILED Symbol target but PASSED null-precision; ~half of misses traced to Phase 2.1 candidate-generator quality not LoRA)
 Phase 4.1 — LIVE since 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to extracted_observations_shadow, v6.2 keeps prod). 72h soak passed.
 Phase 4.2 — DONE 2026-05-02 (PR #198 merged at e38f0c5; tag `redesign-phase4-rag-fix` pushed; RagSynthesis hypothesis materialization + 4 follow-up review fixes deployed; 539/539 tests green; 0 new errors in Loki post-deploy)
-Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). PR-1 MERGED + DEPLOYED 2026-05-03T10:46:44Z (af343c2). PR-2 MERGED #202 (9c50421) + DEPLOYED 2026-05-03T11:22:40Z. Docs PR #203 merged at 0465b3f. **PR-3 IN PROGRESS — implementation dispatched 2026-05-03 (embedding template + schema migration; affects both V1 sync resolution and V2 async ResolutionWorker via SecMaster RAG quality).**
-Last updated: 2026-05-03T11:35:00Z
+Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). PR-1 DEPLOYED af343c2. PR-2 DEPLOYED 9c50421 (guards inactive until V2 cutover). **PR-3 MERGED #204 (eb09f41) + DEPLOYED 2026-05-03T12:01:51Z. Migration ran cleanly (4 new columns + 2 indexes); re-embed cycle rotating 9286 instruments to v2 (~25min wall time at 100ms/row throttle).**
+Last updated: 2026-05-03T12:05:00Z
 
 ## Why PR-2 guards + Gemini aren't exercised in current production (2026-05-03)
 PR-2 deployed cleanly (env vars active, build green, 0 Loki errors). But `secmaster_rag_abstain_total{reason="guard_*"}` and `sentinel_gemini_resolver_calls_total` are at 0 because the new code paths in `DeterministicResolver.TryHybridResolveAsync` (Rule 2) and Rule 2.5 (Gemini) aren't being reached:
@@ -169,7 +169,7 @@ As of 2026-05-03T02:00:00Z:
 |---|---|---|---|---|
 | PR-1 | redesign/phase4-precision-secmaster | SecMaster | A (server RAG hardening) + C-server (minScore 0.5→0.75 + endpoint passthrough + RagStrictMode kill switch) | **MERGED #200 @ af343c2 + DEPLOYED 2026-05-03T10:46:44Z. Smoke probes GREEN.** |
 | PR-2 | redesign/phase4-precision-collector | SentinelCollector | B (client guards) + C-client + D (Gemini flip) | **MERGED #202 @ 9c50421 + DEPLOYED 2026-05-03T11:22:40Z. Build green, 0 Loki errors. Guard + Gemini paths inactive until V2 cutover (see "Why PR-2 guards aren't exercised").** |
-| PR-3 | redesign/phase4-embedding-template | SecMaster | E foundation (prose template + schema migration) | IN PROGRESS — implementation dispatched 2026-05-03 |
+| PR-3 | redesign/phase4-embedding-template | SecMaster | E foundation (prose template + schema migration) | **MERGED #204 @ eb09f41 + DEPLOYED 2026-05-03T12:01:51Z. Migration applied; re-embed cycle running.** |
 | PR-4 | redesign/phase4-catalog-enrichment | SecMaster | E body (Finnhub enrichment worker) | PENDING |
 | PR-5 | redesign/phase4-fred-dedupe | SecMaster + SentinelCollector | E completion (FRED-pollution remediation) | PENDING |
 
