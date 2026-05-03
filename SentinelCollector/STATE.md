@@ -11,7 +11,9 @@ Phase 2 — DONE (PR #197; tag `redesign-phase2-complete` pushed at be79ab2; dep
 Phase 3 — DONE (take2b LoRA r=8 alpha=16 with q/k/v/o + gate/up/down MLP layers; epoch-3 chosen; eval FAILED Symbol target but PASSED null-precision; ~half of misses traced to Phase 2.1 candidate-generator quality not LoRA)
 Phase 4.1 — LIVE since 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to extracted_observations_shadow, v6.2 keeps prod). 72h soak passed.
 Phase 4.2 — DONE 2026-05-02 (PR #198 merged at e38f0c5; tag `redesign-phase4-rag-fix` pushed; RagSynthesis hypothesis materialization + 4 follow-up review fixes deployed; 539/539 tests green; 0 new errors in Loki post-deploy)
-Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). PR-1 DEPLOYED af343c2. PR-2 DEPLOYED 9c50421. PR-3 DEPLOYED eb09f41. PR-4 DEPLOYED 0c44d0d (Finnhub enrichment — 57% error rate on foreign tickers; see "Foreign-ticker 403 retry loop"). **PR-4.1 MERGED #208 (aafddcb) — pre-deploy: needs `openfigi_api_key` added to vault.yml.**
+Phase 4.3 — **DONE 2026-05-03** — V2 precision fix portfolio shipped. All 5 PRs (+ 1 hotfix) deployed and verified. Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. PR-1 af343c2 (RAG strict mode). PR-2 9c50421 (client guards + Gemini). PR-3 eb09f41 (prose template + schema; re-embed 100% v2). PR-4 0c44d0d (Finnhub enrichment). PR-4.1 aafddcb (OpenFIGI sister worker; vault entry added). PR-5 4941959 (FRED-pollution gating + dedupe endpoint). PR-5.1 hotfix abe80f7 (transaction-strategy fix); dedupe ran cleanly: **546 merged / 0 errors**, idempotency confirmed. 546 polluted rows soft-deleted; Finnhub+OpenFIGI workers re-registering them as fresh Equity rows.
+
+Phase 4.4 — IN PROGRESS as of 2026-05-03 — wire ResolutionWorker through DeterministicResolver so PR-2's client guards + Gemini fallback apply to V2 async resolution path (currently inactive on V2 shadow per "Why PR-2 guards aren't exercised" section). Last open follow-up before Phase 4.5 cutover.
 Last updated: 2026-05-03T12:55:00Z
 
 ## Foreign-ticker 403 retry loop (2026-05-03, post PR-4 deploy)
@@ -201,7 +203,7 @@ As of 2026-05-03T02:00:00Z:
 | PR-3 | redesign/phase4-embedding-template | SecMaster | E foundation (prose template + schema migration) | **MERGED #204 @ eb09f41 + DEPLOYED 2026-05-03T12:01:51Z. Migration applied; re-embed cycle running.** |
 | PR-4 | redesign/phase4-catalog-enrichment | SecMaster | E body (Finnhub enrichment worker) | **MERGED #206 (0c44d0d) + DEPLOYED 2026-05-03T12:43:00Z. Cycle running: 5 enriched, 8 errors, 1 no_data in first ~5min. Industry 0→8, Sector 27→35, Exchange 42→50.** ⚠ **57% error rate on foreign tickers — see "Foreign-ticker 403 retry loop" below.** |
 | PR-4.1 | redesign/phase4-openfigi-enrichment | SecMaster | OpenFIGI sister worker (global coverage; closes foreign-ticker loop; populates FIGI/CompositeFigi/ShareClassFigi from /v3/mapping; CUSIP/ISIN/SEDOL deferred to PR-4.2) | **MERGED #208 (aafddcb) — pre-deploy: needs `openfigi_api_key` added to vault.yml first.** |
-| PR-5 | redesign/phase4-fred-dedupe | SecMaster + SentinelCollector | E completion (FRED-pollution remediation) | IN PROGRESS — implementation dispatched 2026-05-03 |
+| PR-5 | redesign/phase4-fred-dedupe | SecMaster + SentinelCollector | E completion (FRED-pollution remediation) | **DEPLOYED 4941959; hotfix PR-5.1 (abe80f7) for NpgsqlRetryingExecutionStrategy. Dedupe ran: 546 merged / 0 errors / idempotency confirmed.** |
 
 ## PR-1 deploy verification (2026-05-03T10:48-10:52Z)
 **Smoke probes (via `mcp__secmaster-mcp__hybrid_resolve`):**
