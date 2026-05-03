@@ -201,7 +201,7 @@ As of 2026-05-03T02:00:00Z:
 | PR-3 | redesign/phase4-embedding-template | SecMaster | E foundation (prose template + schema migration) | **MERGED #204 @ eb09f41 + DEPLOYED 2026-05-03T12:01:51Z. Migration applied; re-embed cycle running.** |
 | PR-4 | redesign/phase4-catalog-enrichment | SecMaster | E body (Finnhub enrichment worker) | **MERGED #206 (0c44d0d) + DEPLOYED 2026-05-03T12:43:00Z. Cycle running: 5 enriched, 8 errors, 1 no_data in first ~5min. Industry 0→8, Sector 27→35, Exchange 42→50.** ⚠ **57% error rate on foreign tickers — see "Foreign-ticker 403 retry loop" below.** |
 | PR-4.1 | redesign/phase4-openfigi-enrichment | SecMaster | OpenFIGI sister worker (global coverage; closes foreign-ticker loop; populates FIGI/CompositeFigi/ShareClassFigi from /v3/mapping; CUSIP/ISIN/SEDOL deferred to PR-4.2) | **MERGED #208 (aafddcb) — pre-deploy: needs `openfigi_api_key` added to vault.yml first.** |
-| PR-5 | redesign/phase4-fred-dedupe | SecMaster + SentinelCollector | E completion (FRED-pollution remediation) | PENDING — ships after PR-4.1 deploy verified |
+| PR-5 | redesign/phase4-fred-dedupe | SecMaster + SentinelCollector | E completion (FRED-pollution remediation) | IN PROGRESS — implementation dispatched 2026-05-03 |
 
 ## PR-1 deploy verification (2026-05-03T10:48-10:52Z)
 **Smoke probes (via `mcp__secmaster-mcp__hybrid_resolve`):**
