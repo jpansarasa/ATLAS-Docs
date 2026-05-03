@@ -11,8 +11,8 @@ Phase 2 — DONE (PR #197; tag `redesign-phase2-complete` pushed at be79ab2; dep
 Phase 3 — DONE (take2b LoRA r=8 alpha=16 with q/k/v/o + gate/up/down MLP layers; epoch-3 chosen; eval FAILED Symbol target but PASSED null-precision; ~half of misses traced to Phase 2.1 candidate-generator quality not LoRA)
 Phase 4.1 — LIVE since 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to extracted_observations_shadow, v6.2 keeps prod). 72h soak passed.
 Phase 4.2 — DONE 2026-05-02 (PR #198 merged at e38f0c5; tag `redesign-phase4-rag-fix` pushed; RagSynthesis hypothesis materialization + 4 follow-up review fixes deployed; 539/539 tests green; 0 new errors in Loki post-deploy)
-Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). PR-1 OPEN as #200 awaiting user review/merge.
-Last updated: 2026-05-03T10:42:00Z
+Phase 4.3 — IN PROGRESS as of 2026-05-03 — V2 precision fix portfolio. Plan approved: 5 PRs across 5 levers (server RAG hardening, client guards, minScore raise, Gemini fallback flip, catalog enrichment + FRED dedupe). Plan file: `/home/james/.claude/plans/let-s-plan-this-in-mighty-boot.md`. Target: ≥95% precision on V2 shadow audit (recall may dip below V1's 58%). **PR-1 MERGED + DEPLOYED 2026-05-03T10:46:44Z (commit af343c2). Smoke probes GREEN.**
+Last updated: 2026-05-03T10:52:00Z
 
 ## Live alert + open decision (2026-05-03)
 **Alert** SentinelLowResolutionRate (P4 warning) fired at 21:27 local. Alert rule: `sum(rate(sentinel_secmaster_resolution_total{status="resolved"}[5m])) / sum(rate(sentinel_secmaster_resolution_total[5m])) < 0.5 for 15m` (`deployment/artifacts/monitoring/alerts/sentinel.yml:80`).
@@ -152,17 +152,43 @@ As of 2026-05-03T02:00:00Z:
 - Phase 4 audit verdict (2026-04-24): RED — ~58% wrong Symbol on async Finnhub path. NOT yet re-audited post Phase 4.2; precision regression revealed 2026-05-03 (see "Live alert + open decision").
 
 ## Open PRs
-- #200 Sentinel V2 precision — PR-1: SecMaster RAG hardening + minScore raise (branch redesign/phase4-precision-secmaster) — awaiting user review
+- (none)
 
 ## Phase 4.3 PR portfolio (5 PRs, plan approved 2026-05-03)
 
 | PR | Branch | Service | Levers | Status |
 |---|---|---|---|---|
-| PR-1 | redesign/phase4-precision-secmaster | SecMaster | A (server RAG hardening) + C-server (minScore 0.5→0.75 + endpoint passthrough + RagStrictMode kill switch) | OPEN as #200 — 179/179 tests, 0 errors/warnings; awaiting review |
-| PR-2 | redesign/phase4-precision-collector | SentinelCollector | B (client guards) + C-client + D (Gemini flip) | PENDING PR-1 merge + deploy |
+| PR-1 | redesign/phase4-precision-secmaster | SecMaster | A (server RAG hardening) + C-server (minScore 0.5→0.75 + endpoint passthrough + RagStrictMode kill switch) | **MERGED #200 @ af343c2 + DEPLOYED 2026-05-03T10:46:44Z. Smoke probes GREEN.** |
+| PR-2 | redesign/phase4-precision-collector | SentinelCollector | B (client guards) + C-client + D (Gemini flip) | NEXT — ready to start |
 | PR-3 | redesign/phase4-embedding-template | SecMaster | E foundation (prose template + schema migration) | PENDING |
 | PR-4 | redesign/phase4-catalog-enrichment | SecMaster | E body (Finnhub enrichment worker) | PENDING |
 | PR-5 | redesign/phase4-fred-dedupe | SecMaster + SentinelCollector | E completion (FRED-pollution remediation) | PENDING |
+
+## PR-1 deploy verification (2026-05-03T10:48-10:52Z)
+**Smoke probes (via `mcp__secmaster-mcp__hybrid_resolve`):**
+- ✓ `Klarna Inc` → method=RagSynthesis, **answer="NO_MATCH"**, resolution=null. (Pre-PR: returned MRNA hypothesis. Fix confirmed.)
+- ✓ `Micron Technology Inc` → method=RagSynthesis, **answer="NO_MATCH"**, resolution=null. (Pre-PR: would return MCHP. Fix confirmed.)
+- ✓ `Equinix Inc` → method=FuzzySql → EQIX/EQUINIX INC. Positive case still resolves.
+- ✓ `AAPL` → method=ExactSql → AAPL/Apple Inc. V1 sanity probe passes.
+- ✓ `Apple Inc` → method=FuzzySql → AAPL. V1 sanity probe passes.
+- ⚠ `supramax index` (no Inc/Corp suffix) → method=VectorSearch → 100.HK/MiniMax Group Inc. **Asset-class filter does NOT fire** (suffix-gated by design); RAG verification doesn't apply (resolved at vector STEP 3). PR-2 client-side token-overlap guard will catch this universally.
+
+**Health:** secmaster Healthy; database connected; 9281 instruments, 7784 mappings.
+
+**Loki errors (post-deploy 5min window 10:46-10:50Z):**
+- secmaster: 0 errors
+- sentinel-collector: 0 errors
+
+**Metrics last 10min:**
+- `secmaster_rag_abstain_total{reason="no_match_literal"}` rate: 7.07/10m (Ollama returning NO_MATCH)
+- `secmaster_rag_abstain_total{reason="token_overlap_zero"}` rate: 2.36/10m (verification pass rejecting RAG hypothesis)
+- `sum(rate(sentinel_secmaster_resolution_total{status="resolved"}[10m])) / sum(rate(sentinel_secmaster_resolution_total[10m]))` = ~12% (pre-deploy 30min was 0-11%, post-deploy 15-19%; no regression vs immediate pre-deploy state)
+
+**Note** STATE.md's earlier "58% V1 prod resolved" baseline was from a different counting method (extracted_observations row counts at 2026-05-03T02:00Z); current realtime metric was already low pre-PR. Recall hit from minScore raise is hard to disentangle from background variance — will reassess after PR-2 ships precision-side guards.
+
+**Kill switches active in compose:**
+- `SemanticSearch__RagStrictMode=true` (env knob; flip to `false` reverts prompt+NO_MATCH+token-overlap+asset-class filter)
+- `SemanticSearch__DefaultMinScore=0.75` (env knob; flip to `0.5` reverts threshold raise)
 
 ## Phase 0 artifact audit
 | Artifact | Status |
@@ -190,6 +216,8 @@ As of 2026-05-03T02:00:00Z:
 | 2026-05-03T10:36:00Z | 4.3.PR-1.review | code-reviewer | Sonnet | Validate PR-1 implementation against plan + CLAUDE.md | done — FIX-REQUIRED: appsettings DefaultMinScore not raised; ILocalResolver default still 0.5f; LogDebug→LogInformation hot-path regression; 4th NIT noted | report inlined to supervisor | (review-only) |
 | 2026-05-03T10:40:00Z | 4.3.PR-1.fix | supervisor | Opus | Apply 4 validator-surfaced fixes directly (small + targeted) | done — appsettings.json, ILocalResolver.cs, RagService.cs, compose.yaml.j2 | 260830c | 260830c |
 | 2026-05-03T10:42:00Z | 4.3.PR-1.push | supervisor | Opus | Push branch + open PR #200 against main | done — PR #200 OPEN | https://github.com/jpansarasa/ATLAS/pull/200 | 260830c |
+| 2026-05-03T10:46:44Z | 4.3.PR-1.deploy | supervisor | Opus | Build secmaster:latest + ansible deploy --tags secmaster | done — secmaster Up; 0 Loki errors in 5min window | /opt/ai-inference (deployed) | af343c2 |
+| 2026-05-03T10:50:00Z | 4.3.PR-1.smoke | supervisor | Opus | Smoke probes via secmaster-mcp + Loki + Prometheus | done — Klarna/Micron NO_MATCH (fix confirmed); EQIX/AAPL still resolve; supramax still wrong (PR-2 will catch); RAG abstain metric firing | (probes inline in STATE.md) | af343c2 |
 
 ## Next action queue (ordered)
 1. Dispatch subagent: create Phase 0 agent-prompt templates (update_claude_md.md, preflight_backups.md, azure_oracle_client.md, curate_golden_corpus.md, generic_review.md, generic_compile_test.md) at SentinelCollector/scripts/agent-prompts/
