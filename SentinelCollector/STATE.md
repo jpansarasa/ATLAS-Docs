@@ -9,8 +9,37 @@ Phase 0 — DONE (tag `redesign-phase0-complete` pushed)
 Phase 1 — DONE (PR #196; tag `redesign-phase1-complete` pushed at 38a2af9)
 Phase 2 — DONE (PR #197; tag `redesign-phase2-complete` pushed at be79ab2; deployed + verified on mercury with flags OFF)
 Phase 3 — DONE (take2b LoRA r=8 alpha=16 with q/k/v/o + gate/up/down MLP layers; epoch-3 chosen; eval FAILED Symbol target but PASSED null-precision; ~half of misses traced to Phase 2.1 candidate-generator quality not LoRA)
-Phase 4.1 — LIVE on 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to extracted_observations_shadow, v6.2 keeps prod). 72h soak.
-Last updated: 2026-05-02T22:35:00Z
+Phase 4.1 — LIVE since 2026-04-30 (shadow mode for fed-rss; v7-e3 writes to extracted_observations_shadow, v6.2 keeps prod). 72h soak passed.
+Phase 4.2 — DONE 2026-05-02 (PR #198 merged at e38f0c5; tag `redesign-phase4-rag-fix` pushed; RagSynthesis hypothesis materialization + 4 follow-up review fixes deployed; 539/539 tests green; 0 new errors in Loki post-deploy)
+Phase 4.3 — OPEN as of 2026-05-03 — V2 hybrid_subject precision problem (see "Live alert + open decision" below). User: "I need to think about this." No code changes pending.
+Last updated: 2026-05-03T02:00:00Z
+
+## Live alert + open decision (2026-05-03)
+**Alert** SentinelLowResolutionRate (P4 warning) fired at 21:27 local. Alert rule: `sum(rate(sentinel_secmaster_resolution_total{status="resolved"}[5m])) / sum(rate(sentinel_secmaster_resolution_total[5m])) < 0.5 for 15m` (`deployment/artifacts/monitoring/alerts/sentinel.yml:80`).
+
+**Real numbers** (last 30m as of update):
+- V1 prod (sentinel-collector → extracted_observations): **96/164 = 58% resolved** — healthy
+- V2 shadow (extracted_observations_shadow): **50/144 = 35% resolved** — below alert threshold
+- Pre-fix V2 was 0%. Phase 4.2 fix is doing its job; precision is the new bottleneck.
+
+**Precision problem** Spot-check of V2 hybrid_subject "successful" matches showed ~50%+ are bound to the WRONG instrument:
+- ✓ Equinix→EQIX, Nike→NKE, IMAX→IMAX, Savara→SVRA, Digital Realty→DLR, Scorpio Tankers→STNG
+- ✗ Klarna→MRNA (Moderna), Micron→MCHP (Microchip), Wingstop→WKSP (real: WING), ClearSign Combustion→CLSK (CleanSpark), Phreesia→FFZY (real: PHR), EPA→AEP (American Electric Power), supramax index→SPX (S&P 500), Forgent Power→FTNT (Fortinet), Klarna→MRNA
+
+**Root cause hypothesis** SecMaster's vector search + RAG hypothesis matches on embedding similarity, not entity identity. Two contributing factors:
+1. FRED catalog backfill polluted symbol space — many tickers got hijacked as Economic Indicators with wrong names (e.g. ALHC→"Alignment Healthcare revenue", MU→"Aroundtown share buyback", CBOE→"California consumer confidence index volatility").
+2. minScore threshold (0.6 in `ResolveLocalFromQuoteAsync`) is too generous; nearest-neighbor often shares embedding space without sharing identity.
+
+**Triage options presented to user (none chosen yet)**
+1. Roll back PR #198 → restores 0% V2 resolved, no false positives. Counterproductive.
+2. Raise SecMaster `minScore` 0.6 → 0.85+ (recall ↓ for precision ↑)
+3. Name-overlap guard in `DeterministicResolver`: only accept materialized lookup if `lookup.Name` shares a token with `subject_entity`
+4. **(my recommendation)** Asset-class hint: if subject ends in Inc/Corp/Ltd, reject candidates with `asset_class IN ('Indicator','Economic','Economic Indicator')`. Directly attacks the FRED-overlap problem (Micron→MCHP, supramax→SPX, EPA→AEP all fit).
+5. Acknowledge alert + plan precision PR; V2 is shadow-only, no immediate prod harm.
+
+**Containment** V2 still shadow-only (`UseV2Pipeline=false`, only fed-rss source opted in). False positives stay in `extracted_observations_shadow`, do NOT reach event bus / threshold engine / alert path. Production extractions go through V1 (sentinel-cove-v6.2), unaffected.
+
+**Open question** User to decide: option 2/3/4/5 or new direction. Any code change needs new branch (current chore/state-phase4-rag-fix is docs-only; redesign/phase3-training merged + deleted).
 
 ## Controlled experiments 2026-05-02 (settle "is the LoRA broken or the pipeline broken?")
 
@@ -21,11 +50,14 @@ User pushed back: "we changed too many variables, change one thing at a time." S
 - **Exp C** (LoRA + pipeline, my-script shape): 25/26 = 96%. Matched B → LoRA emits canonical names well enough.
 - **Production-shape diagnostic** (`q=subj` + `context=quote`, what `SecMasterClient.ResolveLocalFromQuoteAsync` actually sends): triggers RagSynthesis path. Returns `hypothesis="MCD"` (correct) but `instrumentId=null` and `symbol=null`. DeterministicResolver checks `instrumentId != null` and falls through to NoResolution. **This is why production eval showed 0% — the RAG hypothesis is being thrown away.**
 
-### Real bug to fix
-SecMaster's `RagSynthesis` returns the right ticker as `hypothesis` but doesn't materialize an `instrumentId`. Two-line fix candidates:
-1. **SentinelCollector side**: in `DeterministicResolver.TryHybridResolveAsync`, when response has `hypothesis` + null id, call `SecMasterClient.GetBySymbolAsync(hypothesis)` and use that. Cheap, scoped.
-2. **SecMaster side**: in the RagSynthesis branch, after producing the hypothesis, do the by-symbol lookup before returning. Better long-term.
-3. Note `/api/instruments/by-symbol?symbol=MCD` itself returns 404 even though MCD exists. Fix that lookup too or use a different SecMaster endpoint.
+### Real bug — FIXED in PR #198 (merged 2026-05-02 at e38f0c5)
+SecMaster's `RagSynthesis` returns the right ticker as `hypothesis` but doesn't materialize an `instrumentId`.
+
+Chosen fix: option 1 (SentinelCollector side). `DeterministicResolver.TryHybridResolveAsync` now calls `GetInstrumentBySymbolAsync(hypothesis)` after `Trim().ToUpperInvariant()` normalization. New trace tags surface the path: `hybrid.stage`, `hybrid.hypothesis`, `hybrid.hypothesis_resolved`, `hybrid_via_hypothesis`. LogInformation on both materialization-success AND hypothesis-present-but-unresolved (so a future SecMaster catalog drift can't silently recreate the original 0%-resolution mystery).
+
+Note 3 (by-symbol 404) was a false alarm — production code uses path-style `/api/instruments/by-symbol/{symbol}` which works; only my experiment script used the broken query form.
+
+Open follow-up (lower priority): SecMaster could materialize the instrumentId on its side in the RagSynthesis branch (option 2). Would centralize the fix and benefit any other client. Not urgent now that the SentinelCollector side handles it.
 
 ### Outputs
 - /opt/ai-inference/training-data/exp-a-lora-ab.{jsonl,report.md}
@@ -59,8 +91,11 @@ Order: shadow -> data -> decide between (1), (2), (3) based on what shadow shows
 - Schema migration `AddV2ObservationFields` committed (unapplied); 6 nullable cols + 2 CONCURRENT indexes + shadow table
 - v7 prompt: `/opt/ai-inference/prompts/sentinel/extract_and_resolve_v7.txt` + variants for fed-speeches/searxng/rss
 
-## VACATION AUTONOMOUS MODE (2026-04-24 → ~2026-05-01)
-User in Spain (Europe/Madrid, CEST UTC+2). Authorized ops:
+## VACATION AUTONOMOUS MODE — ENDED 2026-05-02
+User returned home; direct chat resumed. Vacation authorizations no longer active by default. Ntfy comms remain wired (mandatory STEP 0 poll on session start, persistent Monitor on `atlas-claude-reply`).
+
+Historical block (kept for reference, not active):
+Authorized ops during 2026-04-24 → 2026-05-02 window:
 - ✓ `git push origin main` + tag push at phase boundaries (compile+tests green; guard enforces)
 - ✓ Azure Foundry spend — burn freely (ledger tracks)
 - ✓ DDL + ansible prod deploys — rollback image/snapshot must exist
@@ -82,8 +117,9 @@ User emergency overrides (ntfy atlas-claude-reply):
 - `HALT AND ROLLBACK` → git reset to last `redesign-phaseN-complete` tag + restart services
 
 ## Last ntfy poll
-topic=atlas-claude-reply last_seen_ts=0 (fresh MCP install; no messages yet)
+topic=atlas-claude-reply last_seen_ts=1777730320 (2026-05-03 ~02:18 UTC) — clear
 via=mcp (sentinel-ntfy MCP registered in ~/.claude.json)
+persistent Monitor `bybnaj6r1` re-armed 2026-05-03 — fires per user message on atlas-claude-reply
 
 ## Decisions locked (never-undo without supersedes entry)
 - 2026-04-24: D1 LLM strategy = local_primary (Qwen2.5-32B-AWQ + sentinel-cove-v7 on vLLM) + cloud_oracle_only (Azure Foundry) — supersedes: none
@@ -101,22 +137,22 @@ via=mcp (sentinel-ntfy MCP registered in ~/.claude.json)
 - (none)
 
 ## Last-verified infra state
-As of 2026-04-24 (session start):
-- db queue: Pending=27287 Rejected=56 Skipped=6 (Approved=0, quarantine kept)
-- quarantined: 17066 rows total (OriginalSymbol populated on 11066 — audit trail intact)
-- kill switch: ON (Extraction__AutoApproveEnabled=false in compose.yaml)
-- unprocessed raw_content: 30437
-- errored raw_content: 59
-- ticker_in_quote rows: (not yet queried; track in Phase 2 telemetry)
-- vllm-server health: up; serves sentinel-cove-v6.2 (v7 NOT loaded)
-- sentinel-collector health: up
-- timescaledb health: up
-- AutoApproveEnabled: false
-- last commit on main: 43b8758 feat(sentinel): scope_nextdata_reprocess utility
-- main is 4 commits ahead of origin/main (NOT pushed yet): e4b0c32, 9c4c5e1, ce61558, 43b8758
-- tag: redesign-phase0-complete at 43b8758 (local only)
-- active feature branch: redesign/phase0-infra (merged; ff to 43b8758; can be deleted after next push)
-- Phase 4 audit verdict (2026-04-24): RED — ~58% wrong Symbol on async Finnhub path (the defect driving this redesign)
+As of 2026-05-03T02:00:00Z:
+- last commit on main: e38f0c5 fix(sentinel): materialize SecMaster RagSynthesis hypothesis into instrument_id (#198)
+- tags: redesign-phase0-complete, redesign-phase1-complete, redesign-phase2-complete, redesign-phase4-rag-fix (all on main)
+- active feature branch: chore/state-phase4-rag-fix (PR #199 OPEN — STATE.md update only; docs-only push allowed)
+- vllm-server: UP, serving sentinel-cove-v6.2 + sentinel-cove-v7-e1/e2/e3 LoRAs (v7-e3 active in V2 shadow)
+- sentinel-collector: UP since 2026-05-02T22:59:57Z (fix-applied build)
+- secmaster + secmaster-mcp: UP (10.4.1.200:8080 internal-only; no host port)
+- gemini-resolver-mcp: UP on :9300 (paid tier confirmed; ~$0.00006/call)
+- timescaledb: UP
+- AutoApproveEnabled: false (D9 hard stop, unchanged)
+- UseV2Pipeline: false (V2 stays shadow; production extractions go through V1)
+- V2EnabledSources: [fed-rss] only
+- Phase 4 audit verdict (2026-04-24): RED — ~58% wrong Symbol on async Finnhub path. NOT yet re-audited post Phase 4.2; precision regression revealed 2026-05-03 (see "Live alert + open decision").
+
+## Open PRs
+- #199 chore(sentinel): STATE.md — Phase 4.2 (RagSynthesis fix) DONE — branch chore/state-phase4-rag-fix; docs-only; awaiting user merge
 
 ## Phase 0 artifact audit
 | Artifact | Status |
@@ -183,11 +219,17 @@ By run:
 - Slot 03 re-picked → fed-press-monetary id=45 (Fed discount-rate minutes May-June 2025). Extracts DPCREDIT=5.25, DFEDTARL=5.00, DFEDTARU=5.25. PCE 3.5% projection rejected; 4.1% densifier contamination rejected (explicitly tagged in source).
 - Slot 08 re-picked → Challenger severance benchmarking 2025 (id=3516). Pure skip (`expected_extractions: []`, `skip_reason=historical_average`). Every number is cohort-average/annual aggregate.
 
-## Branch / tag plan
-- redesign/phase0-infra (active) — Phase 0 deliverables land here
-- merge → main + tag redesign-phase0-complete after user approval
-- redesign/phase1-design (next) — v7 prompt + design doc + schema migration
-- redesign/phase2-pipeline (next) — v2 code behind flag
-- redesign/phase3-training (next) — LoRA v7
-- redesign/phase4-cutover (next) — shadow + A/B + audit
-- redesign/phase5-cleanup (next) — v1 retire + spec + continuous loop
+## Branch / tag plan (current)
+DONE:
+- redesign/phase0-infra → main + tag redesign-phase0-complete
+- redesign/phase1-design → main (PR #196) + tag redesign-phase1-complete @ 38a2af9
+- redesign/phase2-pipeline → main (PR #197) + tag redesign-phase2-complete @ be79ab2
+- redesign/phase3-training → main (PR #198) + tag redesign-phase4-rag-fix @ e38f0c5 (covers Phase 3 LoRA + Phase 4.1 shadow + Phase 4.2 RagSynthesis fix; branch deleted)
+
+OPEN:
+- chore/state-phase4-rag-fix (PR #199) — STATE.md update only
+
+NEXT (when precision decision lands):
+- redesign/phase4-precision — implement chosen option (asset-class filter / minScore raise / name-overlap guard / etc)
+- redesign/phase4-cutover — flip UseV2Pipeline=true after audit ≥ 49/50 + precision green
+- redesign/phase5-cleanup — v1 retire + spec + continuous loop
