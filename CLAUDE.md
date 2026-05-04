@@ -392,12 +392,11 @@ YOU_ARE_ON: mercury # this machine, the production server
 rationale: ssh/ansible to localhost = unnecessary_hop + templating_issues + confusion
 REMEMBER: run commands directly with sudo, not via ssh or ansible targeting mercury
 
-## SUPERVISOR_MODE [sentinel_v2_redesign]
-PLAN: /home/james/.claude/plans/we-need-to-fix-twinkly-dragon.md # strategy, phases, contracts
-STATE: /home/james/ATLAS/SentinelCollector/STATE.md # supervisor memory, read_first | write_last
+## SUPERVISOR_MODE
+STATE: /home/james/ATLAS/STATE.md # supervisor memory, read_first | write_last
 SUPERVISOR_TOUCHES_CODE: never # except STATE.md, plan_file, CLAUDE.md
 ALL_IMPL|REVIEW|VALIDATION: subagent # dispatch ¬ direct_edit
-TEMPLATES: /home/james/ATLAS/SentinelCollector/scripts/agent-prompts/ # reusable, ≤400w each
+TEMPLATES: /home/james/ATLAS/scripts/agent-prompts/ # reusable, ≤400w each
 
 CLOUD_ORACLE: Azure_Foundry # /home/james/.azure-foundry-keys
   gold_label|architecture: claude-opus-4-7
@@ -407,11 +406,11 @@ CLOUD_ORACLE: Azure_Foundry # /home/james/.azure-foundry-keys
   cap: 500K_tpm_client_side | ledger=/opt/ai-inference/training-data/azure-oracle-ledger.jsonl
 
 NTFY:
-  server: https://ntfy.elasticdevelopment.com | auth: atlas:atlasP@ssw0rd
+  server: https://ntfy.elasticdevelopment.com | auth in ansible-vault
   publish(user←supervisor): atlas-claude-ask
   poll(user→supervisor): atlas-claude-reply
   mcp: sentinel-ntfy # registered in ~/.claude.json; tools: ntfy_publish|poll_new|poll_since|ack
 
-WAKEUP_STEP_0: poll(atlas-claude-reply) BEFORE routine_work # learned 2026-04-24
+WAKEUP_STEP_0: poll(atlas-claude-reply) BEFORE routine_work
 FAILURE: bad_subagent_result → fix_prompt + dispatch_fresh ¬ SendMessage
 CONTEXT: long_output → /tmp/sentinel-remediation/<file> ¬ supervisor_turn
