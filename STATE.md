@@ -1,11 +1,11 @@
 # ATLAS Supervisor STATE [2026-05-10]
 
 ## ACTIVE
-- **Epic:** 1 — SecMaster Sector Taxonomy & Classification — **COMPLETE**
-- **Phase:** 1 (spine) — done; ready for Phase 2 kickoff once Epic 1 merges
-- **Branch:** `epic/1-secmaster-taxonomy`, **100 commits** ahead of main, head `7ed9761`
-- **PR:** https://github.com/jpansarasa/ATLAS/pull/215 — open, ready for merge review
-- **Story in flight:** *(none — awaiting user merge decision)*
+- **Epic:** 1 — SecMaster Sector Taxonomy & Classification — **MERGED to main**
+- **Phase:** 1 (spine) — ✓ DONE; Phase 2 unblocked (Epic 2, Epic 3, Epic 4 Feature 4.6)
+- **Branch:** `main` (squash-merge `a08b806`); local epic branch can be deleted
+- **PR:** https://github.com/jpansarasa/ATLAS/pull/215 — **MERGED**
+- **Story in flight:** *(none — Phase 2 recon complete; awaiting user ratification on Epic 3 owner + Risk 1–7)*
 
 ## EPIC 1 STORY QUEUE — all done
 1. ✓ 1.1.1 NAICS taxonomy import (commits dac5b95→fa46b29)
@@ -77,8 +77,28 @@
 ## OPEN ASKS (for user)
 - D15 ratification: `docs/llm/ACCEPTANCE_CRITERIA.md` DRAFT → RATIFIED (blocks Phase 2 Feature 4.6 only).
 - Eval substrate decision (Feature 4.6) — v6.2-cove (70,895) vs. subset.
-- Epic 3 owning-project decision (queued for Phase 2 kickoff).
-- Phase 2 kickoff strategy: Epic 2 / Epic 3 / Epic 4 Feature 4.6 all unblock once Epic 1 merges — parallel branches or sequence?
+- Epic 3 owning-project decision — Plan agent dispatched for written recommendation; user decides post-recommendation.
+
+## PHASE 2 KICKOFF (decided 2026-05-10)
+- Strategy: **parallel branches** Epic 2 + Epic 3 (Feature 4.6 deferred until D15 ratified).
+- Branches on origin from `main@a08b806`:
+  - `epic/2-te-schema-rework` — TE track (sectorWeights + cell projection + macro-score retire)
+  - `epic/3-macro-observations` — substrate track (owning-project pending user ratification)
+
+### Recon outputs (2026-05-10)
+- **Epic 3 owning-project** — Plan-agent recommends **Option 2 (new `MacroSubstrate` project)**.
+  - Doc: `docs/plans/atlas-matrix/epic-3-owner-recommendation.md` (DRAFT, awaiting user ratification).
+  - Decisive constraint: cross-DB topology kills Option 1 (substrate must live in `atlas_data`, not `atlas_secmaster`).
+  - 7 open risks worth pre-ratifying — see doc §"Open risks" (variant A/B migrator, MacroSubstrate.Client, soft FK, D4 CHECK constraints, idempotency key, retention default, devcontainer bootstrap).
+  - Spot-checks ✓: Events triad / FredObservationSourceProvider / AddInstrumentEmbeddings / AddEventsTable all exist as cited.
+
+- **Epic 2 Story 2.1 blast radius** — audit-recon (read-only Explore agent).
+  - Report: `/tmp/sentinel-remediation/epic2-story-2.1-blast-radius.md` (235 lines).
+  - 14 plan-cited files ✓ verified at expected line numbers.
+  - **Plan understated by ~3-4 files** — adds `ThresholdEngine/mcp/Tools/ThresholdEngineTools.cs` (HIGH severity; MCP `evaluate()` + `list_patterns()` group-by-category), `tests/Workers/DataWarmupServiceTests.cs`, `tests/Endpoints/PatternEndpointsTests.cs`, `tests/Data/ThresholdEventRepositoryTests.cs`.
+  - Dashboard `deployment/artifacts/monitoring/dashboards/thresholdengine.json` flagged as needing inspection (recommend pre-dispatch grep).
+  - **One audit error** — claimed `ThresholdEngine/config/patterns/` directory "does not exist"; it does, with 79 JSON files in 11 subdirectories. Other findings hold.
+  - No cross-service references to `category | PatternCategory | MacroScore | MacroRegime` (verified in Sec​Master, FredCollector, OfrCollector, FinnhubCollector, AlertService, CalendarService).
 
 ## DEFERRED FOLLOW-UPS (non-blocking)
 - **readme-consistency** sub-component template detection — audit.sh applies 10-section check uniformly; should detect `*/mcp/`, `*/config/`, `*/scripts/` and apply lighter template.
@@ -88,11 +108,11 @@
 - **AtlasSectorCodes** compile-time exhaustiveness — currently uses `switch` expression with no default arm (CS8509 catches new members); already addressed in Dispatch A but worth pinning if a new sector is added.
 
 ## PHASE STATUS
-- **Phase 1** — Spine — ✓ DONE (Epic 1 complete; PR #215 ready for merge)
-- **Phase 2** — Substrate / TE schema / LLM track — ⧗ blocked on Epic 1 merge
-  - Epic 2 (TE schema rework)
-  - Epic 3 (`macro_observations` substrate)
-  - Epic 4 Feature 4.6 only (LLM reliability track) — also blocked on D15 ratification
+- **Phase 1** — Spine — ✓ DONE (Epic 1 merged to main as `a08b806`)
+- **Phase 2** — Substrate / TE schema / LLM track — → IN FLIGHT
+  - Epic 2 (TE schema rework) — → branch live, Story 2.1 audit-recon dispatched
+  - Epic 3 (`macro_observations` substrate) — → branch live, owning-project Plan agent dispatched
+  - Epic 4 Feature 4.6 only (LLM reliability track) — ⧗ blocked on D15 ratification
 - **Phase 3** — Sentinel rework + matrix — ⧗ blocked on Phase 2
   - Epic 4 Features 4.1–4.5
   - Epic 5 (matrix storage, vector queries)
