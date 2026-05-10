@@ -25,17 +25,49 @@ Context-aware hooks that inject patterns when working on specific file types.
 
 **Purpose**: Prevent pushing code without running tests first.
 
-**Behavior**: Blocks any `git push` command with:
-```
-BLOCKED: git push requires tests to pass first.
+**Behavior**: Blocks any `git push` command unless a tests-passed marker for
+the current working tree exists. The marker is **tree-hash-keyed** (stores
+the tree hash of the most recent commit — committed content only, uncommitted
+edits do not change the tree hash), so it survives:
 
-Before pushing, you MUST:
-1. Run {Project}/.devcontainer/compile.sh (without --no-test)
-2. Verify: 0 errors AND 0 warnings
-3. All tests pass
+- `compile.sh` → `git commit` (commit hash changes, tree unchanged)
+- `git cherry-pick` / `git rebase` of a tested commit (tree preserved)
+- Unrelated commits (e.g. STATE.md edits) that don't change source content
 
-Only then may you push.
-```
+Different tree content → different tree hash → marker mismatch → re-test
+required. This is the safety property: untested source changes are blocked,
+but workflow churn that doesn't change source content is not.
+
+**Caveat (HEAD^{tree} is committed-only)**: the tree hash is computed from
+`HEAD^{tree}`, which reflects the tree of the most recent commit. Uncommitted
+edits in the working directory do NOT change the tree hash. If you run
+`compile.sh` with a dirty working tree, the marker records HEAD's tree — not
+the actually-tested content. `mark-tests-passed.sh` emits a stderr warning
+when it detects a dirty working tree at marker-write time; commit before
+relying on the marker.
+
+**Marker scope (per-worktree)**: the marker file is suffixed with a short
+hash of the worktree toplevel path (`sha1(git rev-parse --show-toplevel)`),
+so two worktrees of the same repo on the same host do not silently share a
+marker even when their trees happen to coincide. Path:
+`/tmp/atlas-test-markers/tests-passed.<12-hex>`. Note: `/tmp` is cleared on
+reboot — markers need to be regenerated after host reboot (this is intended;
+re-running tests after a reboot is cheap insurance).
+
+**Marker format (v2)**: the marker is a single line
+`v2 tree <tree_hash> <iso8601_timestamp>`. The push guard rejects any other
+format (empty file, partial write, pre-v2 commit-hash-keyed marker) with a
+"regenerate" message rather than silently accepting — pre-v2 markers were
+40-char hex strings indistinguishable from tree hashes by shape.
+
+Also enforces:
+- No direct push to `main` / `master` (refspec form too)
+- No deletion of the `main` / `master` remote branch
+- Docs/config-only pushes (CLAUDE.md, *.md, .claude/**, .gitignore,
+  .editorconfig) are exempt from the marker requirement
+- `gh pr merge` requires a `pr-reviewed-{N}` marker (commit-hash-keyed,
+  via `headRefOid` from the GitHub API — PR review is intentionally
+  re-run on every new commit)
 
 **Configuration**: `.claude/settings.local.json`
 ```json
