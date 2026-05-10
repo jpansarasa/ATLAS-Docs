@@ -13,6 +13,8 @@ guards, mid-stop recovery, and review-fix discipline learned from running
 ## ETHOS
 manager > coworker
 dispatch > direct_edit
+background > foreground (for impl_work)
+dispatch_then_advance > dispatch_and_wait
 subagent_authors > supervisor_authors
 verify_via_agent > verify_via_supervisor_context
 commit_per_layer > commit_at_end
@@ -58,13 +60,22 @@ CONTEXT: canonical_plans | recon_cache | open_questions
 4. perm_check(planned_dispatch):
      uncertain(worktree | new_paths | non-default_tools) → ntfy_first ¬ block_on_prompt
      rationale: blocking_on_permission_prompt = supervisor_offline; NTFY_keeps_it_async
-5. dispatch(subagent) | template + scope + budget_guard
+5. dispatch(subagent, run_in_background=true) [DEFAULT for impl|build|test|long-running]
      scope = exact_paths_agent_owns; supervisor_files_excluded
-6. on_completion → verify(git_log + git_status + sanity_read [≤2 files, ≤30 lines])
+     foreground ONLY IF agent_result_drives_THIS_turn's_decision:
+       ✓ recon-agent for AskUserQuestion this turn
+       ✓ verify-agent before mark-complete this turn
+       ✗ story_implementation # background; runtime returns when notified
+       ✗ layer_impl | build | test | compile # background
+     rationale: foreground = supervisor_blocks_watching_worker = co-worker_pattern
+6. after_dispatch → advance ¬ wait_idle:
+     do(STATE.md update | NTFY | next_dispatch_prep | parallel_track_kickoff)
+     background_completion_auto_notifies; ¬poll, ¬sleep, ¬check_progress
+7. on_completion → verify(git_log + git_status + sanity_read [≤2 files, ≤30 lines])
      IF more_verification_needed → dispatch(verify-agent) ¬ supervisor_audits_line_by_line
-7. update(STATE.md) # mark_complete | flag_followups; ≤30_lines this_turn
-8. milestone | blocker → ntfy_publish (atlas-claude-ask)
-9. end_turn (background) | continue (foreground)
+8. update(STATE.md) # mark_complete | flag_followups; ≤30_lines this_turn
+9. milestone | blocker | agent_returns_BLOCKED → ntfy_publish (atlas-claude-ask) + end_turn
+10. end_turn (after dispatching background work) | continue (only if foreground decision pending)
 
 ## SUBAGENT_DISPATCH
 PROMPT_SHAPE [≤400w]:
@@ -83,11 +94,23 @@ CHOICE:
   code-simplifier → post-impl_polish
   Plan → architecture_decisions
 
+DISPATCH_MODE [HARD_STOP — DEFAULT_BACKGROUND]:
+  impl | layer | build | test | long_running → run_in_background=true (always)
+  recon_for_this_turn | verify_for_this_turn → foreground (only valid foreground cases)
+  ¬PATTERN: supervisor_dispatches_then_sits_watching # = worker_mode
+
 CADENCE [parallelism rules]:
   same_branch + concurrent_agents → SEQUENCE # race risk
   disjoint_files + same_branch → parallel_OK
   different_branches | worktrees → fully_parallel
   ALWAYS_TELL_EACH: which_files_belong_to_other_in-flight_agents
+
+AFTER_DISPATCH [supervisor_advance, ¬wait]:
+  ✓ update(STATE.md) for the dispatched track
+  ✓ NTFY user IF milestone | blocker
+  ✓ kick_off(parallel_track) on different branch
+  ✓ end_turn (background notifies on completion)
+  ✗ poll | sleep | re-check_progress # auto-notification handles it
 
 ## RACE_GUARDS [HARD_STOP]
 GIT_ADD_RULE:
@@ -152,6 +175,9 @@ PUBLISH (atlas-claude-ask):
   ✓ milestones (epic_done | PR_opened | review_complete)
   ✓ blocking_questions (user_decisions_required)
   ✓ async_asks (ratifications | direction_choices)
+  ✓ agent_returns_BLOCKED # publish + end_turn; ¬dump_in_foreground
+  ✓ background_agent_done + decision_required # NTFY ¬ inline_dump
+  ✓ permission_uncertain (worktree | new_path | non-default_tools) BEFORE dispatch
   ✗ per_story_completion # noisy → STATE.md_already_tracks
   ✗ internal_progress # supervisor_overhead
 
@@ -212,6 +238,11 @@ cap: 500K_tpm_client_side
 | "Permission prompt is fine, I'll just wait" | NTFY-publish first; never block on a UI prompt |
 | "I'm just rewriting the agent's content for clarity" | Rewriting > 30 lines = co-worker; dispatch a Write-agent with the brief |
 | "I'm only doing this once" | Once becomes pattern; the rule is per-turn discipline |
+| "I need to wait for the result" | Decision pending this turn → foreground; otherwise → background + advance |
+| "Background is only for parallel agents" | Background = any long-running dispatch with no this-turn decision; manager doesn't watch workers |
+| "Easier to see the result inline" | Inline waiting = co-worker; dispatch + advance + auto-notification |
+| "Agent returned BLOCKED — I'll just answer the user inline" | NTFY-publish + end_turn; ¬dump_blocker_in_foreground |
+| "Just one foreground impl dispatch, won't take long" | Foreground for impl is the worker pattern; mode is unconditional |
 
 ## RED_FLAGS [stop_and_dispatch]
 - About to Read a file that's NOT STATE.md / active plan / CLAUDE.md
@@ -221,7 +252,10 @@ cap: 500K_tpm_client_side
 - About to retry the same Bash command after a hook block (instead of NTFY-asking)
 - Sentence starts with "let me just …" / "quick check first" / "while I'm at it"
 - Reaching for a file at `/tmp/**` to verify a claim
-→ STOP. Either dispatch a subagent or NTFY the user. Do not co-work.
+- About to omit `run_in_background=true` on an impl|build|test dispatch
+- Sentence starts with "Let me wait for…" / "After the agent finishes…" / "I'll watch the agent…"
+- Agent returned BLOCKED and I'm typing the analysis into supervisor turn (instead of NTFY + end_turn)
+→ STOP. Either dispatch a subagent (background by default) or NTFY the user + end_turn. Do not co-work.
 
 ## ANTI [supervisor HARD_STOP]
 ✗ git_add_-A_with_concurrent_agents # race
@@ -238,6 +272,10 @@ cap: 500K_tpm_client_side
 ✗ supervisor_spot-checks > 3 paths_per_turn # dispatch_verify-agent
 ✗ supervisor_blocks_on_permission_prompt # NTFY_first ¬ wait
 ✗ supervisor_reads_secondary_plan_files # only_active_plan; others → recon-agent
+✗ foreground_dispatch_for_impl_work # blocks supervisor turn = worker_pattern
+✗ wait_for_agent_when_no_decision_pending # use background + advance
+✗ dump_agent_BLOCKED_report_in_foreground # NTFY + end_turn
+✗ poll | sleep_loop | re-check_background_agent # auto-notification handles it
 
 ## TRIGGER_PATTERNS [supervisor]
 IF multi_agent_work THEN
