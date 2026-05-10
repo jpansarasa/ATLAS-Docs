@@ -20,22 +20,20 @@ Comprehensive reference for ThresholdEngine pattern configuration, expression AP
 
 ## Overview
 
-ThresholdEngine evaluates economic patterns to produce a weighted macro score for regime detection. Each pattern:
+ThresholdEngine evaluates economic patterns and projects each pattern's signal onto the 11-sector ATLAS sector grid. Each pattern:
 
 1. **Evaluates** a condition using C# expressions against time-series data
 2. **Produces** a signal (-3 to +3) indicating directional strength
 3. **Applies** weighting based on reliability, freshness, and temporal relevance
-4. **Contributes** to category and macro scores
+4. **Projects** the weighted signal across the per-pattern `sectorWeights` map (cell-level output)
 
 **Weighted Scoring Formula**:
 ```
 weightedSignal = signal × weight × freshnessFactor × temporalMultiplier × confidence
-effectiveWeight = weight × freshnessFactor × temporalMultiplier × confidence
-categoryScore = Σ(weightedSignals) / Σ(effectiveWeights)
-macroScore = Σ(categoryScore × categoryWeight)
+cellSignal[sector] = weightedSignal × sectorWeights[sector]
 ```
 
-Signal range: -3 to +3. Macro score range: approximately -3 to +3.
+Signal range: -3 to +3. Per-cell projections inherit that range, scaled by the sector weight.
 
 ---
 
@@ -48,9 +46,6 @@ Pattern expressions are C# code snippets compiled at runtime using Roslyn. They 
 | Property | Type | Description |
 |----------|------|-------------|
 | `ctx.CurrentDate` | `DateTimeOffset` | Evaluation timestamp |
-| `ctx.CurrentRegime` | `MacroRegime` | Current economic regime |
-| `ctx.MacroScore` | `decimal` | Composite macro score (approximately -3 to +3) |
-| `ctx.MacroScoreTrend` | `decimal` | Rate of change in macro score |
 
 ### Data Access Methods
 
@@ -127,18 +122,15 @@ ctx.GetLatest("VIXCLS") > 22m
 
 ### Expression Examples
 
-**VIX Deployment (Regime-Aware)**:
+**VIX Deployment (Tiered)**:
 ```csharp
 // Condition
 ctx.GetLatest("VIXCLS") > 22m
 
 // Signal
 var vix = ctx.GetLatest("VIXCLS") ?? 0m;
-var score = ctx.MacroScore;
 if (vix <= 22m) return 0m;
-if (score < -1.0m) return vix > 30m ? 2m : 1m;   // Recession: VIX spike = deploy
-if (score > 1.0m) return vix > 30m ? -2m : -1m;  // Growth: VIX spike = reduce
-return vix > 30m ? -1m : -0.5m;                   // Neutral: moderate defensive
+return vix > 30m ? 2m : 1m;
 ```
 
 **Sahm Rule (Moving Average)**:
@@ -313,13 +305,13 @@ Where:
 
 ### Temporal Multipliers
 
-Applied during regime transitions (|MacroScoreTrend| >= 0.3):
+Applied unconditionally per cell projection — leading indicators are amplified, lagging indicators are damped:
 
-| Temporal Type | Stable | Transitioning |
-|---------------|--------|---------------|
-| Leading | 1.0× | **1.3×** |
-| Coincident | 1.0× | 1.0× |
-| Lagging | 1.0× | **0.7×** |
+| Temporal Type | Multiplier |
+|---------------|------------|
+| Leading | **1.3×** |
+| Coincident | 1.0× |
+| Lagging | **0.7×** |
 
 ### Multi-Series Patterns
 
@@ -343,11 +335,16 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
   "patternId": "string",
   "name": "string",
   "description": "string",
-  "category": "Recession|Liquidity|Growth|NBFI|Inflation|Currency|Valuation|Commodity",
   "expression": "C# condition expression",
   "signalExpression": "C# signal expression (-3 to +3)",
   "applicableRegimes": ["Crisis", "Recession", "LateCycle", "Neutral", "Recovery", "Growth"],
   "requiredSeries": ["SERIES1", "SERIES2"],
+  "sectorWeights": {
+    "ENERGY": 0.0, "MATERIALS": 0.0, "INDUSTRIALS": 0.0,
+    "CONS_DISC": 0.0, "CONS_STAPLES": 0.0, "HEALTHCARE": 0.0,
+    "FINANCIALS": 0.0, "INFOTECH": 0.0, "COMM_SVC": 0.0,
+    "UTILITIES": 0.0, "REAL_ESTATE": 0.0
+  },
   "maxLookbackDays": 365,
   "enabled": true,
 
@@ -360,6 +357,8 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
 }
 ```
 
+The loader sets `UnmappedMemberHandling = Disallow` — unknown keys (e.g. legacy `category`) cause the file to fail load with a structured error rather than silently dropping.
+
 ### Field Descriptions
 
 **Required Fields:**
@@ -369,11 +368,11 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
 | `patternId` | string | Unique identifier (lowercase, hyphens only) |
 | `name` | string | Human-readable name |
 | `description` | string | Explanation of what the pattern detects |
-| `category` | enum | Pattern category for grouping |
 | `expression` | string | C# condition expression returning bool |
 | `signalExpression` | string | C# signal expression returning decimal (-3 to +3) |
 | `applicableRegimes` | array | Macro regimes where pattern is applicable |
 | `requiredSeries` | array | FRED/data series IDs required for evaluation |
+| `sectorWeights` | object | Per-sector weights for the 11 ATLAS sectors (zeros for unaffected sectors; D5 explicit-zero sparsity policy) |
 
 **Optional Fields:**
 
@@ -396,11 +395,16 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
   "patternId": "ism-contraction",
   "name": "ISM Manufacturing Below 50",
   "description": "ISM Manufacturing PMI below 50 indicates economic contraction in the manufacturing sector.",
-  "category": "Recession",
   "expression": "ctx.GetLatest(\"NAPM\") < 50m",
   "signalExpression": "var ism = ctx.GetLatest(\"NAPM\") ?? 50m; return ism < 45m ? -2m : ism < 50m ? -1m : 0m;",
   "applicableRegimes": ["Neutral", "LateCycle", "Recession", "Crisis"],
   "requiredSeries": ["NAPM"],
+  "sectorWeights": {
+    "ENERGY": 0.0, "MATERIALS": 0.5, "INDUSTRIALS": 1.0,
+    "CONS_DISC": 0.5, "CONS_STAPLES": 0.0, "HEALTHCARE": 0.0,
+    "FINANCIALS": 0.0, "INFOTECH": 0.0, "COMM_SVC": 0.0,
+    "UTILITIES": 0.0, "REAL_ESTATE": 0.0
+  },
   "maxLookbackDays": 30,
   "enabled": true,
   "weight": 0.85,
@@ -415,24 +419,9 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
 }
 ```
 
-### Category Weights
+### Theme Directories
 
-Configured in `ThresholdEngine/src/appsettings.json` under `MacroScoring.CategoryWeights`:
-
-| Category | Weight | Purpose | Pattern Count |
-|----------|--------|---------|---------------|
-| Recession | 30% | Downturn detection | 16 |
-| Liquidity | 20% | Market stress | 8 |
-| Growth | 20% | Expansion signals | 8 |
-| NBFI | 10% | Shadow banking risk | 15 (includes OFR patterns) |
-| Currency | 10% | FX risk-off | 3 |
-| Inflation | 10% | Price pressure | 9 |
-| Valuation | 0% | Informational | 6 |
-| Commodity | 0% | Informational | 1 |
-
-**Total**: 66 patterns across 8 categories.
-
-**Note**: OFR (Office of Financial Research) patterns are stored in `config/patterns/ofr/` but categorized as NBFI for scoring purposes.
+Patterns are grouped into theme subfolders under `config/patterns/` (recession, liquidity, growth, valuation, nbfi, inflation, currency, commodity, ofr). The directory name is descriptive only — there is no `category` field on the pattern schema and the engine does not aggregate by directory. Per-pattern `sectorWeights` are the source of truth for downstream allocation.
 
 ---
 
@@ -469,9 +458,6 @@ CalculateFreshnessFactor(pattern):
     return max(0.10, freshness)                // Floor at 10%
 
 GetTemporalMultiplier(pattern):
-    isTransitioning = abs(macroScoreTrend) >= 0.3
-    if not isTransitioning: return 1.0
-
     if pattern.temporalType == Leading:    return 1.30
     if pattern.temporalType == Coincident: return 1.0
     if pattern.temporalType == Lagging:    return 0.70
@@ -479,27 +465,6 @@ GetTemporalMultiplier(pattern):
 ```
 
 ### API Endpoints
-
-**GET /api/patterns/contributions**
-```json
-{
-  "macroScore": -4.4,
-  "isTransitioning": false,
-  "categories": [{
-    "category": "Recession",
-    "categoryWeight": 0.30,
-    "patterns": [{
-      "patternId": "sahm-rule",
-      "weight": 0.95,
-      "daysSincePublication": 15,
-      "daysOverdue": 0,
-      "freshnessFactor": 1.0,
-      "rawSignal": -2.0,
-      "weightedSignal": -1.90
-    }]
-  }]
-}
-```
 
 **GET /api/patterns/health**
 ```json
@@ -515,19 +480,6 @@ GetTemporalMultiplier(pattern):
     "severelyOverdue": 1,
     "noData": 0
   }
-}
-```
-
-**POST /api/patterns/backfill?days=60**
-```json
-{
-  "daysProcessed": 60,
-  "daysWithData": 58,
-  "startDate": "2025-11-20T00:00:00Z",
-  "endDate": "2026-01-19T00:00:00Z",
-  "finalRegime": "Neutral",
-  "finalScore": 0.15,
-  "durationMs": 1234
 }
 ```
 

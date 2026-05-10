@@ -1,12 +1,12 @@
 # ThresholdEngine Configuration
 
-Pattern definitions, regime transition rules, and service settings for the ThresholdEngine. The host service hot-reloads these files at runtime, so this directory is the operator-facing surface for tuning the engine without rebuilding the container.
+Pattern definitions and service settings for the ThresholdEngine. The host service hot-reloads these files at runtime, so this directory is the operator-facing surface for tuning the engine without rebuilding the container.
 
 ## Overview
 
-`ThresholdEngine/config/` is a data/configuration directory, not a code project. It holds the pattern catalog (organised by category), the macro-regime transition rules, and the `appsettings.json` for the service. The ThresholdEngine watches these files and reloads on change (hot-reload latency ~5s), so configuration drift is purely a deploy/file-sync question — not a code change.
+`ThresholdEngine/config/` is a data/configuration directory, not a code project. It holds the pattern catalog (organised by theme directory) and the `appsettings.json` for the service. The ThresholdEngine watches these files and reloads on change (hot-reload latency ~5s), so configuration drift is purely a deploy/file-sync question — not a code change.
 
-This README documents the directory layout, the pattern JSON format, the regime rules, and how to deploy edits.
+This README documents the directory layout, the pattern JSON format, and how to deploy edits.
 
 ## Architecture
 
@@ -22,15 +22,13 @@ operator edit ─► config/patterns/*.json
 
 Pattern files live on a host-mounted volume (read-only inside the container). The `PatternConfig:Path` setting in `appsettings.json` points at the mount. Edits made on the host appear in the container immediately and are picked up by the watcher within ~5 seconds. No rebuild, no restart.
 
-Regime rules in `regimes.json` are loaded the same way and gate which patterns evaluate in which macro regime.
-
 ## Features
 
 - **Hot reload** — file changes take effect within ~5s, no service restart.
-- **Categorised pattern catalog** — recession / liquidity / growth / valuation / nbfi / inflation, each in its own subfolder.
+- **Themed pattern catalog** — patterns live under theme subfolders (recession / liquidity / growth / valuation / nbfi / inflation) for human navigation; the directory name is descriptive, not part of the schema.
 - **Embedded C# expressions** — patterns evaluate user-supplied C# (Roslyn-scripted) against an `EvaluationContext` exposing `ctx.GetLatest(seriesId)`, etc.
-- **Regime gating** — patterns declare `applicableRegimes`; the engine only evaluates them in matching macro regimes.
-- **Operator-friendly JSON** — schema is stable; new patterns added by dropping a file in the right category subfolder.
+- **Sector projection** — patterns declare `sectorWeights` over the 11 ATLAS sectors; the engine multiplies the per-pattern signal by each sector weight to produce a per-cell projection.
+- **Operator-friendly JSON** — schema is stable; unknown fields are rejected at load time so legacy keys cannot silently degrade.
 
 ## Configuration
 
@@ -38,7 +36,6 @@ Regime rules in `regimes.json` are loaded the same way and gate which patterns e
 |---|---|---|
 | `PatternConfig:Path` | Host-mount path the engine watches for pattern JSON | `/app/config/patterns` |
 | `appsettings.json` | Standard ASP.NET Core configuration (logging, OpenTelemetry, ConnectionStrings) — see `ThresholdEngine/README.md` for the full env-var matrix | n/a |
-| `regimes.json` | Macro-regime score thresholds and transition rules | shipped with image |
 
 Pattern JSON schema (per-file):
 
@@ -47,11 +44,16 @@ Pattern JSON schema (per-file):
   "patternId": "vix-deployment-l1",
   "name": "VIX Level 1 Deployment Trigger",
   "description": "VIX >22 indicates elevated volatility, context-dependent signal",
-  "category": "Liquidity",
   "expression": "ctx.GetLatest(\"VIXCLS\") > 22m",
   "signalExpression": "ctx.GetLatest(\"VIXCLS\") > 30m ? 2m : 1m",
   "applicableRegimes": ["Crisis", "Recession", "LateCycle"],
   "requiredSeries": ["VIXCLS"],
+  "sectorWeights": {
+    "ENERGY": 0.0, "MATERIALS": 0.0, "INDUSTRIALS": 0.0,
+    "CONS_DISC": 0.5, "CONS_STAPLES": 0.0, "HEALTHCARE": 0.0,
+    "FINANCIALS": 1.0, "INFOTECH": 0.5, "COMM_SVC": 0.0,
+    "UTILITIES": 0.0, "REAL_ESTATE": 0.0
+  },
   "enabled": true,
   "metadata": {
     "deploymentLevel": "L1",
@@ -59,6 +61,8 @@ Pattern JSON schema (per-file):
   }
 }
 ```
+
+`sectorWeights` is required and must enumerate all 11 ATLAS sectors with explicit numeric weights; zeros are how you say "this pattern does not affect that sector".
 
 ## API Endpoints
 
@@ -74,14 +78,13 @@ For the full surface, see the host project's API Endpoints section.
 
 ```
 ThresholdEngine/config/
-├── patterns/                # Pattern catalog, organised by category
+├── patterns/                # Pattern catalog, organised by theme directory
 │   ├── recession/           # Recession warning patterns (Sahm Rule, ISM contraction, ...)
 │   ├── liquidity/           # VIX deployment, credit spreads, DXY positioning
 │   ├── growth/              # GDP acceleration, ISM expansion, industrial production
 │   ├── valuation/           # CAPE, Buffett Indicator, equity risk premium
 │   ├── nbfi/                # Multi-indicator NBFI (Non-Bank FI) stress detection
 │   └── inflation/           # CPI, PCE, breakeven inflation expectations
-├── regimes.json             # Macro-regime transition rules
 └── appsettings.json         # ASP.NET Core configuration for the host
 ```
 
@@ -89,16 +92,17 @@ ThresholdEngine/config/
 
 ### Editing patterns
 
-1. Edit the appropriate JSON file under `patterns/{category}/` on the host (the directory is bind-mounted into the container).
+1. Edit the appropriate JSON file under `patterns/{theme}/` on the host (the directory is bind-mounted into the container).
 2. Save. The ThresholdEngine watcher picks up the change within ~5 seconds.
 3. Verify via `GET /api/patterns/{id}` or the MCP tool `get_pattern` that the new definition is loaded and produces the expected signal.
 
 ### Authoring a new pattern
 
-1. Pick the category (or add a new one — just create a subfolder).
+1. Pick the theme directory (or add a new one — just create a subfolder; the directory name is descriptive only).
 2. Choose a `patternId` (kebab-case, unique).
 3. Reference required series via `requiredSeries` so SecMaster can validate availability before evaluation.
-4. Test the C# expression against `EvaluationContext` semantics — see `ThresholdEngine/src/Patterns/Expressions/` for the surface.
+4. Populate `sectorWeights` with all 11 ATLAS sectors (zeros for sectors the pattern does not affect).
+5. Test the C# expression against `EvaluationContext` semantics — see `ThresholdEngine/src/Patterns/Expressions/` for the surface.
 
 ### Local validation
 

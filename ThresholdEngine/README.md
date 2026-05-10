@@ -1,10 +1,10 @@
 # ThresholdEngine
 
-Pattern evaluation and regime detection service for ATLAS.
+Pattern evaluation service for ATLAS.
 
 ## Overview
 
-ThresholdEngine evaluates configurable C# expressions against real-time economic data to detect regime transitions and generate macro signals. It consumes observation events from collectors via gRPC streaming, calculates weighted macro scores with freshness-aware decay, and publishes evaluation results to TimescaleDB. Downstream consumers (such as ThresholdEngineMcp) subscribe to evaluation events via the gRPC event stream.
+ThresholdEngine evaluates configurable C# expressions against real-time economic data and projects per-pattern signals onto the 11-sector ATLAS sector grid. It consumes observation events from collectors via gRPC streaming and publishes evaluation results to TimescaleDB. Downstream consumers (such as ThresholdEngineMcp) subscribe to evaluation events via the gRPC event stream.
 
 ## Architecture
 
@@ -23,33 +23,31 @@ flowchart LR
         CACHE[Observation Cache]
         EVAL[Pattern Evaluator]
         ROSLYN[Roslyn Compiler]
-        MACRO[Macro Score Calculator]
-        REGIME[Regime Detector]
+        PROJ[Cell Projector]
     end
 
     FC & AV & FH & OC & SC -->|gRPC Stream| GC
     GC --> CACHE
     CACHE --> EVAL
     ROSLYN --> EVAL
-    EVAL --> MACRO
-    MACRO --> REGIME
-    REGIME -->|Store| DB[(TimescaleDB)]
-    REGIME -->|gRPC Stream :5001| MCP[ThresholdEngineMcp]
+    EVAL --> PROJ
+    PROJ -->|Store| DB[(TimescaleDB)]
+    PROJ -->|gRPC Stream :5001| MCP[ThresholdEngineMcp]
     GC -->|Metrics/Traces| OTEL[OTEL Collector]
 ```
 
-Collectors push observation events over gRPC. ThresholdEngine caches observations, evaluates pattern expressions via Roslyn, computes weighted macro scores per category, and detects regime transitions. Results are persisted to TimescaleDB and streamed to subscribers on port 5001.
+Collectors push observation events over gRPC. ThresholdEngine caches observations, evaluates pattern expressions via Roslyn, and projects each pattern's signal onto its declared `sectorWeights`. Results are persisted to TimescaleDB and streamed to subscribers on port 5001.
 
 ## Features
 
 - **Roslyn Compilation**: C# expressions compiled at runtime with caching for pattern definitions
 - **Context API DSL**: Time-series functions (GetLatest, GetYoY, GetMoM, GetMA, GetSpread, GetRatio, IsSustained)
 - **Hot Reload**: File system watcher detects pattern changes and reloads automatically
-- **Regime Detection**: Six-state machine (Crisis, Recession, LateCycle, Neutral, Recovery, Growth)
-- **Weighted Scoring**: Pattern reliability weights with freshness decay and temporal multipliers
+- **Sector Projection**: Per-pattern `sectorWeights` project signals onto the 11-sector ATLAS grid with explicit-zero sparsity
+- **Freshness Decay & Temporal Multipliers**: Pattern reliability weights with age-based decay and lead/lag multipliers
 - **Multi-Collector Streaming**: Consumes events from 5 collectors via gRPC
 - **gRPC Event Stream**: Publishes evaluation events for downstream subscribers (MCP, alerting)
-- **On-Demand Evaluation**: REST API for manual pattern evaluation, contributions, and health checks
+- **On-Demand Evaluation**: REST API for manual pattern evaluation and health checks
 
 ## Configuration
 
@@ -65,7 +63,6 @@ Collectors push observation events over gRPC. ThresholdEngine caches observation
 | `PatternConfig:Path` (a.k.a. `PatternConfig__Path`) | Pattern config directory | `./config` (dev), `/app/config` (prod) |
 | `PatternConfig__HotReload` | Enable file system watcher | `true` |
 | `PatternConfig__WatchInterval` | File watcher polling interval (ms) | `1000` |
-| `MacroScoring__CategoryWeights__*` | Category weights for macro score | See appsettings.json |
 | `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
 | `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `thresholdengine-service` |
 | `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
@@ -84,9 +81,7 @@ REST surface lives in `src/Endpoints/PatternEndpoints.cs` (route group `/api/pat
 | `/api/patterns/reload` | POST | Trigger manual pattern reload |
 | `/api/patterns/evaluate` | POST | Evaluate all enabled patterns on-demand |
 | `/api/patterns/{patternId}/evaluate` | POST | Evaluate specific pattern on-demand |
-| `/api/patterns/contributions` | GET | Get weighted pattern contribution breakdown |
 | `/api/patterns/health` | GET | Get pattern data freshness and health status |
-| `/api/patterns/backfill` | POST | Backfill regime score history from cached observations |
 
 ### gRPC Services (Port 5001)
 
@@ -125,8 +120,7 @@ ThresholdEngine/
 │   ├── Telemetry/            # OpenTelemetry activity source, metrics
 │   └── Workers/              # Background event consumers, data warmup
 ├── config/
-│   ├── patterns/             # Pattern definitions by category (74 files)
-│   ├── regimes.json          # Regime threshold configuration
+│   ├── patterns/             # Pattern definitions grouped by theme directory
 │   └── pattern-schema.json   # JSON schema for pattern validation
 ├── mcp/                      # MCP server for Claude Code integration
 ├── tests/                    # Unit and integration tests
