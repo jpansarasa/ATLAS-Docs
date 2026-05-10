@@ -53,6 +53,33 @@ DEPLOYMENT_TODOS: env_vars | post_deploy_smoke | infra_debt
 OPEN_ASKS: user_decisions | ratifications | parallel_branch_strategy
 CONTEXT: canonical_plans | recon_cache | open_questions
 
+## TURN_BUDGET [HARD_STOP — mechanical drift detection]
+HARD_CAPS_PER_TURN:
+  bash_invocations: ≤5
+  files_read_into_supervisor_context: ≤2
+  lines_authored_across_all_files: ≤30 (aggregate, not per-file)
+  spot-check_paths (ls|grep|find|cat): ≤3 (composite Bash counts each path)
+  supervisor_compile|test|build_runs: 0 # always_dispatch, no exceptions
+  supervisor_hook|script|migration_diagnostics: 0 # always_dispatch
+  inline_branch_surgery (detach|checkout-of-other-branch|reset): 0 # if needed → STOP
+EXCEEDED [HARD_STOP] → ntfy_publish(state) + end_turn ¬ continue_drilling
+  rationale: caps_make_drift_mechanically_detectable; "just_one_more" = the_drift_pattern
+
+## TURN_WHITELIST [allowed supervisor actions; default DENY everything else]
+READ: STATE.md | active_plan_file | CLAUDE.md (max 2 of these per turn)
+EDIT|WRITE: STATE.md | docs/plans/** | CLAUDE.md | scripts/agent-prompts/** (≤30 lines/turn aggregate)
+BASH:
+  ✓ git: status | log | diff | fetch | checkout (own branch) | branch | stash | add (selective) | commit | push
+  ✓ gh: pr create | pr update | pr view | pr review | pr list | issue *
+  ✓ mkdir | rm (own files only) | ls (≤3 paths/turn)
+  ✓ git worktree add | remove (path setup)
+  ✗ compile.sh | dotnet | npm | nerdctl | python | bash <project-script> # → dispatch
+  ✗ cat <file> | head | tail (use Read for ≤2 files; else dispatch)
+Agent: ✓ dispatch (background by default per DISPATCH_MODE)
+NTFY: ✓ publish | poll
+AskUserQuestion: ✓ (foreground decision_required)
+ACTION_NOT_ON_WHITELIST → STOP. Either dispatch or NTFY user.
+
 ## TURN_LOOP
 1. read(STATE.md, CLAUDE.md) # in_context_already_after_session_start
 2. poll(atlas-claude-reply) IF wakeup | pre_status
@@ -111,6 +138,28 @@ AFTER_DISPATCH [supervisor_advance, ¬wait]:
   ✓ kick_off(parallel_track) on different branch
   ✓ end_turn (background notifies on completion)
   ✗ poll | sleep | re-check_progress # auto-notification handles it
+
+## STOP_ON_OBSTACLE [HARD_STOP — drift killer]
+PRINCIPLE: when an allowlist action fails, DO NOT drill deeper. NTFY user + end_turn.
+PATTERN [observed-this-session]: action_X_blocked → resist_chain(X+1, X+2, …)
+  push_blocked_by_hook
+    ✓ ntfy("push hook stomps shared marker; commit-keyed marker is the fix") + end_turn
+    ✗ supervisor_runs_compile.sh_+_branch_surgery_to_satisfy_marker
+  agent_returns_BLOCKED
+    ✓ ntfy(blocker_description) + end_turn
+    ✗ supervisor_writes_inline_analysis
+  dispatch_permission_prompt
+    ✓ ntfy("perm prompt on path X; needs allowlist or different path") + end_turn
+    ✗ supervisor_blocks_on_UI_or_routes_around_silently
+  build_or_test_run_needed_to_unblock_supervisor
+    ✓ dispatch(build-agent, run_in_background=true) + end_turn ¬ if user not waiting
+    ✗ supervisor_runs_build_themselves
+TRIGGER_PHRASES (stop instantly):
+  - "let me just satisfy the X by Y…"
+  - "the obstacle requires Z, I'll do Z then continue"
+  - "one more step and the push will work"
+  - "let me diagnose the hook / config / script"
+RATIONALE: every_workaround = N+1_supervisor_bash_calls = co-worker_drift; the_obstacle = user_decision_point ¬ supervisor_TODO
 
 ## RACE_GUARDS [HARD_STOP]
 GIT_ADD_RULE:
@@ -243,6 +292,12 @@ cap: 500K_tpm_client_side
 | "Easier to see the result inline" | Inline waiting = co-worker; dispatch + advance + auto-notification |
 | "Agent returned BLOCKED — I'll just answer the user inline" | NTFY-publish + end_turn; ¬dump_blocker_in_foreground |
 | "Just one foreground impl dispatch, won't take long" | Foreground for impl is the worker pattern; mode is unconditional |
+| "I'll just run compile.sh once to refresh the marker" | Build = always_dispatch; if push is blocked → STOP_ON_OBSTACLE → NTFY |
+| "Branch surgery is just git, not impl" | 4+ bash calls to satisfy a hook = drift; NTFY the hook design issue |
+| "The hook is broken; let me work around it" | Hook design issue → flag for user, do NOT inline-fix or route around |
+| "Action N failed; let me try N+1 to unblock" | Slippery slope. STOP_ON_OBSTACLE: NTFY + end_turn |
+| "I'm under turn budget so one more is fine" | Caps are HARD_STOP, not soft target. Exceeded = end turn. |
+| "User is here so I should just power through" | User asking ≠ user wants worker mode. NTFY status, let them redirect. |
 
 ## RED_FLAGS [stop_and_dispatch]
 - About to Read a file that's NOT STATE.md / active plan / CLAUDE.md
@@ -255,6 +310,12 @@ cap: 500K_tpm_client_side
 - About to omit `run_in_background=true` on an impl|build|test dispatch
 - Sentence starts with "Let me wait for…" / "After the agent finishes…" / "I'll watch the agent…"
 - Agent returned BLOCKED and I'm typing the analysis into supervisor turn (instead of NTFY + end_turn)
+- About to invoke compile.sh, dotnet, npm, nerdctl, or any project build/test script
+- About to do `git checkout` of a branch other than my own chore branch (to "fix" something)
+- About to read or diagnose a hook/script file
+- 5th+ Bash call in a single turn (regardless of intent)
+- Action just failed and I'm formulating action N+1 to "make it work"
+- Sentence starts with "let me just satisfy…" / "one more step…" / "to unblock the push…"
 → STOP. Either dispatch a subagent (background by default) or NTFY the user + end_turn. Do not co-work.
 
 ## ANTI [supervisor HARD_STOP]
@@ -276,6 +337,10 @@ cap: 500K_tpm_client_side
 ✗ wait_for_agent_when_no_decision_pending # use background + advance
 ✗ dump_agent_BLOCKED_report_in_foreground # NTFY + end_turn
 ✗ poll | sleep_loop | re-check_background_agent # auto-notification handles it
+✗ supervisor_runs_build|test|compile # always_dispatch, no exceptions
+✗ branch_surgery_to_satisfy_a_hook # NTFY hook design issue, ¬inline_workaround
+✗ chain_of_actions_to_unblock_a_failed_action # STOP_ON_OBSTACLE
+✗ exceed_TURN_BUDGET_caps # caps are hard, not soft
 
 ## TRIGGER_PATTERNS [supervisor]
 IF multi_agent_work THEN
