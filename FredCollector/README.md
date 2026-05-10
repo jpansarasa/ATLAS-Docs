@@ -19,6 +19,8 @@ flowchart LR
 
 Data flows from the FRED API into FredCollector on a cron schedule. New observations are persisted to TimescaleDB, published as gRPC events for ThresholdEngine, and registered with SecMaster as instruments.
 
+Schema is owned by `src/Data/Migrations/` (EF Core). Recent migrations include `AddSeriesSectorTags` and `AddSeriesSignalIdentityTag` (which carry the SecMaster ATLAS-sector + signal-identity classifications down to per-series rows) and `ConvertAtlasSectorCodeToEnum` (the EF value-converter cutover landed by `Events.EntityFrameworkCore`).
+
 ## Features
 
 - **Scheduled Collection**: Quartz cron schedules with Federal Reserve holiday awareness
@@ -44,8 +46,14 @@ Data flows from the FRED API into FredCollector on a cron schedule. New observat
 | `ENABLE_INITIAL_BACKFILL` | Run backfill on startup | `true` |
 | `BACKFILL_MONTHS` | Default backfill depth in months | `24` |
 | `BACKFILL_STARTUP_DELAY_SECONDS` | Delay before startup backfill begins | `5` |
-| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry | `fred-collector` |
+| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `fred-collector` |
+| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
+| `DB_HOST` | PostgreSQL host (used when no `ConnectionStrings__*` is configured) | `timescaledb` |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_USER` | PostgreSQL user | `ai_inference` |
+| `DB_PASSWORD` | PostgreSQL password | (from ansible-vault) |
+| `DB_NAME` | PostgreSQL database name | `atlas_data` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:5001` |
 | `ApiKey__Enabled` | Enable API key authentication | `false` |
 | `ApiKey__Key` | API key value (when enabled) | - |

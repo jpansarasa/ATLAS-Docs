@@ -34,7 +34,9 @@ AI assistants connect via SSE, SecMasterMcp proxies requests to the SecMaster ba
 | `SECMASTER_MCP_LOG_LEVEL` | Logging level | `Warning` |
 | `SECMASTER_MCP_TIMEOUT_SECONDS` | HTTP request timeout | `30` |
 
-## MCP Tools
+## API Endpoints
+
+The MCP server's public surface is its set of MCP tools (over SSE on port 3107). Each tool below is an API endpoint of the server.
 
 ### Search and Resolution
 

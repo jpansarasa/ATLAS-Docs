@@ -54,8 +54,9 @@ Alerts arrive via POST webhook, get parsed (Alertmanager or direct format), enqu
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry | `alert-service` |
+| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `alert-service` |
+| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
 | `Channels__Ntfy__Enabled` | Enable Ntfy channel | `true` |
 | `Channels__Ntfy__Endpoint` | Ntfy server URL | `https://ntfy.sh` |
 | `Channels__Ntfy__Topic` | Ntfy topic name | `atlas-alerts` |

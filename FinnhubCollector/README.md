@@ -38,13 +38,21 @@ Data flows from the Finnhub API through scheduled background collection into Tim
 | `Finnhub__ApiKey` | API key from finnhub.io | Required |
 | `Finnhub__BaseUrl` | Finnhub API base URL | `https://finnhub.io/api/v1/` |
 | `RATE_LIMITER_CAPACITY` | Requests per minute | `60` |
-| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry | `finnhub-collector-service` |
+| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `finnhub-collector-service` |
+| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
+| `DB_HOST` | PostgreSQL host (used when no `ConnectionStrings__*` is configured) | `timescaledb` |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_USER` | PostgreSQL user | `ai_inference` |
+| `DB_PASSWORD` | PostgreSQL password | (from ansible-vault) |
+| `DB_NAME` | PostgreSQL database name | `atlas_data` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint (optional) | - |
 | `Kestrel__HttpPort` | HTTP API port | `8080` |
 | `Kestrel__GrpcPort` | gRPC streaming port | `5001` |
 
 ## API Endpoints
+
+REST surface lives in `src/Endpoints/` — public read APIs (`ApiEndpoints`) and admin/management routes (`AdminEndpoints`).
 
 ### REST API (Port 8080)
 

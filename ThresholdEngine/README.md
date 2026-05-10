@@ -55,16 +55,24 @@ Collectors push observation events over gRPC. ThresholdEngine caches observation
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | Required |
+| `ConnectionStrings__AtlasDb` | PostgreSQL connection string. Falls back to composing from `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` when not set. | Required (or DB_* fallback) |
+| `DB_HOST` | PostgreSQL host (used when `ConnectionStrings__AtlasDb` is not set) | `timescaledb` |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_USER` | PostgreSQL user | `ai_inference` |
+| `DB_PASSWORD` | PostgreSQL password | (from ansible-vault) |
+| `DB_NAME` | PostgreSQL database name | `atlas_data` |
 | `Collectors__Items__*__ServiceUrl` | gRPC URLs for collectors | See appsettings.json |
-| `PatternConfig__Path` | Pattern config directory | `./config` (dev), `/app/config` (prod) |
+| `PatternConfig:Path` (a.k.a. `PatternConfig__Path`) | Pattern config directory | `./config` (dev), `/app/config` (prod) |
 | `PatternConfig__HotReload` | Enable file system watcher | `true` |
 | `PatternConfig__WatchInterval` | File watcher polling interval (ms) | `1000` |
 | `MacroScoring__CategoryWeights__*` | Category weights for macro score | See appsettings.json |
-| `OpenTelemetry__OtlpEndpoint` | OpenTelemetry collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry | `thresholdengine-service` |
+| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `thresholdengine-service` |
+| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
 
 ## API Endpoints
+
+REST surface lives in `src/Endpoints/PatternEndpoints.cs` (route group `/api/patterns`); gRPC surface lives in `src/Grpc/`.
 
 ### REST API (Port 8080)
 

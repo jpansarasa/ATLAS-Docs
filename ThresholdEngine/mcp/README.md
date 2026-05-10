@@ -54,7 +54,9 @@ Data flows from AI assistant requests through MCP to ThresholdEngine, which eval
 | `THRESHOLDENGINE_MCP_LOG_LEVEL` | Logging level | `Warning` |
 | `THRESHOLDENGINE_MCP_TIMEOUT_SECONDS` | HTTP request timeout | `30` |
 
-## MCP Tools
+## API Endpoints
+
+The MCP server's public surface is its set of MCP tools (over SSE on port 3104). Each tool below is an API endpoint of the server.
 
 ### Evaluation
 

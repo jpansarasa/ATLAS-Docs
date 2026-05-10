@@ -32,7 +32,9 @@ AI assistants connect via SSE transport. The MCP server translates tool calls to
 | `FREDCOLLECTOR_MCP_LOG_LEVEL` | `Warning` | Logging level |
 | `FREDCOLLECTOR_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
 
-## MCP Tools
+## API Endpoints
+
+The MCP server's public surface is its set of MCP tools (over SSE on port 3103). Each tool below is an API endpoint of the server.
 
 ### Data Query Tools
 

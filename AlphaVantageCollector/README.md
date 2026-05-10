@@ -57,7 +57,9 @@ The scheduler prioritizes series collection within the daily API limit, skipping
 | `ConnectionStrings__AtlasDb` | PostgreSQL connection string | Required |
 | `AlphaVantage__ApiKey` | API key from alphavantage.co | Required |
 | `AlphaVantage__DailyLimit` | Max requests per day | `25` |
-| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `alphavantage-collector` |
+| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:5001` |
 
 ## API Endpoints

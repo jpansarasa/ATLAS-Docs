@@ -34,7 +34,9 @@ AI assistants connect via MCP protocol (SSE transport) to query stored market da
 | `FINNHUB_MCP_LOG_LEVEL` | Logging level | `Warning` |
 | `FINNHUB_MCP_TIMEOUT_SECONDS` | HTTP request timeout | `30` |
 
-## MCP Tools
+## API Endpoints
+
+The MCP server's public surface is its set of MCP tools (over SSE on port 3105). Each tool below is an API endpoint of the server.
 
 ### Data Query Tools (15 tools)
 

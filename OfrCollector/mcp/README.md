@@ -30,7 +30,9 @@ flowchart LR
 | `OFRCOLLECTOR_API_URL` | Backend service URL | `http://ofr-collector:8080` |
 | `OFRCOLLECTOR_MCP_TIMEOUT_SECONDS` | HTTP request timeout | `30` |
 
-## MCP Tools
+## API Endpoints
+
+The MCP server's public surface is its set of MCP tools (over SSE on port 3106). Each tool below is an API endpoint of the server.
 
 ### FSI Tools (Financial Stress Index)
 

@@ -39,9 +39,9 @@ Nasdaq Data Link is polled every 6 hours. New observations are stored in Timesca
 | `ConnectionStrings__AtlasDb` | TimescaleDB connection string | **Required** |
 | `Nasdaq__ApiKey` | Nasdaq Data Link API key | **Required** |
 | `Nasdaq__BaseUrl` | Nasdaq Data Link base URL | `https://data.nasdaq.com/api/v3` |
-| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry | `nasdaq-collector` |
-| `OpenTelemetry__ServiceVersion` | Service version tag | `1.0.0` |
+| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `nasdaq-collector` |
+| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version tag | `1.0.0` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint (optional) | _(none)_ |
 
 ## API Endpoints

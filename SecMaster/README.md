@@ -65,8 +65,28 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `Collectors__OfrCollectorUrl` | OFR collector URL | `http://ofr-collector:8080` |
 | `Collectors__AlphaVantageCollectorUrl` | AlphaVantage collector URL | `http://alphavantage-collector:8080` |
 | `InstrumentConfiguration__ConfigDirectory` | Path to instrument config files | `/app/config` |
+| `OpenTelemetry:OtlpEndpoint` | OTLP exporter target (Loki/Tempo/Prometheus via collector) | `http://otel-collector:4317` |
+| `OpenTelemetry:ServiceName` | Service name tag in OTEL resource attributes | `secmaster` |
+| `OpenTelemetry:ServiceVersion` | Service version tag in OTEL resource attributes | `1.0.0` |
 
 ## API Endpoints
+
+REST endpoints are split across the following endpoint groups under `src/Endpoints/`:
+
+- **InstrumentEndpoints** (`/api/instruments`) — CRUD over instruments + source mappings.
+- **ResolutionEndpoints** (`/api/resolve`) — symbol → source resolution (single, batch, reverse).
+- **RegistrationEndpoints** (`/api/register`) — collector-side series registration.
+- **SearchEndpoints** (`/api/search`) — fuzzy text search.
+- **SemanticSearchEndpoints** (`/api/semantic`) — vector / hybrid / RAG.
+- **CatalogEndpoints** (`/api/catalog`) — upstream discovery + promotion.
+- **CollectorEndpoints** (`/api/collectors`) — gateway for collector series management.
+- **AtlasSectorEndpoints** (`/api/atlas-sectors`) — 11-sector ATLAS taxonomy lookups + NAICS rollups.
+- **NaicsEndpoints** (`/api/naics`) — NAICS code hierarchy (browse + resolve).
+- **SignalIdentitiesEndpoints** (`/api/signal-identities`) — signal-identity dedup grouping for cross-source equivalents.
+- **EdgarEndpoints** (`/api/edgar`) — EDGAR filer registry (CIK / ticker lookup, refresh).
+- **IdentifiersEndpoints** (`/api/identifiers`) — generic identifier-resolution surface.
+- **InstrumentOverrideEndpoints** (`/api/instruments/{id}/sector-override`, `/api/admin/sector-overrides`) — manual sector override lifecycle.
+- **AdminEndpoints** (`/api/admin`) — catalog coverage report + dedup maintenance ops.
 
 ### REST API (Port 8080)
 
@@ -77,6 +97,9 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `/api/instruments/{id}` | GET/PUT/DELETE | CRUD by ID |
 | `/api/instruments/{id}/sources` | GET | Get source mappings for instrument |
 | `/api/instruments/by-symbol/{symbol}` | GET | Get by symbol |
+| `/api/instruments/{instrumentId}/sector-override` | GET/POST | Get active sector override / set new override |
+| `/api/instruments/{instrumentId}/sector-overrides/history` | GET | Override history for an instrument |
+| `/api/instruments/sector-overrides/{overrideId}` | DELETE | Revoke an active sector override |
 | `/api/resolve/{symbol}` | GET | Resolve symbol to best data source |
 | `/api/resolve` | POST | Resolve with context (frequency, lag, preference) |
 | `/api/resolve/batch` | GET | Batch resolve multiple symbols |
@@ -85,7 +108,10 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `/api/search` | GET | Fuzzy text search |
 | `/api/semantic/search` | GET | Vector similarity search |
 | `/api/semantic/resolve` | GET | Hybrid resolution (SQL, fuzzy, vector, RAG) |
+| `/api/semantic/resolve-local` | GET | Hybrid resolution restricted to local catalog |
 | `/api/semantic/ask` | POST | Natural language Q&A with RAG |
+| `/api/semantic/embed/{instrumentId}` | POST | Force-embed a single instrument |
+| `/api/semantic/embed/backfill` | POST | Backfill embeddings for missing/stale rows |
 | `/api/catalog/search` | GET | Search catalog with upstream discovery |
 | `/api/catalog/{id}/promote` | POST | Promote discovered instrument to collection |
 | `/api/collectors/search` | GET | Smart search across all collectors |
@@ -93,6 +119,24 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `/api/collectors/{collector}/series` | POST | Add series to a collector |
 | `/api/collectors/{collector}/series/{id}/toggle` | PUT | Toggle series active status |
 | `/api/collectors/{collector}/series/{id}` | DELETE | Remove series from collector |
+| `/api/atlas-sectors/` | GET | List the 11 ATLAS sectors |
+| `/api/atlas-sectors/resolve` | GET | Resolve a symbol/identifier to its ATLAS sector |
+| `/api/atlas-sectors/{sectorCode}/naics` | GET | List NAICS codes that roll up to a sector |
+| `/api/naics/` | GET | Browse NAICS codes by prefix |
+| `/api/naics/{parentCode}/children` | GET | List child NAICS codes under a parent |
+| `/api/naics/{code}` | GET | Resolve a NAICS code (with rollup target) |
+| `/api/signal-identities/` | GET | List signal identities |
+| `/api/signal-identities/by-alias` | GET | Lookup signal identity by alias |
+| `/api/signal-identities/by-category/{category}` | GET | List by signal category |
+| `/api/signal-identities/{id}` | GET | Signal-identity detail |
+| `/api/signal-identities/{id}/dedup` | GET | Dedup grouping (cross-source equivalents) |
+| `/api/edgar/filers/{cik}` | GET | EDGAR filer by CIK |
+| `/api/edgar/filers/by-ticker/{ticker}` | GET | EDGAR filer by ticker |
+| `/api/edgar/refresh` | POST | Refresh EDGAR filer registry from upstream |
+| `/api/identifiers/resolve` | GET | Resolve generic identifier (CUSIP, ISIN, etc.) |
+| `/api/admin/catalog/coverage` | GET | Catalog coverage report |
+| `/api/admin/catalog/dedupe-fred-hijacks` | POST | Dedup catalog FRED hijack rows |
+| `/api/admin/sector-overrides` | GET | List all active sector overrides |
 
 ### gRPC Services (Port 5001)
 
@@ -110,8 +154,11 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 SecMaster/
 ├── src/
 │   ├── Configuration/    # Options classes (collectors, semantic search)
-│   ├── Data/             # DbContext, entities, migrations, repositories
-│   ├── Endpoints/        # REST API handlers
+│   ├── Data/
+│   │   ├── Entities/     # 11 entities — see list below
+│   │   ├── Migrations/   # EF migrations (baseline + 13 since)
+│   │   └── Repositories/ # query/persistence helpers
+│   ├── Endpoints/        # REST API handlers (see API Endpoints section for the full list)
 │   ├── Grpc/             # gRPC service implementations
 │   ├── HealthChecks/     # Database health check
 │   ├── Models/           # Resolution models
@@ -122,6 +169,20 @@ SecMaster/
 ├── config/               # Instrument configuration files
 └── .devcontainer/        # Dev container config
 ```
+
+### Entities (`src/Data/Entities/`)
+
+- `InstrumentEntity` — primary instrument row (symbol, name, asset class, NAICS + ATLAS sector tags).
+- `InstrumentEmbeddingEntity` — pgvector embedding (bge-m3, 1024-dim) for semantic search.
+- `InstrumentSectorOverrideEntity` — manual ATLAS-sector override (lifecycle-tracked, FK to instrument).
+- `SourceMappingEntity` — instrument ↔ collector source-id mapping (with frequency/lag metadata).
+- `AliasEntity` — alternate symbols / tickers for an instrument.
+- `AtlasSectorEntity` — 11-row ATLAS sector taxonomy (FK target).
+- `NaicsCodeEntity` — full NAICS 2022 hierarchy.
+- `NaicsSectorRollupEntity` — NAICS → ATLAS sector rollup mappings.
+- `SignalIdentityEntity` — cross-source signal-identity grouping (dedup target).
+- `EdgarFilerEntity` — EDGAR filer registry (CIK + tickers).
+- `MappingVersionEntity` — version-pinned mappings for reproducible resolution.
 
 ## Development
 

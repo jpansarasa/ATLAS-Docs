@@ -19,6 +19,8 @@ flowchart LR
 
 The service pulls data from three OFR sources (FSI via CSV, STFM and HFM via JSON API), persists observations in TimescaleDB, and streams events to ThresholdEngine over gRPC. New instruments are registered with SecMaster on discovery.
 
+Schema is owned by `src/Data/Migrations/` (EF Core) — backed by entities in `src/Data/Entities/`: `FsiEntity` (top-level FSI), `StfmSeriesEntity` / `StfmObservationEntity` (Short-term Funding Monitor), `HfmSeriesEntity` / `HfmObservationEntity` (Hedge Fund Monitor), and `CollectionLogEntity` (per-run audit trail).
+
 ## Features
 
 - **Multi-source Collection**: FSI (Financial Stress Index), STFM (Short-term Funding Monitor), HFM (Hedge Fund Monitor)
@@ -36,15 +38,20 @@ The service pulls data from three OFR sources (FSI via CSV, STFM and HFM via JSO
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ConnectionStrings__AtlasDb` | PostgreSQL/TimescaleDB connection string | **Required** |
-| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry | `ofr-collector-service` |
-| `OpenTelemetry__ServiceVersion` | Service version for telemetry | `1.0.0` |
+| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `ofr-collector-service` |
+| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for telemetry | `1.0.0` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint (optional) | - |
 | `SeriesConfig__Directory` | Directory for series config files | `/app/config` |
 | `Kestrel__HttpPort` | HTTP listener port | `8080` |
 | `Kestrel__GrpcPort` | gRPC listener port | `5001` |
 
 ## API Endpoints
+
+REST surface lives in `src/Endpoints/`:
+
+- **ApiEndpoints** — public read APIs (`/api/fsi/*`, `/api/stfm/*`, `/api/hfm/*`, `/api/categories`, `/api/search`).
+- **AdminEndpoints** — collection / backfill / series-management surface (`/api/admin/*`).
 
 ### REST API (Port 8080)
 

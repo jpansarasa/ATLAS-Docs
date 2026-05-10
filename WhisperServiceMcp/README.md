@@ -51,7 +51,11 @@ AI assistants connect via MCP over SSE transport. The MCP server proxies request
 | `WHISPER_MCP_LOG_LEVEL` | Serilog minimum log level | `Warning` |
 | `ASPNETCORE_URLS` | Listen address | `http://+:8080` |
 
-## API (MCP Tools)
+## API Endpoints
+
+The MCP server's public surface is its set of MCP tools (over SSE on port 3108). Each tool below is an API endpoint of the server.
+
+### MCP Tools
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|

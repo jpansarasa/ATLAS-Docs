@@ -50,6 +50,8 @@ flowchart LR
 
 Collection workers ingest content from multiple sources, normalize it to markdown, extract observations via LLM, resolve against SecMaster, and publish events over gRPC for ThresholdEngine consumption.
 
+Schema is owned by `src/Data/Migrations/` (EF Core). Recent migrations land the review-status / correction / RSS-feed / schedule-type / time-range / retry-count / digest / sector / symbol fields on the core `RawContent` and `ExtractedObservation` tables — the human-review pipeline and validation-trigger machinery are entirely schema-driven.
+
 ## Features
 
 - **SearXNG Collection**: Scheduled news search across configurable engines with daily, weekly, and market-hours schedules
@@ -82,9 +84,17 @@ Collection workers ingest content from multiple sources, normalize it to markdow
 | `Searxng__ScheduleTimes` | Scheduled collection times (JSON array) | `["09:30","12:00","16:00","22:00"]` |
 | `SecMaster__Endpoint` | SecMaster API endpoint | `http://secmaster:8080` |
 | `Markitdown__Endpoint` | Markitdown MCP endpoint | `http://markitdown-mcp:3102` |
-| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `sentinel-collector` |
+| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
 
 ## API Endpoints
+
+REST surface lives under `src/Endpoints/`:
+
+- **AdminEndpoints** — `/admin/*` admin/inspection/CRUD APIs (stats, sources, queries, retention, review queue, RSS feeds, validation triggers, reprocess).
+- **ReviewUiEndpoints** — `/ui/review` browser-based human-review UI (list, detail, action POST).
+- **DigestEndpoints** — `/sentinel/digests/*` daily digest generation, retrieval (HTML/Markdown/JSON), and ntfy resend.
 
 ### REST API (Port 8080)
 
@@ -102,7 +112,12 @@ Collection workers ingest content from multiple sources, normalize it to markdow
 | `/admin/review/backfill-resolution` | POST | Backfill SecMaster resolution for unresolved observations |
 | `/admin/rss-feeds` | CRUD | Manage RSS feed subscriptions |
 | `/admin/validation-triggers` | CRUD | Manage validation trigger rules |
-| `/ui/review` | GET | Browser-based review UI |
+| `/sentinel/digests/` | GET | List daily digests |
+| `/sentinel/digests/latest` | GET | Latest daily digest |
+| `/sentinel/digests/{id}` | GET | Digest as HTML (also `.md` and `.json` variants) |
+| `/sentinel/digests/generate` | POST | Generate a digest on demand |
+| `/sentinel/digests/{id}/resend` | POST | Resend digest ntfy notification |
+| `/ui/review` | GET | Browser-based review UI (host-mapped on port 5091) |
 | `/health` | GET | Health check with component status |
 | `/health/ready` | GET | Readiness check (database, Ollama) |
 | `/health/live` | GET | Liveness check |
@@ -174,6 +189,7 @@ ansible-playbook playbooks/deploy.yml --tags sentinel-collector
 |------|------|-------------|
 | 8080 | HTTP (container) | REST API, health checks, review UI, Swagger |
 | 5001 | HTTP/2 (container) | gRPC event stream |
+| 5091 | HTTP (host-mapped) | Browser access to the review UI (`/ui/review`) and digest pages (`/sentinel/digests/*`) — maps to container 8080 |
 
 ## See Also
 

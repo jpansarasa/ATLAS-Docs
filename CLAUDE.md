@@ -1,4 +1,4 @@
-# CLAUDE.md [CODE.GEN.RULES v1.0]
+# CLAUDE.md [CODE.GEN.RULES v1.1]
 
 ## ETHOS
 pragmatic > dogmatic
@@ -101,11 +101,33 @@ USE_CASES:
   ✗ database_storage: handled_by_ef_core
 
 ## DOC [selective]
-CLI → help(required)
-fn → params(brief) # autocomplete_aid
-inline → minimal # rot_risk
-design → .md ¬ code
-principle: self_doc + strategic_comment
+PRINCIPLE: WHY ¬ WHAT # code_shows_what, comment_shows_why
+LEVELS:
+  module → header(3-5 lines): purpose + invariants + ext_deps # agent_navigation_aid, low_rot
+  fn → params(brief) + raises(if_non_obvious) # autocomplete + contract
+  inline → minimal # rot_risk
+  design → .md ¬ code
+  CLI → help(required)
+COMMENT_TEST [inline]: ¬write UNLESS captures one of:
+  ✓ rationale # "retry 3x: vendor cold-start race"
+  ✓ non_obvious_invariant # "X and Y mutually exclusive, schema doesn't enforce"
+  ✓ workaround # bug_link | external_constraint
+  ✓ hidden_constraint # "single-caller; multi-caller breaks throttle"
+  ✓ surprising_behavior # "exit 0 always; findings on stdout"
+  ✓ domain_rationale # "z-score within sector before combination" | paper_ref(arxiv:NNNN)
+ANTI [comment HARD_STOP]:
+  ✗ restate_name # "The X." on field/property X — types_self_document
+  ✗ narrate_mechanics # "loop through items" — code_shows_this
+  ✗ describe_populator # "populated by Y service" — rot_risk_when_Y_changes
+  ✗ reference_caller # "used by Z" — belongs_in_PR_desc
+  ✗ example_values # "(CPI, payrolls, M2, …)" — drift_with_seed
+  ✗ ticket_id_in_comment # "Story 1.x.y / Phase N / fix #N" — belongs_in_commit_msg
+REF_DISTINCTION:
+  ✓ durable_external # paper | RFC | ADR | arxiv | spec_section — long_lived_context
+  ✗ transient_internal # jira | story | phase | PR_number — drift_with_workflow
+MAINTAIN [edit_code]:
+  ∀edit → review(nearby_comments) → update | delete(stale)
+  rationale: stale_comment > no_comment # actively_misleads_human_and_agent
 
 ## TEST [selective]
 IF complex ∧ fail_prone → unit
