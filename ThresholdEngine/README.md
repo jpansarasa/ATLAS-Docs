@@ -111,7 +111,7 @@ ThresholdEngine/
 │   ├── Data/                 # DbContext, repositories, migrations
 │   ├── Endpoints/            # REST API endpoints
 │   ├── Entities/             # Domain models, PatternEvaluationContext
-│   ├── Enums/                # MacroRegime, PatternCategory, TemporalType
+│   ├── Enums/                # TemporalType
 │   ├── Events/               # Event bus infrastructure
 │   ├── Grpc/                 # gRPC client consumers and server service
 │   ├── HealthChecks/         # Database, pattern, gRPC, data health checks

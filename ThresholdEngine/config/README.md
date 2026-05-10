@@ -46,7 +46,6 @@ Pattern JSON schema (per-file):
   "description": "VIX >22 indicates elevated volatility, context-dependent signal",
   "expression": "ctx.GetLatest(\"VIXCLS\") > 22m",
   "signalExpression": "ctx.GetLatest(\"VIXCLS\") > 30m ? 2m : 1m",
-  "applicableRegimes": ["Crisis", "Recession", "LateCycle"],
   "requiredSeries": ["VIXCLS"],
   "sectorWeights": {
     "ENERGY": 0.0, "MATERIALS": 0.0, "INDUSTRIALS": 0.0,

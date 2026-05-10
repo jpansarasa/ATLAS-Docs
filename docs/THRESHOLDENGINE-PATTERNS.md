@@ -87,20 +87,6 @@ values.Any(predicate)     // Any match
 values.All(predicate)     // All match
 ```
 
-### MacroRegime Enum
-
-```csharp
-public enum MacroRegime
-{
-    Crisis = -3,
-    Recession = -2,
-    LateCycle = -1,
-    Neutral = 0,
-    Recovery = 1,
-    Growth = 2
-}
-```
-
 ### Expression Types
 
 **Condition Expression** - Returns `bool`, determines if pattern triggers:
@@ -337,7 +323,6 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
   "description": "string",
   "expression": "C# condition expression",
   "signalExpression": "C# signal expression (-3 to +3)",
-  "applicableRegimes": ["Crisis", "Recession", "LateCycle", "Neutral", "Recovery", "Growth"],
   "requiredSeries": ["SERIES1", "SERIES2"],
   "sectorWeights": {
     "ENERGY": 0.0, "MATERIALS": 0.0, "INDUSTRIALS": 0.0,
@@ -370,7 +355,6 @@ The loader sets `UnmappedMemberHandling = Disallow` — unknown keys (e.g. legac
 | `description` | string | Explanation of what the pattern detects |
 | `expression` | string | C# condition expression returning bool |
 | `signalExpression` | string | C# signal expression returning decimal (-3 to +3) |
-| `applicableRegimes` | array | Macro regimes where pattern is applicable |
 | `requiredSeries` | array | FRED/data series IDs required for evaluation |
 | `sectorWeights` | object | Per-sector weights for the 11 ATLAS sectors (zeros for unaffected sectors; D5 explicit-zero sparsity policy) |
 
@@ -397,7 +381,6 @@ The loader sets `UnmappedMemberHandling = Disallow` — unknown keys (e.g. legac
   "description": "ISM Manufacturing PMI below 50 indicates economic contraction in the manufacturing sector.",
   "expression": "ctx.GetLatest(\"NAPM\") < 50m",
   "signalExpression": "var ism = ctx.GetLatest(\"NAPM\") ?? 50m; return ism < 45m ? -2m : ism < 50m ? -1m : 0m;",
-  "applicableRegimes": ["Neutral", "LateCycle", "Recession", "Crisis"],
   "requiredSeries": ["NAPM"],
   "sectorWeights": {
     "ENERGY": 0.0, "MATERIALS": 0.5, "INDUSTRIALS": 1.0,
