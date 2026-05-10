@@ -135,6 +135,8 @@ Add 3 sln entries (mirrors Events triad at `ATLAS.sln:130–160`):
 
 Update `CLAUDE.md SERVICES [monorepo]` to list `substrate: MacroSubstrate` (one-line edit, supervisor lands it as part of Story 3.1.0 prep).
 
+> **Correction (post-Story 3.1.0, 2026-05-10):** ATLAS.sln is **gitignored** per commit `6d30136` ("chore: Remove .sln files and fix devcontainer build context"); the sln is dev-local only. `compile.sh` builds csprojs directly without it. Story 3.1.0 landed without sln changes; this Solution-wiring step is dev-local convenience only and **must not be committed**. Future stories should not include sln updates as a deliverable.
+
 ## Open risks (NTFY-worthy before ratifying)
 
 1. **New top-level project = new build/deploy artifact.** Variant A adds a 4th container topology pattern (migrate-only). Default to A; alternative is B (piggyback on FredCollector startup). One-line user ratification needed.

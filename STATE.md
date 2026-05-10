@@ -5,7 +5,7 @@
 - **Phase:** 1 (spine) — ✓ DONE; Phase 2 unblocked (Epic 2, Epic 3, Epic 4 Feature 4.6)
 - **Branch:** `main` (squash-merge `a08b806`); local epic branch can be deleted
 - **PR:** https://github.com/jpansarasa/ATLAS/pull/215 — **MERGED**
-- **Story in flight:** *(none — Phase 2 recon complete; awaiting user ratification on Epic 3 owner + Risk 1–7)*
+- **Story in flight:** Epic 2 Story 2.1.1 (TE strip `category` schema layer) — background agent on `epic/2-te-schema-rework`. Epic 3 Story 3.1.0 (MacroSubstrate scaffolding) ✓ landed, PR #219 open.
 
 ## EPIC 1 STORY QUEUE — all done
 1. ✓ 1.1.1 NAICS taxonomy import (commits dac5b95→fa46b29)
@@ -77,7 +77,7 @@
 ## OPEN ASKS (for user)
 - D15 ratification: `docs/llm/ACCEPTANCE_CRITERIA.md` DRAFT → RATIFIED (blocks Phase 2 Feature 4.6 only).
 - Eval substrate decision (Feature 4.6) — v6.2-cove (70,895) vs. subset.
-- Epic 3 owning-project decision — Plan agent dispatched for written recommendation; user decides post-recommendation.
+- Epic 3 owning-project decision — ✓ ratified Option 2 (new `MacroSubstrate` project). Risks 1–7 in `docs/plans/atlas-matrix/epic-3-owner-recommendation.md` still need pre-Story-3.1.1 ratification.
 
 ## PHASE 2 KICKOFF (decided 2026-05-10)
 - Strategy: **parallel branches** Epic 2 + Epic 3 (Feature 4.6 deferred until D15 ratified).
@@ -110,8 +110,8 @@
 ## PHASE STATUS
 - **Phase 1** — Spine — ✓ DONE (Epic 1 merged to main as `a08b806`)
 - **Phase 2** — Substrate / TE schema / LLM track — → IN FLIGHT
-  - Epic 2 (TE schema rework) — → branch live, Story 2.1 audit-recon dispatched
-  - Epic 3 (`macro_observations` substrate) — → branch live, owning-project Plan agent dispatched
+  - Epic 2 (TE schema rework) — → Story 2.1.1 background agent in flight on `epic/2-te-schema-rework`
+  - Epic 3 (`macro_observations` substrate) — → Story 3.1.0 ✓ done (PR #219); 3.1.1 awaiting risk ratification
   - Epic 4 Feature 4.6 only (LLM reliability track) — ⧗ blocked on D15 ratification
 - **Phase 3** — Sentinel rework + matrix — ⧗ blocked on Phase 2
   - Epic 4 Features 4.1–4.5
@@ -130,5 +130,6 @@
 - All implementation/review/validation went to subagents per CLAUDE.md SUPERVISOR_MODE.
 - Templates dir `/home/james/ATLAS/scripts/agent-prompts/` exists (created Epic 1) with `story-implementation.md`.
 - supervisor-mode skill v2 + readme-consistency skill both wired in; supervisor-mode references readme-consistency in REVIEW_FIX_LOOP suite.
+- supervisor-mode skill discipline tightened mid-session (PRs #217 + #218): TOUCHES vs AUTHORS distinction (≤30-line cap), `NEVER_READ` list, `run_in_background=true` default for impl dispatches, `agent_returns_BLOCKED → ntfy_publish + end_turn`, RATIONALIZATION_TABLE + RED_FLAGS sections. Driven by live failures observed in this session.
 - NTFY channels: publish to `atlas-claude-ask`, poll `atlas-claude-reply`. WAKEUP_STEP_0 is poll-first.
 - Race-guard discipline practiced: selective `git add -- <paths>` throughout; one race incident early in session (resolved by reset+recommit), no regression since.
