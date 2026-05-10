@@ -5,7 +5,11 @@
 - **Phase:** 1 (spine) — ✓ DONE; Phase 2 unblocked (Epic 2, Epic 3, Epic 4 Feature 4.6)
 - **Branch:** `main` (squash-merge `a08b806`); local epic branch can be deleted
 - **PR:** https://github.com/jpansarasa/ATLAS/pull/215 — **MERGED**
-- **Story in flight:** Epic 2 Story 2.1.1 (TE strip `category` schema layer) — background agent on `epic/2-te-schema-rework`. Epic 3 Story 3.1.0 (MacroSubstrate scaffolding) ✓ landed, PR #219 open.
+- **Story 2.1.2 ✓ MERGED** (PR #222 → `ee5f7c5` on main, 2026-05-10). Review suite landed 3 critical + ~6 important findings; fix loop ran on the original branch but DNS hiccup caused merge-before-push of the fix commit.
+- **Recovery in flight:** fix commit `4381068` cherry-picked onto branch `fix/te-2.1.2-review-followup`. Build-agent re-testing for hook marker; will push + open follow-up PR + merge once green.
+- **Out-of-scope deferrals (still on 2.6.1 punch list):** category= tags on gauges/meters in `PatternEvaluationService` + `ThresholdEngineMeter`, `GetPatternContributionsAsync` + DTOs, `MacroScoreCalculator` + `RegimeTransitionDetector` + `PatternCategory` enum deletion.
+- **Next:** Story 2.2.1 (`sectorWeights` on pattern schema) dispatches after fix PR merges (avoids conflict on `PatternConfiguration.cs`/`PatternEvaluationResult.cs`).
+- **Recurring infra issue:** git-push-guard marker is keyed by exact commit hash; agents that compile-then-commit, or any cherry-pick/rebase, force a re-test cycle. 3rd hit this session — flag for future hook redesign (commit-keyed marker placement should happen post-commit, not pre).
 
 ## EPIC 1 STORY QUEUE — all done
 1. ✓ 1.1.1 NAICS taxonomy import (commits dac5b95→fa46b29)
