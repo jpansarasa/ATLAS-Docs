@@ -1,6 +1,6 @@
 ---
 name: supervisor-mode
-description: Supervisor mode workflow — orchestrate multi-agent execution against a structured plan with STATE.md tracking, race-aware dispatch, and trust-but-verify completion
+description: Use when starting or resuming multi-agent execution against a structured plan; when the user invokes /supervisor-mode; when orchestrating multi-step refactors, multi-epic plans, or anything that will fan out across subagents over many turns. Symptoms include "kick off the epic", "drive the plan", "dispatch the work". Do NOT use for single-step tasks the user wants done directly.
 argument-hint: optional plan path; supervisor reads STATE.md + CLAUDE.md by default
 ---
 
@@ -11,15 +11,31 @@ guards, mid-stop recovery, and review-fix discipline learned from running
 ~100+ agent dispatches across multi-epic refactors.
 
 ## ETHOS
+manager > coworker
 dispatch > direct_edit
-verify > trust
+subagent_authors > supervisor_authors
+verify_via_agent > verify_via_supervisor_context
 commit_per_layer > commit_at_end
 selective_pathspec > git_add_-A
+ntfy_when_uncertain > block_on_perm_prompt
 
 ## ROLE_BOUNDARY
-TOUCHES: STATE.md | plan_files | CLAUDE.md | scripts/agent-prompts/
-¬TOUCHES: code (impl|review|validation → subagent)
-OWNS_REMOTE: push | PR_create | PR_update # never_subagent
+EDITS [≤30_lines/turn, index|annotation|cross-link]:
+  STATE.md | plan_files | CLAUDE.md | scripts/agent-prompts/
+  rationale: supervisor_owns_index_not_authorship
+AUTHORS [substantive content >30_lines | new doc | recon write-up]:
+  ¬supervisor → dispatch(Plan|general-purpose|Write-agent) writes_the_file
+  example: recommendation_doc → Plan_agent_writes_to_path_directly
+  example: epic_audit → Explore_agent_writes_/tmp/...; supervisor reads ≤30_line summary
+TOUCHES (code | tests | configs | scripts | hooks): ¬supervisor → subagent
+OWNS_REMOTE: push | PR_create | PR_update # never_subagent (supervisor_judgment_required)
+NEVER_DO_DIRECTLY [HARD_STOP]:
+  ✗ read(agent_output_files | recon_reports | hook_scripts | diagnostic_artifacts)
+  ✗ read(>1_plan_file_per_turn) # active_plan_only; others → recon-agent
+  ✗ grep|find|ls(>3_paths_per_turn) # over → verify-agent
+  ✗ author_substantive_content (>30_lines | new_doc) # → dispatch_authoring_agent
+  ✗ diagnose_scripts # → dispatch_diagnostic
+  rationale: supervisor_context_is_load_bearing; co-worker_drift_destroys_it
 
 ## ENTRY
 prereqs: structured_plan_input + CLAUDE.md + STATE.md (create_if_missing)
@@ -39,11 +55,16 @@ CONTEXT: canonical_plans | recon_cache | open_questions
 1. read(STATE.md, CLAUDE.md) # in_context_already_after_session_start
 2. poll(atlas-claude-reply) IF wakeup | pre_status
 3. select(next_dispatch) | deps_met ∧ disjoint_files ∧ priority_top
-4. dispatch(subagent) | template + scope + budget_guard
-5. on_completion → verify(git_log + git_status + sanity_read)
-6. update(STATE.md) # mark_complete | flag_followups
-7. milestone | blocker → ntfy_publish (atlas-claude-ask)
-8. end_turn (background) | continue (foreground)
+4. perm_check(planned_dispatch):
+     uncertain(worktree | new_paths | non-default_tools) → ntfy_first ¬ block_on_prompt
+     rationale: blocking_on_permission_prompt = supervisor_offline; NTFY_keeps_it_async
+5. dispatch(subagent) | template + scope + budget_guard
+     scope = exact_paths_agent_owns; supervisor_files_excluded
+6. on_completion → verify(git_log + git_status + sanity_read [≤2 files, ≤30 lines])
+     IF more_verification_needed → dispatch(verify-agent) ¬ supervisor_audits_line_by_line
+7. update(STATE.md) # mark_complete | flag_followups; ≤30_lines this_turn
+8. milestone | blocker → ntfy_publish (atlas-claude-ask)
+9. end_turn (background) | continue (foreground)
 
 ## SUBAGENT_DISPATCH
 PROMPT_SHAPE [≤400w]:
@@ -95,8 +116,12 @@ PATTERN: prior_agent's_WIP_files → next_agent's_starting_state
 GATE: ¬mark_complete UNTIL:
   ✓ git log --oneline → expected_commits_present
   ✓ git status --short → working_tree_in_expected_state
-  ✓ sanity_read(1-2_key_files) → match_agent_report
+  ✓ sanity_read(≤2 files, ≤30 lines each) → match_agent_report
   ✗ accept_agent_summary_alone # agent_reports_intent ¬ outcome
+SCOPE_CAP [HARD_STOP]:
+  >3 read-only checks (ls|grep|find|cat|Read) per_turn → dispatch(verify-agent)
+  >2 files_read_into_supervisor_context per_turn → dispatch(verify-agent)
+  rationale: supervisor_context_is_precious; manager_doesn't_audit_line_by_line
 
 ## STORY_SPLIT_HEURISTIC
 SPLIT_IF any:
@@ -147,7 +172,12 @@ RATIONALE: visible_to_others = needs_supervisor_judgment
 
 ## CONTEXT_HYGIENE
 LONG_SUBAGENT_OUTPUT → /tmp/<task-id>/<file> ¬ supervisor_turn
-AGENT_TRANSCRIPT_FILES: ¬read # overflow_risk
+NEVER_READ_INTO_SUPERVISOR [HARD_STOP]:
+  ✗ agent_transcript_files | agent_output_files | recon_reports (.md | .log | .txt at /tmp/**)
+  ✗ hook_scripts | diagnostic_artifacts | sql_dumps
+  ✗ secondary_plan_files (only active_plan + STATE.md + CLAUDE.md)
+  → all → dispatch(read-agent) returning ≤30_line structured_summary
+EXCEPTION: STATE.md | active_plan_file | CLAUDE.md (these are supervisor_memory)
 REUSE: scripts/agent-prompts/ templates ¬ rewrite_each_dispatch
 STATE.md: read_first | write_last per_turn # supervisor_memory
 
@@ -168,6 +198,31 @@ bulk_label | impl: sonnet-4-6
 smoke | triage: haiku-4-5
 cap: 500K_tpm_client_side
 
+## RATIONALIZATION_TABLE [supervisor → coworker drift, plug each]
+| Excuse | Reality |
+|---|---|
+| "TOUCHES means I can author" | TOUCHES = ≤30-line index/annotation; authoring = dispatch (Plan/Write-agent) |
+| "I'll just persist the agent's output to a file myself" | The agent should have written it; if it didn't, dispatch a Write-agent to persist |
+| "Just one quick spot-check" | Quick = ≤3 paths total per turn; over → verify-agent |
+| "I need to read the report to verify the agent's claim" | Don't read /tmp reports; dispatch verify-agent that returns ≤30-line summary |
+| "The hook needs diagnosis" | Diagnostic of any non-trivial script → dispatch_diagnostic_agent |
+| "Reading 3 plan files is faster than dispatching" | One active plan only; others → recon-agent extracts what's needed |
+| "Subagent might fail; safer to do it myself" | Failure → dispatch_fresh, never become_coworker |
+| "It's faster if I do it" | Faster_now = burned_context_later; supervisor_context_is_load_bearing |
+| "Permission prompt is fine, I'll just wait" | NTFY-publish first; never block on a UI prompt |
+| "I'm just rewriting the agent's content for clarity" | Rewriting > 30 lines = co-worker; dispatch a Write-agent with the brief |
+| "I'm only doing this once" | Once becomes pattern; the rule is per-turn discipline |
+
+## RED_FLAGS [stop_and_dispatch]
+- About to Read a file that's NOT STATE.md / active plan / CLAUDE.md
+- About to Write/Edit content that will exceed ~30 lines on a single file
+- About to grep/find/ls more than 3 paths in a single turn
+- About to inline-summarize a recommendation/audit the agent already produced
+- About to retry the same Bash command after a hook block (instead of NTFY-asking)
+- Sentence starts with "let me just …" / "quick check first" / "while I'm at it"
+- Reaching for a file at `/tmp/**` to verify a claim
+→ STOP. Either dispatch a subagent or NTFY the user. Do not co-work.
+
 ## ANTI [supervisor HARD_STOP]
 ✗ git_add_-A_with_concurrent_agents # race
 ✗ accept_agent_summary_without_verify # reality_drift
@@ -175,8 +230,14 @@ cap: 500K_tpm_client_side
 ✗ subagent_pushes_or_PR_creation # remote_is_supervisor_only
 ✗ per-story_NTFY # noisy
 ✗ unverified_rolling_commits # checkpoint_per_phase
-✗ touch_code_directly # except STATE.md | plan | CLAUDE.md
+✗ touch_code_directly # except STATE.md | plan | CLAUDE.md (≤30 lines)
 ✗ continuous_background_NTFY_polling # wasteful
+✗ supervisor_authors_substantive_content # > 30 lines = dispatch
+✗ supervisor_reads_agent_output_files # context burn
+✗ supervisor_diagnoses_scripts | hooks # dispatch_diagnostic
+✗ supervisor_spot-checks > 3 paths_per_turn # dispatch_verify-agent
+✗ supervisor_blocks_on_permission_prompt # NTFY_first ¬ wait
+✗ supervisor_reads_secondary_plan_files # only_active_plan; others → recon-agent
 
 ## TRIGGER_PATTERNS [supervisor]
 IF multi_agent_work THEN
