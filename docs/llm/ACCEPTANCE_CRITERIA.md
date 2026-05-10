@@ -1,6 +1,6 @@
 # LLM Extraction Reliability — Acceptance Criteria (D15)
 
-**Status:** DRAFT — awaiting user ratification before Story 4.6.1.
+**Status:** RATIFIED  2026-05-10 by James.
 Per `atlas-matrix-mvp-plan.md` D15, this document is the source of
 truth for the inherited LoRA acceptance thresholds.
 
