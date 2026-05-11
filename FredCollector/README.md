@@ -19,7 +19,19 @@ flowchart LR
 
 Data flows from the FRED API into FredCollector on a cron schedule. New observations are persisted to TimescaleDB, published as gRPC events for ThresholdEngine, and registered with SecMaster as instruments.
 
-Schema is owned by `src/Data/Migrations/` (EF Core). Recent migrations include `AddSeriesSectorTags` and `AddSeriesSignalIdentityTag` (which carry the SecMaster ATLAS-sector + signal-identity classifications down to per-series rows) and `ConvertAtlasSectorCodeToEnum` (the EF value-converter cutover landed by `Events.EntityFrameworkCore`).
+Schema is owned by `src/Data/Migrations/` (EF Core). Recent migrations include `AddSeriesSectorTags` and `AddSeriesSignalIdentityTag` (which carry the SecMaster ATLAS-sector + signal-identity classifications down to per-series rows), `ConvertAtlasSectorCodeToEnum` (the EF value-converter cutover landed by `Events.EntityFrameworkCore`), and `AddSeriesConfigIsMacro` (per-series routing predicate for the shared `macro_observations` substrate; see below).
+
+### Series classification: macro vs. instrument-attributed
+
+`series_configs.IsMacro` controls whether a series dual-writes observations into the shared `macro_observations` substrate (owned by `MacroSubstrate/`). When the flag is `true`, every collected observation is also written to `macro_observations` with provenance `(source_collector="fred", source_id=<series mnemonic>, observation_time)`; the write is idempotent on that triple, so re-running a collection cycle does not double-write. The legacy `fred_observations` write path is unchanged — the substrate write is additive.
+
+Series default to `IsMacro = false`. Pure macro series (e.g. `UNRATE`, `CPIAUCSL`) opt in:
+
+```sql
+UPDATE series_configs SET "IsMacro" = true WHERE "SeriesId" = 'UNRATE';
+```
+
+Instrument-attributed series (those resolved to a SecMaster signal-identity that represents a specific instrument rather than a macro indicator) stay `IsMacro = false`; the per-series sector tag and signal-identity remain authoritative for that path.
 
 ## Features
 
