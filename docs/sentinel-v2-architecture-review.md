@@ -1,5 +1,7 @@
 # Sentinel v2 Architecture — Review & Merge Log
 
+> **HISTORICAL (pre-removal of Sentinel scoring).** MultiSignalGate, CorroborationWorker, and the Q-score formula described below were removed. Sentinel now persists structured observations only; ThresholdEngine owns scoring. Full rewrite pending.
+
 > Phase 1.2 cross-check: Opus 4.6 reviewed the Opus 4.7 proposal at
 > `/home/james/ATLAS/docs/sentinel-v2-architecture.md`.
 > This file records Opus 4.6's notes and the supervisor's merge decisions.

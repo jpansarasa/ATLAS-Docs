@@ -1,5 +1,7 @@
 # Sentinel v2 Architecture
 
+> **HISTORICAL (pre-removal of Sentinel scoring).** MultiSignalGate, CorroborationWorker, and the Q-score formula described below were removed. Sentinel now persists structured observations only; ThresholdEngine owns scoring. Full rewrite pending.
+
 ## Purpose and scope
 
 This document specifies the internal architecture of the Sentinel v2 ingestion-and-extraction pipeline. It is written for engineers implementing Phase 1.3 (schema migration) through Phase 4.5 (audit gate). It defines component boundaries, data contracts between stages, new schema columns, feature-flag precedence, source routing rules, the multi-signal gate math, and the migration path from v1.
