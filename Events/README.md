@@ -65,6 +65,7 @@ Collectors implement the `ObservationEventStream` gRPC service and register with
 | `OhlcvCollectedEvent` | OHLCV candles (equities, forex, crypto) | FinnhubCollector |
 | `CollectionFailedEvent` | Collection failures with error classification | All collectors |
 | `ThresholdCrossedEvent` | Pattern threshold triggered with signal/metadata | ThresholdEngine |
+| `SectorThresholdCrossedEvent` | Sector aggregated score crossed configured bound | ThresholdEngine |
 
 ### In-Memory Events
 
@@ -72,6 +73,8 @@ Collectors implement the `ObservationEventStream` gRPC service and register with
 |-------|-----------|----------|
 | `ObservationCollectedEvent` | Collectors | ThresholdEngine |
 | `ThresholdCrossedEvent` | ThresholdEngine | AlertService |
+| `SectorScoreEvent` | ThresholdEngine | Matrix persistence, dashboards |
+| `SectorThresholdCrossedEvent` | ThresholdEngine | Validation consumers, dashboards |
 | `RegimeTransitionEvent` | ThresholdEngine | AlertService |
 
 ### Client Libraries
