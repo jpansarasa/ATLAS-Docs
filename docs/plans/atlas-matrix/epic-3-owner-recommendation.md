@@ -1,7 +1,7 @@
 # Epic 3 — `macro_observations` Owning-Project Recommendation
 
 **Source:** Plan-agent recon dispatched 2026-05-10 (post-Epic-1 merge `a08b806`).
-**Status:** DRAFT — pending user ratification.
+**Status:** RATIFIED  2026-05-10 by James.
 **Decision blocks:** Story 3.1.1 (DDL).
 
 ## Recommendation

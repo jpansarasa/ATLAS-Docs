@@ -397,6 +397,7 @@ processing: ThresholdEngine
 alerting: AlertService
 calendar: CalendarService
 metadata: SecMaster
+substrate: MacroSubstrate
 mcp: FredCollector/mcp, ThresholdEngine/mcp, FinnhubCollector/mcp, OfrCollector/mcp, SecMaster/mcp
 shared: Events/, deployment/, docs/
 
