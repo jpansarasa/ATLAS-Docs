@@ -19,7 +19,20 @@ flowchart LR
 
 The service pulls data from three OFR sources (FSI via CSV, STFM and HFM via JSON API), persists observations in TimescaleDB, and streams events to ThresholdEngine over gRPC. New instruments are registered with SecMaster on discovery.
 
-Schema is owned by `src/Data/Migrations/` (EF Core) — backed by entities in `src/Data/Entities/`: `FsiEntity` (top-level FSI), `StfmSeriesEntity` / `StfmObservationEntity` (Short-term Funding Monitor), `HfmSeriesEntity` / `HfmObservationEntity` (Hedge Fund Monitor), and `CollectionLogEntity` (per-run audit trail).
+Schema is owned by `src/Data/Migrations/` (EF Core) — backed by entities in `src/Data/Entities/`: `FsiEntity` (top-level FSI), `StfmSeriesEntity` / `StfmObservationEntity` (Short-term Funding Monitor), `HfmSeriesEntity` / `HfmObservationEntity` (Hedge Fund Monitor), and `CollectionLogEntity` (per-run audit trail). The most recent migration, `AddSeriesIsMacro`, adds a per-series routing predicate for the shared `macro_observations` substrate (see below).
+
+### Series classification: macro vs. instrument-attributed
+
+`ofr_hfm_series.is_macro` and `ofr_stfm_series.is_macro` control whether a series dual-writes observations into the shared `macro_observations` substrate (owned by `MacroSubstrate/`). When the flag is `true`, every collected observation is also written to `macro_observations` with provenance `(source_collector="ofr", source_id=<mnemonic>, observation_time)`; the write is idempotent on that triple, so re-running a collection cycle does not double-write. The legacy `ofr_hfm_observations` / `ofr_stfm_observations` write paths are unchanged — the substrate write is additive.
+
+Series default to `is_macro = false`. Pure macro series (e.g. STFM's `repo-funding-volume`, HFM's `hf-aum-net-flow`) opt in:
+
+```sql
+UPDATE ofr_hfm_series SET is_macro = true WHERE mnemonic = 'hf-aum-net-flow';
+UPDATE ofr_stfm_series SET is_macro = true WHERE mnemonic = 'repo-funding-volume';
+```
+
+Instrument-attributed series (those resolved to a SecMaster signal-identity that represents a specific instrument rather than a macro indicator) stay `is_macro = false`; the per-series signal-identity remains authoritative for that path. FSI is excluded from this slice — its top-level aggregate plus contribution columns don't fit the per-mnemonic observation shape `macro_observations` expects.
 
 ## Features
 
