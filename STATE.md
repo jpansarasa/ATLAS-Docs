@@ -1,23 +1,23 @@
-# ATLAS Supervisor STATE [2026-05-11]
+# ATLAS Supervisor STATE [2026-05-12]
 
-## ACTIVE [2026-05-11]
-- **Phase 2:** Epic 1 + Epic 2 + Epic 3 substrate triad ✓ DONE. Epic 4 LLM track running end-to-end on validation-content via `ExtractionProcessor`.
-- **Latest merges (this session):** PR #246 (4.4.2 qualitative persistence), PR #247 (4.4.3 CoVe verifier), PR #248 (qualitative dispatch in ExtractionProcessor), PR #249 (Feature 5.5.1 `SectorThresholdCrossedEvent` contract).
-- **In flight:** Feature 5.5.2 — TE emission of `SectorThresholdCrossedEvent` (per-sector threshold config, hot-reloadable). Background agent on `epic/5.5.2-sector-threshold-emission`.
-- **Next after 5.5.2:** Story 4.5 — Sentinel subscription to sector-keyed events + narrative search per sector.
-- **Hook redesign landed** (PRs #230 + #238): tree-hash keyed, per-worktree, format-versioned markers at `/tmp/atlas-test-markers/`. Survives commit-after-test + cherry-pick + rebase.
+## ACTIVE [2026-05-12]
+- **Phase 2:** Epic 1 + Epic 2 + Epic 3 substrate triad ✓ DONE. Epic 4 LLM track largely closed (qualitative pipeline + dispatch + 4.5 subscription all merged). Only 4.6.x LoRA reliability remains (multi-week).
+- **Phase 3:** Epic 5 matrix-storage MVP ✓ DONE (F5.1 hypertable + F5.4 sector regimes + F5.5.1/5.5.2/5.5.3 sector-keyed events). Epic 4 Story 4.5 wired in via Sentinel subscription (PR #252).
+- **Phase 4:** Epic 6 kicked off. 6.1.x query surfaces complete (REST + MCP for macro_observations / matrix_cells / sector_regimes & sector_phase_cells). 6.2.x dashboards started (6.2.1 ✓).
+- **Latest merges:** PRs #246–#261 (16 PRs since 2026-05-10). Session close: PR #260 (post-Epic-6 cleanup) + PR #261 (sector × phase matrix dashboard).
+- **In flight:** Epic 6.2.x next dashboard — background agent on `epic/6.2.2-trajectory-dashboard` (sector score & regime trajectory panel).
+- **Next dispatch:** Epic 4 F4.6.x LoRA reliability kickoff (recon dispatched separately).
+- **Hook redesign holds** (PRs #230 + #238): tree-hash keyed, per-worktree, format-versioned markers at `/tmp/atlas-test-markers/`. Survives commit-after-test + cherry-pick + rebase.
 - **Recurring multi-agent race:** parallel agents in the same toplevel share the marker file (`sha1(toplevel)`); mitigate by sequencing pushes between parallel branches or using `isolation: "worktree"`.
 
 ## PHASE STATUS
 - **Phase 1** — Spine — ✓ DONE (Epic 1 merged as `a08b806`)
-- **Phase 2** — Substrate / TE schema / LLM track — → IN FLIGHT
-  - Epic 2 (TE schema rework) — ✓ DONE (sectorWeights + cell projection + macro-score retire)
-  - Epic 3 (`macro_observations` substrate) — ✓ DONE (MacroSubstrate triad + FRED/OFR dual-write + Sentinel macro routing)
-  - Epic 4 LLM track — qualitative pipeline live end-to-end (4.4.1 + 4.4.2 + 4.4.3 + #248 dispatch); 4.5 pending F5.5.2
-  - Epic 4 Feature 4.6 (LoRA reliability) — D15 ratified 2026-05-10; 4.6.1 dispatched separately (multi-week)
-- **Phase 3** — Sentinel rework + matrix — partially advanced via Epic 4 wiring; Epic 5 in flight (F5.5.1 ✓; F5.5.2 → background; F5.5.3 pending)
-- **Phase 4** — Surfaces — ⧗ blocked on Phase 3
-  - Epic 6 (MCP, dashboard, reports)
+- **Phase 2** — Substrate / TE schema / LLM track — ✓ DONE (modulo 4.6.x)
+  - Epic 2 (TE schema rework) — ✓ DONE
+  - Epic 3 (`macro_observations` substrate) — ✓ DONE
+  - Epic 4 LLM track — ✓ DONE through 4.5 (Sentinel subscription); 4.6.x LoRA reliability pending (multi-week, dispatched separately)
+- **Phase 3** — Sentinel rework + matrix — ✓ DONE (Epic 5 matrix-storage MVP complete: F5.1 + F5.4 + F5.5.1 + F5.5.2 + F5.5.3)
+- **Phase 4** — Surfaces — → IN FLIGHT (Epic 6: 6.1.x ✓, 6.2.x active)
 
 ## EPIC 1 — DONE [merged 2026-05-10 as `a08b806`, PR #215]
 - 14 stories merged: 1.1.1, 1.1.2, 1.2.1, 1.2.2, 1.3.1, 1.3.2, 1.4.1, 1.4.2, 1.4.3 (destructive migration, 4 phases), 1.5.1, 1.6.1, 1.6.2, 1.7.1, 1.7.2.
@@ -38,22 +38,34 @@
 - Migrator runs Variant A (one-shot init container `migrate-macro-substrate` wired in `compose.yaml.j2:66-83`).
 - FredCollector parity fix PR #241 (DataCollection + Backfill `ActivitySource` OTEL registration).
 
-## EPIC 4 — IN FLIGHT [Phase 2 LLM track]
+## EPIC 4 — IN FLIGHT [Phase 2 LLM track — only 4.6.x pending]
 - ✓ 4.1.1 Sentinel exits scoring (PR #243) — deleted `MultiSignalGate` + `CorroborationScanner` + `QuoteFidelity`.
 - ✓ 4.3.1 Macro routing (PR #244) — Sentinel routes macro extractions to `macro_observations`.
 - ✓ 4.4.1 Qualitative extraction prompt + schema + service (PR #245).
 - ✓ 4.4.2 Qualitative persistence into `macro_observations` (PR #246).
 - ✓ 4.4.3 CoVe verification layer over qualitative extraction (PR #247).
 - ✓ Qualitative pipeline dispatch wired in `ExtractionProcessor` (PR #248, validation-content branch).
+- ✓ 4.5 Sentinel subscription to sector-keyed events + narrative search per sector (PR #252).
 - ✓ 4.6.1 D15 acceptance criteria pinned into LoRA training metadata (PR #234).
 - ✓ 4.6.2 Eval harness + substrate builder + mock baseline scorecard (PR #236).
-- ◯ 4.5 Sentinel subscription to sector-keyed events + narrative search per sector — blocked on Epic 5 F5.5.2.
-- ◯ 4.6.x LoRA reliability followups — multi-week, dispatched separately.
+- ◯ 4.6.x LoRA reliability followups — multi-week, dispatched separately (recon in flight).
 
-## EPIC 5 — IN FLIGHT [matrix / sector-keyed events]
+## EPIC 5 — DONE [matrix-storage MVP, PRs #249, #250, #253, #254, #255]
+- ✓ F5.1 `matrix_cells` hypertable persistence (PR #253).
+- ✓ F5.4 per-sector regime classifier + `sector_regimes` time-series (PR #254).
 - ✓ F5.5.1 `SectorThresholdCrossedEvent` contract (PR #249).
-- → F5.5.2 TE emission of `SectorThresholdCrossedEvent` — background agent on `epic/5.5.2-sector-threshold-emission`.
-- ◯ F5.5.3 pending (matrix integration step — unblocks Epic 4 Story 4.5).
+- ✓ F5.5.2 TE emission of `SectorThresholdCrossedEvent` + per-sector hot-reloadable threshold config (PR #250).
+- ✓ F5.5.3 sector × phase derived view (materialized view + 7-day refresh worker, PR #255).
+- ✓ Sector-threshold admin REST endpoint (PR #256).
+
+## EPIC 6 — IN FLIGHT [Phase 4 surfaces, PRs #257–#261]
+- ✓ 6.1.1 `macro_observations` REST + MCP tool (PR #257).
+- ✓ 6.1.2 `matrix_cells` REST + MCP tool (PR #258).
+- ✓ 6.1.3 `sector_regimes` + `sector_phase_cells` REST + MCP tools (PR #259).
+- ✓ Post-Epic-6 cleanup — M1 catch-all parity + OCE rethrow + worker test stability + DOC ANTI scrub (PR #260).
+- ✓ 6.2.1 sector × phase matrix primary dashboard (PR #261).
+- → 6.2.x next dashboard — background agent on `epic/6.2.2-trajectory-dashboard` (sector score & regime trajectory).
+- ◯ 6.2.x remaining dashboards + 6.3.x reports — pending.
 
 ## DEPLOYMENT TODOS
 - Wire `ConnectionStrings__AtlasData=...atlas_data...` into the **SecMaster** container in `deployment/artifacts/compose.yaml.j2` + ansible vault (Story 1.7.2 dedup-grouping needs cross-DB raw-SQL access). Migrator already has it (line 74); SecMaster still only has `ConnectionStrings__SecMaster` (line 619). Could not verify ansible-vault contents (no vault password in scope).
