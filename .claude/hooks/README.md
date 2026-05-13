@@ -67,7 +67,14 @@ Also enforces:
   .editorconfig) are exempt from the marker requirement
 - `gh pr merge` requires a `pr-reviewed-{N}` marker (commit-hash-keyed,
   via `headRefOid` from the GitHub API — PR review is intentionally
-  re-run on every new commit)
+  re-run on every new commit). The marker is written by
+  `pr-review-marker.sh` using `gh pr view <N> --json headRefOid` so that
+  the recorded SHA always matches what the merge guard compares against,
+  even when local HEAD is on a different PR's branch. If `gh` is
+  unavailable, the marker falls back to local HEAD ONLY when the current
+  branch matches the PR's headRefName; otherwise the marker is refused
+  (silent wrong markers caused the cross-PR block bug that motivated
+  this — see commit history on `.claude/hooks/pr-review-marker.sh`).
 
 **Configuration**: `.claude/settings.local.json`
 ```json
