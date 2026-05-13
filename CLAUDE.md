@@ -1,207 +1,25 @@
-# CLAUDE.md [CODE.GEN.RULES v1.1]
+# CLAUDE.md [ATLAS project-level]
 
-## ETHOS
-pragmatic > dogmatic
-working > perfect
-maintain > clever
+## PROJECT_OVERVIEW
+name: ATLAS
+purpose: financial data collection, processing, alerting, LLM extraction
+stack: .NET10/C#14 | TimescaleDB | nerdctl/containerd | OTEL→Loki/Prom/Tempo→Grafana | Serilog | Polly
 
-## PRIORITY_0 [always_enforce]
-COMPLETE_IMPL: accept_criteria → full ∧ ¬TODO ∧ ¬placeholder
-  rationale: TODO = placeholder_debt(never_done | should_do_now)
-MIN_MAINTAIN: ∀line justify(existence) | fewest_lines : maintain_easy
-  rationale: every_line = error_opportunity
-LANG_NATIVE: Rust≠Python≠C#≠TS≠PS | ¬port_pattern
-  principle: native_style ¬ pattern_force
+## EXECUTION_CONTEXT [HARD_STOP]
+YOU_ARE_ON: mercury # this machine, the production server
+✗ ssh mercury # you are already here
+✗ ansible mercury # you are already here
+✓ sudo nerdctl ... # direct command
+✓ sudo systemctl ... # direct command
+✓ ansible-playbook -i inventory/hosts.yml ... # deploys TO mercury, runs FROM mercury
+rationale: ssh/ansible to localhost = unnecessary_hop + templating_issues + confusion
+REMEMBER: run commands directly with sudo, not via ssh or ansible targeting mercury
 
-## PROBLEM_SOLVING [meta_process] [PRIORITY_0]
-NEVER: repeat(failed_attempt) # insanity_definition
-PROCESS:
-  1. understand(problem) → root_cause
-  2. hypothesis(fix) → rationale
-  3. attempt(fix)
-  4. IF fail → analyze(why) ¬ revert_thrash
-  5. track(attempted) → ¬repeat
-DEBUG_METHOD:
-  observe → hypothesize → test → learn → iterate
-  ¬pattern: try → fail → try_same → fail → revert → try_original
-IF stuck THEN reassess(understanding) ¬ retry(same_approach)
-EVIDENCE_GATE [debug]: ¬propose_hypothesis UNTIL shown:
-  1. log_lines(relevant) + timestamps
-  2. current(config | state)
-  3. reproduction | observation(failure)
-  rationale: theory_first → wrong_approach_friction (whisper/grafana/mcp incidents)
-  ¬PATTERN: theorize → user_pushback → check_evidence → reality_differs # cycle_waste
-
-## VERIFY_TEST [post_deploy] [PRIORITY_0]
-SMOKE: ∀deploy → smoke_test(unsolicited) # ¬wait_for_request
-ROOT_CAUSE: fix(ansible_gates | config_mechanism) ¬ workaround
-INVESTIGATE: logs/evidence FIRST → theory ¬ theory_first
-  rationale: evidence_grounds_hypothesis ¬ speculation
-COMPLETION_GATE [deploy | PR]: ¬declare_done UNTIL ALL:
-  1. smoke_tests(run) → report(pass/fail counts)
-  2. loki_query(errors, last_10min) → report(findings)
-  3. verify(root_cause_addressed) ¬ workaround
-  4. list(configs/gates touched)
-  ¬PATTERN: "looks obvious" → skip_gate # this_is_how_bugs_ship
-
-## ARCH_PREF [design_defaults]
-ISOLATION: privilege_isolation(sidecar | systemd) > in_process_sandbox
-SIMPLICITY: simplest_working FIRST ¬ over_engineer
-  ✗ persistent_http_server (unjustified)
-  ✗ --user flag (unjustified)
-  ✗ auth_module_switch (unjustified)
-SANDBOX_EXEC: respect(privilege_isolation_preference) # prior_decision
-
-## TASK_MANAGEMENT [complex_work]
-IF complex THEN create(STATE.md) # compact_encoding
-FILE: STATE.md
-STRUCTURE:
-  GOAL → {accept_criteria, constraints}
-  ARCH → {decisions, rationale, implications}
-  ATTEMPTED → {approach, result, fail_reason} # ¬repeat
-  STATUS → {✓done, →active, ⧗blocked, ◯next}
-  CONTEXT → {files, deps, external_systems}
-UPDATE_TRIGGER: task_start | major_decision | attempt_fails | step_completes | stuck
-COMPLEX_INDICATORS: multi_file | debugging_non_trivial | refactor_significant | new_system | conversation_depth > 10
-PROACTIVE: create + update_without_asking
-
-## BOUNDARY_HANDLING [fn_scope]
-ENTRY → validate(params) : feedback(clear)
-  example: validate(index ∈ [0,len)) else "Index 5 exceeds bounds [0,3)"
-INTERNAL_CALL → trust(validated) : propagate(exception)
-  rationale: assume_good_handling
-EXTERNAL_CALL → handle{log(WARN)+continue} | fail{capture(context)+raise}
-  context_min = {index, state, params}
-  rationale: external=uncertainty_boundary
-
-## LOG_RULES [production_default=WARN]
-quality: enable_diagnosis ¬ filter_noise
-format: structured(Loki_parse=true)
-template_good: "Null at items[{idx}] user={uid} state={s}"
-template_bad: "Error occurred"
-chain: log_good + err_good → test_less
-purpose: runtime_debug ¬ noise
-LEVELS:
-  LogDebug: debug_sessions_only | dev_troubleshooting | never_in_prod
-    rationale: too_verbose_for_runtime, attach_debugger_instead
-  LogInformation: runtime_diagnostics | routine_ops | expected_retries | client_disconnect
-    rationale: operational_visibility, filtered_in_prod, visible_in_dev
-  LogWarning: unexpected_but_recoverable | degraded_state
-  LogError: failures | exceptions | requires_attention
-
-## DATETIME_FORMAT [always_iso8601]
-ToString: dateTime.ToString("O") # ISO 8601 round-trip format
-  output: "2024-01-15T10:30:00.0000000Z"
-  rationale: unambiguous | sortable | parseable | includes_timezone
-USE_CASES:
-  ✓ trace_tags: activity?.SetTag("time", dt.ToString("O"))
-  ✓ log_context: _logger.LogInfo("At {Time}", dt.ToString("O"))
-  ✓ diagnostic_strings: any manual DateTime → string
-  ✗ json_serialization: handled_by_serializer
-  ✗ database_storage: handled_by_ef_core
-
-## DOC [selective]
-PRINCIPLE: WHY ¬ WHAT # code_shows_what, comment_shows_why
-LEVELS:
-  module → header(3-5 lines): purpose + invariants + ext_deps # agent_navigation_aid, low_rot
-  fn → params(brief) + raises(if_non_obvious) # autocomplete + contract
-  inline → minimal # rot_risk
-  design → .md ¬ code
-  CLI → help(required)
-COMMENT_TEST [inline]: ¬write UNLESS captures one of:
-  ✓ rationale # "retry 3x: vendor cold-start race"
-  ✓ non_obvious_invariant # "X and Y mutually exclusive, schema doesn't enforce"
-  ✓ workaround # bug_link | external_constraint
-  ✓ hidden_constraint # "single-caller; multi-caller breaks throttle"
-  ✓ surprising_behavior # "exit 0 always; findings on stdout"
-  ✓ domain_rationale # "z-score within sector before combination" | paper_ref(arxiv:NNNN)
-ANTI [comment HARD_STOP]:
-  ✗ restate_name # "The X." on field/property X — types_self_document
-  ✗ narrate_mechanics # "loop through items" — code_shows_this
-  ✗ describe_populator # "populated by Y service" — rot_risk_when_Y_changes
-  ✗ reference_caller # "used by Z" — belongs_in_PR_desc
-  ✗ example_values # "(CPI, payrolls, M2, …)" — drift_with_seed
-  ✗ ticket_id_in_comment # "Story 1.x.y / Phase N / fix #N" — belongs_in_commit_msg
-REF_DISTINCTION:
-  ✓ durable_external # paper | RFC | ADR | arxiv | spec_section — long_lived_context
-  ✗ transient_internal # jira | story | phase | PR_number — drift_with_workflow
-MAINTAIN [edit_code]:
-  ∀edit → review(nearby_comments) → update | delete(stale)
-  rationale: stale_comment > no_comment # actively_misleads_human_and_agent
-
-## TEST [selective]
-IF complex ∧ fail_prone → unit
-IF idempotent ∧ valuable → integration
-¬IF {simple | log_suffices | setup_complex}
-coverage=100 → smell
-rationale: test_right_things ¬ test_everything
-
-## OBS_STACK [where_sensible ¬ everywhere]
-OTEL → Loki(logs) + Prom(metrics) + Tempo(traces) + Grafana(viz)
-metric_purpose: {perf_tune, bottleneck_diagnosis}
-config: lightweight(tunables+ext_connections) ¬ framework
-when: sensible_value ¬ dogmatic
-DEBUGGING [service_issues]:
-  1. Grafana FIRST → Tempo(error traces) + Loki(error logs)
-  2. ¬nerdctl_logs # container_stdout = last_resort
-  rationale: exceptions_have_trace_context + searchable + dashboarded
-  if_no_data_in_grafana → check otel-collector + check service restart timing
-  stack: Serilog.Sinks.OpenTelemetry → otel-collector → Loki
-METRICS:
-  location: uncertainty_boundaries ¬ internal_layers
-    ✓ service_edge: HTTP/gRPC endpoints (latency, errors, throughput)
-    ✓ external_api: upstream calls (FRED, SecMaster) - rate limits, degradation
-    ✓ database: significant operations (bulk inserts, complex queries)
-    ✓ cross_process: gRPC client calls - downstream health
-    ✓ long_running_ops: backfill, batch processing - duration, counts
-    ✗ internal_method: use traces instead
-    ✗ double_count: repository + service for same DB call
-  test: actionable ∧ variable ∧ observed
-    actionable: degradation → clear investigation path
-    variable: actually changes over time (not always ~same)
-    observed: dashboarded or alerted (unobserved = waste + complexity)
-  tags: bounded_cardinality_only
-    ✓ method_name | status_code | service_name | series_id (<100)
-    ✗ event_id | user_id | request_id | correlation_id (unbounded)
-  streaming: per_event_at_boundary for long_running_visibility
-TRACING:
-  catch_blocks: activity?.SetStatus(ActivityStatusCode.Error, ex.Message)
-    rationale: exceptions_must_appear_in_traces
-  spans: service_operations ¬ internal_methods
-ALERTING [metrics_without_alerts = dashboard_archaeology]:
-  P1_PAGE: service_down | data_loss | security
-  P2_URGENT: error_spike | latency_degraded | init_fail
-  P3_NOTIFY: warning_threshold | capacity_approaching
-  golden_signals: latency(p95) + traffic(rate) + errors(%) + saturation
-  health: liveness(restart) + readiness(routing) + startup(warmup)
-
-## IDIOM_MAP [lang_specific]
-Rust: Result<T,E> | pattern_match | ownership
-Python: except | [x for x] | with | : Type
-C#: except | async | LINQ(judicious)
-TypeScript: types(¬over_eng) | async
-PowerShell: Verb-Noun | pipeline | help
-
-## ANTI [hard_stop]
-✗ base_Entity{id,name} # base_class_syndrome
-✗ TODO # placeholder_debt
-✗ pattern_port # C→functional, Python→Java
-✗ log_spam # INFO_prod
-✗ coverage_chase # 100%_target
-✗ abstract_premature # interface_soup
-✗ revert_to_known_broken # problem_solving
-✗ repeat_failed_attempt # insanity
-✗ fix_without_understanding # thrashing
-
-## TRIGGER_PATTERNS [code_gen]
-IF generate_code THEN
-  check(PRIORITY_0) →
-  check(PROBLEM_SOLVING[if_debugging]) →
-  check(TASK_MANAGEMENT[if_complex]) →
-  check(BOUNDARY_HANDLING[context]) →
-  check(IDIOM_MAP[lang]) →
-  check(ANTI) →
-  apply(LOG_RULES, DOC[type], TEST[if_needed], OBS_STACK[if_sensible])
+## PROJECT_CONVENTIONS
+compose_files: compose.yaml ¬ docker-compose.yml
+dockerfile_files: Containerfile ¬ Dockerfile
+development: devcontainer ¬ local_install
+rationale: runtime_agnostic(nerdctl|docker|podman) + compose_v2_standard + clean_host
 
 ## VERIFY [before_commit]
 IF code_change THEN verify(compiles) BEFORE commit
@@ -230,106 +48,14 @@ hook: .claude/hooks/git-push-guard.sh # enforced_by_tooling
   format: "v2 tree <hash> <iso8601>" # version prefix rejects old commit-hash markers
   blocks: tree_content_changed ∧ ¬retested # source_changes_require_retest
 
-## GRAFANA_DASHBOARD [json_provisioning]
-COMMON_FAILURES: "No data" | duplicate_values | broken_viz | heatmap_fail
-  root_cause: config_mistakes → predictable → eliminable
-DASHBOARD_STRUCTURE:
-  id: null # grafana_assigns_on_save
-  uid: [a-z0-9-]{8,40} # stable_urls_across_envs
-  schemaVersion: 41 # current_2025
-  version: 0 # new_dashboards
-  required_fields: {time, timezone, panels, editable, refresh}
-PANEL_STRUCTURE:
-  id: unique_int # duplicate → import_fail
-  gridPos: {x:[0-23], y:int, w:[1-24], h:[3+]} # 24col_grid, ~30px/unit
-  datasource: {type, uid} # ¬string_name, ¬${DS_NAME}
-  required: {targets, fieldConfig.defaults, options}
-STAT_PANEL [prevent_duplicates]:
-  reduceOptions.values: false # true → shows_all_rows → duplicates
-  reduceOptions.calcs: ["lastNotNull"] # "last" → may_return_null
-  reduceOptions.fields: "" # empty → all_numeric, ¬"/.*/"
-  query: sum(metric{...}) # aggregate → single_series
-  instant: true ∧ range: false # ¬both_true → duplicate_data
-  rationale: multiple_series | range_query | values:true → duplicates
-TIMESERIES_PANEL:
-  fieldConfig.defaults.custom: required # omit → broken_render
-    drawStyle: line | bars | points
-    lineInterpolation: linear | smooth | stepBefore | stepAfter
-    lineWidth: [1-10], fillOpacity: [0-100], gradientMode: none | opacity | hue
-    spanNulls: false | true | threshold_ms
-    stacking: {mode: none | normal | percent, group: "A"}
-    axisPlacement: auto | left | right | hidden
-    thresholdsStyle: {mode: off | line | area | line+area}
-  color: {mode: palette-classic | fixed | thresholds}
-  options: {legend: {displayMode, placement, showLegend}, tooltip: {mode, sort}}
-TABLE_PANEL:
-  transformations_required:
-    multiple_queries → [{id: "merge"}]
-    time_series_data → [{id: "seriesToRows"}]
-    sparklines → [{id: "timeSeriesTable"}]
-    column_control → [{id: "organize", options: {excludeByName, renameByName}}]
-  fieldConfig.defaults.custom: {align, cellOptions: {type}, filterable}
-  overrides: matcher{byName|byRegexp|byType} → properties{cellOptions, width}
-HEATMAP_PANEL:
-  calculate: true # grafana_buckets_data
-  calculation: {xBuckets: {mode, value}, yBuckets: {mode, value}}
-  prometheus_histogram: calculate: false ∧ legendFormat: "{{le}}" ∧ yBucketBound: "upper"
-LOG_PANEL [loki]:
-  query_type: log_query # ¬metric_query
-  options: {showTime, wrapLogMessage, prettifyLogMessage, enableLogDetails, dedupStrategy, sortOrder}
-  ✗ rate() | count_over_time() # these → timeseries_panel
-PROMQL [prometheus_queries]:
-  rate_interval: $__rate_interval # ¬[1m] ¬[5m] # auto_adjusts_to_scrape
-    rationale: hardcoded < scrape_interval → "No data"
-  container_filter: container!="POD", container!="" # always
-  aggregation: sum by (label1, label2) # control_cardinality
-  memory: container_memory_working_set_bytes # ¬usage_bytes (includes_cache)
-  legendFormat: "{{pod}} - {{container}}" # explicit ¬ auto_generated
-    rationale: post_aggregation {{__name__}} → empty
-LOGQL [loki_queries]:
-  log_panel: {job="app"} |= "error" | json # no_aggregation
-  timeseries_panel: sum by (level) (count_over_time({job="app"} | json [5m]))
-  unwrap: | unwrap field | __error__="" # always_filter_parse_errors
-TRACEQL [tempo_queries]:
-  queryType: "traceql"
-  operators: span.attr | resource.attr | status | span:duration
-  example: {resource.service.name="frontend" && status=error}
-POSTGRES [timescaledb]:
-  time_column: required # named "time", datetime | unix_epoch
-  order: ORDER BY time ASC # mandatory
-  filter: WHERE $__timeFilter(column)
-  format: "time_series"
-  bucket: time_bucket('5 minutes', time) AS time
-UNITS:
-  time: s | ms | µs | ns | m | h | d
-  data: decbytes | bytes | bits | kbytes | mbytes
-  rate: Bps | bps | KBps | MBps
-  percent: percent(0-100) | percentunit(0-1)
-  throughput: reqps | ops | rps | iops
-ANTI [grafana_hard_stop]:
-  ✗ ${DS_NAME} # templated_datasource → provisioning_fail
-  ✗ rate(metric[1m]) # hardcoded_interval → "No data"
-  ✗ omit fieldConfig.defaults # → broken_render
-  ✗ reduceOptions.values: true # → duplicates
-  ✗ stat_panel + multiple_series + no_aggregation # → duplicates
-  ✗ instant: true ∧ range: true # → duplicate_data
-  ✗ log_query → timeseries_panel # → no_results
-  ✗ metric_query → log_panel # → no_results
-
-## PROJECT_CONVENTIONS [ATLAS]
-compose_files: compose.yaml ¬ docker-compose.yml
-dockerfile_files: Containerfile ¬ Dockerfile
-development: devcontainer ¬ local_install
-rationale: runtime_agnostic(nerdctl|docker|podman) + compose_v2_standard + clean_host
-
-## DEPLOYMENT [ATLAS] [HARD_STOP]
+## DEPLOYMENT [HARD_STOP]
 ✗ NEVER edit /opt/ai-inference/compose.yaml directly
 ✓ ALWAYS use ansible for deployments
   playbook: ansible-playbook playbooks/deploy.yml --tags {service}
   inventory: deployment/inventory/hosts
 rationale: compose.yaml = ansible-managed ∧ direct_edit = config_drift
 
-## CONTAINER_BUILD [ATLAS]
+## CONTAINER_BUILD
 IMAGE: {service-name}:latest # fred-collector ✓ fredcollector ✗
   verify: /opt/ai-inference/compose.yaml
 BUILD: {Project}/.devcontainer/build.sh [--no-cache]
@@ -367,7 +93,7 @@ dashboards: ansible-playbook playbooks/deploy.yml --tags dashboards # grafana_au
 patterns: ansible-playbook playbooks/deploy.yml --tags patterns # hot_reload_no_rebuild
 filter_test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'Name~{Test}'
 
-## DATA_ML_CONTEXT [project_specific]
+## DATA_ML_CONTEXT
 TRAINING_DATA: assume(≥500 good_docs available) ¬ lowball("30-50")
   rationale: high_yield_sources_abundant → estimate_generously
 VLLM_STRUCTURED: response_format(openai_standard) ¬ guided_json
@@ -407,39 +133,3 @@ Collectors →gRPC:8080→ SecMaster (registration, fire-and-forget)
 ThresholdEngine →gRPC:8080→ SecMaster (resolution, context-based routing)
 gRPC: internal_only (container-to-container)
 HTTP: 8080 internal, 50xx host
-
-## STACK
-.NET10/C#14 | TimescaleDB | nerdctl/containerd | OTEL→Loki/Prom/Tempo→Grafana | Serilog
-
-## EXECUTION_CONTEXT [HARD_STOP]
-YOU_ARE_ON: mercury # this machine, the production server
-✗ ssh mercury # you are already here
-✗ ansible mercury # you are already here
-✓ sudo nerdctl ... # direct command
-✓ sudo systemctl ... # direct command
-✓ ansible-playbook -i inventory/hosts.yml ... # deploys TO mercury, runs FROM mercury
-rationale: ssh/ansible to localhost = unnecessary_hop + templating_issues + confusion
-REMEMBER: run commands directly with sudo, not via ssh or ansible targeting mercury
-
-## SUPERVISOR_MODE
-STATE: /home/james/ATLAS/STATE.md # supervisor memory, read_first | write_last
-SUPERVISOR_TOUCHES_CODE: never # except STATE.md, plan_file, CLAUDE.md
-ALL_IMPL|REVIEW|VALIDATION: subagent # dispatch ¬ direct_edit
-TEMPLATES: /home/james/ATLAS/scripts/agent-prompts/ # reusable, ≤400w each
-
-CLOUD_ORACLE: Azure_Foundry # /home/james/.azure-foundry-keys
-  gold_label|architecture: claude-opus-4-7
-  cross_check: claude-opus-4-6
-  bulk_label|impl: claude-sonnet-4-6
-  smoke|triage: claude-haiku-4-5
-  cap: 500K_tpm_client_side | ledger=/opt/ai-inference/training-data/azure-oracle-ledger.jsonl
-
-NTFY:
-  server: https://ntfy.elasticdevelopment.com | auth in ansible-vault
-  publish(user←supervisor): atlas-claude-ask
-  poll(user→supervisor): atlas-claude-reply
-  mcp: sentinel-ntfy # registered in ~/.claude.json; tools: ntfy_publish|poll_new|poll_since|ack
-
-WAKEUP_STEP_0: poll(atlas-claude-reply) BEFORE routine_work
-FAILURE: bad_subagent_result → fix_prompt + dispatch_fresh ¬ SendMessage
-CONTEXT: long_output → /tmp/sentinel-remediation/<file> ¬ supervisor_turn

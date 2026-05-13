@@ -1,14 +1,14 @@
 # ATLAS Supervisor STATE [2026-05-12]
 
-## ACTIVE [2026-05-12]
-- **Phase 2:** Epic 1 + Epic 2 + Epic 3 substrate triad ✓ DONE. Epic 4 LLM track largely closed (qualitative pipeline + dispatch + 4.5 subscription all merged). Only 4.6.x LoRA reliability remains (multi-week).
-- **Phase 3:** Epic 5 matrix-storage MVP ✓ DONE (F5.1 hypertable + F5.4 sector regimes + F5.5.1/5.5.2/5.5.3 sector-keyed events). Epic 4 Story 4.5 wired in via Sentinel subscription (PR #252).
-- **Phase 4:** Epic 6 kicked off. 6.1.x query surfaces complete (REST + MCP for macro_observations / matrix_cells / sector_regimes & sector_phase_cells). 6.2.x dashboards started (6.2.1 ✓).
-- **Latest merges:** PRs #246–#261 (16 PRs since 2026-05-10). Session close: PR #260 (post-Epic-6 cleanup) + PR #261 (sector × phase matrix dashboard).
-- **In flight:** Epic 6.2.x next dashboard — background agent on `epic/6.2.2-trajectory-dashboard` (sector score & regime trajectory panel).
-- **Next dispatch:** Epic 4 F4.6.x LoRA reliability kickoff (recon dispatched separately).
-- **Hook redesign holds** (PRs #230 + #238): tree-hash keyed, per-worktree, format-versioned markers at `/tmp/atlas-test-markers/`. Survives commit-after-test + cherry-pick + rebase.
-- **Recurring multi-agent race:** parallel agents in the same toplevel share the marker file (`sha1(toplevel)`); mitigate by sequencing pushes between parallel branches or using `isolation: "worktree"`.
+## ACTIVE [2026-05-12 — session handoff]
+- **F4.6.3 LoRA diagnostic complete:** base qwen2.5-32B-AWQ wins 4% MAJOR vs LoRA-v7 20% MAJOR (head-to-head 10/4/3 base/tie/LoRA). LoRA actively degrades extraction (sector_rotation 5x inflation, confidence +6pts, fabricated horizon_days). Root cause: trained on Opus-generated labels that were never audited; labels had systematic over-extraction bias.
+- **PR #266 OPEN — revert Sentinel to base.** Config-only one-line change (`Extraction__Model: sentinel-cove → sentinel-cove-v6.2`). 808 tests pass, ansible/j2 verified. Awaiting merge + ansible deploy (`--tags sentinel-collector`).
+- **F4.6.4 Phase 1 spec landed:** `docs/plans/atlas-matrix/f4.6.4-openfigi-naics-rag-phase1.md` (32KB, 5 stories, 7-9 days). OpenFIGI + NAICS entity-resolution RAG. Critical recon finding: ~80% of infra exists in SecMaster (OpenFigiClient, EdgarClient, SicToNaicsMapper, AtlasSectorLookupService); the gap is just qualitative prompt doesn't consume any of it.
+- **6 open Qs in NTFY** (Q1-3 unblock F4.6.4.1 dispatch): OpenFIGI vault populated? NER strategy (regex+dict default)? Confidence threshold 0.7? Plus backfill / headline access / EDGAR freshness.
+- **Phase 4 Epic 6:** 6.1.x query surfaces + 6.2.1-4 dashboards merged (PRs #261-#265). 6.2.5+ deferred.
+- **Methodology learning:** at n=50 audit, 4-row variance = 8pp swing; "trajectory" 18%→8%→26%→20% over prompt iterations was largely noise. The decisive signal was base-vs-LoRA head-to-head on identical row indices.
+- **Substrate generation:** base-model dryrun at `/opt/ai-inference/training-data/v6.3-substrate-source.dryrun.base.jsonl` (993 rows, 4% MAJOR). Ready for full ~15-20k harvest once we decide whether to ship pre-RAG or wait for F4.6.4 to land first.
+- **User update:** CLAUDE.md + skills updated this session; user will restart session to pick up new rules.
 
 ## PHASE STATUS
 - **Phase 1** — Spine — ✓ DONE (Epic 1 merged as `a08b806`)
