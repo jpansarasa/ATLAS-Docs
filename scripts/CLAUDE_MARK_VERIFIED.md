@@ -26,8 +26,9 @@ audit log.
 
 - **.NET source changes.** Run `{Project}/.devcontainer/compile.sh` — that's
   what it's for. Manual marking bypasses tests and is how bugs ship.
-- **A dirty working tree.** The tool refuses (marker keys on `HEAD^{tree}`,
-  which doesn't see uncommitted edits). Commit first, then mark.
+- **A working tree with STAGED changes.** The tool refuses when staged
+  changes are present (since those would change `HEAD^{tree}` on the next
+  commit). Unstaged tracked edits are ignored — they don't affect the marker.
 
 ## Examples
 
