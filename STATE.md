@@ -1,14 +1,10 @@
-# ATLAS Supervisor STATE [2026-05-12]
+# ATLAS Supervisor STATE [2026-05-16]
 
-## ACTIVE [2026-05-12 — session handoff]
-- **F4.6.3 LoRA diagnostic complete:** base qwen2.5-32B-AWQ wins 4% MAJOR vs LoRA-v7 20% MAJOR (head-to-head 10/4/3 base/tie/LoRA). LoRA actively degrades extraction (sector_rotation 5x inflation, confidence +6pts, fabricated horizon_days). Root cause: trained on Opus-generated labels that were never audited; labels had systematic over-extraction bias.
-- **PR #266 OPEN — revert Sentinel to base.** Config-only one-line change (`Extraction__Model: sentinel-cove → sentinel-cove-v6.2`). 808 tests pass, ansible/j2 verified. Awaiting merge + ansible deploy (`--tags sentinel-collector`).
-- **F4.6.4 Phase 1 spec landed:** `docs/plans/atlas-matrix/f4.6.4-openfigi-naics-rag-phase1.md` (32KB, 5 stories, 7-9 days). OpenFIGI + NAICS entity-resolution RAG. Critical recon finding: ~80% of infra exists in SecMaster (OpenFigiClient, EdgarClient, SicToNaicsMapper, AtlasSectorLookupService); the gap is just qualitative prompt doesn't consume any of it.
-- **6 open Qs in NTFY** (Q1-3 unblock F4.6.4.1 dispatch): OpenFIGI vault populated? NER strategy (regex+dict default)? Confidence threshold 0.7? Plus backfill / headline access / EDGAR freshness.
-- **Phase 4 Epic 6:** 6.1.x query surfaces + 6.2.1-4 dashboards merged (PRs #261-#265). 6.2.5+ deferred.
-- **Methodology learning:** at n=50 audit, 4-row variance = 8pp swing; "trajectory" 18%→8%→26%→20% over prompt iterations was largely noise. The decisive signal was base-vs-LoRA head-to-head on identical row indices.
-- **Substrate generation:** base-model dryrun at `/opt/ai-inference/training-data/v6.3-substrate-source.dryrun.base.jsonl` (993 rows, 4% MAJOR). Ready for full ~15-20k harvest once we decide whether to ship pre-RAG or wait for F4.6.4 to land first.
-- **User update:** CLAUDE.md + skills updated this session; user will restart session to pick up new rules.
+## ACTIVE [2026-05-16]
+- **Sentinel Symbol-Identification Remediation** drove the last two days. Discovered 2026-05-15: ~30K of 53K Approved rows carried hallucinated Symbols (cosine-similarity nearest-neighbor over a field-poor RAG returned wrong-but-close candidates — classic WULF→USAF class). Plan: `docs/plans/symbol-identification-remediation.md`. Architecture: `docs/sentinel-extraction-pipeline.md`.
+- **Active operation:** Phase 4 Re-extract backfill running in resolve-only mode at ~218 rows/min; ~65K rows remaining, ETA ~5h (overnight drain). All other remediation phases are shipped or live default-OFF.
+- **Next product action:** when the backfill drains, re-run Phase 5 (AutoApprove re-engage) readiness recon against the post-all-fixes cohort. If true grounding rate ≥90%, AutoApprove can re-engage with quality verification. Until then it stays OFF.
+- **Quarantine posture (unchanged):** AutoApprove OFF; 30K hallucinated `extracted_observations` rows remain quarantined per user policy; 365 LoRA-era catalog rows soft-purged via PR #330; no AutoApprove flip without Phase 5 readiness sign-off.
 
 ## PHASE STATUS
 - **Phase 1** — Spine — ✓ DONE (Epic 1 merged as `a08b806`)
@@ -18,6 +14,38 @@
   - Epic 4 LLM track — ✓ DONE through 4.5 (Sentinel subscription); 4.6.x LoRA reliability pending (multi-week, dispatched separately)
 - **Phase 3** — Sentinel rework + matrix — ✓ DONE (Epic 5 matrix-storage MVP complete: F5.1 + F5.4 + F5.5.1 + F5.5.2 + F5.5.3)
 - **Phase 4** — Surfaces — → IN FLIGHT (Epic 6: 6.1.x ✓, 6.2.x active)
+
+## SENTINEL SYMBOL-IDENTIFICATION REMEDIATION [arc 2026-05-15 → 2026-05-16]
+
+Canonical plan: `docs/plans/symbol-identification-remediation.md`. Architecture: `docs/sentinel-extraction-pipeline.md`. Trigger: 30K+ hallucinated-Symbol Approved rows discovered 2026-05-15 (LoRA-era damage; root cause = cosine-similarity nearest-neighbor over field-poor RAG with no source-grounding check). Defense-in-depth target: rich embeddings + top-N retrieval + CoVe grounding + Gemini catalog-of-last-resort + statement-level validation.
+
+### Phases
+- **Phase 1 — Rich RAG embeddings (v5: ticker + name + description + industry + sector)** — ✓ DONE. PR #311. 100% v5 coverage on 9,073 active instruments; EDGAR sicDescription backfill populated meaningful business descriptions on equities.
+- **Phase 2 — Top-N RAG retrieval (default 5, cap 10)** — ✓ DONE. PR #312. `LocalResolutionDto.Candidates` array with similarity-score ordering. Backwards-compatible with single-candidate callers.
+- **Phase 3 — CoVe Symbol grounding on structured-extraction path** — ✓ DONE.
+  - PR #313: `CoveSymbolVerifier.PickFirstGrounded` wired into `ExtractionProcessor.ApplyLocalResolutionAsync`. Iterates candidates similarity-descending, picks first whose Symbol or Name literally appears in `text_quote ∪ context_summary`; otherwise sets Symbol/InstrumentId to null + `ResolutionState=NoResolution` + `[cove] no-symbol-grounded-in-source` review note.
+  - PR #314: predicate hardening — word-boundary regex for ≥4-char Symbols, Name-only (≥4-char substring) for ≤3-char Symbols; persists `NoGroundingNote` to `review_notes`.
+  - PR #317: ResolutionWorker CoVe wiring + cascade-exhausted marker so the v2 deterministic-resolver path is also covered.
+  - PR #331: tightened CoVe Name predicate to close the TXNM/SFIX/SNX leak class.
+- **Phase 4 — Re-extract backfill BackgroundService** — ✓ CODE LIVE.
+  - PR #318: feature-flag-gated BackgroundService (default OFF).
+  - PRs #321/#322: resolve-only mode (skip LLM extraction, re-run RAG+CoVe against existing rows) + ops-enable.
+  - PR #323: skip RAG LLM-pick in resolve-only mode → 40s/call → <1s (~85× throughput).
+  - Status today: running, ~218 rows/min, ~65K rows remaining.
+- **Phase 5 — AutoApprove re-engage** — ◯ HOLD. Awaiting fresh readiness recon after Phase 4 backfill drains a meaningful post-all-fixes cohort. Gate: true grounding rate ≥90% before flipping `Extraction__AutoApproveEnabled=true`.
+- **Phase 6 — Statement-level CoVe validation (structured-extraction path)** — ✓ CODE LIVE default-OFF. PR #329. Operator decision pending to activate.
+- **Phase 7 — Gemini MCP Google Finance fallback (catalog-of-last-resort)** — ✓ CODE LIVE default-OFF. PR #328. Closes the catalog-gap failure mode (foreign tickers `.PA/.TO/.V/.SI/.WA/.MC`, newly-listed equities). Operator decision pending to activate.
+
+### Supporting fixes (this arc)
+- **Catalog poisoning fix** — SecMaster guard against extraction-emitted symbols being self-registered + soft purge of 365 LoRA-era rows registered as instruments (PR #330).
+- **`ticker_in_quote` bypass guard** — closes the code path that skipped CoVe grounding (PR #331).
+- **Vector similarity floor (default 0.5)** in SecMaster RAG so nearest-neighbor returns null instead of "closest" under that floor (PR #332).
+- **SecMaster perf + observability cleanup** — embedding cache, metric split (`vector_search_duration`), suffix dedup, method-tag on requests (PR #325).
+- **SecMaster Resolve & RAG latency dashboard** (PR #324).
+- **Finnhub upstream circuit breaker** — bounds the 15s-timeout cost on upstream 403s (PR #326).
+- **Supervisor-mode skill** — default parallel code dispatches to worktree isolation (PR #327).
+- **Docs** — pipeline diagram + Phase 6/7 plan additions (PRs #315/#316).
+- **README sweep** — 22 READMEs touched, closing 40 audit findings (PRs #333/#334).
 
 ## EPIC 1 — DONE [merged 2026-05-10 as `a08b806`, PR #215]
 - 14 stories merged: 1.1.1, 1.1.2, 1.2.1, 1.2.2, 1.3.1, 1.3.2, 1.4.1, 1.4.2, 1.4.3 (destructive migration, 4 phases), 1.5.1, 1.6.1, 1.6.2, 1.7.1, 1.7.2.
@@ -73,9 +101,14 @@
 - Bridge devcontainer↔timescaledb network (recurring blocker for integration tests across 4 stories — long-lived infra debt independent of any single epic).
 
 ## OPEN ASKS (for user)
-- Eval substrate decision (Feature 4.6.x) — v6.2-cove (70,895) vs. subset. Not yet settled.
+- **Phase 5 readiness recon** — gates AutoApprove re-engagement. Pending: re-run after Phase 4 backfill drains a meaningful post-all-fixes cohort. Decision needed: flip `Extraction__AutoApproveEnabled=true` once true grounding rate ≥90%.
+- **Phase 6 / Phase 7 flag activation** — both shipped default-OFF. Operator decision on enabling statement-level CoVe validation (#329) and Gemini Google Finance fallback (#328); recommend after Phase 5 is stable.
+- **TEI bge-m3 GPU experiment** — optional, user authorized as "willing to test". Verify whether GPU-served bge-m3 (via TEI) materially beats CPU bge-m3 baseline (~216ms p50 / ~1,474ms p95).
+- **Finnhub API key rotation** — deferred until the system validates; circuit breaker (PR #326) bounds the upstream 403 cost in the meantime.
 
 ## DEFERRED FOLLOW-UPS (non-blocking)
+- **`vector_search_duration_ms` sunset** — renamed to `vector_search_duration` in PR #325; old name still in Prom retention window until it ages out.
+- **Embedding cache hit-rate alerting** — `secmaster_embedding_cache_hits_total` / `secmaster_embedding_cache_misses_total` exist; live hit rate ~57%. If the ceiling stalls, tune target / add a stall-detection alert.
 - **readme-consistency** sub-component template detection — audit.sh applies 10-section check uniformly; should detect `*/mcp/`, `*/config/`, `*/scripts/` and apply lighter template.
 - **readme-consistency** S5 broadening — current regex misses `IConfiguration` parameter-named accesses (e.g. `configuration["FOO"]` lowercase); broaden to catch any `IConfiguration`-typed local.
 - **readme-consistency** S5 `:` vs `__` config-key equivalence — .NET treats them as same; literal-token comparison flags both as separate.
