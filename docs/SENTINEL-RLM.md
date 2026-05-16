@@ -1,6 +1,8 @@
-# Sentinel Extraction: Architecture & Configuration
+# Sentinel Extraction: Configuration & Constraints
 
 Reference: [arxiv:2512.24601](https://arxiv.org/html/2512.24601v1) - Recursive Language Models
+
+> **Pipeline architecture lives in [`sentinel-extraction-pipeline.md`](sentinel-extraction-pipeline.md)** (six-stage flow, RAG top-N, CoVe Symbol grounding, planned Phase 6 statement-level validation, AutoApprove policy). This document covers the model/backend/VRAM constraints and troubleshooting only.
 
 ## Overview
 
