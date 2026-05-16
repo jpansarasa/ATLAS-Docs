@@ -161,3 +161,35 @@ This file is the canonical plan. Per-phase outcomes recorded inline below as eac
 - New unit tests covering: numeric grounded, numeric near-match within tolerance, numeric not in source, date grounded, date wrong format but same value, label grounded, label paraphrased (reject).
 
 **Hold for user direction** — same status as Phases 4 and 5.
+
+### Phase 7 — Gemini MCP Google Finance fallback (deferred)
+
+**Intent:** Close the catalog-gap failure mode that drove the WULF→USAF hallucination class. When RAG+CoVe return no match (catalog miss, foreign ticker, newly-listed equity, name-only mention), call Gemini MCP with the article's company context. If Gemini's Google Finance returns a verified ticker, register the new instrument in SecMaster and resolve. Only when Gemini also has no match do we flag the row as hallucinated/unresolvable.
+
+**Where it fires:**
+- After CoVe rejection (`[cove] no-symbol-grounded-in-source` branch in `ExtractionProcessor.ApplyLocalResolutionAsync`)
+- After cascade-exhausted (RAG returned no candidates at all)
+- Does NOT fire on rows where CoVe accepted a Symbol — those are handled inline. (Sampled cross-check on accepted rows is a separate, out-of-band quality-monitoring concern; see "Position 2" sidebar in the pipeline doc.)
+
+**Architectural target:**
+- New service `GeminiSymbolFallbackService` in `SentinelCollector/src/Services/`
+- Called from `ExtractionProcessor.ApplyLocalResolutionAsync` rejection branch and cascade-exhausted branch
+- Uses the existing Gemini MCP integration (paid tier, project 836625921886, ~$0.00006/call per memory `project_gemini_paid_tier`)
+- Prompt: company-name + context → ticker (or null). Single-call, structured JSON response.
+- On success: call SecMaster registration endpoint with the new instrument metadata (ticker, name, exchange from Gemini response), then resolve.
+- On failure (Gemini also null): leave Symbol=NULL with `[gemini] no-match-from-google-finance` review_notes marker (parallel to the CoVe marker).
+
+**Acceptance:**
+- Foreign-ticker recovery rate (.PA, .TO, .V, .SI, .WA, .MC) measurably improves from current 0% pass-through.
+- Latency budget: Gemini call ≤3s p95; non-blocking on overall pipeline (timeout → null with `[gemini] timeout` marker).
+- Cost ceiling: per-call cost monitored via metric `sentinel_gemini_fallback_cost_usd_total`; alert if >$10/day.
+- Unit tests cover: Gemini-returns-ticker → instrument registered + resolved; Gemini-returns-null → null Symbol + marker; Gemini-timeout → null Symbol + timeout marker; instrument-already-exists → use existing, don't re-register.
+
+**Position 2 — sampled cross-check (deferred, sidebar work):**
+- 10% of Approved rows trigger an async Gemini cross-check
+- Asks: "Does ticker X correspond to the company described in this article?"
+- Emits metric `sentinel_gemini_cross_check_agreement` (rate of yes/no/unknown)
+- Non-blocking; drives a quality dashboard, NOT an inline gate
+- Allows long-term drift detection on the inline pipeline without taking Gemini onto the critical path
+
+**Hold for user direction** — same status as Phases 4, 5, 6.
