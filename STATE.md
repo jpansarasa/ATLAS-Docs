@@ -96,9 +96,7 @@ Canonical plan: `docs/plans/symbol-identification-remediation.md`. Architecture:
 - ◯ 6.2.x remaining dashboards + 6.3.x reports — pending.
 
 ## DEPLOYMENT TODOS
-- Wire `ConnectionStrings__AtlasData=...atlas_data...` into the **SecMaster** container in `deployment/artifacts/compose.yaml.j2` + ansible vault (Story 1.7.2 dedup-grouping needs cross-DB raw-SQL access). Migrator already has it (line 74); SecMaster still only has `ConnectionStrings__SecMaster` (line 619). Could not verify ansible-vault contents (no vault password in scope).
-- Wire `SECMASTER_REST_ENDPOINT` env var into **FredCollector + OfrCollector** containers (Stories 1.6.1/1.6.2). Code reads it (`FredCollector/src/DependencyInjection.cs:112,147`, `OfrCollector/src/DependencyInjection.cs:108`); compose only sets `SECMASTER_GRPC_ENDPOINT`.
-- Bridge devcontainer↔timescaledb network (recurring blocker for integration tests across 4 stories — long-lived infra debt independent of any single epic).
+_All long-standing items cleared 2026-05-16: SecMaster cross-DB conn-string + Fred/OFR `SECMASTER_REST_ENDPOINT` resolved in PR #279 (2026-05-14, predated this audit); devcontainer↔timescaledb network bridged for 4 affected services (CalendarService, Reports, FinnhubCollector, AlphaVantageCollector) in PR #336._
 
 ## OPEN ASKS (for user)
 - **Phase 5 readiness recon** — gates AutoApprove re-engagement. Pending: re-run after Phase 4 backfill drains a meaningful post-all-fixes cohort. Decision needed: flip `Extraction__AutoApproveEnabled=true` once true grounding rate ≥90%.
