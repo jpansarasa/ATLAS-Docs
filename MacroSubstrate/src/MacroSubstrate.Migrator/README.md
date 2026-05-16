@@ -6,6 +6,36 @@ One-shot console host that applies `MacroSubstrate` EF migrations and exits. Wir
 
 Migration ownership for `macro_observations` doesn't belong to a single collector — multiple collectors write to it. This host (Variant A per owner-rec §3.1.1) is the single project that owns schema deployment. It runs `MacroSubstrateDbContext.Database.MigrateAsync()` and exits with `0` on success, `1` on failure. The compose graph blocks dependent services until this completes successfully.
 
+## Architecture
+
+```
+compose: migrate-macro-substrate (restart: no, one-shot)
+    │
+    ▼
+Program.cs   ── reads ConnectionStrings__AtlasData / AtlasDb
+    │
+    ▼
+MacroSubstrateDbContext (from MacroSubstrate package)
+    │
+    ▼
+EF MigrateAsync()  →  atlas_data.macro_observations (TimescaleDB hypertable)
+    │
+    ▼
+exit 0 (success) | exit 1 (failure, logs full exception)
+
+depends_on chain (consumers):
+  fred-collector → migrate-macro-substrate: service_completed_successfully
+  ofr-collector  → migrate-macro-substrate: service_completed_successfully
+  reports-*      → migrate-macro-substrate: service_completed_successfully
+```
+
+## Features
+
+- **Single owner of `macro_observations` schema** — Variant A per owner-rec §3.1.1; avoids the "every collector tries to run migrations" race.
+- **Connection-string fallback chain** — accepts either `ConnectionStrings__AtlasData` (preferred) or `ConnectionStrings__AtlasDb` so collectors that already use the older name don't need to be renamed.
+- **Cold-start retry envelope** — Npgsql `EnableRetryOnFailure(10x / 15s)`; tolerates TimescaleDB warm-up without spurious migrate failures.
+- **Loud-fail at deploy time** — non-zero exit on missing connection string or migration error so the compose dependency-gate halts the whole stack instead of silently leaving consumers running against a stale schema.
+
 ## Behaviour
 
 1. Reads connection string from `ConnectionStrings__AtlasData` (falls back to `ConnectionStrings__AtlasDb`). Loud-fails if neither is set.
@@ -20,6 +50,14 @@ Migration ownership for `macro_observations` doesn't belong to a single collecto
 |---|---|---|
 | `ConnectionStrings__AtlasData` | Primary connection string. Required (or `AtlasDb` fallback). | Required |
 | `ConnectionStrings__AtlasDb` | Alternate name for the same target — preserved for collectors that already use this key. | Optional |
+
+## API Endpoints
+
+N/A — one-shot console host; no HTTP/gRPC surface. Health is the process exit code (0 = success, 1 = failure).
+
+## Ports
+
+N/A — no listener. The compose service exposes nothing.
 
 ## Project Structure
 

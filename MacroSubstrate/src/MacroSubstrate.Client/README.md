@@ -8,6 +8,26 @@ Public contract + DTO for the `macro_observations` write path. Lets collectors d
 
 Pairs with `ATLAS.Events.Client` for the `AtlasSectorCode` enum carried on each observation.
 
+## Architecture
+
+```
+Collector (any)
+    │
+    ▼
+IMacroObservationWriter   ← contract (this package)
+    │
+    ├─ MacroSubstrate.MacroObservationRepository   (EF-backed impl)
+    └─ {custom impl}                                (raw INSERT / alt transport)
+```
+
+This package is contract-only — zero runtime dependencies beyond the .NET BCL and `ATLAS.Events.Client` (for `AtlasSectorCode`). No EF, no Npgsql, no DI registration code. The implementation choice belongs to the consumer.
+
+## Features
+
+- **Writer contract** (`IMacroObservationWriter`) — single + batch write entry points with idempotency-key dedup semantics.
+- **DTO with self-validation** (`MacroObservation.EnsureValid()`) — enforces the D4 invariants (exactly-one of numeric/qualitative, trust↔qualitative coupling, UTC observation time) before they reach any transport.
+- **Cross-DB read-failure type** (`MappingVersionLookupUnavailableException`) — gives consumers a typed handle when the optional SecMaster connection wasn't configured but a versioned-mapping read was attempted.
+
 ## Contract
 
 ### `IMacroObservationWriter`
@@ -36,6 +56,18 @@ Validated by `EnsureValid()` and enforced by DB `CHECK` constraints:
 | Type | Raised when |
 |---|---|
 | `MappingVersionLookupUnavailableException` | A read path needs versioned mapping resolution but `IMappingVersionLookup` was not registered (typically: SecMaster connection string absent at startup). |
+
+## Configuration
+
+N/A — contract-only library. No configuration surface; consumers wire their own implementation and host owns connection strings / endpoints. See [`MacroSubstrate`](../MacroSubstrate/README.md#configuration) for the EF-backed impl's configuration.
+
+## API Endpoints
+
+N/A — library; no HTTP or gRPC surface of its own. The contract is invoked in-process via DI.
+
+## Ports
+
+N/A — library; no listener.
 
 ## Project Structure
 

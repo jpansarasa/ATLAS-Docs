@@ -6,6 +6,34 @@ Shared host scaffolding for the cadence-specific report hosts (`Reports.DailyHos
 
 Reports hosts share more than they differ — they all publish rendered output to a file path on a mounted volume, all wrap publish with telemetry, and all differ only in cadence + window resolver. `Reports.Hosting` factors out the shared pieces so each host's `Program.cs` stays focused on cadence-specific wiring (schedule, window resolver, workers).
 
+## Architecture
+
+```
+{Daily|Weekly|Monthly}Host.Program
+    │
+    ├─ AddReportingCore()                            ← Reports.Core (composer + renderers)
+    ├─ AddReportingSubstrate(configuration)          ← Reports.Substrate (EF reader)
+    └─ AddFileReportPublisher<{Cadence}PublisherTelemetry>()   ← this package
+                                                          │
+                                                          ▼
+                                              IReportPublisher (Singleton)
+                                                          │
+                                                          ▼
+                                              FileReportPublisher
+                                                          │
+                                                          ▼
+                                              /mounted/output/<cadence>/<file>
+```
+
+`FileReportPublisher` is the only implementation today; the interface is the seam where future S3 / NTFY-attachment / S3-presigned publishers plug in without touching cadence hosts.
+
+## Features
+
+- **`IReportPublisher` seam** — single output contract; cadence hosts depend on the interface, not the implementation.
+- **`FileReportPublisher`** — writes rendered bytes to a mounted path; returns a `PublishedReport` describing path + size for downstream telemetry.
+- **Per-cadence telemetry adapter** (`IPublisherTelemetry`) — each cadence host plugs its own `ActivitySource` + `Meter` into the shared publisher so publish spans appear under the host's own pipeline rather than a shared library namespace.
+- **Singleton lifetimes** — no scoped state; safe to share across the host's request/scheduled-job graph.
+
 ## Contract
 
 ### `IReportPublisher`
@@ -34,6 +62,14 @@ services.AddFileReportPublisher<DailyPublisherTelemetry>();
 ```
 
 Both `IPublisherTelemetry` and `IReportPublisher` are registered as `Singleton` — the publisher has no scoped state.
+
+## API Endpoints
+
+N/A — library; no HTTP/gRPC surface. The publisher is invoked in-process via the `IReportPublisher` contract from the cadence-specific hosts.
+
+## Ports
+
+N/A — library; no listener. Cadence hosts own their own ports (see the per-host READMEs).
 
 ## Project Structure
 

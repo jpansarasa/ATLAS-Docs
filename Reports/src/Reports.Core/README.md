@@ -62,6 +62,14 @@ if (config.GetSection("Reports:NewsSummary:Vllm:Endpoint").Exists())
     services.AddVllmNewsSummary(config);
 ```
 
+## API Endpoints
+
+N/A — library; no HTTP/gRPC surface. The composer is invoked in-process via `IReportComposer.ComposeAsync(...)` from the cadence-specific hosts. See [`Reports.DailyHost`](../Reports.DailyHost/README.md), [`Reports.WeeklyHost`](../Reports.WeeklyHost/README.md), [`Reports.MonthlyHost`](../Reports.MonthlyHost/README.md) for the hosts that drive it.
+
+## Ports
+
+N/A — library; no listener. Cadence hosts own their own ports.
+
 ## Project Structure
 
 ```

@@ -47,6 +47,14 @@ Telemetry contract: spans + a failure counter under names exposed at `MacroSubst
 | `ConnectionStrings:AtlasData` | Primary connection string for `macro_observations`. Falls back to `AtlasDb` for collectors that already use that name. | Required |
 | `ConnectionStrings:SecMaster` | Cross-DB connection to `atlas_secmaster` for versioned mapping lookups. Falls back to `AtlasSecMaster`. | Optional (warns at startup if missing) |
 
+## API Endpoints
+
+N/A — library; no HTTP/gRPC surface of its own. The repository is invoked in-process via the `IMacroObservationWriter` contract (see [`MacroSubstrate.Client`](../MacroSubstrate.Client/README.md)). Schema deployment runs through the sibling [`MacroSubstrate.Migrator`](../MacroSubstrate.Migrator/README.md) console host.
+
+## Ports
+
+N/A — library; no listener. Consumers own their HTTP/gRPC surface.
+
 ## Project Structure
 
 ```
