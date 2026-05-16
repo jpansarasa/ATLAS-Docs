@@ -76,6 +76,7 @@ FOREGROUND only if agent_result drives THIS_turn's decision:
 PROMPT_SHAPE (≤400w):
   scope: 1-3 deliverables max
   commit_discipline: per_layer ¬ end_of_story
+  worktree_isolation: pass isolation: "worktree" on parent dispatch when concurrent with another code agent
   git_add: explicit `git add -- <paths>` ¬ -A | -u | .
   budget_guard: ~70% burn → commit + stash + report
   reporting: {commit_hashes, files, test_counts, deviations, blocked}
@@ -85,8 +86,13 @@ PROMPT_SHAPE (≤400w):
 PARALLELISM:
   same_branch + concurrent → SEQUENCE (race risk)
   disjoint_files + same_branch → parallel OK
-  different_branches | worktrees → fully_parallel
+  different_branches without worktrees → COLLIDE (shared working tree; checkout from one agent flips HEAD for the other)
+  different_branches WITH worktrees → fully_parallel
   ALWAYS_TELL each agent which files belong to other in-flight agents
+DEFAULT [parallel code dispatch]:
+  pass isolation: "worktree" on the Agent tool call → tool creates a temporary git worktree per agent, auto-cleanup on completion
+  rationale: shared working tree + concurrent git checkout = silent commit loss; observed 2026-05-16 on PRs #325/#326
+  exceptions: docs-only parallel work on disjoint files can skip worktrees; single-agent dispatches don't need them
 
 AFTER_DISPATCH (advance, ¬wait):
   ✓ update(STATE.md) for the dispatched track
