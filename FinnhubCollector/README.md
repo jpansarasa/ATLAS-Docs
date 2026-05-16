@@ -52,7 +52,7 @@ Data flows from the Finnhub API through scheduled background collection into Tim
 
 ## API Endpoints
 
-REST surface lives in `src/Endpoints/` — public read APIs (`ApiEndpoints`) and admin/management routes (`AdminEndpoints`).
+REST surface lives in `src/Endpoints/` — public read APIs (`ApiEndpoints`), live direct-from-Finnhub queries (`LiveDataEndpoints` — route group `/api/live`), and admin/management routes (`AdminEndpoints`). The Live Data API bypasses local storage and proxies straight to Finnhub for symbols that aren't part of the configured collection set.
 
 ### REST API (Port 8080)
 

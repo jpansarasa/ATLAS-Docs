@@ -87,6 +87,7 @@ REST endpoints are split across the following endpoint groups under `src/Endpoin
 - **IdentifiersEndpoints** (`/api/identifiers`) — generic identifier-resolution surface.
 - **InstrumentOverrideEndpoints** (`/api/instruments/{id}/sector-override`, `/api/admin/sector-overrides`) — manual sector override lifecycle.
 - **AdminEndpoints** (`/api/admin`) — catalog coverage report + dedup maintenance ops.
+- **EntityResolutionEndpoints** (`/api/resolve-entities`) — on-demand entity-resolution composer for F4.6.4 qualitative-extraction grounding. POST a batch of NER candidates + article context; returns a confidence-filtered list of canonical instruments with NAICS + ATLAS sector grounding.
 
 ### REST API (Port 8080)
 
@@ -137,6 +138,7 @@ REST endpoints are split across the following endpoint groups under `src/Endpoin
 | `/api/admin/catalog/coverage` | GET | Catalog coverage report |
 | `/api/admin/catalog/dedupe-fred-hijacks` | POST | Dedup catalog FRED hijack rows |
 | `/api/admin/sector-overrides` | GET | List all active sector overrides |
+| `/api/resolve-entities` | POST | Resolve a batch of NER candidates to canonical instruments with NAICS + ATLAS sector grounding (F4.6.4) |
 
 ### gRPC Services (Port 5001)
 
@@ -155,8 +157,8 @@ SecMaster/
 ├── src/
 │   ├── Configuration/    # Options classes (collectors, semantic search)
 │   ├── Data/
-│   │   ├── Entities/     # 11 entities — see list below
-│   │   ├── Migrations/   # EF migrations (baseline + 13 since)
+│   │   ├── Entities/     # 12 entities — see list below
+│   │   ├── Migrations/   # EF migrations (baseline + extensive schema evolution: NAICS, ATLAS-sector rollup, mapping versions, signal identities, EDGAR filers, sector overrides, NAICS classification, OpenFIGI cache, mapping-version + override invariants)
 │   │   └── Repositories/ # query/persistence helpers
 │   ├── Endpoints/        # REST API handlers (see API Endpoints section for the full list)
 │   ├── Grpc/             # gRPC service implementations
@@ -183,6 +185,7 @@ SecMaster/
 - `SignalIdentityEntity` — cross-source signal-identity grouping (dedup target).
 - `EdgarFilerEntity` — EDGAR filer registry (CIK + tickers).
 - `MappingVersionEntity` — version-pinned mappings for reproducible resolution.
+- `OpenFigiLookupCacheEntity` — cached OpenFIGI symbology lookups (rate-limit protection).
 
 ## Development
 

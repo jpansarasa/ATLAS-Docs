@@ -63,13 +63,24 @@ Collectors push observation events over gRPC. ThresholdEngine caches observation
 | `PatternConfig:Path` (a.k.a. `PatternConfig__Path`) | Pattern config directory | `./config` (dev), `/app/config` (prod) |
 | `PatternConfig__HotReload` | Enable file system watcher | `true` |
 | `PatternConfig__WatchInterval` | File watcher polling interval (ms) | `1000` |
+| `BurstWindow:ConfigFilePath` (a.k.a. `BurstWindow__ConfigFilePath`) | Path to the burst-window JSON config (hot-reloaded by `BurstWindowConfigurationWatcher`). | `./config/burst-windows.json` |
+| `SectorThreshold:ConfigFilePath` (a.k.a. `SectorThreshold__ConfigFilePath`) | Path to the sector-threshold JSON config (hot-reloaded by `SectorThresholdConfigurationWatcher`). Loud-fails at startup if unset *and* the default path is missing. | `./config/sector-thresholds.json` |
+| `SectorThreshold:FailOnEmptyConfiguration` | If `true`, refuse to boot when the loaded sector-threshold config has zero rules. | `false` |
 | `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
 | `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `thresholdengine-service` |
 | `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
 
 ## API Endpoints
 
-REST surface lives in `src/Endpoints/PatternEndpoints.cs` (route group `/api/patterns`); gRPC surface lives in `src/Grpc/`.
+REST surface lives in `src/Endpoints/`:
+
+- **PatternEndpoints** (`/api/patterns`) — pattern CRUD, evaluation, freshness/health.
+- **MatrixCellEndpoints** (`/api/matrix-cells`) — per-cell + per-sector projection vectors from the pattern × sector matrix.
+- **SectorRegimePhaseEndpoints** (`/api/sector-regimes`, `/api/sector-phase-cells`) — sector-regime queries + on-demand refresh of the sector-phase materialised view.
+- **SectorThresholdAdminEndpoints** (`/admin/sector-thresholds`) — operator surface for the sector-threshold configuration (read current snapshot, replace, reload from disk).
+- **MacroObservationEndpoints** (`/api/macro-observations`) — read access over `macro_observations` with versioned-mapping (as-of) resolution via SecMaster.
+
+gRPC surface lives in `src/Grpc/`.
 
 ### REST API (Port 8080)
 
@@ -82,6 +93,16 @@ REST surface lives in `src/Endpoints/PatternEndpoints.cs` (route group `/api/pat
 | `/api/patterns/evaluate` | POST | Evaluate all enabled patterns on-demand |
 | `/api/patterns/{patternId}/evaluate` | POST | Evaluate specific pattern on-demand |
 | `/api/patterns/health` | GET | Get pattern data freshness and health status |
+| `/api/matrix-cells` | GET | Query the pattern × sector matrix cells |
+| `/api/matrix-cells/sector-vector` | GET | Per-sector projection vector across all patterns |
+| `/api/sector-regimes` | GET | Query sector regimes (latest snapshot per sector by default) |
+| `/api/sector-regimes/latest` | GET | Latest regime per sector (convenience) |
+| `/api/sector-phase-cells` | GET | Query the sector-phase materialised view |
+| `/api/sector-phase-cells/refresh` | POST | Trigger refresh of the sector-phase materialised view |
+| `/admin/sector-thresholds` | GET | Current sector-threshold snapshot in memory |
+| `/admin/sector-thresholds` | PUT | Replace the current sector-threshold snapshot |
+| `/admin/sector-thresholds/reload` | POST | Reload sector-threshold configuration from disk |
+| `/api/macro-observations` | GET | Query `macro_observations` (filters: signal-identity, source, sector, kind, time range, as-of mapping-version) |
 
 ### gRPC Services (Port 5001)
 
@@ -108,9 +129,9 @@ ThresholdEngine/
 ├── src/
 │   ├── Compilation/          # Roslyn expression compiler, cache
 │   ├── Configuration/        # Pattern config loader, watcher
-│   ├── Data/                 # DbContext, repositories, migrations
-│   ├── Endpoints/            # REST API endpoints
-│   ├── Entities/             # Domain models, PatternEvaluationContext
+│   ├── Data/                 # DbContext, repositories, migrations (recent sweep: matrix cells, sector regimes, sector-phase view, source_collector + drop legacy category on processed/threshold events)
+│   ├── Endpoints/            # REST API endpoints (Pattern, MatrixCell, SectorRegimePhase, SectorThresholdAdmin, MacroObservation)
+│   ├── Entities/             # Domain models — PatternConfiguration, PatternEvaluationContext + Historical variant, PatternEvaluationResult, ProcessedEvent, ThresholdEvent, DedupedObservation, ValidationResult, ConfigurationAuditLog
 │   ├── Enums/                # TemporalType
 │   ├── Events/               # Event bus infrastructure
 │   ├── Grpc/                 # gRPC client consumers and server service

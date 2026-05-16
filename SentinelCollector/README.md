@@ -50,7 +50,7 @@ flowchart LR
 
 Collection workers ingest content from multiple sources, normalize it to markdown, extract observations via LLM, resolve against SecMaster, and publish events over gRPC for ThresholdEngine consumption.
 
-Schema is owned by `src/Data/Migrations/` (EF Core). Recent migrations land the review-status / correction / RSS-feed / schedule-type / time-range / retry-count / digest / sector / symbol fields on the core `RawContent` and `ExtractedObservation` tables — the human-review pipeline and validation-trigger machinery are entirely schema-driven.
+Schema is owned by `src/Data/Migrations/` (EF Core). Recent migrations land the review-status / correction / RSS-feed / schedule-type / time-range / retry-count / digest / sector / symbol fields on the core `RawContent` and `ExtractedObservation` tables, plus the latest sweep adding `AtlasSectorCode`-as-enum, resolution-attempts tracking, and re-extraction timestamps. The human-review pipeline and validation-trigger machinery are entirely schema-driven.
 
 ## Features
 
