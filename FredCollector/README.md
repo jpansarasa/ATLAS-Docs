@@ -19,7 +19,7 @@ flowchart LR
 
 Data flows from the FRED API into FredCollector on a cron schedule. New observations are persisted to TimescaleDB, published as gRPC events for ThresholdEngine, and registered with SecMaster as instruments.
 
-Schema is owned by `src/Data/Migrations/` (EF Core). Recent migrations include `AddSeriesSectorTags` and `AddSeriesSignalIdentityTag` (which carry the SecMaster ATLAS-sector + signal-identity classifications down to per-series rows), `ConvertAtlasSectorCodeToEnum` (the EF value-converter cutover landed by `Events.EntityFrameworkCore`), and `AddSeriesConfigIsMacro` (per-series routing predicate for the shared `macro_observations` substrate; see below).
+Schema is owned by `src/Data/Migrations/` (EF Core). Current `series_configs` rows carry the SecMaster ATLAS-sector tag (`AtlasSectorCode`, an EF-converted enum), the signal-identity tag (`SignalIdentityId`), an `IsMacro` routing predicate for the shared `macro_observations` substrate (see below), and a check constraint enforcing that ATLAS sector and signal-identity are mutually exclusive (`ck_series_config_sector_xor_signal`) — a series is either macro-rolled by sector or instrument-attributed by signal-identity, never both.
 
 ### Series classification: macro vs. instrument-attributed
 
@@ -71,6 +71,11 @@ Instrument-attributed series (those resolved to a SecMaster signal-identity that
 | `ApiKey__Key` | API key value (when enabled) | - |
 
 ## API Endpoints
+
+REST surface lives in `src/Endpoints/`:
+
+- **ApiEndpoints** — public read APIs (`/api/series/*`, `/api/search`, `/api/discover`, `/health*`) consumed by ThresholdEngine, SecMaster's catalog gateway, and external observers.
+- **AdminEndpoints** — operator surface (`/api/admin/series/*`) for adding, toggling, deleting series and triggering manual collection or backfill.
 
 ### REST API
 

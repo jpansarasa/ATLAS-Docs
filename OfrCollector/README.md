@@ -19,7 +19,7 @@ flowchart LR
 
 The service pulls data from three OFR sources (FSI via CSV, STFM and HFM via JSON API), persists observations in TimescaleDB, and streams events to ThresholdEngine over gRPC. New instruments are registered with SecMaster on discovery.
 
-Schema is owned by `src/Data/Migrations/` (EF Core) — backed by entities in `src/Data/Entities/`: `FsiEntity` (top-level FSI), `StfmSeriesEntity` / `StfmObservationEntity` (Short-term Funding Monitor), `HfmSeriesEntity` / `HfmObservationEntity` (Hedge Fund Monitor), and `CollectionLogEntity` (per-run audit trail). The most recent migration, `AddSeriesIsMacro`, adds a per-series routing predicate for the shared `macro_observations` substrate (see below).
+Schema is owned by `src/Data/Migrations/` (EF Core) — backed by entities in `src/Data/Entities/`: `FsiEntity` (top-level FSI), `StfmSeriesEntity` / `StfmObservationEntity` (Short-term Funding Monitor), `HfmSeriesEntity` / `HfmObservationEntity` (Hedge Fund Monitor), and `CollectionLogEntity` (per-run audit trail). The current STFM and HFM series rows carry two tags from the Epic 1 / Epic 3 schema additions: `SignalIdentityId` (+ `SignalIdentityResolvedAt`) — the SecMaster signal-identity link populated when a mnemonic appears as an alias in the seeded catalog — and `IsMacro` — the routing predicate for the shared `macro_observations` substrate dual-write (see below). Both default null/false so the underlying migrations are additive.
 
 ### Series classification: macro vs. instrument-attributed
 
@@ -128,7 +128,10 @@ OfrCollector/
 ├── src/
 │   ├── Api/                    # OFR API clients (FSI CSV, STFM JSON, HFM JSON)
 │   ├── Configuration/          # Series configuration provider
-│   ├── Data/                   # EF Core DbContext, repositories
+│   ├── Data/
+│   │   ├── Entities/           # 6 entities (Fsi, StfmSeries/Observation, HfmSeries/Observation, CollectionLog)
+│   │   ├── Migrations/         # EF migrations (baseline + precision bumps + as-of column + signal-identity + IsMacro)
+│   │   └── (DbContext + repositories at Data/ root)
 │   ├── Endpoints/              # REST API and Admin endpoints
 │   ├── Enums/                  # Dataset and category enumerations
 │   ├── Grpc/                   # gRPC EventStreamService and repositories

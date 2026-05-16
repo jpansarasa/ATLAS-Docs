@@ -59,6 +59,11 @@ Background workers collect data on a schedule (FRED releases every 6 hours, mark
 
 ## API Endpoints
 
+REST surface lives in `src/Endpoints/`:
+
+- **MarketCalendarEndpoints** (`/api/market/*`) — trading-day calculations, market status, holiday lookups, and Nager.Date passthrough.
+- **EconomicCalendarEndpoints** (`/api/economic/*`) — economic-event queries (date-range, upcoming, high-impact filter) backed by the persisted FRED release schedule.
+
 ### REST API (Port 8080)
 
 #### Market Calendar
