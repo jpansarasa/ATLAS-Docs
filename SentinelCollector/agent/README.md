@@ -5,14 +5,14 @@ Single-file Python CLI that connects to the local vLLM instance and gives the mo
 ## Setup
 
 ```bash
-python -m venv agent/.venv
-agent/.venv/bin/pip install -r agent/requirements.txt
+python -m venv SentinelCollector/agent/.venv
+SentinelCollector/agent/.venv/bin/pip install -r SentinelCollector/agent/requirements.txt
 ```
 
 ## Run
 
 ```bash
-agent/.venv/bin/python agent/agent.py
+SentinelCollector/agent/.venv/bin/python SentinelCollector/agent/agent.py
 ```
 
 Commands in the REPL:

@@ -4,7 +4,7 @@ Persistent IPython kernel in a container, addressed over HTTP via a thin FastAPI
 
 Used by:
 
-- `agent/agent.py` — interactive REPL agent. Spawns one container per REPL session via `sudo nerdctl` (agent runs on the host).
+- `SentinelCollector/agent/agent.py` — interactive REPL agent. Spawns one container per REPL session via `sudo nerdctl` (agent runs on the host).
 - `SentinelCollector` (flag-gated via `Extraction__UseToolAugmentedCove` / `Extraction__UseToolAugmentedEpistemicMarkers`) — one container per extraction task, provisioned through the `sandbox-manager` sidecar.
 
 ## Build

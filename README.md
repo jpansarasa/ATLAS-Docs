@@ -785,6 +785,7 @@ ATLAS/
 ├── OfrCollector/           # OFR financial stability data
 │   └── mcp/                # OFR data MCP server (integrated)
 ├── SentinelCollector/      # LLM-based document extraction
+│   └── agent/              # Tool-calling CLI agent for Qwen on vLLM (shared sandbox-kernel)
 ├── CalendarService/        # Market status, trading days
 ├── SecMaster/              # Instrument metadata & source resolution
 │   └── mcp/                # SecMaster data MCP server (integrated)
@@ -795,7 +796,6 @@ ATLAS/
 │   └── mcp/                # Whisper MCP server (integrated)
 ├── markitdownMCP/          # Document conversion MCP server (standalone)
 ├── FinBertSidecar/         # FinBERT sentiment analysis sidecar
-├── agent/                  # Tool-calling CLI agent for Qwen on vLLM
 ├── Events/                 # Shared gRPC event contracts
 ├── deployment/             # Ansible playbooks, compose templates, configs
 ├── CLAUDE.md               # AI assistant rules
