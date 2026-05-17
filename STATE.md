@@ -123,7 +123,7 @@ _All long-standing items cleared 2026-05-16: SecMaster cross-DB conn-string + Fr
 
 ## SUPERVISOR NOTES
 - All implementation/review/validation goes to subagents per CLAUDE.md SUPERVISOR_MODE.
-- Templates dir `/home/james/ATLAS/scripts/agent-prompts/` with `story-implementation.md`.
+- Templates dir `/home/james/ATLAS/.claude/skills/supervisor-mode/templates/` with `story-implementation.md`.
 - supervisor-mode skill v2 + readme-consistency skill both wired; supervisor-mode references readme-consistency in REVIEW_FIX_LOOP suite.
 - supervisor-mode skill discipline tightened (PRs #217 + #218): TOUCHES vs AUTHORS distinction (≤30-line cap), `NEVER_READ` list, `run_in_background=true` default for impl dispatches, `agent_returns_BLOCKED → ntfy_publish + end_turn`, RATIONALIZATION_TABLE + RED_FLAGS.
 - NTFY channels: publish to `atlas-claude-ask`, poll `atlas-claude-reply`. WAKEUP_STEP_0 is poll-first.

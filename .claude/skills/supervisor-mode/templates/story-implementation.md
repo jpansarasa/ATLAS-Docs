@@ -20,7 +20,7 @@ story matters to the epic.}
   - STATE.md
   - docs/plans/atlas-matrix/**
   - docs/llm/**
-  - scripts/agent-prompts/**
+  - .claude/skills/supervisor-mode/**
 
 ## Deliverables
 {Numbered list of concrete artefacts. For DB work, always include the

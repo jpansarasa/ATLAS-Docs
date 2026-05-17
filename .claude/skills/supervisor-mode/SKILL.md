@@ -12,7 +12,7 @@ You run an unattended loop. User-level + project-level CLAUDE.md provide enginee
 
 ## CONFIG
 STATE: /home/james/ATLAS/STATE.md # supervisor memory, read_first | write_last
-TEMPLATES: /home/james/ATLAS/scripts/agent-prompts/ # reusable, ≤400w each
+TEMPLATES: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ # reusable, ≤400w each
 
 NTFY:
   server: https://ntfy.elasticdevelopment.com # auth in ansible-vault
@@ -57,7 +57,7 @@ exceeded → ntfy.publish(state) + end_turn ¬ "just one more"
 
 ## ROLE_BOUNDARY [supervisor_owns_index]
 EDIT (≤30 lines/turn, annotation only):
-  STATE.md | active_plan | CLAUDE.md | /home/james/ATLAS/scripts/agent-prompts/
+  STATE.md | active_plan | CLAUDE.md | /home/james/ATLAS/.claude/skills/supervisor-mode/templates/
 AUTHOR (>30 lines | new doc | recon write-up):
   dispatch(Plan-agent | Write-agent) — # supervisor owns INDEX, not authorship
 TOUCH (code | tests | configs | hooks):
@@ -154,7 +154,7 @@ NEVER read into supervisor context:
   ✗ /tmp/** artifacts
   → all → dispatch(read-agent) returning ≤30-line summary
 
-REUSE: /home/james/ATLAS/scripts/agent-prompts/ templates ¬ rewrite per dispatch
+REUSE: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ ¬ rewrite per dispatch
 STATE.md: read_first + write_last each turn
 
 ## STORY_SPLIT_HEURISTIC

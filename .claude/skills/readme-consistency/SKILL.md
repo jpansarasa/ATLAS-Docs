@@ -98,7 +98,7 @@ PROCESS:
    - gold example: literal pointer "SecMaster/README.md (resolve relative to repo root)"
    - per-project commit discipline: "one commit per project README"
    - commit message format: "docs({project}): refresh README per readme-consistency audit"
-   - HARD rules from CLAUDE.md SUPERVISOR_MODE: ¬push, ¬PR, selective `git add -- <paths>`, supervisor-owned files (STATE.md, docs/plans/**, scripts/agent-prompts/**) untouched
+   - HARD rules from CLAUDE.md SUPERVISOR_MODE: ¬push, ¬PR, selective `git add -- <paths>`, supervisor-owned files (STATE.md, docs/plans/**, .claude/skills/supervisor-mode/**) untouched
 2. dispatch via Agent tool, subagent_type=general-purpose, run_in_background=false
    (foreground because we need the result for Phase 4; non-interactive callers can wrap in their own background dispatch)
 3. on agent completion → record commit hashes for Phase 4 summary
@@ -123,7 +123,7 @@ For each project in the gap report:
    `docs({project}): refresh README per readme-consistency audit`
 
 DO NOT push. DO NOT open PR. Supervisor handles upstream.
-DO NOT touch STATE.md, docs/plans/**, docs/llm/**, scripts/agent-prompts/**.
+DO NOT touch STATE.md, docs/plans/**, docs/llm/**, .claude/skills/supervisor-mode/**.
 
 Report final commit hashes."
 
@@ -152,7 +152,7 @@ PROCESS:
 ## ANTI [skill HARD_STOP]
 ✗ subagent_pushes # supervisor owns remote per CLAUDE.md
 ✗ subagent_opens_PR # same
-✗ touch_supervisor_owned # STATE.md, docs/plans/**, docs/llm/**, scripts/agent-prompts/**
+✗ touch_supervisor_owned # STATE.md, docs/plans/**, docs/llm/**, .claude/skills/supervisor-mode/**
 ✗ skip_re_audit # Phase 4 is non-optional; closes the loop
 ✗ infinite_recursion # READMECONSISTENCY_DEPTH guard
 ✗ assume_isatty_under_subagent # always check explicit flag first
