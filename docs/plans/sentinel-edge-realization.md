@@ -277,13 +277,16 @@ CLAIM market_performance
   - source_span: "The stock gained 140% over the past year, reaching near its 52-week high of $16.12."
 ```
 
-### Open design questions
+### Decided design (2026-05-17 evening convergence)
 
-1. **DSL parser strictness.** Strict (fail-fast on grammar violation) vs lenient (best-effort parsing of partial outputs). Lean strict because we want the LLM to learn the grammar precisely, not learn to be sloppy. Errors surface as observability metric `sentinel_cod_dsl_parse_errors_total`.
-2. **Source span granularity.** Required at fact level (current draft) vs optional at fact level (could just be at block level). Required is verification-friendly but adds tokens.
-3. **Handling text the article does NOT explicitly mention.** E.g., article mentions "Target Hospitality" but never says "TH" — should `ENT TH:NYSE = "Target Hospitality Corp" / equity` be allowed, or must the LLM only declare entities by the form they appear in source? Lean: allow canonical ticker lookup IF the company is unambiguous; flag with `inferred=true` if the ticker isn't in source.
-4. **DSL evolution.** Once v1 ships, downstream parser depends on it. Schema changes require versioning. Adopt `DSL: vN` header pattern; downstream parsers select version-appropriate decoder.
-5. **Free-text "NOTE:" lines for things that don't fit slots.** Probably yes — anything not slotting cleanly goes into a free-text NOTE block, easier than expanding the schema for every edge case.
+1. **Parser strictness:** strict, fail-fast. Any output that fails the v1 grammar is rejected at parse time and counted via `sentinel_cod_dsl_parse_errors_total{model,article_id}`. Rationale: parse-error rate is itself a CoD success metric — we want the LLM to learn the grammar precisely rather than learn that sloppy output is tolerated.
+2. **Source-span granularity:** required at fact (slot) level, not just block level. Rationale: makes Phase 6 statement validation O(1) per slot — each fact carries its own verbatim span, so verification is a direct lookup instead of re-segmenting a block-level span across N facts.
+3. **Inferred entities:** allowed with an explicit `(inferred=true)` qualifier on the ENT block, e.g. `ENT TH:NYSE = "Target Hospitality Corp" / equity (inferred=true)`. Rationale: CoD can supply canonical tickers even when the article only mentions the company name, while keeping the inference visible so downstream applies stricter validation (RAG + Phase 7 Gemini chain) on inferred entities.
+4. **DSL evolution:** the `DSL: vN` header is the contract. The parser dispatches to a per-version decoder, and a new `DSLVersion` column on `raw_content` records the producing version so re-extracts always pick the right decoder. Rationale: schema changes become first-class migrations rather than implicit breaks.
+5. **NOTE: escape hatch:** allowed for content that doesn't fit the slot structure, with optional `source_span:`. Each NOTE block is counted via `sentinel_cod_dsl_note_blocks_total{model}`. Rationale: gives the model a safety valve instead of forcing it to mangle facts into ill-fitting slots, and the metric surfaces grammar gaps that should become first-class slots.
+6. **CLAIM blocks keep both `claim_text` and `source_span`:** `claim_text` is the LLM's canonical distillation of the claim; `source_span` is the verbatim source text. Rationale: they serve different roles — `claim_text` is the durable, searchable, downstream-consumable form; `source_span` is the audit trail for Phase 6 statement validation.
+7. **Multi-sentence source spans:** `source_span` accepts either a single string or a list of strings, with the list form used when a fact aggregates across multiple sentences. Rationale: real articles spread one fact across multiple sentences (subject in one, qualifier in the next); forcing a single contiguous quote loses fidelity.
+8. **Forward references:** allowed. The parser is two-pass — Pass 1 collects every ENT declaration into a symbol table; Pass 2 resolves all references in EVT/CLAIM blocks. An undeclared ENT reference is a parse error. Rationale: easier LLM authoring (entities can be declared anywhere in the output) for trivial parser cost.
 
 ### Benchmark implications
 
@@ -365,3 +368,4 @@ Still open:
 | 2026-05-17 | Infinite-resources prior for design | Stop pre-optimizing for compute/disk; mercury has the headroom | Operating principle |
 | 2026-05-17 | Container tagging deferred | Needs release-notes discipline; not just a tag scheme tweak | Captured in §7 |
 | 2026-05-17 (evening) | Reframe CoD output: structured symbolic DSL, not English prose | LLM consumer + small-model strength at template-filling + Phase 6 verifiability + extraction-layer simplification | v1 grammar drafted; awaiting user convergence on open Qs |
+| 2026-05-17 (evening) | DSL v1 design convergence (8 decisions, see §6) | User convergence on parser strictness, span granularity, inferred entities, versioning, NOTE escape hatch, CLAIM duality, multi-span lists, forward references | Locked; parser spec is next |
