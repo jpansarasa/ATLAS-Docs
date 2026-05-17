@@ -133,7 +133,7 @@ The decision matrix is unit-tested with boundary cases in
 ## Testing the harness itself
 
 ```bash
-cd scripts/f4.6.4-ab
+cd scripts/sentinel-quality-check
 python3 -m unittest test_ab_scorecard.py
 ```
 
@@ -151,7 +151,7 @@ versus the historical 4% target — there was no automated tripwire.
 
 | Aspect | Value |
 |---|---|
-| Wrapper | `scripts/f4.6.4-ab/weekly_quality_check.sh` |
+| Wrapper | `scripts/sentinel-quality-check/weekly_quality_check.sh` |
 | systemd service | `atlas-sentinel-quality-check.service` |
 | systemd timer | `atlas-sentinel-quality-check.timer` (`OnCalendar=Mon *-*-* 09:23:00`) |
 | Run dir | `/opt/ai-inference/training-data/sentinel-quality-check-YYYYMMDD-HHMM/` |

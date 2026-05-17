@@ -14,14 +14,14 @@ Repo-root operator scripts. Mix of Claude Code helpers, ad-hoc auditing harnesse
 | Directory | Purpose |
 |---|---|
 | `claude-watchdog/` | Background watchdog (`scan.py` + `notify.sh`) that flags long-running Claude Code sessions sitting idle on user input. Publishes to NTFY `atlas-claude-ask`. |
-| `f4.6.4-ab/` | On-demand A/B audit harness for the F4.6.4 entity-resolution prompt-grounding feature. Renders a Markdown scorecard from a 50-row stratified sample. |
+| `sentinel-quality-check/` | Production weekly Sentinel qualitative-extraction quality-check harness (runs via `atlas-sentinel-quality-check.timer`). Also serves as the on-demand A/B audit harness for the F4.6.4 entity-resolution prompt-grounding feature. Renders a Markdown scorecard from a 50-row stratified sample. |
 
 ## When to use which
 
 - **Need to push a docs/YAML/shell-only PR?** Run `scripts/claude-mark-verified "<reason>"` first; the hook will accept the manual marker.
 - **Dispatching a subagent for a Matrix epic story?** Templates live in `.claude/skills/supervisor-mode/templates/` (start from `story-implementation.md`).
 - **Long-running Claude session stuck on permission prompts?** `claude-watchdog/scan.py` is what fires the NTFY ping; tail its log to debug false positives.
-- **Investigating an F4.6.4 prompt-grounding regression?** Re-run the `f4.6.4-ab/` harness against the live extraction stack.
+- **Investigating an F4.6.4 prompt-grounding regression?** Re-run the `sentinel-quality-check/` harness against the live extraction stack.
 
 ## See Also
 
