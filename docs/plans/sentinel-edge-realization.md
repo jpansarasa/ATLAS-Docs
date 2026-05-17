@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-17 (post-session pause; pre-dispatch planning artifact)
 **Status:** Discussion artifact, **not** a fix plan. Pulls the whole picture together so we can methodically decide what to dispatch next.
-**Context:** Two days of intensive Sentinel work + deep diagnostics have exposed a layered set of architectural and operational gaps. This doc steps back from fix-mode into plan-mode. No work should be dispatched against this doc without an explicit decision in §7 / §8.
+**Context:** Two days of intensive Sentinel work + deep diagnostics have exposed a layered set of architectural and operational gaps. This doc steps back from fix-mode into plan-mode. No work should be dispatched against this doc without an explicit decision in §8 / §9.
 
 ## 1. Operating principles
 
@@ -125,9 +125,202 @@ Phase 6 statement validation: feature-flag-gated, flag set to `true`, but silent
 
 `extraction_confidence ≥ 0.9` AND `resolution_confidence ≥ 0.8`. These numbers came from intuition, not calibration. Morning recon: 4 of 7 `cove_VectorSearch` hits hovered at 0.791-0.795 — _just under_ the gate. We have no ground-truth labels, so we don't know whether 0.8 is "right" or whether we're rejecting good rows / approving bad ones.
 
-**Why it compounds:** every other fix in §6 changes the distribution of confidence scores at the gate. Thresholds tuned today against the broken-pipeline distribution will be wrong tomorrow when Phase 6 + Phase 7 are firing correctly. This is the **last** thing to tune, not the first.
+**Why it compounds:** every other fix in §7 changes the distribution of confidence scores at the gate. Thresholds tuned today against the broken-pipeline distribution will be wrong tomorrow when Phase 6 + Phase 7 are firing correctly. This is the **last** thing to tune, not the first.
 
-## 6. Corrected priority order
+## 6. CoD as Symbolic DSL (v1 design)
+
+### Motivation
+
+The current CoD pipeline produces English prose summaries (`raw_content.context_summary`). This is the wrong target for two reasons:
+
+1. **The consumer is an LLM, not a human.** Downstream extraction reads CoD output and emits structured rows. English prose introduces ambiguity ("bi-weekly", "literally", passive voice, anaphora) that the extraction LLM must re-interpret — burning a model call to re-extract what CoD already had structured implicitly.
+
+2. **English summarization is what small models fail at.** Structured-output tasks are what small models do well. Forcing CoD into prose form may be the reason our 7B CoD model under-performs even on tokens that genuinely exist in the source.
+
+The reframe: CoD's output is a **dense, unambiguous, parseable fact graph** in a custom DSL. The DSL is designed for LLM authoring + LLM consumption, NOT for human readability (though it is readable). Models that struggle with fluent prose may excel at template-filling.
+
+### Design principles
+
+- **Forced disambiguation.** Every slot has a defined type. "$20M to $40M" must commit to a range expression `∈ [$20M, $40M]`, never natural-language hedging.
+- **Token preservation by construction.** Required slots (entity, value, unit, source_span) force the model to capture signal-bearing tokens; can't summarize them away.
+- **Verifiability at slot level.** Each fact has a verbatim `source_span` that CoVe (or a test harness) can check independently. Phase 6 statement validation becomes trivial.
+- **Downstream as deterministic transform.** A 100-200 line parser converts DSL → JSON. No second LLM call required for the extraction step. Potential to remove an entire model-call layer.
+- **Versioned.** The DSL is a contract; schema changes are migrations. `DSL: v1` header on every output.
+- **LLM-friendly syntax.** Familiar shapes (indented key-value, arrows, set notation) that models already pattern-match from training data. Not arbitrary syntax.
+
+### v1 Grammar (draft)
+
+Top of every CoD output:
+```
+DSL: v1
+SOURCE: <source_url_or_id>
+TIMESTAMP: <ISO8601>
+```
+
+Each fact is one of three block types: ENT (entity declaration), EVT (event), CLAIM (qualitative claim or statement). Block syntax:
+
+```
+<BLOCK_TYPE> <local_id_or_descriptor>
+  - <slot_name>: <slot_value> [(<qualifier>=<value>, ...)]
+  - source_span: "<verbatim source text>"
+```
+
+**ENT blocks** — declare entities the article mentions. Local-id makes them referenceable from EVT/CLAIM blocks. Required slots: `type` (one of: equity, etf, index, sector, industry, macro_indicator, analyst_firm, person, org, country). Optional slots: `aliases` (list), `verbatim_name` (as-mentioned).
+
+```
+ENT TH:NYSE = "Target Hospitality Corp" / equity
+ENT TexasCap = "Texas Capital Securities" / analyst_firm
+ENT Technology / sector
+```
+
+Identifier conventions:
+- Equities/ETFs/indices: `TICKER:EXCHANGE` (e.g., `TH:NYSE`, `IXIC:NASDAQ`). Foreign suffixes preserved: `BMW:DE`, `RIO:L`.
+- Sectors: explicit named sector (`Technology`, `Healthcare`)
+- Industries: short descriptor (`Semiconductors`)
+- Macro indicators: standardized identifier (`UNRATE`, `CPI`)
+- Analyst firms / orgs / persons: PascalCase short alias defined inline
+- Local-only refs (when not in any catalog): `_anon:<short_desc>` (e.g., `_anon:unnamed_hyperscaler`)
+
+**EVT blocks** — describe events / actions. Required slots: `subject`, `event_kind` (verb form). Optional: any number of named slots, `qualifiers` set in parentheses.
+
+```
+EVT analyst_action
+  - subject: TexasCap → TH:NYSE
+  - price_target: $18.00 (rating=Buy, change=raised)
+  - claim: var_revenue ∈ [$20M, $40M] /yr (qualifier=potential)
+  - source_span: "Texas Capital Securities increased its price target to $18..."
+
+EVT secondary_offering
+  - subject: TH:NYSE
+  - shares: 7M @ $14.00
+  - proceeds: $98M (beneficiary=existing_stockholders)
+  - source_span: "Target Hospitality Corp. priced a secondary offering of 7 million shares..."
+```
+
+**CLAIM blocks** — qualitative or quoted statements that don't fit EVT slot structure. Required slots: `subject`, `claim_text`. Optional: `speaker`, `epistemic_marker` (verbatim hedge if present).
+
+```
+CLAIM market_performance
+  - subject: TH:NYSE
+  - return_ytd: +140%
+  - 52w_high: $16.12
+  - source_span: "The stock gained 140% over the past year..."
+
+CLAIM analyst_qualifier
+  - subject: TH:NYSE
+  - claim_text: "priced-for-perfection"
+  - speaker: TexasCap
+  - epistemic_marker: "rating-cautious"
+  - source_span: "is seen as 'priced-for-perfection'"
+```
+
+### Value-type literals
+
+- **Money**: `$<number>` with magnitude suffix `K/M/B/T` (e.g., `$98M`, `$1.2B`)
+- **Percent**: `<number>%` or `±<number>%` (e.g., `4.1%`, `+140%`)
+- **Counts**: bare integer with comma separators OR magnitude suffix (e.g., `256,000` or `256K`)
+- **Ranges**: `∈ [<low>, <high>]` (e.g., `∈ [$20M, $40M]`)
+- **Dates**: ISO-8601 (`2026-03-31`) OR quarter (`Q3_2026`) OR period (`5yr`, `2x2yr`)
+- **Ratios**: `<num>:<num>` (e.g., `1.87:1`)
+- **Counterparty placeholder**: `<name>` for known entities, `_anon:<descriptor>` for unnamed ("hyperscaler" without name)
+
+### Worked example
+
+Source article (excerpt):
+
+> "Target Hospitality Corp. priced a secondary offering of 7 million shares at $14.00 each, raising $98 million for the selling stockholders. The company secured a five-year contract to provide 4,000 rooms for a hyperscaler, with guaranteed revenue of $550 million starting Q3 2026, and options for two additional two-year extensions. This brings the total number of beds under construction to over 5,000. Analysts at Stifel and Texas Capital Securities raised their price targets to $15 and $18, respectively, maintaining Buy ratings. The stock gained 140% over the past year, reaching near its 52-week high of $16.12."
+
+CoD output (v1 DSL):
+
+```
+DSL: v1
+SOURCE: https://example.com/target-hospitality-secondary
+TIMESTAMP: 2026-05-17T00:42:16Z
+
+ENT TH:NYSE = "Target Hospitality Corp" / equity
+ENT Stifel / analyst_firm
+ENT TexasCap = "Texas Capital Securities" / analyst_firm
+ENT _anon:hyperscaler / org
+
+EVT secondary_offering
+  - subject: TH:NYSE
+  - shares: 7M @ $14.00
+  - proceeds: $98M (beneficiary=existing_stockholders)
+  - source_span: "Target Hospitality Corp. priced a secondary offering of 7 million shares at $14.00 each, raising $98 million for the selling stockholders."
+
+EVT contract_award
+  - subject: TH:NYSE
+  - counterparty: _anon:hyperscaler
+  - scope: 4000_rooms / 5yr + 2x2yr_options
+  - guaranteed_revenue: $550M (start=Q3_2026)
+  - source_span: "The company secured a five-year contract to provide 4,000 rooms for a hyperscaler, with guaranteed revenue of $550 million starting Q3 2026, and options for two additional two-year extensions."
+
+EVT capacity_disclosure
+  - subject: TH:NYSE
+  - beds_under_construction: >5,000
+  - source_span: "This brings the total number of beds under construction to over 5,000."
+
+EVT analyst_action
+  - subject: Stifel → TH:NYSE
+  - price_target: $15.00 (rating=Buy, change=raised)
+  - source_span: "Analysts at Stifel and Texas Capital Securities raised their price targets to $15 and $18, respectively, maintaining Buy ratings."
+
+EVT analyst_action
+  - subject: TexasCap → TH:NYSE
+  - price_target: $18.00 (rating=Buy, change=raised)
+  - source_span: "Analysts at Stifel and Texas Capital Securities raised their price targets to $15 and $18, respectively, maintaining Buy ratings."
+
+CLAIM market_performance
+  - subject: TH:NYSE
+  - return_ytd: +140%
+  - 52w_high: $16.12
+  - source_span: "The stock gained 140% over the past year, reaching near its 52-week high of $16.12."
+```
+
+### Open design questions
+
+1. **DSL parser strictness.** Strict (fail-fast on grammar violation) vs lenient (best-effort parsing of partial outputs). Lean strict because we want the LLM to learn the grammar precisely, not learn to be sloppy. Errors surface as observability metric `sentinel_cod_dsl_parse_errors_total`.
+2. **Source span granularity.** Required at fact level (current draft) vs optional at fact level (could just be at block level). Required is verification-friendly but adds tokens.
+3. **Handling text the article does NOT explicitly mention.** E.g., article mentions "Target Hospitality" but never says "TH" — should `ENT TH:NYSE = "Target Hospitality Corp" / equity` be allowed, or must the LLM only declare entities by the form they appear in source? Lean: allow canonical ticker lookup IF the company is unambiguous; flag with `inferred=true` if the ticker isn't in source.
+4. **DSL evolution.** Once v1 ships, downstream parser depends on it. Schema changes require versioning. Adopt `DSL: vN` header pattern; downstream parsers select version-appropriate decoder.
+5. **Free-text "NOTE:" lines for things that don't fit slots.** Probably yes — anything not slotting cleanly goes into a free-text NOTE block, easier than expanding the schema for every edge case.
+
+### Benchmark implications
+
+Current benchmark (Round 1, in flight): tests prose-CoD token-preservation across 9 models. **Still useful as a baseline capability test** — models that can't preserve tokens in prose are highly unlikely to fill a DSL faithfully. The Round 1 results establish a floor.
+
+New benchmark needed (Round 2 candidate): rewrite CoD prompts to target v1 DSL, test top 3-5 models from Round 1 on the same corpus. Score:
+- **DSL grammar validity:** does the output parse with the v1 parser?
+- **Token preservation:** same metric as Round 1 — did the model preserve source entities?
+- **Schema completeness:** are required slots populated on every block?
+- **Downstream-extraction success:** does the DSL→JSON parser produce structured rows cleanly, OR does extraction fail / produce garbage?
+
+Hypothesis: a 7B model on DSL CoD may beat a 70B model on prose CoD. If true, the architectural lever is prompt+output-format, not model size.
+
+### Why this might collapse the extraction layer entirely
+
+If DSL CoD is reliable, the structured-extraction step becomes a deterministic parser:
+- Input: validated DSL fact graph
+- Output: extracted_observation rows (one per EVT/CLAIM)
+- No LLM call required at extraction
+
+This:
+- Removes an entire layer of LLM-call cost and latency
+- Removes a class of "extraction LLM emits wrong fields" bugs
+- Makes Phase 6 statement validation trivial (each slot already has source_span)
+- Makes resolution a pure DB cache + Finnhub/OpenFIGI/Gemini lookup chain on ENT tickers
+
+If we get the DSL right, the entire downstream stack simplifies dramatically.
+
+### Next steps after grammar lands
+
+1. Converge on the open design questions (1-5 above) with user.
+2. Write the v1 parser (~200 lines C# or Python). Test against synthetic DSL examples.
+3. Rewrite CoD prompts to target the DSL.
+4. Run Round 2 benchmark on top 3-5 prose-Round-1 models.
+5. If results positive: collapse the extraction layer (replace LLM extraction with DSL parser).
+
+## 7. Corrected priority order
 
 Re-sequenced 2026-05-17 evening. Old order put Phase 7 lazy-load first; that put the cart before the horse — lazy-load enrichment is downstream of CoD, and CoD itself is unvalidated. Catalog/RAG/Phase 7 work is now explicitly deferred until upstream stages (CoD, then extraction) are trusted on per-stage measures.
 
@@ -143,7 +336,7 @@ Re-sequenced 2026-05-17 evening. Old order put Phase 7 lazy-load first; that put
 | 8 | **Threshold calibration** | After above stable. |
 | 9 | **Container tagging discipline** (requires release-notes process) | Operational improvement after Sentinel works. |
 
-## 7. Open questions — for discussion before dispatch
+## 8. Open questions — for discussion before dispatch
 
 Resolved this session:
 
@@ -156,7 +349,7 @@ Still open:
 - **Per-stage measures for stages beyond CoD** (extraction, resolution, statement-validation) — discuss as each stage's validation comes up.
 - **V2 path unification scope** — common middleware refactor vs continue patching one-at-a-time.
 
-## 8. Decision log
+## 9. Decision log
 
 | Date | Decision | Rationale | Status |
 |---|---|---|---|
@@ -164,10 +357,11 @@ Still open:
 | 2026-05-17 | Flip Phase 6 + Phase 7 + AutoApprove ON | User: "no risk in PoC, validation IS the edge" | Live (PR #341), but V2-path wiring incomplete — see §5 |
 | 2026-05-17 | Defer bulk catalog expansion (OpenFIGI + Wikidata) | User correction citing `SecMaster/README.md` lazy-load + discover-on-demand design intent. The 89% unresolved rate is the entry condition for lazy-load, not a structural narrowness problem. | Captured in this plan §4 |
 | 2026-05-17 | Reject bulk catalog seeding | SecMaster lazy-load is by design; bulk seed = wrong-architecture | Captured in §4 |
-| 2026-05-17 | CoD benchmark on Ollama (B), runtime investigation deferred (A) | Forward momentum on model quality; runtime swap can re-validate top 2-3 | Captured in §6 |
-| 2026-05-17 | Approved 9-model roster (4 to pull, 5 loaded) | Refreshed against current SOTA, balanced size tiers, dropped reasoning/MoE variants unfit for CoD | Captured in §6 |
+| 2026-05-17 | CoD benchmark on Ollama (B), runtime investigation deferred (A) | Forward momentum on model quality; runtime swap can re-validate top 2-3 | Captured in §7 |
+| 2026-05-17 | Approved 9-model roster (4 to pull, 5 loaded) | Refreshed against current SOTA, balanced size tiers, dropped reasoning/MoE variants unfit for CoD | Captured in §7 |
 | 2026-05-17 | Disk cleanup: 8 superseded models deleted | Reduce clutter; recon's disk constraint was wrong, no actual blocker | Done |
 | 2026-05-17 | Drop feature-flag pattern entirely | Each flag was tech debt; rollback via git+ansible/ZFS is sufficient | Operating principle |
 | 2026-05-17 | Token preservation (regex+LLM-validate) as CoD success measure | Subjective dimensions rejected; signal-bearing tokens are what downstream needs | Operating principle |
 | 2026-05-17 | Infinite-resources prior for design | Stop pre-optimizing for compute/disk; mercury has the headroom | Operating principle |
-| 2026-05-17 | Container tagging deferred | Needs release-notes discipline; not just a tag scheme tweak | Captured in §6 |
+| 2026-05-17 | Container tagging deferred | Needs release-notes discipline; not just a tag scheme tweak | Captured in §7 |
+| 2026-05-17 (evening) | Reframe CoD output: structured symbolic DSL, not English prose | LLM consumer + small-model strength at template-filling + Phase 6 verifiability + extraction-layer simplification | v1 grammar drafted; awaiting user convergence on open Qs |

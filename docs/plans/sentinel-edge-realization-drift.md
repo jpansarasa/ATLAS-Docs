@@ -37,6 +37,11 @@
 - Faithfully preserves all signal-bearing tokens (tickers, company names, sector mentions, numerics with units) from source.
 - Output structure adapted to model capability (small models: chunking + refinement; large models: single-pass).
 - Per-source/per-model preservation metric visible in OTEL.
+- Output format is structured symbolic DSL (v1) rather than English prose
+  - Forces disambiguation; preserves signal-bearing tokens by construction
+  - Each fact has source_span for downstream verification
+  - Parseable by a deterministic 200-line parser
+  - Versioned (DSL: v1 header); schema changes are migrations
 
 ### ACTUAL (as of 2026-05-17)
 
@@ -51,12 +56,17 @@
 - Model size violates project standard. Reason: assumed 7B could handle CoD; never validated.
 - Architectural complexity (token estimation + chunking + CoD-on-CoD) added for small-model constraints. May be unnecessary on larger models.
 - No measurement infrastructure. Quality is inferred from downstream artifacts, not directly observed.
+- Output format is English prose, not structured DSL — wrong target for an LLM consumer
+  - Reason: original design assumed human readability; downstream consumer is actually another LLM
+  - Implication: subsequent extraction step has to re-interpret prose, burning a model call to extract what CoD could have structured implicitly
+  - DSL reframe captured in main planning doc §"CoD as Symbolic DSL (v1 design)"
 
 ### HISTORY
 
 - 2026-05-17: NFP-template contamination discovered (literal numerics bleeding into unrelated articles). Fixed PR #342.
 - 2026-05-17: Diagnosed that 7B model + literal-numeric exemplars = template echoing. Reframed: CoD model size matters.
 - 2026-05-17: Decision to benchmark 9 candidate models on CoD with token-preservation as success measure.
+- 2026-05-17 (evening): User reframed CoD target from English prose summarization to structured symbolic DSL. Rationale: English ambiguity, LLM consumer, small-model strength at structured output, verifiability. v1 grammar drafted; Round 2 benchmark deferred until grammar converged + parser ready.
 
 ## Stage 2: Structured Extraction
 
