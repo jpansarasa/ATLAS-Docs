@@ -3,7 +3,7 @@
 **Status:** Canonical architecture reference (as of 2026-05-16)
 **Scope:** End-to-end flow from document input to persisted observation, including CoD summarization, structured extraction, RAG-based Symbol resolution, and CoVe verification.
 
-This document is the load-bearing description of the Sentinel extraction pipeline as actually deployed in `SentinelCollector`. It supersedes the pipeline-flow material in `docs/sentinel-v2-architecture.md` (which is marked HISTORICAL for the gate/scoring sections) and complements the configuration/troubleshooting reference in `docs/SENTINEL-RLM.md`.
+This document is the load-bearing description of the Sentinel extraction pipeline as actually deployed in `SentinelCollector`. It complements the configuration/troubleshooting reference in `docs/SENTINEL-RLM.md`.
 
 See also:
 - `docs/plans/symbol-identification-remediation.md` — the remediation plan that drove Phases 1-3 (rich RAG, top-N, CoVe Symbol grounding) and frames Phase 6 (statement-level validation).
@@ -188,4 +188,3 @@ Plans and history:
 Reference:
 - `docs/SENTINEL-RLM.md` — model/backend/VRAM constraints.
 - `docs/sentinel-product-spec-v2.md` — product spec (what Sentinel is and is not allowed to do).
-- `docs/sentinel-v2-architecture.md` — HISTORICAL component-level architecture (gate/scoring sections superseded; routing/normalizer sections still informative).
