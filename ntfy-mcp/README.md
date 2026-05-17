@@ -1,6 +1,8 @@
-# sentinel-ntfy MCP Server
+# ntfy MCP Server
 
 MCP server exposing ntfy publish/poll as structured tools with `last_seen_ts` persistence per topic. Used by the Sentinel v2 supervisor to communicate with the user without curl boilerplate.
+
+> Originally named `sentinel-mcp` / `sentinel_ntfy`. Renamed to `ntfy-mcp` / `ntfy` because the bridge is not Sentinel-specific. The MCP server name registered in `~/.claude.json` remains `sentinel-ntfy` for backward compatibility — update it together with the `command` path when convenient.
 
 ## Tools
 
@@ -24,6 +26,8 @@ Auth and endpoint via env vars — never hardcoded:
 | `NTFY_PASSWORD` | — | **yes** |
 | `NTFY_STATE_FILE` | `/opt/ai-inference/sentinel-mcp-state.json` | no |
 
+> The default state file path keeps the legacy `sentinel-mcp-state.json` filename to preserve existing `last_seen_ts` state across the rename.
+
 ## State file
 
 Shape at `/opt/ai-inference/sentinel-mcp-state.json`:
@@ -43,7 +47,7 @@ Loaded on startup; saved atomically (write-to-tmp then rename) on every state-mu
 ## Install
 
 ```bash
-cd /home/james/ATLAS/sentinel-mcp
+cd /home/james/ATLAS/ntfy-mcp
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -56,8 +60,8 @@ Add to `~/.claude.json` under `mcpServers` (read-modify-write — do NOT overwri
 ```json
 "sentinel-ntfy": {
   "type": "stdio",
-  "command": "/home/james/ATLAS/sentinel-mcp/.venv/bin/python",
-  "args": ["-m", "sentinel_ntfy"],
+  "command": "/home/james/ATLAS/ntfy-mcp/.venv/bin/python",
+  "args": ["-m", "ntfy"],
   "env": {
     "NTFY_ENDPOINT": "https://ntfy.elasticdevelopment.com",
     "NTFY_USER": "atlas",
@@ -67,6 +71,8 @@ Add to `~/.claude.json` under `mcpServers` (read-modify-write — do NOT overwri
 }
 ```
 
+> The server-name key `sentinel-ntfy` is the legacy MCP server name. You may rename it to `ntfy` at the same time you update the `command` path — just keep both consistent with this repo's pyproject `[project.scripts]` entry.
+
 Restart Claude Code after editing `~/.claude.json` to activate.
 
 ## Smoke test (client only)
@@ -75,10 +81,10 @@ Restart Claude Code after editing `~/.claude.json` to activate.
 source .venv/bin/activate
 python3 -c "
 import asyncio, os
-from sentinel_ntfy.client import NtfyClient
+from ntfy.client import NtfyClient
 async def main():
     c = NtfyClient('https://ntfy.elasticdevelopment.com', 'atlas', os.environ['NTFY_PASSWORD'])
-    r = await c.publish('atlas-claude-ask', title='MCP smoke test', body='sentinel-ntfy MCP built and registered')
+    r = await c.publish('atlas-claude-ask', title='MCP smoke test', body='ntfy-mcp built and registered')
     print('published id=', r['id'])
     msgs = await c.poll_since('atlas-claude-ask', since='5m')
     print(f'saw {len(msgs)} recent messages')
