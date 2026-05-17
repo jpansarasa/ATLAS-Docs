@@ -82,6 +82,7 @@ Results displayed in test output. Full benchmark logs in `/tmp/benchmark_*.txt`.
 
 ## Hardware
 
-- GPU: NVIDIA RTX 4090 (24GB VRAM)
-- All models run fully on GPU (no CPU offload)
+- GPU: NVIDIA RTX 5090 (32GB VRAM)
+- CPU: Threadripper-class, 128GB DDR5 RAM (used for CoD / RAG / parallel small-model fan-out)
+- All models in this benchmark ran fully on GPU (no CPU offload). Note: ATLAS production CoD runs on CPU via `ollama-cpu-gen`; this benchmark file specifically tracks the GPU-served extraction track.
 - Context size: 32K tokens
