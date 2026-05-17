@@ -792,7 +792,7 @@ ATLAS/
 │   └── mcp/                # Pattern evaluation MCP server (integrated)
 ├── AlertService/           # Notification dispatch
 ├── WhisperService/         # Audio transcription service
-├── WhisperServiceMcp/      # Whisper MCP server (standalone)
+│   └── mcp/                # Whisper MCP server (integrated)
 ├── markitdownMCP/          # Document conversion MCP server (standalone)
 ├── FinBertSidecar/         # FinBERT sentiment analysis sidecar
 ├── agent/                  # Tool-calling CLI agent for Qwen on vLLM

@@ -4,7 +4,7 @@ Video transcription service using faster-whisper for speech-to-text conversion.
 
 ## Overview
 
-WhisperService downloads videos from YouTube and other platforms using yt-dlp, extracts audio via ffmpeg, and transcribes it using faster-whisper. It provides an async job queue with status tracking, persists transcripts as JSON to disk, and exports metrics and traces via OpenTelemetry. The companion WhisperServiceMcp exposes this service to AI assistants.
+WhisperService downloads videos from YouTube and other platforms using yt-dlp, extracts audio via ffmpeg, and transcribes it using faster-whisper. It provides an async job queue with status tracking, persists transcripts as JSON to disk, and exports metrics and traces via OpenTelemetry. The companion [WhisperServiceMcp](mcp/README.md) exposes this service to AI assistants.
 
 ## Architecture
 
@@ -15,7 +15,7 @@ flowchart LR
     FFmpeg -->|Transcribe| Whisper[faster-whisper]
     Whisper -->|Store| FS[(Filesystem<br/>/data/transcripts)]
     WS -->|Metrics & Traces| OTEL[OpenTelemetry<br/>Collector]
-    MCP[WhisperServiceMcp] -->|REST API| WS
+    MCP[WhisperServiceMcp<br/>mcp/] -->|REST API| WS
 ```
 
 Videos are downloaded with yt-dlp, converted to 16kHz MP3 by ffmpeg, then transcribed by faster-whisper. Completed transcripts are persisted as JSON files and video/audio files are cleaned up automatically.
@@ -74,11 +74,12 @@ WhisperService/
 ├── config/
 │   └── whisper.yaml       # Default configuration reference
 ├── requirements.txt       # Python dependencies
-└── .devcontainer/
-    ├── Containerfile      # Container image (python:3.12-slim)
-    ├── build.sh           # Build script
-    ├── compose.dev.yaml   # Development compose
-    └── devcontainer.json  # VS Code dev container config
+├── .devcontainer/
+│   ├── Containerfile      # Container image (python:3.12-slim)
+│   ├── build.sh           # Build script
+│   ├── compose.dev.yaml   # Development compose
+│   └── devcontainer.json  # VS Code dev container config
+└── mcp/                   # Companion MCP server (C#) - see mcp/README.md
 ```
 
 ## Development
@@ -114,5 +115,5 @@ ansible-playbook playbooks/deploy.yml --tags whisper-service
 
 ## See Also
 
-- [WhisperServiceMcp](../WhisperServiceMcp/README.md) - MCP server for AI assistant integration
+- [WhisperServiceMcp](mcp/README.md) - MCP server for AI assistant integration
 - [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System architecture

@@ -105,7 +105,7 @@ MCP servers are consolidated into their parent service directories where applica
 - `FinnhubCollector/mcp/` - FinnhubMcp
 - `OfrCollector/mcp/` - OfrMcp
 - `SecMaster/mcp/` - SecMasterMcp
-- `WhisperServiceMcp/` - Standalone (Python WhisperService uses different stack)
+- `WhisperService/mcp/` - WhisperServiceMcp (C# MCP child of Python WhisperService)
 
 | Service | Port (Host) | Purpose |
 |---------|-------------|---------|

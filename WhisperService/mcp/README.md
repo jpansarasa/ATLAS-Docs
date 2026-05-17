@@ -69,41 +69,39 @@ The MCP server's public surface is its set of MCP tools (over SSE on port 3108).
 ## Project Structure
 
 ```
-WhisperServiceMcp/
-├── src/
-│   ├── Program.cs                # MCP server startup, Serilog, health endpoint
-│   ├── DependencyInjection.cs    # HttpClient with Polly retry + circuit breaker
-│   ├── SseKeepaliveMiddleware.cs # SSE keepalive to prevent connection timeouts
-│   ├── Tools/
-│   │   └── WhisperTools.cs       # MCP tool definitions (6 tools)
-│   ├── Client/
-│   │   ├── IWhisperServiceClient.cs
-│   │   ├── WhisperServiceClient.cs
-│   │   └── Models/
-│   │       └── ClientModels.cs   # Request/response DTOs
-│   └── Containerfile             # Multi-stage .NET 10 build
-└── .devcontainer/
-    ├── devcontainer.json
-    └── compile.sh
+WhisperService/mcp/
+├── Client/
+│   ├── IWhisperServiceClient.cs
+│   ├── WhisperServiceClient.cs
+│   └── Models/
+│       └── ClientModels.cs       # Request/response DTOs
+├── Tools/
+│   └── WhisperTools.cs           # MCP tool definitions (6 tools)
+├── Program.cs                    # MCP server startup, Serilog, health endpoint
+├── DependencyInjection.cs        # HttpClient with Polly retry + circuit breaker
+├── WhisperServiceMcp.csproj
+└── Containerfile                 # Multi-stage .NET 10 build
 ```
 
-## Development
+The parent [WhisperService/](../README.md) is a Python project; this MCP
+child is C# and is built independently. Source files live directly
+under `mcp/` (no nested `src/`), matching the sibling pattern used by
+`FredCollector/mcp/`, `ThresholdEngine/mcp/`, `FinnhubCollector/mcp/`,
+`OfrCollector/mcp/`, and `SecMaster/mcp/`.
 
-### Prerequisites
+### Build Container
 
-- VS Code with Dev Containers extension
-- Access to shared infrastructure (WhisperService must be running)
+```bash
+sudo nerdctl build -f WhisperService/mcp/Containerfile -t whisper-service-mcp:latest .
+```
 
-### Getting Started
-
-1. Open in VS Code: `code WhisperServiceMcp/`
-2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
-3. Build: `.devcontainer/compile.sh`
+The build context is the monorepo root because the Containerfile COPYs
+`WhisperService/mcp/`.
 
 ## Deployment
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags whisper-mcp
+ansible-playbook playbooks/deploy.yml --tags whisper-service-mcp
 ```
 
 ## Ports
@@ -132,6 +130,6 @@ Claude Desktop uses stdio transport; `mcp-proxy` bridges stdio to SSE.
 
 ## See Also
 
-- [WhisperService](../WhisperService/README.md) - Backend transcription service (faster-whisper)
+- [WhisperService](../README.md) - Backend transcription service (faster-whisper)
 - [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification
-- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System design
+- [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) - System design

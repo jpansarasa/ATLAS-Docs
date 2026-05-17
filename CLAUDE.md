@@ -124,7 +124,7 @@ alerting: AlertService
 calendar: CalendarService
 metadata: SecMaster
 substrate: MacroSubstrate
-mcp: FredCollector/mcp, ThresholdEngine/mcp, FinnhubCollector/mcp, OfrCollector/mcp, SecMaster/mcp
+mcp: FredCollector/mcp, ThresholdEngine/mcp, FinnhubCollector/mcp, OfrCollector/mcp, SecMaster/mcp, WhisperService/mcp
 shared: Events/, deployment/, docs/
 
 ## DATA_FLOW
