@@ -2,12 +2,6 @@
 
 Operator + research scripts for Sentinel's extraction pipeline. Mix of one-shot training-data builders, LoRA fine-tuning drivers, A/B evaluation harnesses, and ad-hoc analysis utilities. **Most of these are research/eval tooling — not production code paths**. Nothing here runs in CI or against production tables without explicit invocation.
 
-## Subdirectories
-
-| Directory | Purpose |
-|---|---|
-| `agent-prompts/` | Subagent prompt templates used by supervisor-mode when dispatching Sentinel epic work. |
-
 ## Files — grouped by intent
 
 ### Training data generation
