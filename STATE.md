@@ -119,7 +119,6 @@ _All long-standing items cleared 2026-05-16: SecMaster cross-DB conn-string + Fr
 - Execution meta-plan: `~/.claude/plans/we-are-going-to-purrfect-sedgewick.md`
 - Plans index: `docs/plans/atlas-matrix/README.md`
 - Acceptance criteria (ratified 2026-05-10): `docs/llm/ACCEPTANCE_CRITERIA.md`
-- Epic 3 owner doc: `docs/plans/atlas-matrix/epic-3-owner-recommendation.md`
 
 ## SUPERVISOR NOTES
 - All implementation/review/validation goes to subagents per CLAUDE.md SUPERVISOR_MODE.
