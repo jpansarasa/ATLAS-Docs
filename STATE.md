@@ -1,10 +1,11 @@
 # ATLAS Supervisor STATE [2026-05-16]
 
-## ACTIVE [2026-05-16]
-- **Sentinel Symbol-Identification Remediation** drove the last two days. Discovered 2026-05-15: ~30K of 53K Approved rows carried hallucinated Symbols (cosine-similarity nearest-neighbor over a field-poor RAG returned wrong-but-close candidates — classic WULF→USAF class). Plan: `docs/plans/symbol-identification-remediation.md`. Architecture: `docs/sentinel-extraction-pipeline.md`.
-- **Active operation:** Phase 4 Re-extract backfill running in resolve-only mode at ~218 rows/min; ~65K rows remaining, ETA ~5h (overnight drain). All other remediation phases are shipped or live default-OFF.
-- **Next product action:** when the backfill drains, re-run Phase 5 (AutoApprove re-engage) readiness recon against the post-all-fixes cohort. If true grounding rate ≥90%, AutoApprove can re-engage with quality verification. Until then it stays OFF.
-- **Quarantine posture (unchanged):** AutoApprove OFF; 30K hallucinated `extracted_observations` rows remain quarantined per user policy; 365 LoRA-era catalog rows soft-purged via PR #330; no AutoApprove flip without Phase 5 readiness sign-off.
+## ACTIVE [2026-05-17]
+- **CoD reframe + DSL workstream** is the upstream-of-everything beat per planning doc §7 priority order. Sentinel extraction quality is bottlenecked by CoD; CoD output is being reframed from English prose to a structured symbolic DSL. Canonical: `docs/plans/sentinel-edge-realization.md` (§6 v1 spec + 8 locked decisions) + `docs/plans/sentinel-edge-realization-drift.md` (per-stage drift).
+- **2026-05-17 shipped:** §6 spec + decisions (PRs #347/#348), Python parser + 21 tests (PR #349), per-class CoD prompts (PR #350), Round 2 benchmark harness (PR #351). Also today: WhisperServiceMcp consolidation (#353), `scripts/` reorg (#356, #358), `agent/` → SentinelCollector (#360), `sentinel-mcp/` → `ntfy-mcp/` (#361), atlas-matrix doc sweep (#359), 6 stale-doc deletions (#354/#355).
+- **In flight:** Round 1 CoD prose-baseline benchmark (9 models, ~80% done). Round 2 DSL benchmark kickoff is gated on Round 1 completion (sequential — Ollama CPU runners would contend). Also in flight: Round 2 model roster research (Gemma 4 + Qwen3.6 + qwen3:30b candidates).
+- **Runtime posture:** Sentinel ingest healthy (250-1000 rows/hr); AutoApprove disciplined (5-18/hr, 100% with subject_entity + instrument_id); Phase 6/7 wired but silent metrics (planning doc §5 gaps 3+4 still open).
+- **Older arc (symbol-identification remediation, 2026-05-15→16)** retained below as supporting history — phases completed but the "ACTIVE" focus has moved upstream to CoD.
 
 ## PHASE STATUS
 - **Phase 1** — Spine — ✓ DONE (Epic 1 merged as `a08b806`)
