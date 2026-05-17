@@ -51,12 +51,25 @@ The Round 2 runner sweeps **model class x prompt x A/B example**:
 | example_arm     | `base`  (template alone)  /  `with_example` (template + worked example appendix) |
 | corpus          | shared Round 2 corpus (top-3 to top-5 prose-Round-1 models' source set) |
 
-Per-class candidate models (initial set; runner reads from a
-manifest, not from this README):
+Per-class candidate models (CPU-topology corrected; runner reads from
+`scripts/model_classes.py`, not from this README — see that file for
+the authoritative list and the drop rationale):
 
-- **Class A**: `qwen2.5:7b`, `qwen3:8b`, `granite4-micro`, `phi4-mini`
-- **Class B**: `mistral-small`, `gemma3`
-- **Class C**: `qwen2.5:32b`, `sentinel-cove-v6.2-base`
+- **Class A** (small dense, <=14B, CPU fan-out friendly):
+  `qwen2.5:7b-instruct`, `qwen3:8b`, `granite4.1:8b`, `phi4-mini:3.8b`
+- **Class B** (mid 20-30B; dense or MoE-w-small-active):
+  `mistral-small3.2:24b-instruct-2506-q4_K_M`,
+  `gemma4:26b-a4b-it-q4_K_M` (MoE 26B/4B-active),
+  `qwen3:30b-a3b-instruct-2507-q4_K_M` (MoE 30.5B/3.3B-active)
+- **Class C** (>=30B; MoE-w-small-active preferred + one dense
+  reference + in-house adapter):
+  `qwen2.5:32b-instruct-q4_K_M` (dense reference; BENCHMARKS.md leader),
+  `qwen3-next:80b` (MoE 80B/3B-active),
+  `sentinel-cod-v6:latest` (in-house CoD-tuned)
+
+Dense models >=30B (`llama3.3:70b`, `granite4.1:30b`, `gemma4:31b-it`)
+are excluded from CoD: they serialize on CPU and defeat the parallel-
+fan-out principle. GPU is reserved for extraction + CoVE.
 
 Universal prompts were rejected up front: they bias one model class
 over another, which confounds the prompt-vs-capacity question that
