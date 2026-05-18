@@ -56,20 +56,24 @@ Per-class candidate models (CPU-topology corrected; runner reads from
 the authoritative list and the drop rationale):
 
 - **Class A** (small dense, <=14B, CPU fan-out friendly):
-  `qwen2.5:7b-instruct`, `qwen3:8b`, `granite4.1:8b`, `phi4-mini:3.8b`
+  `qwen2.5:7b-instruct`, `qwen3:8b` (think=false), `granite4.1:8b`,
+  `phi4-mini:3.8b`
 - **Class B** (mid 20-30B; dense or MoE-w-small-active):
   `mistral-small3.2:24b-instruct-2506-q4_K_M`,
-  `gemma4:26b-a4b-it-q4_K_M` (MoE 26B/4B-active),
   `qwen3:30b-a3b-instruct-2507-q4_K_M` (MoE 30.5B/3.3B-active)
 - **Class C** (>=30B; MoE-w-small-active preferred + one dense
   reference + in-house adapter):
   `qwen2.5:32b-instruct-q4_K_M` (dense reference; BENCHMARKS.md leader),
-  `qwen3-next:80b` (MoE 80B/3B-active),
   `sentinel-cod-v6:latest` (in-house CoD-tuned)
 
 Dense models >=30B (`llama3.3:70b`, `granite4.1:30b`, `gemma4:31b-it`)
 are excluded from CoD: they serialize on CPU and defeat the parallel-
 fan-out principle. GPU is reserved for extraction + CoVE.
+
+Round 1 smoke-test drops (2026-05-17): `gemma4:26b-a4b-it-q4_K_M`
+exceeded the per-call timeout on CPU (integrity intact, just too slow);
+`qwen3-next:80b` is non-viable on CPU at any size. See
+`scripts/model_classes.py` for the authoritative rationale.
 
 Universal prompts were rejected up front: they bias one model class
 over another, which confounds the prompt-vs-capacity question that
