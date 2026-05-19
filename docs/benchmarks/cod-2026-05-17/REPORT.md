@@ -42,29 +42,25 @@ no manual labels. Same model used for scoring — same definition end-to-end.
 
 | Model | Size | Variant | Tickers | Companies | Sectors | Industries | Numerics | n | Latency p50 | Latency p95 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `qwen2.5:7b-instruct` | 7B | chunked | — | 75% | — | 0% | 100% | 1 | 269.5s | 269.5s |
-| `qwen3:8b` | 8B | chunked | — | — | — | — | — | 0 | — | — |
-| `granite4:7b-a1b-h` | 7B-MoE | chunked | — | — | — | — | — | 0 | — | — |
-| `phi4:14b-q4_K_M` | 14B | chunked | — | — | — | — | — | 0 | — | — |
-| `mistral-small:24b` | 24B | single_pass | — | — | — | — | — | 0 | — | — |
-| `gemma3:27b` | 27B | single_pass | — | — | — | — | — | 0 | — | — |
-| `qwen3:30b-a3b-instruct-2507-q4_K_M` | 30B-MoE | single_pass | — | — | — | — | — | 0 | — | — |
-| `command-r:35b-v0.1-q4_K_M` | 35B | single_pass | — | — | — | — | — | 0 | — | — |
-| `llama3.3:70b-instruct-q4_K_M` | 70B | single_pass | — | — | — | — | — | 0 | — | — |
+| `qwen2.5:7b-instruct` | 7B | chunked | 0% | 24% | 0% | 18% | 13% | 10 | 343.1s | 516.8s |
+| `qwen3:8b` | 8B | chunked | 0% | 24% | 100% | 27% | 15% | 10 | 1373.3s | 2376.9s |
+| `granite4.1:8b` | 8B | chunked | 0% | 38% | 100% | 23% | 18% | 10 | 432.6s | 596.5s |
+| `phi4-mini:3.8b` | 3.8B | chunked | 0% | 33% | 100% | 23% | 11% | 10 | 487.0s | 2252.6s |
+| `gemma4:26b-a4b-it-q4_K_M` | 26B-MoE | single_pass | 0% | 0% | — | 24% | 0% | 5 | 380.4s | 533.5s |
+| `qwen3:30b-a3b-instruct-2507-q4_K_M` | 30B-MoE | single_pass | 25% | 40% | 100% | 23% | 19% | 10 | 49.3s | 78.5s |
+| `sentinel-cod-v6:latest` | 7B-LoRA | chunked | 0% | 78% | 100% | 100% | 82% | 2 | 352.6s | 364.7s |
 
 ## Results — Preservation Rate (median per-article)
 
 | Model | Tickers | Companies | Sectors | Industries | Numerics |
 |---|---|---|---|---|---|
-| `qwen2.5:7b-instruct` | — | 75% | — | 0% | 100% |
-| `qwen3:8b` | — | — | — | — | — |
-| `granite4:7b-a1b-h` | — | — | — | — | — |
-| `phi4:14b-q4_K_M` | — | — | — | — | — |
-| `mistral-small:24b` | — | — | — | — | — |
-| `gemma3:27b` | — | — | — | — | — |
-| `qwen3:30b-a3b-instruct-2507-q4_K_M` | — | — | — | — | — |
-| `command-r:35b-v0.1-q4_K_M` | — | — | — | — | — |
-| `llama3.3:70b-instruct-q4_K_M` | — | — | — | — | — |
+| `qwen2.5:7b-instruct` | 0% | 26% | 0% | 20% | 22% |
+| `qwen3:8b` | 0% | 28% | 100% | 20% | 22% |
+| `granite4.1:8b` | 0% | 44% | 100% | 20% | 27% |
+| `phi4-mini:3.8b` | 0% | 44% | 100% | 20% | 16% |
+| `gemma4:26b-a4b-it-q4_K_M` | 0% | 0% | — | 22% | 0% |
+| `qwen3:30b-a3b-instruct-2507-q4_K_M` | 50% | 56% | 100% | 20% | 32% |
+| `sentinel-cod-v6:latest` | 0% | 78% | 100% | 100% | 89% |
 
 ## Recommendation
 
@@ -74,35 +70,36 @@ _(Filled in by reviewer after results land.)_
 
 | Model | n | p50 wall | p95 wall | Total wall |
 |---|---|---|---|---|
-| `qwen2.5:7b-instruct` | 1 | 269.5s | 269.5s | 269.5s |
-| `qwen3:8b` | 0 | — | — | — |
-| `granite4:7b-a1b-h` | 0 | — | — | — |
-| `phi4:14b-q4_K_M` | 0 | — | — | — |
-| `mistral-small:24b` | 0 | — | — | — |
-| `gemma3:27b` | 0 | — | — | — |
-| `qwen3:30b-a3b-instruct-2507-q4_K_M` | 0 | — | — | — |
-| `command-r:35b-v0.1-q4_K_M` | 0 | — | — | — |
-| `llama3.3:70b-instruct-q4_K_M` | 0 | — | — | — |
+| `qwen2.5:7b-instruct` | 10 | 343.1s | 516.8s | 4775.1s |
+| `qwen3:8b` | 10 | 1373.3s | 2376.9s | 25658.2s |
+| `granite4.1:8b` | 10 | 432.6s | 596.5s | 5727.4s |
+| `phi4-mini:3.8b` | 10 | 487.0s | 2252.6s | 9108.0s |
+| `gemma4:26b-a4b-it-q4_K_M` | 5 | 380.4s | 533.5s | 1752.3s |
+| `qwen3:30b-a3b-instruct-2507-q4_K_M` | 10 | 49.3s | 78.5s | 617.6s |
+| `sentinel-cod-v6:latest` | 2 | 352.6s | 364.7s | 705.1s |
 
 ## Cost — LLM-judge
 
 - Ground-truth generation (Opus on Foundry): 155,581 input + 17,091 output tokens
-- Preservation scoring (Opus on Foundry): 632 input + 98 output tokens
+- Preservation scoring (Opus on Foundry): 56,858 input + 5,896 output tokens
 
 Azure Foundry list price for Opus 4-7 is roughly an order of magnitude below direct Anthropic
 (see `feedback_azure_foundry_vs_anthropic_cost`), so this round 1 cost remains well under $10.
 
 ## Deviations from spec
 
-- **Corpus 20, not 75.** CPU inference at ~50–100 s/call across 5 chunked iterations made a 75-article
-  corpus infeasible inside the 3–4 h budget. Trimmed corpus is stratified the same way; the
+- **Corpus 10, not 75.** CPU inference at ~50–100 s/call across 5 chunked iterations made a 75-article
+  corpus infeasible inside the time budget. Trimmed corpus is stratified the same way; the
   full 72-article corpus is preserved at `corpus.full72.jsonl` for a future re-run.
-- **Model substitutions.** The user-requested `qwen3.5:9b`, `granite4.1:8b`, `gemma4:26b`, and
-  `qwen3.6:27b` do not exist in the Ollama library. Substituted closest currently-published
-  equivalents: `qwen3:8b`, `granite4:7b-a1b-h`, `gemma3:27b`, `qwen3:30b-a3b-instruct-2507-q4_K_M`.
+- **Roster cull.** After viability checks (PRs #366–#370), the roster collapsed to 7 actually-runnable
+  ollama-pulled models. Originally-aspirational picks like `mistral-small:24b`, `gemma3:27b`,
+  `command-r:35b`, and `llama3.3:70b` were dropped (sub-10 TPS, OOM, or absent from the registry).
+- **Partial runs.** `gemma4:26b-a4b-it-q4_K_M` completed 5/10 before the orchestrator wall-clock
+  cut. `sentinel-cod-v6:latest` produced 2 records before erroring out (legacy adapter; included
+  only as a reference, not for scoring weight).
 - **Single-pass variant for ≥24 B.** Per the planning conversation's principle of prompt
   architecture matching model capability — long-context models don't need chunking when the
-  article fits in context. All 20 corpus articles fit in 32K.
+  article fits in context. All 10 corpus articles fit in 32K.
 
 ## Round 2 (user-gated)
 
