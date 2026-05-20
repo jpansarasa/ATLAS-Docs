@@ -3,9 +3,13 @@
 Total result files: **140**
 Models seen: **7**, variants: **2**
 
-Metrics columns: `n`, `gv%` (grammar-valid rate), `ent` (mean ENT count), `evt`, `claim`, `note`, `ent_rec` (ent recall, mean), `num_rec` (numeric recall, mean), `undecl` (mean undeclared ENT refs), `miss_slot` (mean missing required slots).
+Phase 0 instrumentation (DSL PoC plan §3) — per-category recall breakdown, span_copy_fraction mechanism metric, and latency-per-recall-point cost metric.
 
-## Per-model averages
+Legacy columns (preserved for apples-to-apples vs R1/R2/R3): `n`, `gv%` (grammar-valid rate), `ent`/`evt`/`claim`/`note` (mean block counts), `ent_rec` (legacy combined ticker+company recall), `num_rec` (legacy lenient numeric recall, == `num_sem` below), `undecl`, `miss_slot`.
+
+Phase 0 columns: `tick`/`org`/`pers`/`loc`/`inst`/`sect`/`ind` (per-category recall; n/a when ground truth lacks the category), `num_exa` (numeric exact-match rate), `num_sem` (numeric semantic recall — full literal OR any digit-token), `unit_pre` (unit-token preservation), `span_cp` (n=4 char n-gram fraction of output appearing verbatim in input), `wall_s` (mean wall seconds), `cost` (wall_s / (mean(num+tick+org recall) × 100), plan §3.3).
+
+## Per-model averages — legacy view (R1/R2/R3 parity)
 
 | model | class | variant | n | gv% | ent | evt | claim | note | ent_rec | num_rec | undecl | miss_slot |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -23,6 +27,46 @@ Metrics columns: `n`, `gv%` (grammar-valid rate), `ent` (mean ENT count), `evt`,
 | gemma4:26b-a4b-it-q4_K_M | B | spec+example | 10 | 20.0% | 1.10 | 2.60 | 0.00 | 0.00 | n/a | n/a | 0.00 | 0.00 |
 | qwen3:30b-a3b-instruct-2507-q4_K_M | B | spec | 10 | 100.0% | 10.90 | 27.70 | 1.70 | 0.20 | 29.4% | 88.6% | 0.00 | 0.00 |
 | qwen3:30b-a3b-instruct-2507-q4_K_M | B | spec+example | 10 | 90.0% | 9.40 | 24.00 | 1.00 | 0.10 | 8.8% | 90.8% | 0.00 | 0.00 |
+
+## Per-model averages — Phase 0 per-category recall
+
+| model | class | variant | n | tick | org | pers | loc | inst | sect | ind | num_exa | num_sem | unit_pre | span_cp |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| qwen2.5:7b-instruct | A | spec | 10 | 0.0% | 14.7% | n/a | n/a | n/a | 100.0% | 50.0% | 57.5% | 65.2% | 79.8% | 57.6% |
+| qwen2.5:7b-instruct | A | spec+example | 10 | 0.0% | 16.9% | n/a | n/a | n/a | 0.0% | 40.0% | 53.2% | 78.6% | 77.1% | 56.8% |
+| qwen3:8b | A | spec | 10 | 50.0% | 23.3% | n/a | n/a | n/a | 0.0% | 68.8% | 62.4% | 88.8% | 76.1% | 59.7% |
+| qwen3:8b | A | spec+example | 10 | 50.0% | 19.9% | n/a | n/a | n/a | 100.0% | 50.4% | 79.0% | 86.4% | 96.8% | 52.4% |
+| granite4.1:8b | A | spec | 10 | 0.0% | 21.7% | n/a | n/a | n/a | 0.0% | 100.0% | 88.9% | 88.9% | 100.0% | 54.8% |
+| granite4.1:8b | A | spec+example | 10 | 0.0% | 23.6% | n/a | n/a | n/a | 100.0% | 61.2% | 47.6% | 73.9% | 76.8% | 55.9% |
+| phi4-mini:3.8b | A | spec | 10 | 0.0% | 40.0% | n/a | n/a | n/a | 0.0% | n/a | 66.7% | 88.9% | 100.0% | 25.0% |
+| phi4-mini:3.8b | A | spec+example | 10 | 0.0% | 6.2% | n/a | n/a | n/a | 0.0% | 13.3% | 5.9% | 15.8% | 50.6% | 25.2% |
+| gemma4:e4b | A | spec | 10 | 0.0% | 40.0% | n/a | n/a | n/a | 100.0% | 17.1% | 64.9% | 85.7% | 82.7% | 59.2% |
+| gemma4:e4b | A | spec+example | 10 | 0.0% | 28.3% | n/a | n/a | n/a | n/a | 50.4% | 59.0% | 66.5% | 80.5% | 58.1% |
+| gemma4:26b-a4b-it-q4_K_M | B | spec | 10 | 0.0% | 8.3% | n/a | n/a | n/a | n/a | 0.0% | 9.3% | 23.6% | 44.7% | 47.8% |
+| gemma4:26b-a4b-it-q4_K_M | B | spec+example | 10 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 61.5% |
+| qwen3:30b-a3b-instruct-2507-q4_K_M | B | spec | 10 | 50.0% | 31.0% | n/a | n/a | n/a | 100.0% | 60.8% | 66.9% | 88.6% | 82.2% | 62.5% |
+| qwen3:30b-a3b-instruct-2507-q4_K_M | B | spec+example | 10 | 0.0% | 8.8% | n/a | n/a | n/a | 100.0% | 60.0% | 68.2% | 90.8% | 80.7% | 50.3% |
+
+## Per-model averages — latency × recall cost (plan §3.3)
+
+`cost` = mean(wall_s) / (mean target_recall × 100); lower is better. Target recall = unweighted mean of available {numeric, ticker, org} recalls. ``n/a`` when no target-recall component is available.
+
+| model | class | variant | n | wall_s | tick | org | num_sem | cost |
+|---|---|---|---|---|---|---|---|---|
+| qwen2.5:7b-instruct | A | spec | 10 | 311.52 | 0.0% | 14.7% | 65.2% | 11.71 |
+| qwen2.5:7b-instruct | A | spec+example | 10 | 169.20 | 0.0% | 16.9% | 78.6% | 5.32 |
+| qwen3:8b | A | spec | 10 | 547.31 | 50.0% | 23.3% | 88.8% | 10.13 |
+| qwen3:8b | A | spec+example | 10 | 350.06 | 50.0% | 19.9% | 86.4% | 6.72 |
+| granite4.1:8b | A | spec | 10 | 235.78 | 0.0% | 21.7% | 88.9% | 6.40 |
+| granite4.1:8b | A | spec+example | 10 | 226.51 | 0.0% | 23.6% | 73.9% | 6.97 |
+| phi4-mini:3.8b | A | spec | 10 | 156.04 | 0.0% | 40.0% | 88.9% | 3.63 |
+| phi4-mini:3.8b | A | spec+example | 10 | 130.23 | 0.0% | 6.2% | 15.8% | 17.73 |
+| gemma4:e4b | A | spec | 10 | 243.83 | 0.0% | 40.0% | 85.7% | 5.82 |
+| gemma4:e4b | A | spec+example | 10 | 186.15 | 0.0% | 28.3% | 66.5% | 5.89 |
+| gemma4:26b-a4b-it-q4_K_M | B | spec | 10 | 1001.33 | 0.0% | 8.3% | 23.6% | 93.93 |
+| gemma4:26b-a4b-it-q4_K_M | B | spec+example | 10 | 1144.82 | n/a | n/a | n/a | n/a |
+| qwen3:30b-a3b-instruct-2507-q4_K_M | B | spec | 10 | 339.72 | 50.0% | 31.0% | 88.6% | 6.01 |
+| qwen3:30b-a3b-instruct-2507-q4_K_M | B | spec+example | 10 | 422.77 | 0.0% | 8.8% | 90.8% | 12.74 |
 
 ## Per-class averages
 
@@ -57,77 +101,15 @@ Per-class deltas:
 | B | -10.0% | -1.25 | -1.80 | -0.35 | -17.6% | 16.7% | 0.00 | 0.00 |
 | C | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 
----
+## Span-copy correlations (plan §3.2 mechanism check)
 
-## Round 2 (rescore) vs Round 3 (fresh) — qwen3:30b headline comparison
+Pearson `r` of per-cell `span_copy_fraction` against the indicated recall. Positive `r` supports the induction-head copy-mode hypothesis (verbatim copies preserve numerics and entity surfaces better than paraphrase/regeneration). `n` is the number of (model, variant, article) cells with both metrics defined.
 
-Baselines: Round 1 prose for `qwen3:30b-a3b-instruct-2507-q4_K_M` reported
-`ent_recall = 25%` (single-pass extraction). The hypothesis under test is
-whether the structured CoD DSL — with the widened parser from PRs
-#375 / #376 — clears that bar end-to-end on a fresh inference run.
-
-| metric (qwen3:30b) | R1 prose | R2 rescore (widened parser) | R3 fresh (widened parser, TIMEOUT=1800) | R3 − R2 | R3 − prose |
-|---|---|---|---|---|---|
-| spec `gv%`         | n/a      | 90.0%  | 100.0% | +10.0pp | n/a |
-| spec `ent_recall`  | 25.0%    | 31.7%  | 29.4%  | -2.3pp  | +4.4pp |
-| spec `num_recall`  | n/a      | 91.7%  | 88.6%  | -3.1pp  | n/a |
-| spec+ex `gv%`      | n/a      | 80.0%  | 90.0%  | +10.0pp | n/a |
-| spec+ex `ent_recall` | n/a    | 11.2%  | 8.8%   | -2.4pp  | n/a |
-| spec+ex `num_recall` | n/a    | 89.0%  | 90.8%  | +1.8pp  | n/a |
-
-### Resolution of the 47K-char outlier (article 27772)
-
-The previously-timed-out earnings transcript (47K chars, Jenoptik Q4 2025):
-
-- `qwen3:30b` **spec/27772**: completed in **1095s** wall, `grammar_valid=true`,
-  `ent_recall=0.31`, `num_recall=0.73` — **rescued by the 1800s budget.**
-- `qwen3:30b` **spec+example/27772**: **still timed out** at 1800s. The
-  worked-example arm expands the prompt enough that this single cell
-  exceeds the new ceiling; this contributes to the spec+ex `ent_recall`
-  drop (timeouts score as `null`).
-
-### Run-failure inventory (10 ReadTimeouts at 1800s, 0 other failures)
-
-- `gemma4:26b-a4b-it-q4_K_M`: 7 (3 spec, 4 spec+example) — model is
-  pathological on long inputs at this quantization.
-- `qwen3:30b` spec+example/27772 — as above.
-- `qwen2.5:7b-instruct` spec/36065 — single edge case.
-- `qwen3:8b` spec/36065 — single edge case.
-
-Timeouts are scored as `grammar_valid=false` with null recall, so they
-*do* drag the per-model averages above, but legitimately so.
-
-## Hypothesis verdict — **TRENDING**
-
-Decision rule (per the user-authorized sequence):
-- **CONFIRMED**: best-model DSL ent_recall ≥ +5pp over prose, repeatable.
-- **TRENDING**: above prose baseline but within run-to-run noise.
-- **NEEDS-MORE**: at or below prose baseline.
-
-Result:
-- qwen3:30b spec arm clears prose by **+4.4pp** (29.4% vs 25%) — just
-  below the +5pp threshold for CONFIRMED.
-- Run-to-run drift R2→R3 is **-2.3pp** on the same parser at n=10,
-  which is larger than the headline gap over prose. We cannot
-  distinguish "real improvement" from noise without a third run.
-- Worked-example arm regression vs spec (-20.6pp) is now **confirmed
-  across two independent runs**. This is no longer a fluke — the
-  current worked example actively harms recall.
-
-### Recommended next step — **prompt-tune the worked example**
-
-Both data points (R2 rescore -20.4pp, R3 fresh -20.6pp) say the same
-thing: the current `spec+example` worked example is degrading recall on
-the best model. Before either shipping the widened DSL or rethinking
-the approach, the cheapest informative experiment is to revise the
-worked example (shorter, simpler ENT block, fewer EVT slots) and re-run
-just the `spec+example` arm. If a revised example pulls qwen3:30b
-ent_recall above 31.7%, the DSL stack is doing real work and we ship.
-If it stays under 15%, the DSL itself is the bottleneck and we rethink.
-
-Threshold tripped for this recommendation: **repeatable spec+example
-regression** (-20pp vs spec on both runs) + **spec arm gap over prose
-under +5pp threshold** for CONFIRMED.
+| target metric | Pearson r | n pairs |
+|---|---|---|
+| numeric_exact_match_rate | +0.630 | 66 |
+| numeric_semantic_match_rate | +0.363 | 66 |
+| org_recall | +0.106 | 56 |
 
 ---
 
