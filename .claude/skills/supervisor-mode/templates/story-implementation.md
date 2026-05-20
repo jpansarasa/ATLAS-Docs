@@ -22,6 +22,17 @@ story matters to the epic.}
   - docs/llm/**
   - .claude/skills/supervisor-mode/**
 
+## Git ops hygiene (HARD_STOP — supervisor-edit preservation)
+- If `git status --short` shows supervisor-owned files modified (e.g. ` M STATE.md`),
+  DO NOT `git stash`, `git restore`, or `git checkout -- <path>` them.
+- `git checkout -b <newbranch>` and `git pull --ff-only` BOTH preserve dirty
+  tracked files when the new ref doesn't touch them — proceed as-is.
+- The only valid action on supervisor-owned modifications is leaving them alone.
+- If you literally cannot proceed (e.g. genuine merge conflict on a supervisor
+  file), STOP and report the conflict — do not "resolve" it by reverting.
+- Background: dispatched agents have wiped weeks of supervisor STATE.md edits
+  via stash-and-never-pop; see stash list `git stash list | grep STATE`.
+
 ## Deliverables
 {Numbered list of concrete artefacts. For DB work, always include the
 EF migration step explicitly per CLAUDE.md HARD_STOP:
