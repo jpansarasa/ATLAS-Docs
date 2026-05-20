@@ -158,16 +158,18 @@ If no difference → mechanism is elsewhere; document negative result.
 
 ### 4.3 Close the Class C hole (Q3)
 
-Run the two Class C models that R2/R3 skipped:
+Run the remaining Class C model R2/R3 skipped:
 - `qwen2.5:32b-instruct-q4_K_M` (dense reference, BENCHMARKS.md leader)
-- `sentinel-cod-v6:latest` (in-house LoRA)
 
 Both arms (spec, spec+example), n=10. Same corpus.
 
+(sentinel-cod-v6 is excluded: not a Class C candidate, treated as a cautionary
+tale — it overfit prose CoD output-plausibility and degraded under R1.)
+
 Decision:
-- sentinel-cod-v6 reproduces R1 78%/82% on DSL → LoRA generalizes to new output format; keep adapter, possibly retrain on DSL-formatted data.
-- sentinel-cod-v6 drops to qwen3:30b levels → LoRA was overfit to prose CoD; DSL retraining required.
 - qwen2.5:32b beats qwen3:30b-MoE → reconsider MoE-over-dense default.
+- qwen2.5:32b matches qwen3:30b → MoE-active-3B is sufficient at this scale.
+- qwen2.5:32b dramatically worse → unexpected; investigate before Phase 2.
 
 ### 4.4 Frontier closed-weight reference (Q4)
 
@@ -409,7 +411,12 @@ Claude Code should pause and surface these rather than deciding alone:
 
 1. **Production latency budget.** What's the per-article wall-time ceiling for the production pipeline? This determines whether qwen3:30b's ~50s p50 is acceptable or whether we need a smaller class A model with the v2 schema doing the heavy lifting.
 2. **Retire prose CoD?** After Phase 1.1 (direct-extraction arm), the data may say prose CoD is obsolete. Decision is human's — there may be legacy reasons to keep a prose path.
-3. **LoRA retraining priority.** If Phase 1.3 says sentinel-cod-v6 needs DSL-formatted retraining, that's a 1-2 week side project on Mercury. Worth doing before or after Phase 4?
+3. **LoRA retraining priority + objective.** Any future LoRA needs a training
+   objective that rewards source-anchored extraction, not output plausibility —
+   sentinel-cod-v6 demonstrates the failure mode of optimizing for the latter
+   (overfit the prose CoD shape, lost recall on the underlying facts). If we
+   revisit LoRA, the loss function must include verbatim-copy + source-span
+   fidelity terms. Decision: pursue this before or after Phase 4?
 4. **Foundry vs local Claude for semantic verification.** Cost vs latency vs Anthropic API dependency. Need an architectural call.
 5. **NAICS vs GICS for the matrix taxonomy.** ATLAS docs reference both. Lock one before Phase 4.
 
