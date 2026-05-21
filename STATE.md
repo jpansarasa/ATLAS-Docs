@@ -1,14 +1,24 @@
 # ATLAS Supervisor STATE [2026-05-16]
 
-## ACTIVE [2026-05-17]
-- **CoD reframe + DSL workstream** is the upstream-of-everything beat per planning doc §7 priority order. Sentinel extraction quality is bottlenecked by CoD; CoD output is being reframed from English prose to a structured symbolic DSL. Canonical: `docs/plans/sentinel-edge-realization.md` (§6 v1 spec + 8 locked decisions) + `docs/plans/sentinel-edge-realization-drift.md` (per-stage drift).
-- **2026-05-17 shipped:** §6 spec + decisions (PRs #347/#348), Python parser + 21 tests (PR #349), per-class CoD prompts (PR #350), Round 2 benchmark harness (PR #351). Also today: WhisperServiceMcp consolidation (#353), `scripts/` reorg (#356, #358), `agent/` → SentinelCollector (#360), `sentinel-mcp/` → `ntfy-mcp/` (#361), atlas-matrix doc sweep (#359), 6 stale-doc deletions (#354/#355).
-- **Round 1 + Round 2 + Round 3 done.** Round 1 winner (prose CoD baseline, PR #371): qwen3:30b-a3b @ 25% ticker preservation. Round 2 v1-DSL initially scored 0% on the winner — root cause was parser-side rejection of multi-word entity names. After grammar widening (PR #375) + 4 lenient pre-passes (PR #376), Round 2 rescore lifted qwen3:30b spec to 90% grammar_valid + 31.7% ent_recall. Round 3 (PR #379) was a fresh inference run with widened parser + TIMEOUT 1800s: qwen3:30b spec landed at 100% grammar_valid + **29.4% ent_recall** (+4.4pp over prose 25%, just under the +5pp CONFIRMED threshold; -2.3pp drift vs R2 rescore). Worked-example arm (spec+example) **regresses recall by ~20pp on the winner across both R2 and R3** — example actively harms preservation.
-- **Verdict: TRENDING (not CONFIRMED).** Spec arm lift over prose is within noise at n=10. spec+example regression is now confirmed across two independent runs.
-- **Next gate (user-authorized sequence, awaiting direction):** "iterate grammar → if not enough, tune prompts → if not enough, rethink." Grammar iteration done. Recommendation: prompt-tune the worked example (shorter ENT block, fewer EVT slots), re-run only `spec+example`. If qwen3:30b ent_recall > 31.7% → ship widened DSL. If < 15% → DSL itself is the bottleneck → rethink (POS-taxonomy idea parked in memory as `project_sentinel_dsl_pos_taxonomy_idea`).
-- **Spec amendment proposed (NOT yet applied — `docs/plans/sentinel-edge-realization.md` §6 is supervisor-owned):** widen ENT name to accept multi-word identifiers, accept bare `CLAIM` without kind, allow multi-word slot names, accept inline-typed ENT-refs in subject (PR #375), plus PR #376 pre-pass behaviors (header repair, nested-list promotion, trailing-narrative prune, in-block blank collapse). Cumulative grammar is significantly more lenient than v1 spec.
-- **Runtime posture:** Sentinel ingest healthy (250-1000 rows/hr); AutoApprove disciplined (5-18/hr, 100% with subject_entity + instrument_id); Phase 6/7 wired but silent metrics (planning doc §5 gaps 3+4 still open).
-- **Older arc (symbol-identification remediation, 2026-05-15→16)** retained below as supporting history — phases completed but the "ACTIVE" focus has moved upstream to CoD.
+## ACTIVE [2026-05-21]
+- **DSL PoC plan** (`docs/plans/atlas-dsl-poc-plan.md`) drives current work. **Inference topology rule (PR #386):** CPU = extraction (qwen3:30b-a3b on `ollama-cpu-gen`, port 11435). GPU = summarization + verification (sentinel-cove-v6.2 on `vllm-server`). Benchmark work targets CPU; do NOT lift plan §5's vLLM-specific text verbatim.
+- **Phase 0 + Phase 1 complete (PRs #381–#385 merged 2026-05-20):**
+  - **#381** Phase 0 instrumentation — per-category recall (ticker/org/person/loc/instrument/sector/industry/numeric_exact/numeric_semantic/unit_preservation), `span_copy_fraction`, `cost_per_recall_point`. R2/R3 rescored under new metrics.
+  - **#382** Phase 1.4 — Claude 4.7 frontier reference. qwen3:30b only +3.9pp behind on numeric_exact; **qwen3:30b at capability frontier — don't chase a bigger model.** Foundry cost $1.41/$5.
+  - **#383** Phase 1.1 — direct-extraction arm. `direct ≈ spec` on mechanistic metrics; **structure is the whole CoD win — retire prose-CoD prompt path.**
+  - **#384** Phase 1.2 — schema-order experiment. v1b (derived-first) collapses gv% 100%→50%. **Tam et al. mechanism CONFIRMED; verbatim-first locked as design rule for Phase 2+3.**
+  - **#385** Phase 1.3 — Class C qwen2.5:32b dense. qwen3:30b-a3b (MoE) beats qwen2.5:32b on every recall AND is 3.19× cheaper. **MoE-active-3B is the right shape.**
+  - Mechanism: `span_copy_fraction` ↔ `numeric_exact_match` Pearson r=+0.6 (R2/R3) — induction-head copy-mode story has direct mechanistic evidence (#381 correlation analysis).
+- **Phase 2 BLOCKED** awaiting user choice between (ntfy `rKGuEfLK588B`):
+  - **B1**: upgrade ollama to a GBNF-capable version
+  - **B2**: deploy llama.cpp `llama-server` directly (raw GBNF support)
+  - **B3**: convert grammar to JSON-schema (works on ollama 0.24 today; loses GBNF expressiveness)
+  - **B4**: revisit vLLM with agent's empirical fixes (`structured_outputs` not `guided_decoding`; bounded identifier tails; `max_tokens` cap)
+  - Empirically verified: **ollama 0.24 silently drops raw GBNF via `format`** (use of `--ollama-engine` Go runner; llama.cpp grammar support incomplete). JSON-schema enum is correctly enforced.
+  - Partial vLLM data from before user rollback: `grammar_taught_constrained` gv% 55.6%, numeric_semantic 76.8% (+10.9pp over baseline), latency overhead only +4%. Free decoder gv% = 0%, confirming constraint is necessary.
+- **Phase 3+ pending** Phase 2 unblock. Plan §6 (v2 copy-mode schema), §7 (GPU verifier), §8 (matrix integration) all gated on Phase 2.
+- **Runtime posture (PoC testing window):** sentinel-collector, secmaster, secmaster-mcp, alert-service, and all MCP containers (finnhub/threshold-engine/markitdown/whisper/ofr/fred) are STOPPED to free ollama-cpu-gen for benchmarking. Restart when DSL PoC test window ends. User direction: alert-service stays down (output not useful right now).
+- **Older arc (symbol-identification remediation, 2026-05-15→16)** retained below as supporting history.
 
 ## PHASE STATUS
 - **Phase 1** — Spine — ✓ DONE (Epic 1 merged as `a08b806`)
