@@ -458,6 +458,14 @@ Phase 5 (matrix integration) ────► demonstrates end-to-end; ~3 days
 
 Total ~4 weeks of focused effort. Each phase has explicit acceptance criteria; gates are data-driven not calendar-driven. If a phase blows up the assumptions of the next phase, re-plan rather than push through.
 
+### 11.1 Phase 2 sweep — complete (2026-05-21), §5.3 OVERALL FAIL
+
+Three-arm sweep ran (full report at `docs/benchmarks/cod-2026-05-17/results/phase2-sweep/REPORT.md`). Arm A grammar-taught/free-decoder reused from `dsl-round3` (gv 100%, num_rec 88.6%, wall 339.7s). Arm B grammar-taught/GBNF-constrained on `llama-server` clears 2 of 3 §5.3 gates (num_rec 95.5% > 91.7% target, latency -10% vs free decoder), but FAILS the gv=100% gate at 40% — not because the GBNF rejected anything, but because the grammar's `{0,128}` block bound never tells the model to stop; outputs hit `n_predict=4096` mid-block and the post-hoc Lark parser then rejects the truncated tail. The §5.4 prompt-simplification probe (Arm C, content-only prompt + GBNF) collapses outright (numeric_recall 0%, gv 20%): the grammar-taught prompt was carrying semantic load (block kinds, slot vocabulary, copy-mode expectations) that GBNF doesn't encode. Net: keep the grammar-taught prompt; Phase 3's v2 schema must bound block emission much tighter (or add a terminator block that the prompt instructs the model to emit) before grammar-constrained decoding becomes production-viable.
+
+### 11.1.1 v1.2 terminator (2026-05-21) — mechanism validated, gv% gate not cleared on n=3
+
+Implemented v1.2 GBNF with required `end-block ::= "END\n"` terminator + tightened block cap `{0,64}`. Lark front-end accepts END as optional (backward-compat). Class B prompt adds "emit `END` and stop" instruction. Quick re-run on n=3 prior-FAIL Arm B cells: gv 2/3 = 66.7%. **Mechanism validated**: all 3 cells now stop voluntarily on `eos` (no more `n_predict=4096` cap hits) and 2/3 previously-truncated cells (`27560`, `31149`) now parse cleanly. The remaining failure (`31430`) is a pre-existing degenerate-loop pathology (model emits `ENT etsy / org` 30-59x in a row) that was also present in the v1.1 Arm B output — orthogonal to the terminator fix. Supervisor decision needed: full n=10 re-run to characterize the truncation-vs-loop failure split, then either accept the mechanism win + carry the degenerate-loop issue separately or bound repeat-ENT emission at the grammar level.
+
 ---
 
 ## 12. References (full survey at `docs/research/dsl-prior-art.md`)
