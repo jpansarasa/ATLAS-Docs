@@ -43,7 +43,7 @@ Before more prompt-tuning, disambiguate these — each is cheap and informative:
 | Q2 | Does schema field order (Tam et al.) explain the worked-example regression? | Two variants of v1 DSL: verbatim-first vs derived-first | Validates or invalidates mechanism (a)'s schema-design failure mode |
 | Q3 | Does the in-house sentinel-cod-v6 LoRA reproduce R1's 78%/82% under DSL? | Run Class C (sentinel-cod-v6 + qwen2.5:32b-dense) | Whether to retrain LoRA on DSL-formatted data |
 | Q4 | Is the qwen3:30b gain real or a 30B-specific artifact? | Add 1 frontier closed-weight model (Claude on Foundry, single arm) | External validity of the whole approach |
-| Q5 | Does the structured-output gain survive grammar-constrained decoding? | Phase 2 (vLLM guided_decoding) | Whether the gain is from teaching grammar or from emitting structure |
+| Q5 | Does the structured-output gain survive grammar-constrained decoding? | Phase 2 (GBNF via llama.cpp on ollama-cpu-gen) | Whether the gain is from teaching grammar or from emitting structure |
 
 ---
 
@@ -185,9 +185,11 @@ Budget cap: $5 in Foundry credits. Stop if exceeded.
 
 **Premise:** the v1 grammar is a context-free grammar; we should not be teaching it to the model with examples and hoping. We should make it impossible for the decoder to emit invalid syntax.
 
+**Inference target:** CPU/ollama (`ollama-cpu-gen`, qwen3:30b-a3b), same target as Phase 1.x. Extraction is the CPU layer in the corrected topology; the GPU (vllm-server, `sentinel-cove-v6.2`) hosts CoVE / verification (Phase 4), not extraction. Do not move Phase 2 to vLLM "for grammar support" — llama.cpp (ollama's backend) supports GBNF natively.
+
 ### 5.1 Convert v1 DSL grammar to GBNF
 
-vLLM supports `guided_decoding` with regex, json_schema, and grammar (Lark or GBNF). Pick GBNF for compatibility.
+GBNF is the lingua franca for grammar-constrained decoding across llama.cpp (ollama), xgrammar, and Outlines. Authoring the grammar in GBNF keeps it runtime-portable should we later add a GPU verifier arm that also wants to enforce shape.
 
 ```
 # docs/grammars/cod-dsl-v1.gbnf
@@ -200,20 +202,31 @@ ent_key     ::= "name" | "ticker" | "type" | "source_span" | ...
 # ...etc
 ```
 
-### 5.2 Wire vLLM guided_decoding
+### 5.2 Wire grammar-constrained decoding into ollama-cpu-gen
+
+ollama exposes llama.cpp's GBNF support via the `format` parameter on `/api/generate` (since 0.5+). The PoC runner posts the GBNF inline alongside the prompt; no Python `vllm` import, no GPU dependency.
 
 ```python
-# scripts/run_dsl_benchmark.py (sketch)
-from vllm import LLM, SamplingParams
-from vllm.sampling_params import GuidedDecodingParams
+# scripts/run_dsl_benchmark.py (sketch — ollama, not vLLM)
+import requests
 
-guided = GuidedDecodingParams(grammar=open("docs/grammars/cod-dsl-v1.gbnf").read())
-params = SamplingParams(
-    temperature=0.0,
-    max_tokens=8192,
-    guided_decoding=guided,
+grammar = open("docs/grammars/cod-dsl-v1.gbnf").read()
+resp = requests.post(
+    "http://ollama-cpu-gen:11434/api/generate",
+    json={
+        "model": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+        "prompt": prompt,
+        "format": grammar,          # GBNF; llama.cpp enforces shape at decode
+        "options": {"temperature": 0.0, "num_predict": 8192},
+        "stream": False,
+    },
+    timeout=900,
 )
 ```
+
+Notes:
+- Phase 2's three arms (grammar_taught / grammar_taught_constrained / content_only) all run against the same CPU model so the constraint contribution is isolated from any model-class drift.
+- Bench scripts + prompts + results live under `docs/benchmarks/cod-2026-05-17/` next to the Phase 1.x sweeps — not at repo root. Result schema mirrors `run_cod_dsl.py` so `aggregate_report.py` scores Phase 2 cells without modification.
 
 ### 5.3 Acceptance
 
