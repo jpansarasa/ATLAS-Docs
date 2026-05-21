@@ -44,7 +44,7 @@ hook: .claude/hooks/git-push-guard.sh # enforced_by_tooling
   marker: tree-hash-keyed (HEAD^{tree}) # committed_content_only, ¬commit_hash
   caveat: HEAD^{tree} reflects committed state — uncommitted edits do NOT change tree hash
   survives: commit_after_test | cherry-pick | rebase | unrelated_commits
-  scope: per-worktree (filename suffix = sha1(toplevel)) # ¬shared_across_worktrees
+  scope: write=per-worktree (filename suffix = sha1(toplevel)); read=global scan by tree-hash # any_worktree's_marker_satisfies_gate
   format: "v2 tree <hash> <iso8601>" # version prefix rejects old commit-hash markers
   blocks: tree_content_changed ∧ ¬retested # source_changes_require_retest
 
