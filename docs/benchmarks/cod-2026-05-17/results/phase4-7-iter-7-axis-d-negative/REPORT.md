@@ -1,6 +1,6 @@
 # Phase 4.7 acceptance run (n=50) — REPORT
 
-_Generated: 2026-05-25T15:45:32Z_
+_Generated: 2026-05-25T15:53:01Z_
 
 **Parent plan:** `docs/plans/atlas-dsl-poc-phase4-gpu-semantic-verifier.md` §5 Phase 4.7 (acceptance run) + `docs/plans/atlas-dsl-poc-plan.md` §7.3 (gate criteria).
 
@@ -10,11 +10,11 @@ _Generated: 2026-05-25T15:45:32Z_
 - Production-pipeline enriched docs: **47** (3 parse-failed at the v15 DSL grammar level)
 - Foundry-labeling label sets: **47**
 - Articles with at least one CLAIM: **24**
-- Per-CLAIM verdicts compared: **137** (agree=98, disagree=39, foundry-missing=0)
+- Per-CLAIM verdicts compared: **137** (agree=95, disagree=42, foundry-missing=0)
 
 ## 2. Acceptance gate (§7.3, ≥85% agreement)
 
-**Result:** **FAIL** — agreement = 0.7153 (71.53%); gate = ≥85%
+**Result:** **FAIL** — agreement = 0.6934 (69.34%); gate = ≥85%
 
 Gate FAILED. Per plan §5 Phase 4.7, remediation = prompt iteration on the production claim-verifier (the `BuildPrompt` template). The top disagreement classes are listed in §5 below.
 
@@ -64,19 +64,17 @@ Aggregated: validated NUMs total = **480**, grounded ENTs total = **346**.
 
 | production \ foundry | full | partial | none |
 |---|---|---|---|
-| **full** | 0 | 1 | 0 |
-| **partial** | 13 | 82 | 10 |
-| **none** | 1 | 14 | 16 |
+| **full** | 0 | 0 | 0 |
+| **partial** | 14 | 93 | 24 |
+| **none** | 0 | 4 | 2 |
 
 Agreement = sum of diagonal; disagreement = sum of off-diagonal.
 
 ## 5. Disagreement classes (frequency-sorted)
 
-- **production=none / foundry=partial:** 14
-- **production=partial / foundry=full:** 13
-- **production=partial / foundry=none:** 10
-- **production=none / foundry=full:** 1
-- **production=full / foundry=partial:** 1
+- **production=partial / foundry=none:** 24
+- **production=partial / foundry=full:** 14
+- **production=none / foundry=partial:** 4
 
 ## 6. Parse failures
 
@@ -87,7 +85,7 @@ Agreement = sum of diagonal; disagreement = sum of off-diagonal.
 ## 7. Cost breakdown
 
 - Production arm (vllm-server, `Qwen/Qwen2.5-32B-Instruct-AWQ`): **$0.0000** (production runtime = $0 per plan §6).
-- Production-arm total wall-time across n=50: **97135 ms** (97.1 s for 137 CLAIM calls).
+- Production-arm total wall-time across n=50: **114834 ms** (114.8 s for 137 CLAIM calls).
 - Foundry (Claude 4.7) labeling arm: **$0.3222** (cap = $10.00; headroom = $9.6778).
 
 ## 8. Methodology notes
