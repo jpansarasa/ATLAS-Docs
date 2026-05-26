@@ -1,6 +1,6 @@
 # Phase 4.7s.1 — Training Data Manifest (v1)
 
-Generated: 2026-05-26T04:58:08Z
+Generated: 2026-05-26T05:46:22Z
 Seed: 17
 
 ## Bucket counts (actual)
@@ -10,11 +10,11 @@ Seed: 17
 | consistent | 1000 | 1000 | OK |
 | unrelated_strong | 1000 | 1000 | OK |
 | unrelated_hard | 500 | 500 | OK |
-| partial/related (Foundry) | 137 | 1500 | SHORT (Phase 4.7s.3 needed) |
+| partial/related (Foundry) | 1193 | 1500 | SHORT (Phase 4.7s.3 needed) |
 
 ## Bucket counts (by `source.kind`)
 
-- `foundry_labeled_partial`: 137
+- `foundry_labeled_partial`: 1193
 - `synthetic_consistent_pipeline`: 137
 - `synthetic_consistent_v15`: 863
 - `synthetic_unrelated_hard`: 500
@@ -22,16 +22,16 @@ Seed: 17
 
 ## Label distribution (four-value verdict enum)
 
-- `consistent`: 1014
+- `consistent`: 1026
 - `insufficient_evidence`: 244
-- `related`: 97
-- `unrelated`: 1282
+- `related`: 492
+- `unrelated`: 1931
 
 ## Split sizes
 
-- train: 1304
-- val: 314
-- test_holdout: 1019
+- train: 1778
+- val: 355
+- test_holdout: 1560
 
 ## Held-out article pool (OK)
 
@@ -56,5 +56,5 @@ Seed: 17
 
 ## Notes
 
-* The partial/related bucket FELL SHORT of 1500. Only 137 distinct (article_id, claim_block_id) pairs have existing Foundry labels (137 claims × 17 iter runs = many labels, but only 137 distinct claims). Phase 4.7s.3 must run NEW Foundry calls against the 137 candidates in `foundry_candidates.jsonl` AND/OR a corpus expansion is required.
+* The partial/related bucket FELL SHORT of 1500. Only 1193 distinct (article_id, claim_block_id) pairs have existing Foundry labels (137 claims × 17 iter runs = many labels, but only 137 distinct claims). Phase 4.7s.3 must run NEW Foundry calls against the 137 candidates in `foundry_candidates.jsonl` AND/OR a corpus expansion is required.
 
