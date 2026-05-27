@@ -1,5 +1,7 @@
 # DSL PoC — Phase 5 — Integration with ATLAS matrix (plan §8)
 
+> **Status**: ACTIVE — Phase 5.8 demo re-run #3 in flight 2026-05-26.
+
 **Status:** scoping. No code, no deploy. Single source of truth for Phase 5
 work until split into stories and merged.
 **Parent plan:** `docs/plans/atlas-dsl-poc-plan.md` §8 (lines 358–406).

@@ -1,5 +1,7 @@
 # DSL PoC — Phase 4 — GPU semantic verifier (plan §7.2)
 
+> **Status**: COMPLETED 2026-05-26. Tagged as `dsl-poc-phase4-done`. Kept as the canonical Phase 4 record (§11 gate-recalibration rationale).
+
 **Status:** scoping. No code, no deploy. Single source of truth for Phase 4
 work until split into stories and merged.
 **Parent plan:** `docs/plans/atlas-dsl-poc-plan.md` §7 (lines 317–406),
