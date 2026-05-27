@@ -29,6 +29,14 @@ METHODS:
   fallback: ASK_USER("Can't verify - use devcontainer or skip?")
 ¬PATTERN: "straightforward" → commit_anyway # this_is_how_bugs_ship
 
+## PHASE_TAGS [going_forward]
+At phase / epic completion:
+  1. tag the merge-completion commit: `git tag -a dsl-poc-phase{N}-done <sha> -m "<outcome summary>"`
+  2. `git push origin tag/dsl-poc-phase{N}-done` (or `--tags` selectively)
+  3. add a brief entry to `docs/RELEASES.md` — phase outcome + tag reference
+  4. `git rm` phase-specific working/iteration docs from `docs/plans/`
+rationale: main = reference data + current/active plans. Iteration history recoverable via tag (`git checkout <tag>` | `git show <tag>:<path>`). git log is the archive; tags are the named index.
+
 ## GIT_PUSH [HARD_STOP]
 ✗ NEVER git push without first running ALL tests for modified projects
 ✓ ALWAYS run {Project}/.devcontainer/compile.sh (without --no-test) before push
