@@ -35,18 +35,20 @@ Videos are downloaded with yt-dlp, converted to 16kHz MP3 by ffmpeg, then transc
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `WHISPER_MODEL` | Whisper model size (tiny, base, small, medium, large-v3) | `large-v3` |
+| `WHISPER_SERVICE_NAME` | Service name (OTEL `service.name`) | `whisper-service` |
+| `WHISPER_HOST` | Bind address | `0.0.0.0` |
+| `WHISPER_PORT` | HTTP port (1-65535) | `8090` |
+| `WHISPER_LOG_LEVEL` | Log level | `WARNING` |
+| `WHISPER_MODEL` | faster-whisper model id or HF repo (e.g. `large-v3`, `Systran/faster-distil-whisper-large-v3`) | `large-v3` |
 | `WHISPER_DEVICE` | Compute device (`cpu` or `cuda`) | `cpu` |
 | `WHISPER_COMPUTE_TYPE` | Quantization type (`int8`, `float16`, `float32`) | `int8` |
-| `WHISPER_NUM_WORKERS` | Concurrent transcription threads | `8` |
-| `WHISPER_BEAM_SIZE` | Beam search size | `5` |
-| `WHISPER_DATA_DIR` | Video download directory | `/data/videos` |
+| `WHISPER_NUM_WORKERS` | Concurrent transcription threads + CPU threads passed to faster-whisper (1-32) | `8` |
+| `WHISPER_BEAM_SIZE` | Beam search size (>= 1) | `5` |
+| `WHISPER_DATA_DIR` | Video/audio working directory | `/data/videos` |
 | `WHISPER_MODEL_DIR` | Model cache directory | `/data/models` |
-| `WHISPER_TRANSCRIPT_DIR` | Transcript output directory | `/data/transcripts` |
-| `WHISPER_KEEP_VIDEOS` | Keep videos after transcription | `false` |
-| `WHISPER_PORT` | HTTP port | `8090` |
-| `WHISPER_LOG_LEVEL` | Log level | `WARNING` |
-| `WHISPER_OTEL_ENDPOINT` | OTLP collector endpoint | `http://otel-collector:4317` |
+| `WHISPER_TRANSCRIPT_DIR` | Transcript JSON output directory | `/data/transcripts` |
+| `WHISPER_KEEP_VIDEOS` | Keep source videos after audio extraction | `false` |
+| `WHISPER_OTEL_ENDPOINT` | OTLP gRPC collector endpoint | `http://otel-collector:4317` |
 | `WHISPER_OTEL_ENABLED` | Enable OpenTelemetry | `true` |
 
 ## API Endpoints
