@@ -1,5 +1,23 @@
 # ATLAS Supervisor STATE [2026-05-16]
 
+## EACH TURN START HERE
+Before any action this turn:
+1. Re-read `docs/plans/atlas-dsl-poc-plan.md` §5 / §6 / §7 / §8 (NOT "I read it earlier" — RE-READ NOW)
+2. Walk plan §8 pipeline diagram backward from this turn's target (failure / new work)
+3. Confirm: each pipeline stage has impl OR explicit-stub OR explicit-out-of-scope on main
+4. If mismatch between plan + production → STOP + NTFY architectural ¬ dispatch
+
+Canonical pipeline (plan §8 verbatim):
+  SentinelCollector
+    → CPU extraction (qwen3:30b on ollama-cpu-gen / llama-server, v2 DSL, GBNF-constrained per §5)
+    → Deterministic verifier (Python, no LLM, §7.1 — byte-match copy slots against source_span)
+    → Semantic verifier (5090 GPU, §7.2 — claim verification + sector tagging + entity resolution)
+    → ThresholdEngine
+    → ATLAS matrix
+
+If you find yourself dispatching without re-grounding in the plan, see `[[feedback-walk-pipeline-each-turn]]`. If citing benchmark scores as production-capable, see `[[feedback-benchmark-not-production]]`.
+
+
 ## ACTIVE [2026-05-24]
 - **DSL PoC plan** (`docs/plans/atlas-dsl-poc-plan.md`) drives current work. **Inference topology rule (PR #386):** CPU = extraction (qwen3:30b-a3b on `ollama-cpu-gen`, port 11435). GPU = summarization + verification (sentinel-cove-v6.2 on `vllm-server`). Benchmark work targets CPU; do NOT lift plan §5's vLLM-specific text verbatim.
 - **Phase 0 + Phase 1 complete (PRs #381–#385 merged 2026-05-20):**

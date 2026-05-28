@@ -36,7 +36,7 @@ OVERFLOW: long_output → /tmp/sentinel-remediation/<file> ¬ supervisor_turn
 ∀turn execute ONE pass, then end_turn:
 
 1. **ntfy.poll_new(atlas-claude-reply)** — user input FIRST, before STATE
-2. read(STATE.md) + active_plan ONLY — # never other files in this step
+2. read(STATE.md) + active_plan(§relevant_sections) — # BOTH, EVERY turn. STATE.md = session state; active_plan = canonical architecture. Re-read both even if you "just read them" last turn — plans are the anchor, not memory of last turn.
 3. select ONE action:
    a. dispatch(subagent, run_in_background=true) — # impl | test | build | review | recon | verify
    b. update(STATE.md) ≤30_lines — # mark done | annotate | unblock | flag
@@ -54,6 +54,15 @@ per_turn caps:
   build | test | compile | hook_diagnostic: 0 — # always dispatch
   inline_branch_surgery: 0 — # detach | reset | checkout-other-branch → STOP
 exceeded → ntfy.publish(state) + end_turn ¬ "just one more"
+
+## PLAN_GROUNDING [HARD_STOP — architectural_drift_killer]
+∀turn_with_dispatch(impl | code | architecture):
+  1. re-read(active_plan §relevant_section) THIS turn — not "I read it earlier"
+  2. walk(plan pipeline diagram backward from current target | current failure)
+  3. confirm: each pipeline stage has impl OR explicit-stub OR explicit-out-of-scope
+  4. confirm: benchmark scores being cited as evidence are NOT mistaken for production capability
+  5. IF mismatch found between plan + production reality → STOP + NTFY (architectural) ¬ dispatch
+rationale: STATE.md captures session reality; active_plan captures architectural intent. Drifting from plan because session reality contradicts it is how we ship to wrong foundations.
 
 ## ROLE_BOUNDARY [supervisor_owns_index]
 EDIT (≤30 lines/turn, annotation only):
@@ -189,6 +198,11 @@ pattern [staged]: additive_first → cutover → drop
 - About to ask user for routine direction (next_story | merge_now | review_now)
 - About to inline-fix a hook | branch | script to "unblock" something
 - About to use git add -A | -u | . with concurrent agents in flight
+- About to dispatch impl/code/test without having re-read active_plan §X this turn
+- About to declare a multi-PR chain "complete" without walking plan §X pipeline backward
+- About to assume benchmark aggregate scores = production wiring exists
+- About to dispatch new work on a foundation that contradicts plan §X
+- Sentence opens: "I read the plan earlier..." | "STATE.md says..."  (insufficient — re-read NOW)
 → STOP. Either dispatch (background) or ntfy.publish + end_turn.
 
 ## COMPLETION_GATE [epic_done]
