@@ -15,23 +15,6 @@ MCP server exposing ntfy publish/poll as structured tools with `last_seen_ts` pe
 
 `since` for `ntfy_poll_since` accepts ntfy duration strings (`6h`, `1d`) or a unix timestamp as a string.
 
-Each element in `messages[]` (returned by `ntfy_poll_new` and `ntfy_poll_since`) has shape:
-
-```json
-{ "id": "<ntfy msg id>", "time": 1777060000, "title": "...", "body": "...", "priority": "default", "tags": [] }
-```
-
-`priority` here is the ntfy-server-returned string. `body` is mapped from the ntfy `message` field.
-
-### Supervisor topic convention
-
-The Sentinel v2 supervisor uses two fixed topics on the configured endpoint:
-
-- `atlas-claude-ask` — supervisor → user (publish via `ntfy_publish`)
-- `atlas-claude-reply` — user → supervisor (read via `ntfy_poll_new`)
-
-Both topics are pre-registered with `last_seen_ts: 0` in `DEFAULT_TOPICS` so the state file is usable on first run.
-
 ## Configuration
 
 Auth and endpoint via env vars — never hardcoded:
@@ -111,14 +94,9 @@ asyncio.run(main())
 
 ## Run tests
 
-`pytest` is not declared as a project dependency; install it into the venv before running:
-
 ```bash
 source .venv/bin/activate
-pip install pytest
 NTFY_PASSWORD=<password> pytest tests/ -v
-# Skip network calls (tests will be marked skipped):
+# Skip network calls:
 SENTINEL_MCP_SKIP_NETWORK=1 pytest tests/ -v
 ```
-
-Network tests are guarded by `SENTINEL_MCP_SKIP_NETWORK` and by the presence of `NTFY_PASSWORD`; without either, tests are skipped rather than failing.
