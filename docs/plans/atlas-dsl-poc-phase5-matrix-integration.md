@@ -1,9 +1,15 @@
 # DSL PoC — Phase 5 — Integration with ATLAS matrix (plan §8)
 
-> **Status**: ACTIVE — Phase 5.8 demo re-run #3 in flight 2026-05-26.
+> **Status**: IMPLEMENTED — all 8 sub-phases shipped via PRs #478, #482–#488, #490; CPU CoD
+> cutover shipped via PRs #505–#510 (PR #510 OPEN). Phase 5.8 demo verdict FAIL 0/10 on PR #510;
+> trajectory #494 (0/10) → #496 (0/10) → #499 (3/10 PROGRESS, GPU V2 path) → #510 (0/10, CPU CoD path).
+> 3 diagnosed gaps blocking cell production on CPU CoD path (see §17). Rollback path NOT REHEARSED.
+> Pending fork decision (polish / rollback / accept) surfaced via NTFY `z37K6aploLgM`.
 
-**Status:** scoping. No code, no deploy. Single source of truth for Phase 5
-work until split into stories and merged.
+**Implementation status as of 2026-05-27:** scoping document is now an outcome record. All Phase
+5.1–5.8 sub-phases landed plus CPU CoD migration cutover (6 PRs). Design intent and rationale
+below preserved as written when approved (PR #477); per-phase outcomes inserted inline and
+consolidated in §17. Rollback strategy (§10) remains theoretical — not exercised in production.
 **Parent plan:** `docs/plans/atlas-dsl-poc-plan.md` §8 (lines 358–406).
 **Predecessor:** Phase 4 — `docs/plans/atlas-dsl-poc-phase4-gpu-semantic-verifier.md`.
 4.7 PASS milestone on n=563 holdout (Foundry agreement 80.64%) landed
@@ -38,10 +44,10 @@ direct cutover at Phase 5.5 per `[[feedback-drop-feature-flags]]`.
 
 | Layer | Status | Notes |
 |---|---|---|
-| CPU extraction (v15 DSL on `llama-server`) | DONE | Phase 3; production-locked T=0 A/B (PRs #431/#432/#433). |
-| Deterministic Python verifier (`verifier_v2_3_1.py`) | DONE | Phase 3 / §7.1; word-grounded. |
-| GPU semantic verifier (`SemanticVerifierService`) | DONE | Phase 4.5 cutover; Phase 4.7 n=563 PASS (PR #476). |
-| **Matrix integration** | **THIS PHASE** | Data routing + storage. Zero new inference. |
+| CPU extraction (v8 DSL on `llama-server`, GBNF) | DONE — benchmark + production | Benchmark: Phase 3 v15 DSL A/B (PRs #431/#432/#433). Production cutover 2026-05-27: PRs #505 (grammar field), #506 (v8 baseline + v14 word-hints + v2.3 GBNF), #507 (dsl-parser-mcp sidecar), #508 (DSL AST → MergedExtractionResult adapter), #509 (CpuDslExtractionService), #510 (Backend=LlamaServerDsl cutover, OPEN). |
+| Deterministic Python verifier (`verifier_v2_3_1.py`) | DONE | Phase 3 / §7.1; word-grounded. Wrapped as `dsl-parser-mcp` sidecar in PR #507. |
+| GPU semantic verifier (`SemanticVerifierService`) | DONE | Phase 4.5 cutover; Phase 4.7 n=563 PASS (PR #476). Live until CPU CoD cutover (#510). |
+| **Matrix integration** | **DONE** | PRs #478, #482–#488, #490 (Phase 5.1–5.8 infrastructure). Demo verdict FAIL 0/10 on PR #510 (§17). Data routing + storage. Zero new inference. |
 
 Phase 5 is the consumer wiring the parent plan §8 calls for. The
 `EnrichedDocument` envelope is already being computed per article
@@ -307,9 +313,9 @@ future PR. Per `[[feedback-drop-feature-flags]]`: no default-OFF flag;
 integration glue at Phase 5.5 is the cutover. Per
 `[[feedback-no-placeholder-prs]]`: each PR ships substantive impl.
 
-### Phase 5.1 — schema migration + `MatrixCellUpdate` DTO
+### Phase 5.1 — schema migration + `MatrixCellUpdate` DTO — SHIPPED PR #478
 
-**Scope.** EF migration `Phase5SentinelMatrixColumns` adding
+**Scope (as designed).** EF migration `Phase5SentinelMatrixColumns` adding
 `industry_code text`, `polarity smallint`, `source_provenance jsonb`
 to `matrix_cells` + index `(sector_code, industry_code, evaluated_at)`.
 Shared `MatrixCellUpdate` + `SourceProvenance` records in `Events`
@@ -324,9 +330,14 @@ MatrixCellUpdate, SourceProvenance}.cs`.
 existing rows readable; DTO ctor invariants tested (sector_code non-empty,
 polarity ∈ {-1,0,+1}, confidence ∈ [0,1], provenance non-null).
 
-### Phase 5.2 — `SignalCalculator` (pure library)
+**Outcome (2026-05-27).** Shipped via PR #478 (Phase 5.1 — matrix_cells Sentinel-producer
+schema fields). Follow-up PR #480 added composite PK `(Id, EvaluatedAt)` for hypertable
+partition column (required by TimescaleDB after initial migration). Acceptance MET: migration
+applies, DTO invariants enforced.
 
-**Scope.** Pure function per §6. C#: `ThresholdEngine.Matrix.Sentinel.SignalCalculator`.
+### Phase 5.2 — `SignalCalculator` (pure library) — SHIPPED PR #482
+
+**Scope (as designed).** Pure function per §6. C#: `ThresholdEngine.Matrix.Sentinel.SignalCalculator`.
 Python reference: `dsl/matrix_calculator.py` for PoC corpus runs.
 
 **Files (new):** `ThresholdEngine/src/Matrix/Sentinel/SignalCalculator.cs`
@@ -339,9 +350,14 @@ Python `dsl/matrix_calculator.py` + `dsl/tests/test_matrix_calculator.py`.
 (d) 7d half-life decay; (e) ±3 clamp; (f) deterministic byte-identical
 runs. PoC parity: Python + C# produce matching updates on fixture.
 
-### Phase 5.3 — `EnrichmentFilter` (the §5 safety property)
+**Outcome (2026-05-27).** Shipped via PR #482 (Phase 5.2 — SignalMagnitudeCalculator +
+MatrixCellUpdate, weighted-mean, daily UTC bucket). PR #490 added silent-skip metric for
+observability. Acceptance MET unit-test-side; production-side: calculator never runs on the
+0/10 demo path because no `MatrixCellUpdate` instances survive upstream filtering (§17 gap 1).
 
-**Scope.** Pure function enforcing §5 drops. Emits per-reason drop-count
+### Phase 5.3 — `EnrichmentFilter` (the §5 safety property) — SHIPPED PR #483
+
+**Scope (as designed).** Pure function enforcing §5 drops. Emits per-reason drop-count
 + surviving subset so Phase 5.7 can dashboard.
 
 **Files (new):** `ThresholdEngine/src/Matrix/Sentinel/{EnrichmentFilter,
@@ -354,9 +370,15 @@ surface per reason; all-pass fixture has zero drops; empty
 EnrichedDocument → empty output no-throw. Every drop reason exercised
 per `[[feedback-no-placeholder-prs]]`.
 
-### Phase 5.4 — `MatrixCellEnrichmentPublisher` (Sentinel bridge)
+**Outcome (2026-05-27).** Shipped via PR #483 (Phase 5.3 — SignalFilter §8.2 safety property).
+Acceptance MET unit-test-side. Production-side: on the demo corpus only
+`entity_resolution_exhausted` populates significantly — the other 4 reasons appear at near-zero
+because the v8 DSL emits no `source_entity` slot, so the entity-resolution gate trips first and
+the downstream reasons never get a chance to fire.
 
-New publisher in `SentinelCollector.Semantic` consuming
+### Phase 5.4 — `MatrixCellEnrichmentPublisher` (Sentinel bridge) — SHIPPED PR #484
+
+**Scope (as designed).** New publisher in `SentinelCollector.Semantic` consuming
 `EnrichedDocument` + `MergedExtractionResult`, running `EnrichmentFilter`
 + `SignalCalculator` (5.2/5.3 live in shared `Events` so SentinelCollector
 refs without a TE project ref), publishing `SentinelMatrixUpdateEvent`
@@ -372,9 +394,14 @@ zero-update → empty publish (heartbeat); (c) bus throw fail-soft with
 counter `atlas_sentinel_matrix_publish_failures_total`; (d) in-proc
 event-bus integration fixture → captured consumer; protobuf regen clean.
 
-### Phase 5.5 — `MatrixCellSentinelWorker` (TE CUTOVER)
+**Outcome (2026-05-27).** Shipped via PR #484 (Phase 5.4 — SentinelCollector matrix bridge:
+filter + calculator + emit). Acceptance MET. Production-side: bridge fires per article but the
+filter consumes all enrichments on the CPU CoD path → 0 events published with non-empty
+updates (see §17 gaps 1 and 2).
 
-New `BackgroundService` cloning `MatrixCellPersistenceWorker`
+### Phase 5.5 — `MatrixCellSentinelWorker` (TE CUTOVER) — SHIPPED PR #485
+
+**Scope (as designed).** New `BackgroundService` cloning `MatrixCellPersistenceWorker`
 (channel + coalesce + clamp + drop-write,
 `MatrixCellPersistenceWorker.cs:104–127`); subscribes to
 `SentinelMatrixUpdateEvent`; writes via existing
@@ -389,9 +416,15 @@ industry_code/polarity/source_provenance populated; republish →
 0 new (idempotency); 50k saturation → WriteFailures ticks,
 rate-limited warning, FRED writes uninterrupted.
 
-### Phase 5.6 — Audit trail (JOIN-on-demand endpoint + MCP)
+**Outcome (2026-05-27).** Shipped via PR #485 (Phase 5.5 — gRPC bridge from SentinelCollector
+matrix-cell channel to ThresholdEngine consumer). Worker named `MatrixCellSentinelWorker` in
+ThresholdEngine, subscribing to the gRPC stream from SentinelCollector. Acceptance MET
+integration-test-side. Production-side: 0 rows written across all 4 demo runs because
+upstream publisher emits 0 non-empty events on the CPU CoD path (see §17).
 
-REST `GET /matrix-cells/{id}/source-article` returning §7.5
+### Phase 5.6 — Audit trail (JOIN-on-demand endpoint + MCP) — SHIPPED PRs #486 + #487
+
+**Scope (as designed).** REST `GET /matrix-cells/{id}/source-article` returning §7.5
 JOIN-on-demand: reads `source_provenance` JSONB, dereferences
 `rawContentId` against `sentinel.raw_content` (cross-DB per Epic
 1/2/3 conn-string pattern). MCP tool wraps the same query (matches
@@ -403,10 +436,21 @@ Epic 6 matrix-cells MCP).
 row → endpoint returns source article p95 < 1s per §14. Latency on
 `atlas_matrix_audit_lookup_duration_ms`.
 
-### Phase 5.7 — Observability
+**Outcome (2026-05-27).** Shipped via PR #486 (matrix-cell audit read surface §7.5) plus
+fix-up PR #487 (raw SQL with `jsonb ->>` operator — EF translation issue forced raw SQL on
+the by-article query). Acceptance MET integration-test-side; production p95 untested because
+zero matrix_cells rows exist to audit on the demo path.
+
+### Phase 5.7 — Observability — SHIPPED PR #488
 
 Pairs with `v2-pipeline-health.json` + `atlas-matrix-primary.json`
 / `atlas-matrix-trajectory.json`.
+
+**Outcome (2026-05-27).** Shipped via PR #488 (Sentinel matrix dashboard + alerts) as
+`sentinel-matrix-pipeline` Grafana dashboard. PR #490 added silent-skip metric for
+SignalMagnitudeCalculator. Acceptance MET on the dashboard / promtool side; production panels
+show zero throughput on demo runs because the upstream pipeline emits zero cells (the
+dashboards correctly read the empty state).
 
 **Metrics** (bounded cardinality — sector=11, reason=5, outcome=2;
 no article/block ids in tags):
@@ -433,9 +477,9 @@ dropped); P3_NOTIFY any single drop reason >50% total for 30 min
 **Acceptance**: metrics in Prometheus after n=10 smoke; 4 panels
 render; `promtool check` clean.
 
-### Phase 5.8 — n=10 acceptance + production deploy
+### Phase 5.8 — n=10 acceptance + production deploy — SHIPPED PRs #489 / #494 / #496 / #499 / #510
 
-**Scope.** Parent plan §8.3: end-to-end demo on n=10 R2/R3 articles;
+**Scope (as designed).** Parent plan §8.3: end-to-end demo on n=10 R2/R3 articles;
 per-article wall time within Q3 budget; per-cell auditable back to
 source.
 
@@ -451,6 +495,28 @@ their `dsl_block_id`).
 sentinel-collector,threshold-engine` per CLAUDE.md DEPLOYMENT.
 Smoke test post-deploy per CLAUDE.md VERIFY_TEST COMPLETION_GATE.
 NTFY milestone per `[[feedback-ntfy-not-inline]]`.
+
+**Outcome (2026-05-27).** Demo run trajectory:
+
+| Run | PR | Path | Verdict | Cells | Notes |
+|---|---|---|---|---|---|
+| 1 | #489 (OPEN) | GPU V2 baseline | FAIL | 0/10 | Initial diagnosis; harness attribution + secmaster alias gaps. |
+| 2 | #494 (CLOSED) | GPU V2 | FAIL | 0/10 | Re-run after PR #492 secmaster exhaust-all-lookups fix. |
+| 3 | #496 (CLOSED) | GPU V2 | FAIL | 0/10 | Re-run after PR #495 case-insensitive alias lookup. |
+| 4 | #499 (CLOSED) | GPU V2 | PROGRESS | 3/10 | First non-zero — after PRs #497/#498 deterministic V2 + prepass entity bag. |
+| 5 | #510 (OPEN) | CPU CoD cutover | FAIL | 0/10 | Backend=LlamaServerDsl active; regression vs #499. See §17 gaps. |
+
+Gate-by-gate outcome on PR #510 (current):
+1. n=10 within wall-time budget: 7/10 articles completed; 3/10 TIMEOUT under CPU CoD
+   per-article budget (need timeout bump).
+2. Cell update latency p95 < 5 min: N/A (0 cells written).
+3. Audit lookup p95 < 1 s: untested (no cells to audit).
+4. Drop rate populated for all 5 reasons: only `entity_resolution_exhausted` populated
+   significantly; remaining 4 reasons near-zero.
+5. Hard safety (`ClaimSupport.None` low-conf never in matrix): N/A (no cells produced).
+
+Demo did not deploy beyond per-run bench-harness. Production cutover (`Extraction__Backend=LlamaServerDsl`)
+shipped via PR #510 ansible config; ansible deploy gated on PR #510 merge.
 
 ---
 
@@ -497,26 +563,30 @@ lookup p50/p95, cell freshness p50/p95. Alerts: 2 P2_URGENT
 
 ---
 
-## 12. Open questions — for user
+## 12. Open questions — RESOLVED at plan approval
 
-Defaults proposed in §6; need user sign-off before 5.2 + 5.5 ship.
-NTFY per `[[feedback-ntfy-not-inline]]`.
+All five questions were decided at plan approval; recording the decisions inline.
+Original phrasing preserved so the rationale remains traceable.
 
-1. **Time bucket granularity.** Default **daily** UTC-midnight
-   (matches `SectorPhaseAggregateEntity` window). Hourly = ~24× row
-   volume; per-source-publish = irregular but most reactive.
-2. **Aggregation rule** (multiple updates → same cell). Default
-   **weighted-mean** (weights = `confidence × freshness`). Sum
-   double-counts re-extraction; max lets outliers dominate.
-3. **Production wall-time budget per article.** Parent §8.3 left TBD.
-   Phase 5 adds calculator (<10 ms) + publish/persist (<50 ms in-proc) —
-   negligible additive. Real question: end-to-end article → matrix-cell
-   SLO. Phase 4.7 p95 enrichment latency captured in 5.8 REPORT.
-4. **Freshness half-life.** Default 7 days. Per-source override table
-   proposed (24h earnings vs 30d macro commentary).
-5. **Audit trail: JOIN-on-demand vs separate table.** JOIN-on-demand
-   (§7.5, proposed) is simpler + same audit power. Separate table =
-   faster bulk audit but 2× write + duplicated source of truth.
+1. **Time bucket granularity.** **DECIDED: daily UTC-midnight** (matches
+   `SectorPhaseAggregateEntity` window). Hourly = ~24× row volume; per-source-publish =
+   irregular but most reactive. Implemented in PR #482 (`SignalMagnitudeCalculator`).
+2. **Aggregation rule** (multiple updates → same cell). **DECIDED: weighted-mean**
+   (weights = `confidence × freshness`). Sum double-counts re-extraction; max lets
+   outliers dominate. Implemented in PR #482.
+3. **Production wall-time budget per article.** **STILL OPEN — measurement-pending.**
+   Parent §8.3 left TBD. Phase 5 adds calculator (<10 ms) + publish/persist (<50 ms in-proc)
+   — negligible additive. Phase 5.8 REPORT captures end-to-end p50/p95 per run. Under CPU
+   CoD (PR #510), 3/10 articles TIMEOUT — budget must rise or per-article CoD latency must
+   fall before this gate can be re-evaluated.
+4. **Freshness half-life.** **DECIDED: 7 days default**, no per-source override yet.
+   Per-source override table proposed (24h earnings vs 30d macro commentary) but deferred
+   — single default in PRs #482/#484. Revisit if a sector cluster shows systematic
+   over/under-decay in Phase 6+.
+5. **Audit trail: JOIN-on-demand vs separate table.** **DECIDED: JOIN-on-demand**
+   (§7.5). Simpler + same audit power. Separate table would add 2× write + duplicated
+   source of truth. Implemented in PRs #486 + #487 (raw SQL with `jsonb ->>` to dodge an
+   EF translation bug).
 
 ---
 
@@ -544,25 +614,36 @@ visible on existing TimescaleDB chunk-size panels.
 
 ---
 
-## 14. Success criteria (consolidated, per parent §8.3)
+## 14. Success criteria (consolidated, per parent §8.3) — OUTCOME 2026-05-27
 
-Concrete + measurable, all reported in 5.8 REPORT.md:
+Concrete + measurable, all reported in 5.8 REPORT.md. Outcome rows record the verdict
+on the current production path (PR #510, CPU CoD cutover). Pre-cutover GPU V2 path on
+PR #499 PROGRESSed 3/10 — that path is no longer the production path.
 
-1. **n=10 end-to-end within Q3 wall-time budget** — histogram + p50/p95
-   in REPORT.
-2. **Cell update latency p95 < 5 min** from extraction →
-   matrix-cell-available (`atlas_sentinel_matrix_cell_freshness_seconds`).
-3. **Audit lookup p95 < 1 s** for `/matrix-cells/{id}/source-article`
-   incl. cross-DB JOIN (`atlas_matrix_audit_lookup_duration_ms`).
+1. **n=10 end-to-end within Q3 wall-time budget** — histogram + p50/p95 in REPORT.
+   - **OUTCOME (PR #510): FAIL — 7/10 articles completed; 3/10 TIMEOUT** under the
+     per-article CPU CoD budget. Budget bump or CoD latency cut required.
+2. **Cell update latency p95 < 5 min** from extraction → matrix-cell-available
+   (`atlas_sentinel_matrix_cell_freshness_seconds`).
+   - **OUTCOME (PR #510): N/A — 0 cells written.** Cannot measure freshness of an
+     empty set. Re-test contingent on §17 gap fixes.
+3. **Audit lookup p95 < 1 s** for `/matrix-cells/{id}/source-article` incl. cross-DB
+   JOIN (`atlas_matrix_audit_lookup_duration_ms`).
+   - **OUTCOME (PR #510): UNTESTED — no cells to audit.** Endpoint + JSONB extract
+     verified via integration tests (PRs #486/#487); production latency not measured.
 4. **Drop rate populated for all 5 reasons** across the corpus
    (`atlas_sentinel_matrix_drops_total{reason}`).
-5. **Hard safety: `ClaimSupport.None` low-conf never reaches matrix.**
-   Spot-check 10 dropped CLAIMs → confirm zero rows reference their
-   `dsl_block_id`.
+   - **OUTCOME (PR #510): PARTIAL — only `entity_resolution_exhausted` populated**
+     significantly. Other 4 reasons appear near-zero because the entity-resolution gate
+     trips first on the v8-DSL path that emits no `source_entity` slot (§17 gap 1).
+5. **Hard safety: `ClaimSupport.None` low-conf never reaches matrix.** Spot-check 10
+   dropped CLAIMs → confirm zero rows reference their `dsl_block_id`.
+   - **OUTCOME (PR #510): N/A — 0 cells produced.** Spot-check vacuously true; not
+     informative until cell production unblocks.
 
-All five clear → Phase 5 closes; DSL PoC end-to-end loop demonstrated.
-Any miss → diagnose via 5.2/5.3 unit tests + 5.7 panels before
-declaring done.
+**Verdict: FAIL on the current production path (CPU CoD).** Phase 5 infrastructure SHIPPED;
+phase 5 PoC end-to-end loop NOT DEMONSTRATED on the cutover path. See §17 for diagnosis +
+pending fork decision.
 
 ---
 
@@ -597,3 +678,78 @@ week with 5.2/5.3 + 5.6/5.7 parallelised per
   `[[atlas-inference-topology]]`, `[[feedback-drop-feature-flags]]`,
   `[[feedback-no-placeholder-prs]]`, `[[feedback-parallel-agents-use-worktrees]]`,
   `[[feedback-ntfy-not-inline]]`.
+
+---
+
+## 17. Implementation outcome (2026-05-27)
+
+### 17.1 PRs landed (14 total)
+
+**Phase 5 infrastructure (9 PRs):**
+
+| Sub-phase | PR | Title | State |
+|---|---|---|---|
+| 5.1 schema | #478 | Phase 5.1 — matrix_cells Sentinel-producer schema fields | MERGED |
+| 5.1 fix-up | #480 | CreateMatrixCells composite PK `(Id, EvaluatedAt)` for hypertable partition | MERGED |
+| 5.2 calculator | #482 | Phase 5.2 — SignalMagnitudeCalculator + MatrixCellUpdate (weighted-mean, daily UTC bucket) | MERGED |
+| 5.3 filter | #483 | Phase 5.3 — SignalFilter (§8.2 safety property) | MERGED |
+| 5.4 publisher | #484 | Phase 5.4 — SentinelCollector matrix bridge (filter + calculator + emit) | MERGED |
+| 5.5 bridge + worker | #485 | Phase 5.5 — gRPC bridge from SentinelCollector matrix-cell channel to TE consumer | MERGED |
+| 5.6 audit | #486 | Phase 5.6 — matrix-cell audit read surface (§7.5) | MERGED |
+| 5.6 fix-up | #487 | Phase 5.6 audit by-article — raw SQL with `jsonb ->>` operator | MERGED |
+| 5.7 obs | #488 | Phase 5.7 — Sentinel matrix dashboard + alerts (`sentinel-matrix-pipeline`) | MERGED |
+| 5.8 metric | #490 | Phase 5.8 — SignalMagnitudeCalculator silent-skip metric | MERGED |
+
+**CPU CoD migration (6 PRs):**
+
+| Step | PR | Title | State |
+|---|---|---|---|
+| CoD 1/6 | #507 | dsl-parser-mcp — Python sidecar wrapping benchmark DSL parser + verifier | MERGED |
+| CoD 2/6 | #505 | llama-server-client — `grammar` field for GBNF-constrained decoding | MERGED |
+| CoD 3/6 | #506 | cod-prompts — v8 baseline + v14 word-hints + v2.3 GBNF | MERGED |
+| CoD 4/6 | #508 | DSL AST → MergedExtractionResult adapter + dsl-parser-mcp client | MERGED |
+| CoD 5/6 | #509 | CpuDslExtractionService — llama-server + GBNF + DSL pipeline | MERGED |
+| CoD 6/6 | #510 | cutover `Extraction__Backend=LlamaServerDsl` + Phase 5.8 demo (FAIL 0/10) | **OPEN** |
+
+### 17.2 Demo verdict trajectory
+
+| Run | PR | Path | Verdict | Cells | Trigger |
+|---|---|---|---|---|---|
+| 1 | #489 OPEN | GPU V2 baseline | FAIL | 0/10 | Initial demo; harness attribution + secmaster alias gaps surfaced. |
+| 2 | #494 CLOSED | GPU V2 | FAIL | 0/10 | Re-run after PR #492 (secmaster exhaust-all-lookups). |
+| 3 | #496 CLOSED | GPU V2 | FAIL | 0/10 | Re-run after PR #495 (secmaster case-insensitive alias). |
+| 4 | #499 CLOSED | GPU V2 | **PROGRESS** | 3/10 | First non-zero — after PR #497 (prepass entity bag) + PR #498 (deterministic V2 extractor). |
+| 5 | #510 OPEN | CPU CoD cutover | FAIL | 0/10 | Backend=LlamaServerDsl active; regression vs #499 — see 17.3. |
+
+### 17.3 Diagnosed gaps preventing cell production on CPU CoD path
+
+Three independent gaps explain the #510 0/10 regression vs the #499 GPU V2 3/10 progress:
+
+1. **v8 DSL emits no `source_entity` slot.** The `DslToMergedExtractionAdapter` (PR #508)
+   maps the v8 DSL AST into `MergedExtractionResult`, but the v8 grammar (PR #506) has no
+   `source_entity` production. Downstream `EntityResolver` therefore sees no entity to
+   resolve → cascade exhausts → `entity_resolution_exhausted` drop fires before the other
+   four filter reasons get a chance. Fix: add `source_entity` to the v8 GBNF (or carry
+   the entity-bag prepass output directly into MergedExtraction, bypassing the v8 slot).
+2. **Gemini fallback not wired into the DSL adapter cascade.** Stage 3 Gemini fallback
+   exists on the V2-JSON path but `DslToMergedExtractionAdapter` (PR #508) does not consult
+   it — so the cascade short-circuits earlier on the CPU CoD path than on the V2 path. Fix:
+   port the Stage 3 invocation into the DSL adapter.
+3. **3/10 articles TIMEOUT under CPU CoD per-article budget.** Larger articles + GBNF
+   sampling overhead push past the wall-time budget inherited from the V2 path. Fix: bump
+   the per-article timeout on the CPU backend (or strip GBNF overhead via grammar
+   compilation cache).
+
+### 17.4 Pending fork decision
+
+Surfaced via NTFY `z37K6aploLgM`. Three options on the table:
+
+- **A) Polish PRs (~3–4 hr).** Fix gaps 1–3, re-run Phase 5.8 demo on PR #510, target
+  cells>0 verdict, then merge.
+- **B) Rollback to GPU V2.** Revert PR #510 cutover (keep PRs #505–#509 infrastructure),
+  accept GPU V2 path as production, defer CPU CoD to a follow-up cycle.
+- **C) Accept the milestone.** Merge PR #510 as-is, treat Phase 5 as "infrastructure
+  complete + cell production deferred", land closing tag and revisit in Phase 6.
+
+User decision pending. Until resolved, this plan stays IMPLEMENTED but not CLOSED, and
+PR #510 stays OPEN.
