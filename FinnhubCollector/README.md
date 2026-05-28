@@ -4,90 +4,100 @@ Market data collector service for the Finnhub API.
 
 ## Overview
 
-FinnhubCollector ingests diverse market data including stock quotes, candles, news sentiment, analyst ratings, economic calendars, and earnings calendars from the Finnhub API. It operates under a strict rate limit (60 requests/minute), stores data in TimescaleDB, and streams observation events to downstream consumers via gRPC. The service integrates with SecMaster for instrument registration and exports telemetry to the observability stack.
+FinnhubCollector ingests market data including stock quotes, candles, news/insider sentiment, analyst recommendations & price targets, economic events, earnings, and IPO calendars from the Finnhub API. It enforces a 60 requests/minute token-bucket rate limit, persists data via EF Core to TimescaleDB, and streams observation events to downstream consumers over gRPC. It optionally registers instruments with SecMaster and exports telemetry (traces, metrics, logs) to the OTEL collector.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     FH[Finnhub API] -->|HTTP/JSON| FC[FinnhubCollector]
-    FC -->|Store| DB[(TimescaleDB)]
+    FC -->|EF Core| DB[(TimescaleDB)]
     FC -->|gRPC Stream| TE[ThresholdEngine]
-    FC -->|Register| SM[SecMaster]
+    FC -->|gRPC Register| SM[SecMaster]
     FC -->|OTLP| OC[otel-collector]
 ```
 
-Data flows from the Finnhub API through scheduled background collection into TimescaleDB. Each collected observation is published to an internal channel, then streamed via gRPC to ThresholdEngine for threshold evaluation. Instruments are registered with SecMaster on first collection. Live data endpoints bypass storage and query Finnhub directly.
+Scheduled background workers poll configured series via the rate-limited HTTP client and persist results. Each successful collection is published to an in-memory channel and streamed via gRPC to ThresholdEngine. Live-data endpoints bypass storage entirely and proxy directly to Finnhub. Migrations are applied at startup (`Program.cs:141`).
 
 ## Features
 
-- **Data Collection**: Automated background collection of configured series (quotes, sentiment, calendars, analyst data)
-- **Live Data API**: On-demand queries directly to Finnhub API bypassing local storage
-- **Admin API**: Series management (add, toggle, delete, trigger collection, check status)
-- **Rate Limiting**: Token bucket algorithm enforcing 60 requests/minute
-- **gRPC Streaming**: Real-time observation events to downstream services
-- **SecMaster Integration**: Automatic instrument registration via gRPC
-- **Resilience**: Retry policies with exponential backoff and circuit breaker
-- **Full Observability**: Distributed tracing, metrics, and structured logging via OTLP
+- **Background Collection**: `QuoteCollectionWorker` polls configured series on per-series schedules
+- **Live Data API**: On-demand pass-through to Finnhub (`/api/live/*`), no storage
+- **Admin API**: Add/toggle/delete series; trigger ad-hoc collection via bounded queue with duplicate-suppression
+- **Token-Bucket Rate Limiting**: 60 req/min default (Finnhub free tier), tunable via `RATE_LIMITER_CAPACITY`
+- **gRPC Streaming**: `ObservationEventStream` service for real-time + historical event consumption
+- **SecMaster Integration**: Optional series registration when `SECMASTER_GRPC_ENDPOINT` is set
+- **Resilience**: Polly retry (3x, exponential), circuit breaker (5 failures / 60s break), 30s timeout
+- **Observability**: OpenTelemetry traces + metrics, Serilog → OTLP, ASP.NET health checks
 
 ## Configuration
+
+Required:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ConnectionStrings__AtlasDb` | PostgreSQL/TimescaleDB connection string | Required |
-| `Finnhub__ApiKey` | API key from finnhub.io | Required |
-| `Finnhub__BaseUrl` | Finnhub API base URL | `https://finnhub.io/api/v1/` |
-| `RATE_LIMITER_CAPACITY` | Requests per minute | `60` |
-| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `finnhub-collector-service` |
-| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
-| `DB_HOST` | PostgreSQL host (used when no `ConnectionStrings__*` is configured) | `timescaledb` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_USER` | PostgreSQL user | `ai_inference` |
-| `DB_PASSWORD` | PostgreSQL password | (from ansible-vault) |
-| `DB_NAME` | PostgreSQL database name | `atlas_data` |
-| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint (optional) | - |
-| `Kestrel__HttpPort` | HTTP API port | `8080` |
-| `Kestrel__GrpcPort` | gRPC streaming port | `5001` |
+| `Finnhub__ApiKey` (alias `FINNHUB_API_KEY`) | API key from finnhub.io | Required |
+
+Optional:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `Finnhub__BaseUrl` (alias `FINNHUB_API_BASE_URL`) | Finnhub API base URL | `https://finnhub.io/api/v1/` |
+| `RATE_LIMITER_CAPACITY` | Token bucket capacity per minute | `60` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint; omit to disable registration | unset (disabled) |
+| `Kestrel__HttpPort` | HTTP listen port | `8080` |
+| `Kestrel__GrpcPort` | gRPC listen port (HTTP/2) | `5001` |
+| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint | `http://otel-collector:4317` |
+| `OpenTelemetry__ServiceName` | Service name for OTEL resource attributes | `finnhub-collector-service` |
+| `OpenTelemetry__ServiceVersion` | Service version for OTEL resource attributes | `1.0.0` |
+| `BackgroundCollection__MaxQueueSize` | Max pending ad-hoc collection requests | `100` |
+| `BackgroundCollection__MaxResultsCache` | Max retained collection-result entries | `1000` |
+
+Notes:
+- Database access is configured solely via the `ConnectionStrings__AtlasDb` connection string. There are no `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` environment variables in this service.
+- In production (`/opt/ai-inference/compose.yaml`), `OpenTelemetry__ServiceName` is overridden to `finnhub-collector`.
 
 ## API Endpoints
 
-REST surface lives in `src/Endpoints/` — public read APIs (`ApiEndpoints`), live direct-from-Finnhub queries (`LiveDataEndpoints` — route group `/api/live`), and admin/management routes (`AdminEndpoints`). The Live Data API bypasses local storage and proxies straight to Finnhub for symbols that aren't part of the configured collection set.
+REST endpoints live in `src/Endpoints/` (`ApiEndpoints`, `LiveDataEndpoints`, `AdminEndpoints`). The Live Data group always proxies directly to Finnhub and never reads/writes the database.
 
 ### REST API (Port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Full health check |
+| `/health` | GET | Full health check (includes DB) |
 | `/health/ready` | GET | Readiness probe |
 | `/health/live` | GET | Liveness probe |
-| `/api/series` | GET | Get active series |
-| `/api/series/{seriesId}` | GET | Get specific series |
-| `/api/quotes/{symbol}` | GET | Get latest quote |
-| `/api/quotes/{symbol}/history` | GET | Get quote history |
-| `/api/calendar/economic` | GET | Economic calendar events |
-| `/api/calendar/economic/high-impact` | GET | High-impact economic events |
-| `/api/calendar/earnings` | GET | Earnings calendar |
-| `/api/calendar/ipo` | GET | IPO calendar |
-| `/api/sentiment/{symbol}/news` | GET | News sentiment |
-| `/api/sentiment/{symbol}/insider` | GET | Insider sentiment |
-| `/api/analyst/{symbol}/recommendations` | GET | Analyst recommendations |
-| `/api/analyst/{symbol}/price-target` | GET | Price target |
-| `/api/company/{symbol}` | GET | Company profile |
-| `/api/market/status` | GET | Market status |
-| `/api/symbols/search` | GET | Symbol search |
-| `/api/search` | GET | Unified search (SecMaster gateway) |
-| `/api/discover` | GET | Upstream symbol discovery |
-| `/swagger` | GET | API documentation |
+| `/api/health` | GET | Lightweight static health response |
+| `/api/series` | GET | List configured series (optional `?type=` filter) |
+| `/api/series/{seriesId}` | GET | Get a specific series |
+| `/api/quotes/{symbol}` | GET | Latest stored quote |
+| `/api/quotes/{symbol}/history` | GET | Stored quote history (`?from=&to=` ISO dates) |
+| `/api/calendar/economic` | GET | Upcoming economic events (`?days=7`) |
+| `/api/calendar/economic/high-impact` | GET | High-impact economic events (`?from=&to=`) |
+| `/api/calendar/earnings` | GET | Upcoming earnings (`?days=7`) |
+| `/api/calendar/ipo` | GET | Upcoming IPOs (`?days=30`) |
+| `/api/sentiment/{symbol}/news` | GET | Stored news sentiment |
+| `/api/sentiment/{symbol}/insider` | GET | Stored insider sentiment |
+| `/api/analyst/{symbol}/recommendations` | GET | Stored analyst recommendations |
+| `/api/analyst/{symbol}/price-target` | GET | Stored price target |
+| `/api/company/{symbol}` | GET | Stored company profile |
+| `/api/market/status` | GET | Live market status (proxied; `?exchange=US`) |
+| `/api/symbols/search` | GET | Symbol search via Finnhub (`?q=`) |
+| `/api/search` | GET | Unified search of local series (SecMaster gateway; `?q=&limit=`) |
+| `/api/discover` | GET | Upstream symbol discovery via Finnhub (`?q=&limit=`) |
+| `/api/backfill/sectors` | POST | Re-register all active series with SecMaster, populating sector from Finnhub profiles |
+| `/swagger` | GET | OpenAPI/Swagger UI |
 
 ### Live Data API (Direct Finnhub Queries)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/live/quote/{symbol}` | GET | Live quote |
-| `/api/live/candles/{symbol}` | GET | Live OHLCV candles |
+| `/api/live/candles/{symbol}` | GET | Live OHLCV candles (`?resolution=D&days=30`) |
 | `/api/live/profile/{symbol}` | GET | Live company profile |
-| `/api/live/recommendation/{symbol}` | GET | Live recommendations |
+| `/api/live/recommendation/{symbol}` | GET | Live recommendation trends |
 | `/api/live/price-target/{symbol}` | GET | Live price target |
 | `/api/live/news-sentiment/{symbol}` | GET | Live news sentiment |
 | `/api/live/peers/{symbol}` | GET | Live company peers |
@@ -96,43 +106,47 @@ REST surface lives in `src/Endpoints/` — public read APIs (`ApiEndpoints`), li
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/admin/series` | GET | Get all series (including inactive) |
-| `/api/admin/series` | POST | Add new series |
-| `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable series |
-| `/api/admin/series/{seriesId}` | DELETE | Delete series |
-| `/api/admin/series/{seriesId}/collect` | POST | Trigger collection |
-| `/api/admin/series/{seriesId}/collect/status` | GET | Collection status |
+| `/api/admin/series` | GET | All series (including inactive) |
+| `/api/admin/series` | POST | Add a new series |
+| `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable a series |
+| `/api/admin/series/{seriesId}` | DELETE | Delete a series |
+| `/api/admin/series/{seriesId}/collect` | POST | Queue immediate collection (returns 429 if queue full or already queued) |
+| `/api/admin/series/{seriesId}/collect/status` | GET | Last queued/collection result for a series |
 
 ### gRPC Services (Port 5001)
 
+Service contract: `ATLAS.Events.Grpc.ObservationEventStream` (see `Events/src/Events/Protos/observation_events.proto`). gRPC reflection is enabled.
+
 | Service | Method | Description |
 |---------|--------|-------------|
-| `ObservationEventStream` | `SubscribeToEvents` | Real-time event subscription |
-| `ObservationEventStream` | `GetEventsSince` | Historical events since timestamp |
-| `ObservationEventStream` | `GetEventsBetween` | Events within time range |
-| `ObservationEventStream` | `GetLatestEventTime` | Most recent event timestamp |
-| `ObservationEventStream` | `GetHealth` | Service health with statistics |
+| `ObservationEventStream` | `SubscribeToEvents` | Subscribe from a checkpoint and stream ongoing events |
+| `ObservationEventStream` | `GetEventsSince` | Stream historical events since a timestamp |
+| `ObservationEventStream` | `GetEventsBetween` | Stream events within a time range |
+| `ObservationEventStream` | `GetLatestEventTime` | Timestamp of most recent event |
+| `ObservationEventStream` | `GetHealth` | Service health + event statistics |
 
 ## Project Structure
 
 ```
 FinnhubCollector/
 ├── src/
-│   ├── Api/              # Finnhub HTTP client
-│   ├── Data/             # EF Core DbContext, repositories, migrations
-│   ├── Endpoints/        # REST endpoints (API, Live, Admin)
-│   ├── Events/           # Observation channel
-│   ├── Grpc/             # gRPC services and repositories
-│   ├── HealthChecks/     # Database health check
+│   ├── Api/              # Finnhub HTTP client + FinnhubApiClientOptions
+│   ├── Data/             # EF Core DbContext + repositories
+│   ├── Endpoints/        # ApiEndpoints, LiveDataEndpoints, AdminEndpoints
+│   ├── Events/           # In-memory observation channel
+│   ├── Grpc/             # EventStreamService + gRPC repositories
+│   ├── HealthChecks/     # DatabaseHealthCheck
 │   ├── Interfaces/       # Service contracts
-│   ├── Models/           # Domain models
-│   ├── Services/         # Application services, rate limiter
-│   ├── Telemetry/        # OpenTelemetry instrumentation
-│   ├── Workers/          # Background collection worker
-│   └── Program.cs        # Application entry point
+│   ├── Models/           # Domain models (Series, Quote, Sentiment, ...)
+│   ├── Services/         # SeriesManagementService, BackgroundCollectionQueue, TokenBucketRateLimiter
+│   ├── Telemetry/        # FinnhubActivitySource + FinnhubMeter
+│   ├── Workers/          # QuoteCollectionWorker (background poller)
+│   ├── DependencyInjection.cs
+│   └── Program.cs
+├── migrations/           # SQL inspection helpers (schema is managed by EF Core)
 ├── mcp/                  # MCP server for AI assistants
 ├── tests/                # Unit and integration tests
-└── .devcontainer/        # Development container
+└── .devcontainer/        # Devcontainer + build/compile scripts
 ```
 
 ## Development
@@ -140,22 +154,23 @@ FinnhubCollector/
 ### Prerequisites
 
 - VS Code with Dev Containers extension
-- Access to shared infrastructure (PostgreSQL, observability stack)
+- Access to shared infrastructure (TimescaleDB, observability stack)
+- Finnhub API key (free tier sufficient)
 
 ### Getting Started
 
-1. Open in VS Code: `code FinnhubCollector/`
+1. Open the monorepo in VS Code (the devcontainer expects the ATLAS root as build context)
 2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
-3. Build: `dotnet build`
-4. Run: `dotnet run`
+3. Build: `dotnet build src/FinnhubCollector.csproj`
+4. Run: `dotnet run --project src/FinnhubCollector.csproj`
 
 ### Build Commands
 
 ```bash
-# Compile and test
+# Compile + tests (run from FinnhubCollector/)
 .devcontainer/compile.sh
 
-# Build container image
+# Build container image (run from FinnhubCollector/; uses monorepo root as build context)
 .devcontainer/build.sh
 ```
 
@@ -169,12 +184,14 @@ ansible-playbook playbooks/deploy.yml --tags finnhub-collector
 
 | Port | Type | Description |
 |------|------|-------------|
-| 8080 | HTTP (internal) | REST API, health checks |
-| 5001 | HTTP/2 (internal) | gRPC event stream |
+| 8080 | HTTP/1.1 (internal) | REST API, health checks, Swagger |
+| 5001 | HTTP/2 (internal) | gRPC `ObservationEventStream` |
+
+No host-mapped ports; access is container-to-container only. The `finnhub-mcp` sidecar (separate compose service) exposes the MCP transport.
 
 ## See Also
 
 - [ThresholdEngine](../ThresholdEngine/README.md) - Consumes observation events
-- [SecMaster](../SecMaster/README.md) - Instrument registration
-- [Events](../Events/README.md) - Shared gRPC event contracts
-- [FinnhubMcp](mcp/README.md) - MCP server for AI assistants
+- [SecMaster](../SecMaster/README.md) - Instrument registration target
+- [Events](../Events/README.md) - Shared gRPC contracts (`observation_events.proto`, `secmaster.proto`)
+- [FinnhubMcp](mcp/README.md) - MCP server fronting this collector
