@@ -1,6 +1,9 @@
 # ATLAS — DSL Extraction PoC Plan
 
 **Status:** PoC, exploratory. Iterate freely; data drives the next step.
+
+> **As of 2026-05-27**: Phases 0-4 PASS at recalibrated gates; Phase 5 implementation shipped (8 sub-phases) but demo at 0/10 cells. See [phase5-matrix-integration.md] §17 for current diagnosis.
+
 **Goal:** CPU extraction → GPU verification pipeline that emits validated facts to the signal × sector × industry × time matrix with sufficient fidelity to feed scoring. North-star metric: per-article numeric+entity recall on financial news, with provenance traceable to a source span.
 **Non-goal:** premature production deployment. Production prompts at `/opt/ai-inference/prompts/` are not touched in this plan.
 
@@ -185,7 +188,7 @@ Budget cap: $5 in Foundry credits. Stop if exceeded.
 
 **Premise:** the v1 grammar is a context-free grammar; we should not be teaching it to the model with examples and hoping. We should make it impossible for the decoder to emit invalid syntax.
 
-**Inference target:** CPU/ollama (`ollama-cpu-gen`, qwen3:30b-a3b), same target as Phase 1.x. Extraction is the CPU layer in the corrected topology; the GPU (vllm-server, `sentinel-cove-v6.2`) hosts CoVE / verification (Phase 4), not extraction. Do not move Phase 2 to vLLM "for grammar support" — llama.cpp (ollama's backend) supports GBNF natively.
+**Inference target:** CPU/ollama (`ollama-cpu-gen`, qwen3:30b-a3b), same target as Phase 1.x. Extraction is the CPU layer in the corrected topology; the GPU (vllm-server, `Qwen/Qwen2.5-32B-Instruct-AWQ`) hosts CoVE / verification (Phase 4), not extraction. Do not move Phase 2 to vLLM "for grammar support" — llama.cpp (ollama's backend) supports GBNF natively.
 
 ### 5.1 Convert v1 DSL grammar to GBNF
 
@@ -430,8 +433,8 @@ Claude Code should pause and surface these rather than deciding alone:
    (overfit the prose CoD shape, lost recall on the underlying facts). If we
    revisit LoRA, the loss function must include verbatim-copy + source-span
    fidelity terms. Decision: pursue this before or after Phase 4?
-4. **Foundry vs local Claude for semantic verification.** Cost vs latency vs Anthropic API dependency. Need an architectural call.
-5. **NAICS vs GICS for the matrix taxonomy.** ATLAS docs reference both. Lock one before Phase 4.
+4. **Foundry vs local Claude for semantic verification.** ~~Cost vs latency vs Anthropic API dependency. Need an architectural call.~~ **RESOLVED (Phase 4.7):** production uses local vLLM (`Qwen/Qwen2.5-32B-Instruct-AWQ` on `vllm-server`); Foundry retained only for offline labeling / oracle judging.
+5. **NAICS vs GICS for the matrix taxonomy.** ~~ATLAS docs reference both. Lock one before Phase 4.~~ **RESOLVED:** NAICS, per `Events/src/Events/MatrixCellUpdate.cs` (`SectorCode` = NAICS 2-digit; `IndustryCode` = NAICS 3/4/6-digit) and `ThresholdEngine/src/Data/Entities/MatrixCellEntity.cs`.
 
 ---
 
