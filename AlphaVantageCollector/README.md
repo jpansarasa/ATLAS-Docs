@@ -1,141 +1,163 @@
 # AlphaVantageCollector
 
-Collector service for Alpha Vantage market data with strict rate limiting and priority-based scheduling.
+Collector service for Alpha Vantage market data with strict daily-quota enforcement, token-bucket rate limiting, and priority-based scheduling.
 
 ## Overview
 
-AlphaVantageCollector fetches financial and economic data from Alpha Vantage, including commodities, economic indicators, equities, forex, and cryptocurrencies. It implements priority-based scheduling to efficiently work within the free tier limit (25 requests/day). Integrates with ThresholdEngine via gRPC streaming, SecMaster for instrument registration, and CalendarService for market holidays.
+AlphaVantageCollector fetches commodities, economic indicators, equities (OHLCV), forex, and crypto from the Alpha Vantage HTTP API and persists them to TimescaleDB. A background worker (`CollectionWorker`) ticks every 4 hours, asks the scheduler for at most 4 series due for collection (priority-ordered), and pulls them respecting a 25-request daily cap. Downstream consumers subscribe to a gRPC `ObservationEventStream` for change notifications. SecMaster instrument registration is optional and fire-and-forget.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
     subgraph Inputs
-        AV[Alpha Vantage API]
-        CAL[CalendarService]
+        AV[Alpha Vantage HTTP API]
+        CAL[CalendarService<br/>CME computational holidays]
     end
 
     subgraph AlphaVantageCollector
-        SCHED[Scheduler]
-        API[API Client]
-        REPO[Repository]
+        WORKER[CollectionWorker<br/>4h tick, 4 req/cycle]
+        SCHED[CollectionScheduler<br/>priority + interval]
+        API[AlphaVantageApiClient<br/>token bucket + daily quota]
+        REPO[AlphaVantageRepository]
+        ADMIN[Admin REST API<br/>add/toggle/delete series]
+        STREAM[ObservationEventStreamService<br/>gRPC]
     end
 
     subgraph Outputs
-        DB[(TimescaleDB)]
-        TE[ThresholdEngine]
-        SM[SecMaster]
-        OTEL[OpenTelemetry]
+        DB[(TimescaleDB<br/>observations + ohlcv + series)]
+        TE[ThresholdEngine<br/>subscribes via gRPC]
+        SM[SecMaster<br/>optional fire-and-forget]
+        OTEL[OTLP collector<br/>traces + metrics + logs]
     end
 
-    AV -->|HTTP/JSON| API
-    CAL -->|CME Holidays| SCHED
-    SCHED --> API --> REPO
-    REPO -->|Store| DB
-    REPO -->|gRPC Stream| TE
-    API -->|Register| SM
-    SCHED -->|Metrics/Traces| OTEL
+    CAL --> WORKER
+    WORKER --> SCHED --> REPO
+    WORKER --> API
+    API -->|HTTPS/JSON| AV
+    API --> REPO --> DB
+    ADMIN --> REPO
+    ADMIN -.optional.-> SM
+    TE -->|SubscribeToEvents| STREAM
+    STREAM --> REPO
+    WORKER --> OTEL
+    API --> OTEL
+    STREAM --> OTEL
 ```
 
-The scheduler prioritizes series collection within the daily API limit, skipping market holidays. New observations are stored in TimescaleDB and streamed to ThresholdEngine for real-time analysis.
+The worker skips entire cycles on CME market holidays. The scheduler returns series whose `Interval` has elapsed since `LastCollectedAt`, ordered by `Priority` ascending then by oldest `LastCollectedAt`. The gRPC stream service polls the repository every 5s and emits an `Event` per newly-collected observation per subscribed series.
 
 ## Features
 
-- **Multi-Asset Support**: Commodities, economic indicators, equities (OHLCV), forex, crypto, technical indicators
-- **Priority Scheduling**: High-priority series collected more frequently based on configurable intervals
-- **Rate Limiting**: Enforces 25 requests/day limit with intelligent scheduling
-- **Market Calendar**: Skips collection on CME market holidays via CalendarService
-- **Real-time Streaming**: gRPC event stream for downstream consumers (ThresholdEngine)
-- **SecMaster Integration**: Automatic instrument registration via gRPC
-- **Admin API**: Dynamic series management without service restart
-- **Symbol Discovery**: Search upstream Alpha Vantage API for new instruments
+- **Multi-asset endpoints**: commodities, economic indicators, equities OHLCV (daily/weekly/monthly, adjusted variants), forex (rate + OHLC daily), crypto daily, symbol search
+- **Hard daily quota**: free-tier 25 requests/day enforced in-process by `AlphaVantageApiClient` (resets at UTC midnight)
+- **Token-bucket rate limiter**: 5-token bucket, 1 token replenished/minute (smooths bursts under the daily cap)
+- **Priority + interval scheduling**: `daily`/`weekly`/`monthly`/`quarterly`/`annual` cadences with priority tiebreak
+- **CME holiday awareness**: `CalendarService.Core` computational holidays via `MarketCalendarAdapter`
+- **gRPC change stream**: `SubscribeToEvents` (long-poll, 5s tick) + `GetEventsSince` (one-shot range) + `GetHealth`
+- **Admin REST API**: add / toggle / delete series at runtime (`/api/admin/series`)
+- **Symbol discovery**: `/api/discover` proxies Alpha Vantage `SYMBOL_SEARCH`
+- **Optional SecMaster registration**: fire-and-forget on series add; service runs fine without `SECMASTER_GRPC_ENDPOINT`
+
+> Note: `SeriesType.TechnicalIndicator` is defined and routable via the admin API but the `CollectionWorker` has no branch for it - adding a technical-indicator series will log `Unknown series type` each cycle. Treat as scaffolded-only.
 
 ## Configuration
 
+All env vars use `__` (double underscore) as the `:` separator per .NET configuration binding.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | Required |
-| `AlphaVantage__ApiKey` | API key from alphavantage.co | Required |
-| `AlphaVantage__DailyLimit` | Max requests per day | `25` |
-| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `alphavantage-collector` |
-| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
-| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:5001` |
+| `ConnectionStrings__AtlasDb` | PostgreSQL/TimescaleDB connection string | Required (validated at startup) |
+| `AlphaVantage__ApiKey` | API key from alphavantage.co | Required (validated at startup) |
+| `AlphaVantage__BaseUrl` | Alpha Vantage API base URL | `https://www.alphavantage.co/query` |
+| `AlphaVantage__DailyLimit` | Max requests per UTC day | `25` |
+| `AlphaVantage__MaxRetries` | Max retry attempts (currently unused by client) | `2` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint for instrument registration | Unset = registration disabled |
+| `OpenTelemetry__OtlpEndpoint` | OTLP gRPC collector endpoint (traces, metrics, logs) | `http://otel-collector:4317` |
+| `OpenTelemetry__ServiceName` | `service.name` resource attribute | `alphavantage-collector` |
+| `OpenTelemetry__ServiceVersion` | `service.version` resource attribute | `1.0.0` |
+| `ASPNETCORE_URLS` | Kestrel bind URLs (set in Containerfile) | `http://+:8080;http://+:5001` |
+| `ASPNETCORE_ENVIRONMENT` | Standard ASP.NET environment selector | `Production` (in compose) |
 
 ## API Endpoints
 
-### REST API (Port 8080)
+### REST API (Port 8080, internal)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/series` | GET | List all active series |
-| `/api/series/{seriesId}` | GET | Get specific series details |
-| `/api/series/{seriesId}/observations` | GET | Get observations with date filtering |
-| `/api/series/{seriesId}/latest` | GET | Get latest observation |
-| `/api/search` | GET | Unified search for SecMaster gateway |
-| `/api/discover` | GET | Search upstream Alpha Vantage API |
-| `/health` | GET | Health check with database status |
-| `/health/ready` | GET | Readiness probe |
-| `/health/live` | GET | Liveness probe |
+| `/api/search` | GET | Local DB title/symbol search; shape: `{ Query, Count, Results[{SeriesId, Title, Interval}] }`. Used by SecMaster gateway. |
+| `/api/discover` | GET | Proxies Alpha Vantage upstream `SYMBOL_SEARCH` |
+| `/api/health` | GET | Custom JSON health (always 200 if process is up) |
+| `/api/series` | GET | List active series |
+| `/api/series/{seriesId}` | GET | Get a specific series |
+| `/api/series/{seriesId}/observations` | GET | Get observations (OHLCV shape for Equity/Forex/Crypto, scalar shape otherwise; `startDate`, `endDate`, `limit` query params) |
+| `/api/series/{seriesId}/latest` | GET | Latest observation (OHLCV or scalar by type) |
+| `/api/admin/series` | GET | List all series (active + inactive) with priority |
+| `/api/admin/series` | POST | Add new series (body: `{ Symbol, Type, Title?, Priority? }`) |
+| `/api/admin/series/{seriesId}/toggle` | PUT | Flip `IsActive` |
+| `/api/admin/series/{seriesId}` | DELETE | Delete a series |
+| `/health` | GET | Aggregate health check (includes deep DB check, tagged `ready`,`db`) |
+| `/health/ready` | GET | Readiness probe (filters checks by `ready` tag) |
+| `/health/live` | GET | Liveness probe (no checks; always returns healthy if process responds) |
 
-### Admin API
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/admin/series` | GET | List all configured series |
-| `/api/admin/series` | POST | Add new series |
-| `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable series |
-| `/api/admin/series/{seriesId}` | DELETE | Delete series |
-
-### gRPC Services (Port 5001)
+### gRPC Services (Port 5001, internal)
 
 | Service | Method | Description |
 |---------|--------|-------------|
-| `ObservationEventStream` | `SubscribeToEvents` | Stream observation events in real-time |
-| `ObservationEventStream` | `GetEventsSince` | Get events from a specific time |
-| `ObservationEventStream` | `GetHealth` | gRPC health check |
+| `ATLAS.Events.Grpc.ObservationEventStream` | `SubscribeToEvents` | Server-streaming long-poll (5s tick). Filters by optional `SeriesIds`; emits one `Event` per new observation per series. |
+| `ATLAS.Events.Grpc.ObservationEventStream` | `GetEventsSince` | One-shot range stream from a timestamp; optional series filter and `Limit` cap. |
+| `ATLAS.Events.Grpc.ObservationEventStream` | `GetHealth` | gRPC-side health response (currently returns `Healthy=true`, `TotalEvents=0`, `LatestEventTime=now`). |
+
+`Event` payload is `SeriesCollectedEvent` (series ID + collected-at timestamp); consumers fetch the actual values via REST or repository.
 
 ## Project Structure
 
 ```
 AlphaVantageCollector/
-├── src/
-│   ├── Api/              # Alpha Vantage API client
-│   ├── Data/             # EF Core DbContext and repository
-│   ├── Grpc/             # gRPC event stream service
-│   ├── HealthChecks/     # Database health check
-│   ├── Interfaces/       # Service contracts
-│   ├── Models/           # Domain models
-│   ├── Services/         # Scheduler, series management
-│   ├── Telemetry/        # OpenTelemetry instrumentation
-│   └── Workers/          # Background collection worker
-├── tests/                # Unit and integration tests
-├── migrations/           # Database migrations
-└── .devcontainer/        # Dev container config
+|-- src/
+|   |-- AlphaVantageCollector.csproj
+|   |-- Program.cs
+|   |-- Containerfile               # multi-stage: build / development / runtime
+|   |-- appsettings.json
+|   |-- appsettings.Development.json
+|   |-- Api/                        # AlphaVantageApiClient + options (token bucket, daily quota)
+|   |-- Data/                       # EF Core DbContext, design-time factory, repository
+|   |-- Grpc/                       # ObservationEventStreamService
+|   |-- HealthChecks/               # DatabaseHealthCheck (deep DB check)
+|   |-- Interfaces/                 # service contracts
+|   |-- Models/                     # AlphaVantageSeries, AlphaVantageObservation, OhlcvObservation, SeriesType, SymbolSearchResult
+|   |-- Services/                   # CollectionScheduler, SeriesManagementService, MarketCalendarAdapter
+|   |-- Telemetry/                  # AlphaVantageActivitySource, AlphaVantageMeter
+|   `-- Workers/                    # CollectionWorker (background service)
+|-- tests/                          # Unit + integration tests
+|-- migrations/                     # Raw .sql migration scripts (001_initial_schema.sql, 002_add_ohlcv_and_series.sql)
+`-- .devcontainer/                  # devcontainer.json, compose.yaml, compile.sh, build.sh
 ```
+
+> Note: `migrations/` contains hand-written SQL, not EF migrations. The ATLAS convention (CLAUDE.md `DATABASE [ef_core]`) is EF-managed migrations; this service predates that convention and has not been migrated.
 
 ## Development
 
 ### Prerequisites
 
 - VS Code with Dev Containers extension
-- Access to shared infrastructure (PostgreSQL, observability stack)
+- Access to shared infrastructure (TimescaleDB, OTEL collector)
 
 ### Getting Started
 
 1. Open in VS Code: `code AlphaVantageCollector/`
 2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
-3. Build: `dotnet build`
-4. Run: `dotnet run`
+3. Build: `dotnet build src/AlphaVantageCollector.csproj`
+4. Run: `dotnet run --project src/AlphaVantageCollector.csproj`
 
 ### Build Scripts
 
 ```bash
-# Compile and test
-.devcontainer/compile.sh
+# Compile + run tests (used by git-push-guard)
+AlphaVantageCollector/.devcontainer/compile.sh
 
-# Build container image
-.devcontainer/build.sh
+# Build production container image (alphavantage-collector:latest)
+AlphaVantageCollector/.devcontainer/build.sh
 ```
 
 ## Deployment
@@ -144,18 +166,20 @@ AlphaVantageCollector/
 ansible-playbook playbooks/deploy.yml --tags alphavantage-collector
 ```
 
+Image name: `alphavantage-collector:latest`. Container name: `alphavantage-collector`. Memory limit: 256M. CPU limit: 0.5. Restart policy: `unless-stopped`. Log mount: `/opt/ai-inference/logs/alphavantage-collector:/app/logs`.
+
 ## Ports
 
 | Port | Description |
 |------|-------------|
-| 8080 | REST API (internal) |
-| 5001 | gRPC event streaming (internal) |
+| 8080 | REST + health endpoints (internal, no host mapping) |
+| 5001 | gRPC `ObservationEventStream` (internal, no host mapping) |
 
-No host port mapping - internal service only.
+No host port mapping - reachable only by other containers on the compose network.
 
 ## See Also
 
-- [ThresholdEngine](../ThresholdEngine/README.md) - Consumes observation events
-- [SecMaster](../SecMaster/README.md) - Instrument registration
-- [CalendarService](../CalendarService/README.md) - Market calendar provider
-- [Events](../Events/README.md) - Shared gRPC event contracts
+- [ThresholdEngine](../ThresholdEngine/README.md) - Consumes `ObservationEventStream`
+- [SecMaster](../SecMaster/README.md) - Optional instrument registration target
+- [CalendarService](../CalendarService/README.md) - Provides CME computational holidays
+- [Events](../Events/README.md) - Shared gRPC event contracts (`ATLAS.Events.Grpc.ObservationEventStream`)
