@@ -2,60 +2,88 @@
 
 ## Overview
 
-ATLAS (Automated Threshold Logic and Alert System) is an event-driven platform for financial data collection, pattern evaluation, and regime detection. It ingests data from multiple sources, evaluates 62 configurable patterns, and delivers alerts when economic conditions change.
+ATLAS (Automated Threshold Logic and Alert System) is an event-driven platform for financial data collection, pattern evaluation, and per-sector regime detection. Collectors ingest from multiple sources, stream observation events to ThresholdEngine over gRPC, where 79 configurable patterns (72 enabled, 7 disabled) are evaluated by a Roslyn-compiled expression engine, projected onto the 11-sector ATLAS grid, persisted as matrix cells, and classified into per-sector regimes. SentinelCollector adds unstructured-content extraction via a CPU Chain-of-Density (CoD) DSL pipeline that grounds against a sidecar parser/verifier and a GPU vLLM verification step. Threshold-crossing events surface to Prometheus, which routes via Alertmanager into AlertService for ntfy/email/AutoFix delivery.
 
 ```mermaid
 flowchart LR
     subgraph Collection
         FC[FredCollector<br/>FRED API]
-        AV[AlphaVantageCollector<br/>Commodities/Forex]
-        FH[FinnhubCollector<br/>Stocks/Calendars]
+        AV[AlphaVantageCollector<br/>Commodities/Forex/Equities]
+        FH[FinnhubCollector<br/>Stocks/Calendars/Sentiment]
         OFR[OfrCollector<br/>FSI/STFM/HFM]
-        SC[SentinelCollector<br/>News/Sentiment]
-        CS[CalendarService<br/>Market Holidays]
+        SC[SentinelCollector<br/>SearXNG/RSS/Edge + CPU CoD DSL]
+        ND[NasdaqCollector<br/>disabled - WAF block]
+        CS[CalendarService<br/>NYSE holidays + FRED releases]
     end
 
     subgraph Metadata
-        SM[SecMaster<br/>Instrument Registry]
+        SM[SecMaster<br/>Instrument registry + resolution]
     end
 
     subgraph Evaluation
-        TE[ThresholdEngine<br/>62 patterns]
+        TE[ThresholdEngine<br/>79 patterns / 11 sectors / matrix cells]
     end
 
     subgraph Alerting
-        AS[AlertService<br/>ntfy + email]
+        PR[Prometheus]
+        AM[Alertmanager]
+        AS[AlertService<br/>ntfy + email + AutoFix]
     end
 
-    subgraph AI["AI Services"]
+    subgraph AI["Inference Services"]
+        LS[llama-server<br/>CPU - CoD DSL emit]
+        DSL[dsl-parser-mcp<br/>parse + verify]
+        VLLM[vllm-server<br/>GPU - verification + reports]
+        OG[ollama-cpu-gen<br/>CoD summarisation]
+        OE[ollama-cpu-embed<br/>SecMaster embeddings]
         WS[WhisperService<br/>Transcription]
-        FB[FinBertSidecar<br/>Embeddings]
-        OL[Ollama GPU<br/>LLM Extraction]
+        FB[FinBertSidecar<br/>FinBERT embeddings]
+        TRF[trafilatura<br/>HTML pre-wash]
+        SPACY[spacy-ner<br/>Entity NER]
+    end
+
+    subgraph Reports
+        RP[reports-daily/weekly/monthly<br/>Markdown + HTML]
     end
 
     subgraph MCP["MCP Servers (Claude)"]
-        FM[FredCollectorMcp]
-        TM[ThresholdEngineMcp]
-        FHM[FinnhubMcp]
-        OM[OfrMcp]
-        SMM[SecMasterMcp]
-        WSM[WhisperServiceMcp]
+        FM[fredcollector-mcp]
+        TM[thresholdengine-mcp]
+        FHM[finnhub-mcp]
+        OM[ofr-mcp]
+        SMM[secmaster-mcp]
+        WSM[whisper-service-mcp]
+        MM[markitdown-mcp]
+        GRM[gemini-resolver-mcp<br/>host systemd]
+        NTM[ntfy-mcp<br/>host stdio]
     end
 
     FC -->|gRPC stream| TE
     AV -->|gRPC stream| TE
     FH -->|gRPC stream| TE
     OFR -->|gRPC stream| TE
-    SC -->|gRPC stream| TE
-    FC -->|register series| SM
-    FH -->|register symbols| SM
-    OFR -->|register series| SM
-    SC -->|register series| SM
-    SC -->|extraction| OL
-    SM -->|embeddings| FB
-    TE -->|HTTP POST| AS
+    SC -->|gRPC ObservationEventStream<br/>+ MatrixUpdateStream| TE
+    FC -->|gRPC register| SM
+    FH -->|gRPC register| SM
+    OFR -->|gRPC register| SM
+    AV -->|gRPC register| SM
+    SC -->|REST + gRPC resolve| SM
+    SC --> LS
+    SC --> DSL
+    SC --> VLLM
+    SC --> TRF
+    SC --> SPACY
+    SC --> MM
+    SC -->|fallback resolver| GRM
+    SM --> OE
+    TE -->|gRPC + REST| SM
+    TE -->|metrics| PR
+    PR --> AM
+    AM -->|POST /alerts| AS
     AS --> N[ntfy.sh]
     AS --> E[Email]
+    AS --> AF[autofix-queue]
+    RP --> VLLM
 
     FC -.-> FM
     TE -.-> TM
@@ -69,84 +97,117 @@ flowchart LR
 
 ### Data Collectors
 
-| Service | Port (Internal) | Data Source | Key Data |
-|---------|-----------------|-------------|----------|
-| FredCollector | 8080, 5001 | Federal Reserve | 47 economic series |
-| AlphaVantageCollector | 8080, 5001 | Alpha Vantage | Commodities, forex |
-| FinnhubCollector | 8080, 5001 | Finnhub | Stock quotes, earnings, sentiment |
-| OfrCollector | 8080, 5001 | OFR.gov | Financial Stress Index, STFM, HFM |
-| SentinelCollector | 8080, 5001 | SearXNG + Ollama | News aggregation, LLM extraction |
-| CalendarService | 8080 | Nager.Date, Finnhub | Market holidays, economic events |
+| Service | Ports (internal) | Data Source | Key Data |
+|---------|------------------|-------------|----------|
+| FredCollector | 8080 / 5001 | Federal Reserve | Economic series (UNRATE, CPIAUCSL, GDP, etc.); optional MacroSubstrate dual-write |
+| AlphaVantageCollector | 8080 / 5001 | Alpha Vantage | Commodities, forex, equities (OHLCV), crypto, economic indicators |
+| FinnhubCollector | 8080 / 5001 | Finnhub | Stock quotes, candles, sentiment, analyst ratings, earnings/IPO calendars |
+| OfrCollector | 8080 / 5001 | OFR.gov | Financial Stress Index, STFM (short-term funding), HFM (hedge fund monitor) |
+| SentinelCollector | 8080 / 5001 / 5091 (host) | SearXNG / RSS / Cloudflare edge | News + filings + sentiment; CPU CoD DSL extraction → matrix cells |
+| NasdaqCollector | 8080 / 5001 (disabled) | Nasdaq Data Link | LBMA gold (compose entry commented out — datacenter IP blocked by WAF) |
+| CalendarService | 8080 | Nager.Date + FRED | NYSE trading days/holidays + FRED economic release schedule |
 
-Note: All collectors expose 8080 (REST) and 5001 (gRPC) internally. CalendarService only exposes REST (no gRPC streaming). SentinelCollector additionally exposes 5091 (host) for the Review UI.
+All `5001` ports speak gRPC `ObservationEventStream` (proto: `Events/src/Events/Protos/observation_events.proto`). SentinelCollector additionally exposes `MatrixUpdateStream` on `5001` and host-maps container `8080` to host `5091` for the browser-based review UI + digest pages.
 
 ### Processing & Alerting
 
-| Service | Port | Responsibility |
-|---------|------|----------------|
-| ThresholdEngine | 8080, 5001 (internal) | Pattern evaluation, regime detection, macro scoring |
-| AlertService | 8080 (internal) | Notification routing (ntfy, email) |
-| SecMaster | 8080, 5001 (internal) | Instrument metadata registry, series search, gRPC registration |
+| Service | Ports | Responsibility |
+|---------|-------|----------------|
+| ThresholdEngine | 8080 / 5001 (internal) | Roslyn pattern evaluation, 11-sector projection, matrix-cell persistence, per-sector regime classification, threshold-crossing event stream |
+| AlertService | 8080 (internal) | Webhook sink for Alertmanager; severity routing → ntfy / email / AutoFix; fingerprint+status dedup (30 min window) |
+| SecMaster | 8080 / 5001 (internal) | Instrument registry, context-aware source resolution, hybrid search (SQL + fuzzy + vector + RAG), OpenFIGI/EDGAR enrichment, ATLAS sector / NAICS classification |
 
-### AI Services
+### Substrate & Reports
+
+| Component | Type | Purpose |
+|-----------|------|---------|
+| MacroSubstrate | Library (no listener) | Shared EF writer for `atlas_data.macro_observations`; consumed by FredCollector, OfrCollector, SentinelCollector via DI. `migrate-macro-substrate` is a one-shot console host that owns schema deployment. |
+| Reports.DailyHost / WeeklyHost / MonthlyHost | Containers (internal :8080, scheduled) | Daily 02:00 UTC / Mon 02:00 UTC / 1st-of-month 02:00 UTC Markdown + HTML reports from MacroSubstrate; news summaries via vLLM. |
+| Events | Library | Shared gRPC protos (`observation_events.proto`) + `Events.Client` DTOs (incl. `AtlasSectorCode` enum). |
+| LlmBenchmark | xUnit harness (no listener) | Sentinel extraction-quality benchmarks (CoVe / CoD / epistemic markers) against a pinned golden dataset. |
+
+### AI / Inference Services
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| WhisperService | 8090 (host) | YouTube transcription via Whisper |
-| FinBertSidecar | 8080 (internal) | Financial text embeddings for SecMaster |
-| Ollama GPU | 11434 (host) | LLM inference (GPU) - SentinelCollector extraction, SecMaster queries |
-| Ollama CPU | 11435 (host) | LLM inference (CPU fallback) - embeddings |
+| WhisperService | 8090 (host + container) | YouTube transcription via faster-whisper (Python FastAPI) |
+| FinBertSidecar | 8080 (internal) | FinBERT 768-dim L2-normalized embeddings (CPU) |
+| vllm-server | 8000 (host) | GPU inference (Qwen2.5-32B-Instruct-AWQ) — Sentinel claim verification, Reports news summarisation |
+| llama-server | 11437 → 8080 (host) | CPU llama.cpp serving qwen3:30b-a3b — Sentinel CPU CoD DSL emission with GBNF grammar |
+| ollama-cpu-gen | 11435 → 11434 (host) | CPU Ollama — Sentinel CoD summarisation, epistemic markers |
+| ollama-cpu-embed | 11436 → 11434 (host) | CPU Ollama — `bge-m3` embeddings for SecMaster semantic search |
+| trafilatura | 3109 (host) | HTML pre-wash for SentinelCollector content normalisation |
+| spacy-ner | internal only | spaCy NER sidecar — entity pre-pass for SentinelCollector V2 pipeline |
+| dsl-parser-mcp | 3120 (host) | FastAPI sidecar — Lark parser + v2.3.1 verifier for the CPU CoD DSL pipeline (consumed by SentinelCollector) |
+
+> **Inference topology** (per project memory): GPU = extraction verifier + CoVe (largest model that fits 32GB VRAM on RTX 5090). CPU = CoD + RAG + small-model parallelism. CoD never touches GPU.
 
 ### MCP Servers
 
-MCP servers are consolidated into their parent service directories where applicable:
-- `FredCollector/mcp/` - FredCollectorMcp
-- `ThresholdEngine/mcp/` - ThresholdEngineMcp
-- `FinnhubCollector/mcp/` - FinnhubMcp
-- `OfrCollector/mcp/` - OfrMcp
-- `SecMaster/mcp/` - SecMasterMcp
-- `WhisperService/mcp/` - WhisperServiceMcp (C# MCP child of Python WhisperService)
+MCP servers are consolidated under their parent service directories where applicable:
 
-| Service | Port (Host) | Purpose |
-|---------|-------------|---------|
-| OllamaMcp | 3100 | Local LLM inference |
-| markitdownMcp | 3102 | Document conversion |
-| FredCollectorMcp | 3103 | FRED data query and admin |
-| ThresholdEngineMcp | 3104 | Pattern evaluation and regime status |
-| FinnhubMcp | 3105 | Market data, calendars, live quotes |
-| OfrMcp | 3106 | FSI, funding markets, hedge fund data |
-| SecMasterMcp | 3107 | Instrument search, metadata query |
-| WhisperServiceMcp | 3108 | YouTube transcription |
+- `FredCollector/mcp/` → `fredcollector-mcp`
+- `ThresholdEngine/mcp/` → `thresholdengine-mcp`
+- `FinnhubCollector/mcp/` → `finnhub-mcp`
+- `OfrCollector/mcp/` → `ofr-mcp`
+- `SecMaster/mcp/` → `secmaster-mcp`
+- `WhisperService/mcp/` → `whisper-service-mcp` (C# MCP child of the Python WhisperService)
+
+Three MCP-style sidecars live outside any parent service:
+
+- `SentinelCollector/dsl-parser-mcp/` → `dsl-parser-mcp` (FastAPI sidecar — not stdio MCP)
+- `gemini-resolver-mcp/` → host `systemd` unit, FastAPI on `:9300` (HTTP, not stdio MCP — name kept for symmetry with `ntfy-mcp`)
+- `ntfy-mcp/` → host stdio MCP, ntfy publish/poll for the Sentinel v2 supervisor
+- `markitdownMCP/` → upstream `mcp/markitdown:latest` container image (no source in this directory)
+
+| Server | Port (Host) | Transport | Purpose |
+|--------|-------------|-----------|---------|
+| markitdown-mcp | 3102 | StreamableHTTP `/mcp/` + SSE `/sse` | Document conversion (PDF/Office/HTML → Markdown) |
+| fredcollector-mcp | 3103 | Streamable HTTP | FRED data query + admin |
+| thresholdengine-mcp | 3104 | Streamable HTTP | Pattern evaluation, sector-regime status, matrix-cell queries |
+| finnhub-mcp | 3105 | Streamable HTTP | Market data, calendars, live quotes |
+| ofr-mcp | 3106 | Streamable HTTP | FSI, funding markets, hedge fund data |
+| secmaster-mcp | 3107 | Streamable HTTP | Instrument search, metadata query, semantic search |
+| whisper-service-mcp | 3108 | Streamable HTTP | YouTube transcription proxy |
+| dsl-parser-mcp | 3120 | FastAPI HTTP | DSL parse + v2.3.1 grounding verifier |
+| gemini-resolver-mcp | 9300 (host systemd) | FastAPI HTTP | Sentinel Phase 4.2 Gemini-grounded fallback resolver |
+| ntfy-mcp | n/a (stdio) | MCP stdio | ntfy publish/poll for supervisor ↔ user channel |
 
 ### Infrastructure
 
 | Service | Port | Access | Purpose |
 |---------|------|--------|---------|
-| TimescaleDB | 5432 | Host | Time-series database |
+| TimescaleDB | 5432 | Host | Time-series database (PostgreSQL + hypertables + pgvector) |
 | Prometheus | 9090 | Internal | Metrics storage (Grafana proxy) |
+| Alertmanager | 9093 | Internal | Alert routing — webhooks AlertService at `http://alert-service:8080/alerts` |
 | Grafana | 3000 | Host | Dashboards |
 | Loki | 3100 | Internal | Log aggregation (Grafana proxy) |
 | Tempo | 3200 | Internal | Distributed tracing (Grafana proxy) |
-| otel-collector | 4317 | Internal | OpenTelemetry pipeline |
-| Alertmanager | 9093 | Internal | Alert routing |
+| otel-collector | 4317 | Internal | OpenTelemetry pipeline (OTLP/gRPC) |
 
 ## Design Principles
 
 ### Single Responsibility
+
 - **Collectors**: Data ingestion only. No threshold logic.
-- **ThresholdEngine**: Pattern evaluation only. No data collection.
+- **ThresholdEngine**: Pattern evaluation, sector projection, regime classification. No data collection.
 - **AlertService**: Notification delivery only. No business logic.
 - **MCP Servers**: API translation only. No data storage.
 
 ### Event-Driven Communication
-- Collectors → ThresholdEngine: gRPC server streaming
-- ThresholdEngine → AlertService: HTTP POST to `/alerts`
-- All events share the `ObservationCollectedEvent` contract
+
+- Collectors → ThresholdEngine: gRPC server-streamed `ObservationEventStream`
+- SentinelCollector → ThresholdEngine: `ObservationEventStream` + `MatrixUpdateStream` (Phase 5.5 DSL matrix-cell enrichments)
+- ThresholdEngine → Prometheus → Alertmanager → AlertService: metric-derived alert routing
+- ThresholdEngine → downstream subscribers: gRPC `ObservationEventStream` (threshold-crossing events, replay, time-range)
+- AlertService → ntfy / SMTP / AutoFix queue file
 
 ### Configuration Over Code
-- 62 patterns defined in JSON with C# expressions
-- Hot reload via file watcher (no restart needed)
-- Admin APIs for runtime series management
+
+- 79 patterns defined in JSON with C# expressions, compiled by Roslyn at runtime
+- Hot reload via `PatternConfigurationWatcher`, `BurstWindowConfigurationWatcher`, `SectorThresholdConfigurationWatcher`
+- Admin APIs for runtime series management on each collector
+- Prompts host-mounted (`/prompts`) — edits hot-reload without container rebuild
 
 ## Event Flow
 
@@ -156,54 +217,70 @@ sequenceDiagram
     participant COL as Collectors
     participant DB as TimescaleDB
     participant TE as ThresholdEngine
+    participant PR as Prometheus
+    participant AM as Alertmanager
     participant AS as AlertService
 
     APIs->>COL: Economic/Market data
     COL->>DB: Store observations
     COL->>TE: ObservationCollectedEvent (gRPC)
-    TE->>TE: Evaluate 62 patterns
-    TE->>TE: Calculate macro score
-    TE->>TE: Detect regime transitions
-    TE->>AS: POST /alerts (if triggered)
+    TE->>TE: Evaluate 79 patterns (Roslyn)
+    TE->>TE: Project onto 11 sectors (matrix cells)
+    TE->>TE: Classify per-sector regimes
+    TE->>DB: Persist matrix cells + sector regimes
+    TE->>PR: Threshold-crossing metrics
+    PR->>AM: Alert rule fires
+    AM->>AS: POST /alerts (webhook)
+    AS->>AS: Dedup (fingerprint:status, 30 min)
     AS->>AS: Route by severity
     AS-->>ntfy: Push notification
     AS-->>Email: SMTP
+    AS-->>AutoFix: JSON file → host runner
 ```
 
 ## Pattern Categories
 
-| Category | Count | Purpose | Key Patterns |
-|----------|-------|---------|--------------|
-| Recession | 13 | Contraction warnings | Sahm Rule, yield curve, claims |
-| Growth | 8 | Expansion signals | GDP, employment, ISM |
-| Liquidity | 8 | Market stress | VIX spikes, credit spreads, TED |
-| NBFI | 8 | Shadow banking | HY spreads, repo stress, leverage |
-| Inflation | 8 | Price pressures | CPI, breakevens, commodity prices |
-| OFR | 7 | Financial stability | FSI components, STFM, HFM |
-| Valuation | 6 | Market levels | Buffett indicator, CAPE |
-| Currency | 3 | Risk sentiment | DXY, EM FX, carry trades |
-| Commodity | 1 | Real assets | Copper/Gold ratio |
+Counts derive from `ThresholdEngine/config/patterns/<category>/*.json` (one pattern per file). The `enabled` column is the subset with `"enabled": true`; the remainder are kept in-tree but turned off.
 
-**Total: 62 patterns** across 9 categories
+| Category | Total | Enabled | Purpose | Representative Patterns |
+|----------|-------|---------|---------|-------------------------|
+| Recession | 25 | 24 | Contraction warnings | Sahm Rule (official + custom), yield-curve inversion / steepening, initial + continuing claims, Beveridge curve, Challenger layoffs, JOLTS |
+| NBFI | 10 | 8 | Shadow-banking stress | HY spreads, CCC-BB divergence, repo stress (standing + reverse), Chicago NFCI, KRE underperformance, NBFI escalation |
+| Growth | 9 | 9 | Expansion signals | GDP acceleration, industrial production, durable goods, equipment/residential investment, retail sales, housing starts |
+| Inflation | 9 | 9 | Price pressures | CPI YoY/acceleration, core CPI stickiness, PCE, breakevens (5Y/10Y/5Y5Y), Truflation divergence |
+| Liquidity | 9 | 9 | Market stress | VIX deployment L1/L2, credit-spread widening, Fed liquidity contraction, real rates / TIPS, M2 growth, DXY risk-off |
+| OFR | 7 | 7 | Financial stability | FSI (top-level + credit / volatility / funding / EM components), STFM repo stress, HFM leverage |
+| Valuation | 6 | 3 | Market levels | Buffett indicator (daily + monthly), CAPE, equity risk premium, forward P/E, equal-weight indicator |
+| Currency | 3 | 3 | Risk sentiment | EUR/USD dollar strength, EM currency weakness, JPY carry unwind |
+| Commodity | 1 | 0 | Real assets | Copper/Gold ratio |
 
-## Regime Detection
+**Total: 79 patterns (72 enabled, 7 disabled) across 9 categories.**
 
-ThresholdEngine maintains a regime state based on macro score:
+## Sector Projection & Per-Sector Regime Classification
 
-| Regime | Macro Score | Meaning |
-|--------|-------------|---------|
-| Expansion | < 30 | Normal growth conditions |
-| Caution | 30-50 | Elevated risk signals |
-| Warning | 50-70 | Multiple stress indicators |
-| Crisis | > 70 | Systemic stress detected |
+Every pattern declares a weight per ATLAS sector (`SectorWeights` dictionary). `CellProjector` projects each pattern signal onto the 11-sector matrix column; `SectorAggregator` sums weighted contributions per sector per cycle.
 
-Regime transitions trigger alerts via AlertService.
+**The 11 ATLAS sectors** (DB form, from `Events.Client/AtlasSectorCode.cs`): `ENERGY`, `MATERIALS`, `INDUSTRIALS`, `CONS_DISC`, `CONS_STAPLES`, `HEALTHCARE`, `FINANCIALS`, `INFOTECH`, `COMM_SVC`, `UTILITIES`, `REAL_ESTATE`. The D5 sparsity policy requires every pattern to declare an explicit numeric weight (zero or non-zero) for all 11 sectors — partial maps are rejected by `PatternConfigurationLoader`.
+
+`SectorRegimeClassifier` resolves each sector's aggregated score against the default `SectorRegimeTaxonomy` — five contiguous, half-open, range-covering bands across the cell-value clamp range `[-3, +3]`:
+
+| Regime Code | Score Band | Meaning |
+|-------------|------------|---------|
+| `severe_contraction` | `[-3, -1.5)` | Saturated downside |
+| `contraction` | `[-1.5, -0.5)` | Meaningful negative tilt |
+| `neutral` | `[-0.5, +0.5)` | Within noise |
+| `expansion` | `[+0.5, +1.5)` | Meaningful positive tilt |
+| `overheating` | `[+1.5, +3]` | Saturated upside |
+
+Boundary rule: half-open lower-inclusive on every band except the topmost (closed on both sides so a clamp-saturating value lands in-band). The taxonomy is configurable but every band must be contiguous and gap-free — the constructor fails loud on broken invariants at config-time, not at classify-time.
+
+Per-sector regime trajectories and the derived `sector_phase_cells` materialised view are exposed under `/api/sector-regimes` and `/api/sector-phase-cells` on ThresholdEngine.
 
 ## Data Flow by Source
 
 ```mermaid
 flowchart LR
-    subgraph FRED["FRED (47 series)"]
+    subgraph FRED["FRED"]
         FA[FRED API] --> FC[FredCollector]
     end
 
@@ -211,34 +288,46 @@ flowchart LR
         AVA[AV API] --> AVC[AlphaVantageCollector]
     end
 
-    subgraph OFR["OFR (FSI, STFM, HFM)"]
+    subgraph OFR["OFR (FSI / STFM / HFM)"]
         OA[OFR API] --> OC[OfrCollector]
     end
 
-    subgraph Finnhub["Finnhub (Stocks, Calendars)"]
+    subgraph Finnhub["Finnhub"]
         FHA[Finnhub API] --> FHC[FinnhubCollector]
     end
 
     subgraph Sentinel["SentinelCollector"]
-        SX[SearXNG] --> SC[SentinelCollector]
+        SX[SearXNG]
+        RSS[RSS feeds]
+        EW[Cloudflare edge]
+        SX & RSS & EW --> SCNT[Content workers]
+        SCNT --> NZ[Normalizer<br/>markitdown + trafilatura]
+        NZ --> CODX[CPU CoD DSL<br/>llama-server + dsl-parser-mcp]
+        CODX --> VRF[GPU verification<br/>vllm-server]
+        VRF --> RES[Resolution cascade<br/>SecMaster → Finnhub → AV → Gemini]
     end
 
     FC --> DB[(TimescaleDB)]
     AVC --> DB
     OC --> DB
     FHC --> DB
-    SC --> DB
+    RES --> DB
 
-    FC -->|gRPC| SM[SecMaster]
-    OC -->|gRPC| SM
-    FHC -->|gRPC| SM
-    SC -->|gRPC| SM
-    SM --> PG[(PostgreSQL)]
+    FC -->|gRPC register| SM[SecMaster]
+    OC -->|gRPC register| SM
+    FHC -->|gRPC register| SM
+    AVC -->|gRPC register| SM
+    RES -->|REST + gRPC resolve| SM
+    SM --> PG[(atlas_secmaster<br/>+ pgvector)]
 
-    FC -.-> FM[FredCollectorMcp]
-    OC -.-> OM[OfrMcp]
-    FHC -.-> FHM[FinnhubMcp]
-    SM -.-> SMM[SecMasterMcp]
+    FC -->|IsMacro=true dual-write| MS[(macro_observations<br/>via MacroSubstrate)]
+    OC --> MS
+    RES --> MS
+
+    FC -.-> FM[fredcollector-mcp]
+    OC -.-> OM[ofr-mcp]
+    FHC -.-> FHM[finnhub-mcp]
+    SM -.-> SMM[secmaster-mcp]
 
     FM -.-> C[Claude]
     OM -.-> C
@@ -246,58 +335,101 @@ flowchart LR
     SMM -.-> C
 ```
 
-**SecMaster Purpose**: Centralized instrument metadata, search across sources, series discovery
+**SecMaster Purpose**: Centralised instrument metadata, context-aware source resolution (frequency / latency / collector priority), hybrid search (SQL + fuzzy + vector + RAG), embedding backfill, OpenFIGI + EDGAR enrichment.
+
+**MacroSubstrate Purpose**: Shared `macro_observations` hypertable owned by no single collector. Collectors take `IMacroObservationWriter` via DI and dual-write when their per-series `IsMacro` flag is `true`. Versioned as-of reads resolve the active mapping label via `atlas_secmaster.mapping_versions`.
+
+## SentinelCollector: CPU CoD DSL Extraction Pipeline
+
+```mermaid
+flowchart LR
+    SRC[SearXNG / RSS / Edge] --> CW[Collection Workers]
+    CW --> NZ[markitdown + trafilatura]
+    NZ --> SPACY[spacy-ner<br/>entity pre-pass]
+    SPACY --> LS[llama-server<br/>CPU CoD emit<br/>GBNF grammar]
+    LS --> DSL[dsl-parser-mcp<br/>parse + verify v2.3.1]
+    DSL --> VLLM[vllm-server<br/>GPU claim verification]
+    VLLM --> RES[ResolutionWorker]
+    RES --> SM[SecMaster]
+    RES -.fallback.-> FH[Finnhub]
+    RES -.fallback.-> AV[AlphaVantage]
+    RES -.fallback.-> GEM[gemini-resolver-mcp]
+    RES --> PUB[Event Publishers]
+    PUB -->|ObservationEventStream| TE[ThresholdEngine]
+    PUB -->|MatrixUpdateStream| TE
+```
+
+Production extraction backend is `Extraction__Backend=LlamaServerDsl` (set in compose). The CPU CoD model emits a grammar-constrained DSL document; the `dsl-parser-mcp` sidecar parses with Lark and verifies grounding word-by-word against the source article (v2.3.1 punctuation-tolerant + byte-verbatim). vLLM provides GPU-side claim verification. Resolution walks SecMaster → Finnhub → AlphaVantage → Gemini-grounded fallback.
+
+Legacy Ollama / llama.cpp / vLLM extraction backends remain in `ExtractionOptions` and still drive shadow runs; the production `IMergedExtractionService` binding routes to the CPU DSL path post-PR #510.
 
 ## MCP Integration
 
-MCP (Model Context Protocol) servers expose ATLAS data to Claude:
+MCP (Model Context Protocol) servers expose ATLAS data and capabilities to Claude:
 
 ```mermaid
 flowchart TB
-    CD[Claude Desktop] --> OM["ollama-mcp<br/>SSE :3100"]
-    CD --> MM["markitdown-mcp<br/>SSE :3102"]
-    CD --> FM["fredcollector-mcp<br/>SSE :3103"]
-    CD --> TM["thresholdengine-mcp<br/>SSE :3104"]
-    CD --> FHM["finnhub-mcp<br/>SSE :3105"]
-    CD --> OFM["ofr-mcp<br/>SSE :3106"]
-    CD --> SMM["secmaster-mcp<br/>SSE :3107"]
-    CD --> WSM["whisper-mcp<br/>SSE :3108"]
+    CD[Claude Desktop / Code] --> MM["markitdown-mcp<br/>StreamableHTTP+SSE :3102"]
+    CD --> FM["fredcollector-mcp<br/>HTTP :3103"]
+    CD --> TM["thresholdengine-mcp<br/>HTTP :3104"]
+    CD --> FHM["finnhub-mcp<br/>HTTP :3105"]
+    CD --> OFM["ofr-mcp<br/>HTTP :3106"]
+    CD --> SMM["secmaster-mcp<br/>HTTP :3107"]
+    CD --> WSM["whisper-service-mcp<br/>HTTP :3108"]
+    CD --> NTM["ntfy-mcp<br/>stdio (host)"]
 
-    OM -.- OT["ollama_generate, ollama_chat,<br/>ollama_list_models..."]
+    SC[SentinelCollector] --> DSL["dsl-parser-mcp<br/>HTTP :3120"]
+    SC --> GRM["gemini-resolver-mcp<br/>HTTP :9300 (host systemd)"]
+
     MM -.- MT["convert_to_markdown"]
     FM -.- FT["get_latest, get_observations,<br/>search, health..."]
-    TM -.- TT["evaluate, list_patterns,<br/>get_pattern..."]
+    TM -.- TT["evaluate, list_patterns,<br/>get_pattern, matrix-cell queries..."]
     FHM -.- FHT["get_quote, get_earnings_calendar,<br/>get_live_*..."]
     OFM -.- OFT["get_fsi_latest, list_stfm_series,<br/>add_series..."]
     SMM -.- ST["search_instruments, semantic_search,<br/>resolve_source, ask_secmaster..."]
-    WSM -.- WT["transcribe, get_transcript,<br/>backfill..."]
+    WSM -.- WT["transcribe, get_status,<br/>get_transcript, backfill..."]
+    NTM -.- NTT["ntfy_publish, ntfy_poll_new,<br/>ntfy_poll_since, ntfy_ack"]
+    DSL -.- DT["/parse, /verify"]
+    GRM -.- GT["/resolve"]
 ```
 
 ## Why This Architecture?
 
 ### Composability
-New data sources integrate by implementing the gRPC contract. OfrCollector was added without modifying ThresholdEngine.
+New data sources integrate by implementing the gRPC contract from `Events/`. OfrCollector and SentinelCollector were added without modifying ThresholdEngine.
 
 ### Observability
-Full OpenTelemetry stack: traces (Tempo), metrics (Prometheus), logs (Loki), all visualized in Grafana.
+Full OpenTelemetry stack: traces (Tempo), metrics (Prometheus), logs (Loki), all visualised in Grafana via OTLP/gRPC.
 
 ### Flexibility
-Change a threshold? Edit JSON, patterns hot-reload. Add a series? Use the admin API.
+Change a threshold? Edit JSON, patterns hot-reload. Add a series? Use the admin API. Edit a prompt? Edit the host-mounted file under `/opt/ai-inference/prompts/` and the prompt provider picks it up.
 
 ### AI-Native
-MCP servers let Claude directly query financial data and evaluate patterns.
+MCP servers let Claude directly query financial data and evaluate patterns. The CPU CoD DSL pipeline lets a small CPU model do pattern-recognition + verbatim copy + classification while the larger GPU model handles structured emission and verification (LLM-strength layering principle).
 
 ## See Also
 
-- [FredCollector](../FredCollector/README.md) - FRED data collection
-- [AlphaVantageCollector](../AlphaVantageCollector/README.md) - Commodities data
-- [FinnhubCollector](../FinnhubCollector/README.md) - Market data
-- [OfrCollector](../OfrCollector/README.md) - OFR financial stress data
-- [SentinelCollector](../SentinelCollector/README.md) - News aggregation with LLM extraction
-- [CalendarService](../CalendarService/README.md) - Market holidays and economic events
-- [ThresholdEngine](../ThresholdEngine/README.md) - Pattern evaluation
-- [SecMaster](../SecMaster/README.md) - Instrument metadata
-- [AlertService](../AlertService/README.md) - Notifications
-- [WhisperService](../WhisperService/README.md) - YouTube transcription
-- [FinBertSidecar](../FinBertSidecar/README.md) - Financial sentiment embeddings
-- [Deployment](../deployment/README.md) - Infrastructure setup
+- [FredCollector](../FredCollector/README.md) — FRED economic data collection
+- [AlphaVantageCollector](../AlphaVantageCollector/README.md) — Commodities, forex, equities, crypto
+- [FinnhubCollector](../FinnhubCollector/README.md) — Market data, calendars, sentiment
+- [OfrCollector](../OfrCollector/README.md) — OFR financial stress data
+- [NasdaqCollector](../NasdaqCollector/README.md) — Nasdaq Data Link (disabled — WAF block)
+- [SentinelCollector](../SentinelCollector/README.md) — News aggregation + CPU CoD DSL extraction
+- [SentinelCollector/dsl-parser-mcp](../SentinelCollector/dsl-parser-mcp/README.md) — DSL parser + verifier sidecar
+- [CalendarService](../CalendarService/README.md) — NYSE holidays + FRED release schedule
+- [ThresholdEngine](../ThresholdEngine/README.md) — Pattern evaluation, sector projection, regime classification
+- [ThresholdEngine/mcp](../ThresholdEngine/mcp/README.md) — MCP for pattern + matrix-cell queries
+- [SecMaster](../SecMaster/README.md) — Instrument metadata + resolution
+- [SecMaster/mcp](../SecMaster/mcp/README.md) — MCP for instrument search
+- [AlertService](../AlertService/README.md) — Notification routing
+- [WhisperService](../WhisperService/README.md) — YouTube transcription
+- [WhisperService/mcp](../WhisperService/mcp/README.md) — MCP for transcription
+- [FinBertSidecar](../FinBertSidecar/README.md) — FinBERT embeddings
+- [MacroSubstrate](../MacroSubstrate/README.md) — Shared macro-observations hypertable
+- [Events](../Events/README.md) — Shared gRPC contracts
+- [Reports](../Reports/README.md) — Daily/weekly/monthly report generation
+- [LlmBenchmark](../LlmBenchmark/README.md) — Sentinel extraction-quality benchmarks
+- [gemini-resolver-mcp](../gemini-resolver-mcp/README.md) — Gemini-grounded fallback resolver
+- [ntfy-mcp](../ntfy-mcp/README.md) — ntfy publish/poll MCP for supervisor channel
+- [markitdownMCP](../markitdownMCP/README.md) — Document → Markdown conversion (upstream image)
+- [Deployment](../deployment/README.md) — Infrastructure setup
