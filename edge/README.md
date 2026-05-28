@@ -49,6 +49,7 @@ Content flows from external sources into the worker on cron schedules, gets dedu
 - **Sync API**: Pull-based sync with acknowledgment for reliable home-side ingestion
 - **Admin API**: CRUD management of source configurations stored in D1
 - **Auto-purge**: Daily maintenance cleans synced content (>7 days) and stale seen URLs (>30 days)
+- **Workers Observability**: Invocation logs ingested to Cloudflare Observability (100% head sampling)
 
 ## Configuration
 
@@ -66,6 +67,12 @@ Content flows from external sources into the worker on cron schedules, gets dedu
 | `DB` | D1 Database | `sentinel-edge-db` |
 | `R2` | R2 Bucket | `sentinel-raw` |
 
+### Worker Limits
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| `cpu_ms` | `300_000` (5 min) | Raised from default 30s to accommodate large D1 queries during sync/purge |
+
 ### Cron Triggers
 
 | Schedule | Description | Cron |
@@ -77,6 +84,8 @@ Content flows from external sources into the worker on cron schedules, gets dedu
 
 ### Configured Sources
 
+Defined in `src/config/sources.json` (static, baked into the worker bundle) and mirrored into the `source_configs` D1 table for admin-API editing via migration `0001_add_source_configs.sql`.
+
 | Source | Type | Description |
 |--------|------|-------------|
 | `challenger-rss` | RSS | Challenger Gray layoff announcements (filtered) |
@@ -85,6 +94,8 @@ Content flows from external sources into the worker on cron schedules, gets dedu
 | `fed-press-bcreg` | RSS | Federal Reserve bank regulation |
 | `fed-speeches` | RSS | Federal Reserve speeches |
 | `tsa-checkpoint` | Scraper | TSA passenger volume data |
+
+The `binary` collector code is implemented but no binary sources are currently configured.
 
 ## API Endpoints
 
@@ -136,12 +147,18 @@ edge/
 │   │       ├── d1.ts            # D1 query helpers
 │   │       ├── hash.ts          # SHA-256 hashing
 │   │       └── ulid.ts          # ULID generation
-│   ├── migrations/              # D1 schema migrations
-│   ├── schema.sql               # Base D1 schema
-│   ├── wrangler.toml            # Cloudflare Worker config
+│   ├── migrations/              # D1 schema migrations (0001_add_source_configs, 0002_add_seen_urls)
+│   ├── schema.sql               # Base D1 schema (raw_content, seen_urls, source_configs)
+│   ├── wrangler.toml            # Worker config: bindings, crons, limits, observability
 │   ├── tsconfig.json            # TypeScript config
-│   ├── package.json             # Node dependencies
-│   └── .devcontainer/           # Dev container config
+│   ├── package.json             # Node dependencies and scripts
+│   └── .devcontainer/
+│       ├── Dockerfile           # node:22-bookworm-slim + wrangler + typescript
+│       ├── compose.yaml         # nerdctl/docker compose for dev container
+│       ├── devcontainer.json    # VS Code Dev Containers config
+│       ├── build.sh             # Build dev image (nerdctl/docker)
+│       ├── dev.sh               # Start wrangler dev server in container
+│       └── typecheck.sh         # Run `tsc --noEmit` in container
 └── README.md
 ```
 
@@ -150,7 +167,7 @@ edge/
 ### Prerequisites
 
 - VS Code with Dev Containers extension
-- Node.js 18+ (provided by devcontainer)
+- Node.js 22 (provided by devcontainer via `node:22-bookworm-slim`)
 - Cloudflare account with Wrangler CLI access
 
 ### Getting Started
@@ -161,12 +178,25 @@ edge/
 
 ### Manual Development
 
+Container-based helpers (recommended, match other ATLAS services):
+
+```bash
+cd edge/sentinel-edge/.devcontainer
+./build.sh           # Build dev image (nerdctl or docker)
+./dev.sh             # Start wrangler dev server inside container
+./typecheck.sh       # Run TypeScript typecheck inside container
+```
+
+Host-side (requires local Node 22+ and wrangler):
+
 ```bash
 cd edge/sentinel-edge
 npm install
-npm run dev          # Start wrangler dev server
-npm run typecheck    # TypeScript type checking
+npm run dev          # wrangler dev (port 8787)
+npm run typecheck    # tsc --noEmit
 ```
+
+> Note: `package.json` also declares a `lint` script (`eslint src/`), but `eslint` is not in `devDependencies` — running it would fail without a separate install. Use the VS Code ESLint extension (auto-installed by the devcontainer) instead.
 
 ## Deployment
 
@@ -176,7 +206,9 @@ npm run typecheck    # TypeScript type checking
 cd edge/sentinel-edge
 wrangler login
 wrangler d1 create sentinel-edge-db    # Update database_id in wrangler.toml
-wrangler d1 execute sentinel-edge-db --file=schema.sql
+wrangler d1 execute sentinel-edge-db --file=schema.sql --remote
+wrangler d1 execute sentinel-edge-db --file=migrations/0001_add_source_configs.sql --remote
+wrangler d1 execute sentinel-edge-db --file=migrations/0002_add_seen_urls.sql --remote
 wrangler r2 bucket create sentinel-raw
 wrangler secret put API_KEY
 ```
@@ -185,8 +217,11 @@ wrangler secret put API_KEY
 
 ```bash
 cd edge/sentinel-edge
-wrangler deploy
+wrangler deploy            # production
+wrangler deploy --env dev  # dev environment (sentinel-edge-dev worker)
 ```
+
+Worker runs on Cloudflare's edge network; no ATLAS ansible playbook applies (sentinel-edge is not in `/opt/ai-inference/compose.yaml`). Home-side consumers (e.g. the SentinelCollector `EdgeSyncWorker`) reach the worker via its public Cloudflare URL using `EdgeSync__*` env vars.
 
 ## Ports
 
@@ -199,5 +234,7 @@ Production traffic is routed by Cloudflare's edge network; no host port mapping 
 ## See Also
 
 - [sentinel-edge/schema.sql](sentinel-edge/schema.sql) - D1 database schema
-- [sentinel-edge/wrangler.toml](sentinel-edge/wrangler.toml) - Worker and cron configuration
+- [sentinel-edge/migrations/](sentinel-edge/migrations/) - D1 schema migrations
+- [sentinel-edge/wrangler.toml](sentinel-edge/wrangler.toml) - Worker, bindings, crons, limits, observability
+- [sentinel-edge/src/config/sources.json](sentinel-edge/src/config/sources.json) - Static source definitions
 - [docs/](../docs/) - System documentation

@@ -1,133 +1,140 @@
 # FredCollectorMcp
 
-MCP server exposing ATLAS economic data from FRED to AI assistants.
+MCP server exposing ATLAS FRED economic data to AI assistants over Streamable HTTP.
 
 ## Overview
 
-Exposes FredCollector REST API as MCP tools, enabling Claude Desktop and Claude Code to query FRED economic data collected locally in TimescaleDB with sub-second response times. No FRED API key required - all data is already collected and served from the ATLAS platform.
+Translates Model Context Protocol tool calls into REST requests against the sibling `fred-collector` service (which serves FRED data from TimescaleDB). No FRED API key is required in the MCP layer — all credentials and data live in the parent collector. The server hosts the MCP endpoint over HTTP using the official `ModelContextProtocol.AspNetCore` package.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP/SSE| MCP[FredCollectorMcp<br/>:3103]
-    MCP -->|HTTP| API[fred-collector<br/>:8080]
+    AI[AI Assistant<br/>Claude Desktop/Code] -->|MCP / Streamable HTTP| MCP[fredcollector-mcp<br/>container :8080<br/>host :3103]
+    MCP -->|REST| API[fred-collector<br/>:8080]
     API -->|SQL| DB[(TimescaleDB)]
 ```
 
-AI assistants connect via SSE transport. The MCP server translates tool calls to FredCollector REST API requests, returning formatted responses.
+The MCP server listens on container port `8080` (path `/mcp`) and is published to host port `3103`. It depends on `fred-collector` being healthy before starting.
 
 ## Features
 
-- **Data Query Tools**: Get latest values, historical observations, search series
-- **Admin Tools**: Add/remove series, trigger collection and backfill
-- **SSE Transport**: HTTP-based transport for remote access
-- **Claude Desktop Integration**: Works with mcp-proxy for stdio bridging
+- **Data Query Tools**: list/search series, latest value, historical observations, categories, health, OpenAPI introspection
+- **Admin Tools**: add/toggle/delete series, trigger collection or backfill
+- **Streamable HTTP Transport**: `ModelContextProtocol.AspNetCore` `MapMcp("/mcp")` — no SSE endpoint is mounted
+- **Plain HTTP Health**: `GET /health` returns `{"status":"healthy"}` for container healthchecks
 
 ## Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FREDCOLLECTOR_API_URL` | `http://fred-collector:8080` | Backend service URL |
-| `FREDCOLLECTOR_MCP_LOG_LEVEL` | `Warning` | Logging level |
-| `FREDCOLLECTOR_MCP_TIMEOUT_SECONDS` | `30` | HTTP request timeout |
+| `ASPNETCORE_URLS` | `http://+:8080` | Kestrel bind address (set in Containerfile) |
+| `FREDCOLLECTOR_API_URL` | `http://fred-collector:8080` | Backend `fred-collector` REST base URL |
+| `FREDCOLLECTOR_MCP_TIMEOUT_SECONDS` | `30` | HTTP client timeout for backend calls |
+| `FREDCOLLECTOR_MCP_LOG_LEVEL` | `Warning` | Declared in Containerfile/compose; **not currently read by `Program.cs`** (Serilog minimum level is hardcoded to `Warning`) |
 
-## API Endpoints
+## MCP Tools
 
-The MCP server's public surface is its set of MCP tools (over SSE on port 3103). Each tool below is an API endpoint of the server.
+All tools are served over Streamable HTTP at `POST /mcp`. There is no separate REST API surface — tool invocations are MCP requests, not query-string GETs.
 
-### Data Query Tools
-
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `list_series` | List all configured FRED series | `category` (optional) |
-| `get_latest` | Get most recent observation | `series_id` |
-| `get_observations` | Get historical observations | `series_id`, `start_date`, `end_date`, `limit` |
-| `search` | Search FRED for series | `query`, `limit` |
-| `categories` | List categories and series counts | None |
-| `health` | Service health and data freshness | None |
-| `api_schema` | OpenAPI specification | `format` |
-
-### Admin Tools
+### Data Query Tools (read-only)
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `add_series` | Add new series to collect | `seriesId`, `category`, `backfill` |
-| `get_all_series_admin` | Get all series including inactive | None |
-| `toggle_series` | Enable/disable series collection | `seriesId` |
-| `delete_series` | Delete series and observations | `seriesId` |
-| `trigger_collection` | Trigger immediate collection | `seriesId` |
-| `trigger_backfill` | Trigger historical backfill | `seriesId`, `months` |
+| `list_series` | List all configured FRED series | `category` (optional: Recession, Liquidity, Growth, NBFI, Commodity, Valuation, Inflation) |
+| `get_latest` | Most recent observation for a series | `series_id` |
+| `get_observations` | Historical observations | `series_id`, `start_date?`, `end_date?`, `limit?` |
+| `search` | Search FRED by keyword | `query`, `limit?` |
+| `categories` | Categories and their series counts | _none_ |
+| `health` | Backend health + per-frequency data freshness | _none_ |
+| `api_schema` | Introspect backend OpenAPI spec | `format?` (`summary` default, or `full`) |
+
+### Admin Tools (destructive)
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `add_series` | Add new series and (optionally) backfill | `seriesId`, `category`, `backfill=true` |
+| `get_all_series_admin` | All series incl. inactive | _none_ |
+| `toggle_series` | Flip `IsActive` for a series | `seriesId` |
+| `delete_series` | Delete series + all observations | `seriesId` |
+| `trigger_collection` | Force immediate collection | `seriesId` |
+| `trigger_backfill` | Trigger historical backfill | `seriesId`, `months=1` (clamped 1-120) |
+
+## HTTP Endpoints
+
+| Path | Method | Purpose |
+|------|--------|---------|
+| `/mcp` | POST | MCP Streamable HTTP transport |
+| `/health` | GET | Liveness probe (container healthcheck) |
 
 ## Project Structure
 
 ```
 FredCollector/mcp/
 ├── Client/
-│   ├── FredCollectorClient.cs   # HTTP client implementation
-│   ├── IFredCollectorClient.cs  # Client interface
-│   └── Models/
-│       └── ClientModels.cs      # DTO models
+│   ├── FredCollectorClient.cs   # Typed HttpClient against fred-collector REST API
+│   └── IFredCollectorClient.cs  # Client contract (DTOs from FredCollector.Dto)
 ├── Tools/
-│   └── FredCollectorTools.cs    # MCP tool definitions
-├── Containerfile                # Container build
-├── FredCollectorMcp.csproj      # Project file
-└── Program.cs                   # Entry point
+│   └── FredCollectorTools.cs    # [McpServerToolType] — all MCP tools
+├── Containerfile                # Multi-stage build (sdk:10.0 → aspnet:10.0)
+├── FredCollectorMcp.csproj      # Refs FredCollector/src/FredCollector.csproj
+└── Program.cs                   # Web host, Serilog, MapMcp("/mcp"), MapGet("/health")
 ```
+
+DTOs are imported from the parent `FredCollector.Dto` namespace — there is no local `Models/` directory.
 
 ## Development
 
 ### Prerequisites
 
-- VS Code with Dev Containers extension
-- FredCollector backend running
+- .NET 10 SDK (or use the parent `FredCollector/.devcontainer/`)
+- `fred-collector` backend reachable at `FREDCOLLECTOR_API_URL`
 
-### Build
+### Build & Test
 
-```bash
-.devcontainer/compile.sh
-```
-
-### Build Container
+This subproject has no dedicated `.devcontainer/`. Use the parent FredCollector dev container scripts, which compile the whole solution including `mcp/`:
 
 ```bash
-.devcontainer/build.sh
+FredCollector/.devcontainer/compile.sh          # restore + build + test
+FredCollector/.devcontainer/build.sh            # nerdctl build of container image
 ```
 
 ## Deployment
 
+Image is built from the monorepo root and tagged `fredcollector-mcp:latest`. The compose service name and container name are both `fredcollector-mcp`.
+
 ```bash
-ansible-playbook playbooks/deploy.yml --tags fred-collector-mcp
+ansible-playbook playbooks/deploy.yml --tags fredcollector-mcp
 ```
 
 ## Ports
 
-| Port | Description |
-|------|-------------|
-| 8080 | REST API (internal) |
-| 3103 | Host-mapped SSE endpoint |
+| Port | Scope | Description |
+|------|-------|-------------|
+| `8080` | Container | Kestrel HTTP (MCP `/mcp` + `/health`) |
+| `3103` | Host | Published from container `8080` (see `ports_mcp.fred_collector` in `deployment/ansible/group_vars/all.yml`) |
 
-SSE endpoint: `http://mercury:3103/sse`
+MCP endpoint: `http://mercury:3103/mcp`
 
 ## Claude Desktop Integration
 
-Add to `~/.config/Claude/claude_desktop_config.json`:
+The server uses Streamable HTTP, not SSE. For clients that only speak stdio, bridge via a Streamable-HTTP-capable proxy:
 
 ```json
 {
   "mcpServers": {
     "fred-collector": {
       "command": "uvx",
-      "args": ["mcp-proxy", "http://mercury:3103/sse"]
+      "args": ["mcp-proxy", "http://mercury:3103/mcp"]
     }
   }
 }
 ```
 
-Claude Desktop uses stdio transport, so `mcp-proxy` bridges stdio to SSE.
+Clients that natively support Streamable HTTP can point directly at `http://mercury:3103/mcp`.
 
 ## See Also
 
-- [FredCollector](../README.md) - Backend service documentation
-- [ThresholdEngine MCP](../../ThresholdEngine/mcp/README.md) - Pattern evaluation and macro scoring
-- [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification
+- [FredCollector](../README.md) — backend collector service (FRED API → TimescaleDB)
+- [ThresholdEngine MCP](../../ThresholdEngine/mcp/README.md) — pattern evaluation MCP server
+- [Model Context Protocol](https://modelcontextprotocol.io/) — protocol specification
