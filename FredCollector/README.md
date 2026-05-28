@@ -4,22 +4,24 @@ Automated FRED economic data collection service for ATLAS.
 
 ## Overview
 
-FredCollector retrieves economic indicators from the Federal Reserve Economic Data (FRED) API and stores them in TimescaleDB. It handles scheduling, rate limiting, backfill, and exposes data via REST API and gRPC event streams for downstream consumption by ThresholdEngine.
+FredCollector retrieves economic indicators from the Federal Reserve Economic Data (FRED) API and stores them in TimescaleDB. It schedules collection via Quartz, respects FRED API rate limits via a token bucket, backfills history on startup, exposes a REST surface for ThresholdEngine and the SecMaster catalog gateway, and streams observation events over gRPC for downstream consumers.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    FRED[FRED API] -->|HTTP/JSON| FC[FredCollector]
-    FC -->|Store| DB[(TimescaleDB)]
-    FC -->|gRPC Stream| TE[ThresholdEngine]
-    FC -->|Register| SM[SecMaster]
-    FC -->|Metrics/Traces| OTEL[OpenTelemetry]
+    FRED[FRED API] -->|HTTPS/JSON| FC[FredCollector]
+    FC -->|EF Core / Npgsql| DB[(TimescaleDB)]
+    FC -->|gRPC stream| TE[ThresholdEngine]
+    FC -->|gRPC RegisterSeries| SM[SecMaster]
+    FC -->|REST resolve| SMR[SecMaster REST]
+    FC -->|MacroSubstrate writer| MS[(macro_observations)]
+    FC -->|OTLP| OTEL[OpenTelemetry Collector]
 ```
 
-Data flows from the FRED API into FredCollector on a cron schedule. New observations are persisted to TimescaleDB, published as gRPC events for ThresholdEngine, and registered with SecMaster as instruments.
+Quartz cron schedules trigger `SeriesCollectionJob`, which calls `DataCollectionService` to fetch observations from FRED through a Polly-protected typed `HttpClient` (token-bucket throttled). New observations are persisted via `ObservationRepository`, published over the `ObservationChannel` to gRPC subscribers, and — when `series_configs.IsMacro = true` — dual-written to the shared `macro_observations` substrate (`MacroSubstrate`). On startup, `InitialDataBackfillWorker` backfills any series with zero observations; the optional `FredSeriesSectorTagBackgroundService` and `FredSeriesSignalIdentityTagBackgroundService` periodically re-tag series against SecMaster's REST taxonomy.
 
-Schema is owned by `src/Data/Migrations/` (EF Core). Current `series_configs` rows carry the SecMaster ATLAS-sector tag (`AtlasSectorCode`, an EF-converted enum), the signal-identity tag (`SignalIdentityId`), an `IsMacro` routing predicate for the shared `macro_observations` substrate (see below), and a check constraint enforcing that ATLAS sector and signal-identity are mutually exclusive (`ck_series_config_sector_xor_signal`) — a series is either macro-rolled by sector or instrument-attributed by signal-identity, never both.
+Schema is owned by EF Core migrations under `src/Data/Migrations/`. `series_configs` carries the SecMaster ATLAS-sector tag (`AtlasSectorCode`, EF-converted enum), the signal-identity tag (`SignalIdentityId`), and the `IsMacro` routing predicate. A check constraint (`ck_series_config_sector_xor_signal`) enforces that sector and signal-identity are mutually exclusive — a series is either macro-rolled by sector or instrument-attributed by signal-identity, never both.
 
 ### Series classification: macro vs. instrument-attributed
 
@@ -35,144 +37,176 @@ Instrument-attributed series (those resolved to a SecMaster signal-identity that
 
 ## Features
 
-- **Scheduled Collection**: Quartz cron schedules with Federal Reserve holiday awareness
-- **Rate Limiting**: Token bucket limiter respects FRED API limits (120 req/min)
-- **Smart Backfill**: Automatic gap-fill on startup and on-demand via admin API
-- **Event Streaming**: Real-time gRPC streams for downstream consumers (ThresholdEngine)
-- **Admin API**: Add, enable/disable, delete series; trigger manual collection/backfill
-- **Series Search**: Search FRED API with filtering by frequency, popularity, and sort order
-- **SecMaster Integration**: Automatic instrument registration via gRPC
-- **Resilience**: Polly retry (3x exponential backoff) and circuit breaker (5 failures / 60s)
-- **Full Observability**: OpenTelemetry metrics, traces, and structured logs to OTLP
+- **Scheduled collection** — Quartz cron jobs (`SeriesCollectionJob`) with Federal Reserve holiday awareness via `CalendarService.Core` (`MarketStatusWorker` exposes the open/holiday status as a metric).
+- **Rate limiting** — Token bucket (`TokenBucketRateLimiter`) throttling FRED API calls (default 120 capacity, 2.0 tokens/sec refill).
+- **Resilient HTTP** — Polly retry (3× exponential backoff), circuit breaker (5 failures / 60s break), 30s request timeout.
+- **Startup backfill** — `InitialDataBackfillWorker` backfills history for series with no observations (configurable depth and toggle).
+- **On-demand admin** — Add / toggle / delete series, trigger collection or backfill (fire-and-forget background tasks).
+- **Series search** — Search FRED catalog with filters (frequency, popularity, active-only, sort order) plus two SecMaster-gateway aliases (`/api/search`, `/api/discover`).
+- **SecMaster integration** — gRPC `RegisterSeries`, plus optional REST-based periodic re-tagging for ATLAS sectors and signal-identities.
+- **MacroSubstrate dual-write** — When `IsMacro=true`, observations are additionally written to `macro_observations` for cross-collector substrate queries.
+- **gRPC event stream** — `ObservationEventStream` proto (port 5001) for ThresholdEngine subscription, replay, and time-range queries.
+- **Observability** — OpenTelemetry traces, metrics, and Serilog structured logs exported via OTLP gRPC; ActivitySources include the shared `MacroSubstrate` source.
+- **RFC 9457 problem details** — Errors return `application/problem+json` with `traceId` extension.
 
 ## Configuration
 
+Runtime configuration is provided via environment variables (`__` maps to `:` for `IConfiguration` keys).
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ConnectionStrings__AtlasDb` | PostgreSQL connection string | Required |
-| `FRED_API_KEY` | FRED API key | Required |
-| `FredApi__BaseUrl` | FRED API URL | `https://api.stlouisfed.org/fred/` |
-| `FredApi__RateLimitPerMinute` | Rate limit (requests/min) | `120` |
+| `ConnectionStrings__AtlasDb` | PostgreSQL connection string (required at runtime; `MacroSubstrate` falls back to this when `ConnectionStrings:AtlasData` is unset) | **Required** |
+| `FRED_API_KEY` | FRED API key. When unset, the FRED HTTP client and rate limiter are not registered (search/collection paths will fail). | **Required** |
+| `FRED_API_BASE_URL` | FRED REST base URL | `https://api.stlouisfed.org/fred/` |
 | `RATE_LIMITER_CAPACITY` | Token bucket capacity | `120` |
 | `RATE_LIMITER_REFILL_RATE` | Token bucket refill rate (tokens/sec) | `2.0` |
-| `ENABLE_INITIAL_BACKFILL` | Run backfill on startup | `true` |
+| `ENABLE_INITIAL_BACKFILL` | Run startup backfill for series with no observations | `true` |
 | `BACKFILL_MONTHS` | Default backfill depth in months | `24` |
 | `BACKFILL_STARTUP_DELAY_SECONDS` | Delay before startup backfill begins | `5` |
-| `OpenTelemetry:OtlpEndpoint` (a.k.a. `OpenTelemetry__OtlpEndpoint`) | OTLP collector endpoint | `http://otel-collector:4317` |
-| `OpenTelemetry:ServiceName` (a.k.a. `OpenTelemetry__ServiceName`) | Service name for telemetry | `fred-collector` |
-| `OpenTelemetry:ServiceVersion` (a.k.a. `OpenTelemetry__ServiceVersion`) | Service version for OTEL resource attributes | `1.0.0` |
-| `DB_HOST` | PostgreSQL host (used when no `ConnectionStrings__*` is configured) | `timescaledb` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_USER` | PostgreSQL user | `ai_inference` |
-| `DB_PASSWORD` | PostgreSQL password | (from ansible-vault) |
-| `DB_NAME` | PostgreSQL database name | `atlas_data` |
-| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint | `http://secmaster:5001` |
-| `ApiKey__Enabled` | Enable API key authentication | `false` |
-| `ApiKey__Key` | API key value (when enabled) | - |
+| `OpenTelemetry__OtlpEndpoint` | OTLP collector endpoint (gRPC) | `http://otel-collector:4317` |
+| `OpenTelemetry__ServiceName` | Service name resource attribute | `fred-collector` |
+| `OpenTelemetry__ServiceVersion` | Service version resource attribute | `1.0.0` |
+| `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint (registration). When unset, `SecMasterRegistryClient` is not registered. | unset → no-op |
+| `SECMASTER_REST_ENDPOINT` | SecMaster REST endpoint (used by both sector and signal-identity taggers). When unset, both tagger workers no-op. | unset → no-op |
+| `ApiKey__Enabled` | Enable `X-API-Key` / `?api_key=` authentication on `/api/*` (health endpoints stay anonymous) | `false` |
+| `ApiKey__Key` | Expected API key value (only checked when enabled) | unset |
+| `Kestrel__HttpPort` | REST / health-check listen port | `8080` |
+| `Kestrel__GrpcPort` | gRPC listen port (HTTP/2 only) | `5001` |
+| `SectorTagging__Enabled` | Master switch for periodic ATLAS-sector re-tag worker | `true` |
+| `SectorTagging__EnabledOnStartup` | Run an immediate pass at startup | `true` |
+| `SectorTagging__RefreshIntervalHours` | Periodic interval between sector re-tag passes | `24` |
+| `SectorTagging__MaxBatchSize` | Cap per-pass batch size | `100` |
+| `SignalIdentityTagging__Enabled` | Master switch for periodic signal-identity re-tag worker | `true` |
+| `SignalIdentityTagging__EnabledOnStartup` | Run an immediate pass at startup | `true` |
+| `SignalIdentityTagging__RefreshIntervalHours` | Periodic interval between signal-identity re-tag passes | `24` |
+| `SignalIdentityTagging__MaxBatchSize` | Cap per-pass batch size | `200` |
+
+> **Note** — `appsettings.json` contains a `FredApi:*` section (`BaseUrl`, `RateLimitPerMinute`, etc.). These keys are **not** read at runtime; only the env vars above are honored.
+>
+> **Design-time only** — `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` are read **only** by `FredCollectorDbContextFactory` for `dotnet ef migrations` at design time, with defaults `localhost` / `5432` / `atlas_data` / `atlas_user` / *(required)*. They have no effect on the running container, which always uses `ConnectionStrings__AtlasDb`.
 
 ## API Endpoints
 
-REST surface lives in `src/Endpoints/`:
+### REST API (port 8080, internal)
 
-- **ApiEndpoints** — public read APIs (`/api/series/*`, `/api/search`, `/api/discover`, `/health*`) consumed by ThresholdEngine, SecMaster's catalog gateway, and external observers.
-- **AdminEndpoints** — operator surface (`/api/admin/series/*`) for adding, toggling, deleting series and triggering manual collection or backfill.
+All `/api/*` routes require authentication when `ApiKey__Enabled=true` (`X-API-Key` header or `?api_key=` query). When disabled, all requests are admitted. The root-level health endpoints are always anonymous. Source: `src/Endpoints/ApiEndpoints.cs`.
 
-### REST API
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/series` | GET | api | List active configured series |
+| `/api/series/{seriesId}` | GET | api | Get one series by ID (404 if not found) |
+| `/api/series/{seriesId}/observations` | GET | api | Get observations (query: `startDate`, `endDate`, `limit`) |
+| `/api/series/{seriesId}/latest` | GET | api | Get latest observation for a series |
+| `/api/series/search` | GET | api | Search FRED upstream (query: `query` (1–200 chars, required), `limit` (1–100), `frequency`, `minPopularity`, `activeOnly`, `orderBy`) |
+| `/api/search` | GET | api | SecMaster-gateway unified search (query: `q` (required), `limit` (default 20)) |
+| `/api/discover` | GET | api | SecMaster-catalog upstream discovery (query: `q` (required), `limit` (default 20)) |
+| `/api/health` | GET | anonymous | Lightweight static health payload (under api group, explicitly anonymous) |
+| `/health` | GET | anonymous | Full health check (database `ready` check) |
+| `/health/ready` | GET | anonymous | Readiness probe (filters checks tagged `ready`) |
+| `/health/live` | GET | anonymous | Liveness probe (always healthy) |
+| `/swagger` | GET | anonymous | Swagger UI (Development environment only) |
 
-Requires `X-API-Key` header when `ApiKey__Enabled=true` (except health endpoints).
+### Admin API (port 8080, internal)
+
+All `/api/admin/*` routes use the same `ApiKey__Enabled` gate. Source: `src/Endpoints/AdminEndpoints.cs`.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/series` | GET | List active series |
-| `/api/series/{seriesId}` | GET | Get specific series by ID |
-| `/api/series/{seriesId}/observations` | GET | Get observations (query: startDate, endDate, limit) |
-| `/api/series/{seriesId}/latest` | GET | Get latest observation |
-| `/api/series/search` | GET | Search FRED API (query: query, limit, frequency, minPopularity, activeOnly, orderBy) |
-| `/api/search` | GET | Unified search for SecMaster gateway (query: q, limit) |
-| `/api/discover` | GET | Upstream discovery for SecMaster catalog (query: q, limit) |
-| `/health` | GET | Health check (anonymous) |
-| `/health/ready` | GET | Readiness check (anonymous) |
-| `/health/live` | GET | Liveness check (anonymous) |
+| `/api/admin/series` | POST | Add a series (body: `{seriesId, category, backfill?}`; auto-fetches metadata from FRED; 409 on duplicate) |
+| `/api/admin/series` | GET | List all series including inactive |
+| `/api/admin/series/{seriesId}/toggle` | PUT | Flip `IsActive` |
+| `/api/admin/series/{seriesId}` | DELETE | Delete a series (204) |
+| `/api/admin/series/{seriesId}/collect` | POST | Fire-and-forget immediate collection (`ToUpperInvariant` series id) |
+| `/api/admin/series/{seriesId}/backfill` | POST | Fire-and-forget backfill (query: `months`, default `1`) |
 
-### Admin API
+### gRPC services (port 5001, internal, HTTP/2 only)
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/admin/series` | POST | Add series (body: {seriesId, category, backfill}) |
-| `/api/admin/series` | GET | Get all series (including inactive) |
-| `/api/admin/series/{seriesId}/toggle` | PUT | Enable/disable series |
-| `/api/admin/series/{seriesId}` | DELETE | Delete series |
-| `/api/admin/series/{seriesId}/collect` | POST | Trigger immediate collection |
-| `/api/admin/series/{seriesId}/backfill` | POST | Trigger backfill (query: months) |
-
-### gRPC API
-
-**Service**: `ObservationEventStream` (port 5001)
+`ObservationEventStream` (`Events/src/Events/Protos/observation_events.proto`). Reflection enabled.
 
 | Method | Description |
 |--------|-------------|
-| `SubscribeToEvents` | Stream events in real-time (supports filtering by type, series) |
-| `GetEventsSince` | Replay events from timestamp (supports limit) |
-| `GetEventsBetween` | Get events in time range |
-| `GetLatestEventTime` | Get timestamp of latest event |
-| `GetHealth` | Health check with event statistics |
+| `SubscribeToEvents(SubscriptionRequest) → stream Event` | Live event subscription (supports type/series filtering) |
+| `GetEventsSince(TimeRangeRequest) → stream Event` | Replay events from timestamp |
+| `GetEventsBetween(TimeRangeRequest) → stream Event` | Events in a closed time range |
+| `GetLatestEventTime(Empty) → Timestamp` | Latest event timestamp |
+| `GetHealth(Empty) → HealthResponse` | gRPC health + event-store statistics |
 
 ## Project Structure
 
 ```
 FredCollector/
 ├── src/
-│   ├── Api/              # FRED API client
-│   ├── Data/             # EF Core DbContext, migrations, repositories
-│   ├── Endpoints/        # Minimal API endpoint definitions
-│   ├── Grpc/             # gRPC event stream service
-│   ├── Jobs/             # Quartz scheduled jobs
-│   ├── Publishers/       # Event publishing to gRPC streams
-│   ├── RateLimiting/     # Token bucket rate limiter
-│   ├── Services/         # Business logic (collection, backfill, search)
-│   ├── Workers/          # Background workers (scheduler, backfill, market status)
-│   └── Program.cs
-├── mcp/                  # MCP server for AI assistants
-├── tests/                # Unit and integration tests
-└── .devcontainer/        # Dev container config
+│   ├── Api/                 # Typed FRED HTTP client + API key handler
+│   ├── Data/                # EF Core DbContext, Configurations, Migrations, Repositories
+│   ├── Dto/                 # Public REST DTOs
+│   ├── Endpoints/           # Minimal-API endpoint mappings (ApiEndpoints, AdminEndpoints)
+│   ├── Entities/            # EF entities (SeriesConfig, FredObservation, …)
+│   ├── Enums/               # Domain enums
+│   ├── Events/              # Domain events (publish surface)
+│   ├── Exceptions/          # FredApiException et al.
+│   ├── Grpc/
+│   │   ├── Repositories/    # EventRepository (gRPC read path)
+│   │   └── Services/        # EventStreamService (ObservationEventStream impl)
+│   ├── HealthChecks/        # DatabaseHealthCheck
+│   ├── Interfaces/          # Service / repository contracts
+│   ├── Jobs/                # Quartz jobs (SeriesCollectionJob)
+│   ├── Middleware/          # ApiKeyAuthenticationHandler
+│   ├── Models/              # Request / response models + *Options classes
+│   ├── Publishers/          # EventPublisher → ObservationChannel
+│   ├── RateLimiting/        # TokenBucketRateLimiter
+│   ├── Services/            # Collection, backfill, search, sector/signal-identity tag + resolve
+│   ├── Telemetry/           # ActivitySource + Meter definitions
+│   ├── Workers/             # Hosted services (scheduler, backfill, market status, tag workers)
+│   ├── Containerfile        # Multi-stage build (sdk → publish → aspnet runtime)
+│   ├── DependencyInjection.cs
+│   ├── Program.cs
+│   ├── ProblemTypes.cs
+│   ├── appsettings.json
+│   └── FredCollector.csproj
+├── mcp/                     # MCP sidecar server (see mcp/README.md)
+├── tests/
+│   ├── FredCollector.UnitTests/
+│   └── FredCollector.IntegrationTests/
+└── .devcontainer/           # build.sh, compile.sh, compose.yaml, devcontainer.json
 ```
 
 ## Development
 
 ### Prerequisites
 
-- VS Code with Dev Containers extension
-- Access to shared infrastructure (PostgreSQL, observability stack)
+- VS Code with the Dev Containers extension
+- Access to the shared infrastructure (TimescaleDB, OTEL collector, SecMaster)
 
-### Getting Started
+### Getting started
 
 1. Open in VS Code: `code FredCollector/`
-2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
-3. Build: `.devcontainer/compile.sh`
-4. Run: `dotnet run --project src`
-
-### Build Container
-
-```bash
-.devcontainer/build.sh
-```
+2. Reopen in Container (Command Palette → "Dev Containers: Reopen in Container")
+3. Compile and run tests: `FredCollector/.devcontainer/compile.sh`
+4. Build the runtime image: `FredCollector/.devcontainer/build.sh` (add `--no-cache` for a clean rebuild)
 
 ## Deployment
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags fred-collector
+cd deployment/ansible
+ansible-playbook -i inventory/hosts.yml playbooks/deploy.yml --tags fred-collector
 ```
+
+The image (`fred-collector:latest`) is built and the container restarted by the ansible role. **Never** edit `/opt/ai-inference/compose.yaml` directly — it is ansible-managed.
 
 ## Ports
 
-| Port | Type | Description |
-|------|------|-------------|
-| 8080 | HTTP (internal) | REST API, health checks |
-| 5001 | HTTP/2 (internal) | gRPC event stream |
+| Port | Protocol | Visibility | Description |
+|------|----------|------------|-------------|
+| 8080 | HTTP/1.1+HTTP/2 | container-internal | REST API, health checks, Swagger (dev) |
+| 5001 | HTTP/2 only | container-internal | `ObservationEventStream` gRPC + reflection |
+
+No host port is mapped in `/opt/ai-inference/compose.yaml`; consumers reach the service via Docker DNS (`http://fred-collector:8080`, `http://fred-collector:5001`).
 
 ## See Also
 
-- [ThresholdEngine](../ThresholdEngine/README.md) - Consumes FRED observation events
-- [SecMaster](../SecMaster/README.md) - Instrument registration
-- [Events](../Events/README.md) - Shared gRPC event contracts
-- [FredCollector MCP](mcp/README.md) - MCP server for AI assistants
+- [ThresholdEngine](../ThresholdEngine/README.md) — Consumes the `ObservationEventStream` gRPC for pattern evaluation
+- [SecMaster](../SecMaster/README.md) — Instrument registration (gRPC) and sector / signal-identity REST taxonomy
+- [MacroSubstrate](../MacroSubstrate/src/MacroSubstrate/README.md) — Shared substrate consumed by the `IsMacro=true` dual-write path
+- [CalendarService](../CalendarService/README.md) — Federal Reserve holiday calendar provider
+- [Events](../Events/README.md) — Shared `.proto` contracts (`observation_events.proto`, `secmaster.proto`)
+- [FredCollector MCP](mcp/README.md) — MCP sidecar exposing FredCollector REST surface to AI assistants
