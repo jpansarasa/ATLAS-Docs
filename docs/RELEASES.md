@@ -25,6 +25,21 @@ agreement gate. 80.64% via prompt iter-2-axis-C + IsSelfReferential
 short-circuit on Qwen2.5-32B-Instruct-AWQ. Recalibration rationale in
 `docs/plans/atlas-dsl-poc-phase4-gpu-semantic-verifier.md §11`.
 
+### `dsl-poc-phase5-done` (@ ff72eb8f)
+**Phase 5 matrix integration — DONE.** CPU CoD cutover live
+(`Extraction__Backend=LlamaServerDsl` default); §17.4 path A
+`cells>0` criterion met (2 cells from 1/10 articles via FOMC 29807).
+4 review findings closed (CR-IMP-1 prune blast radius narrowed,
+CR-IMP-2 timeout-override coverage, OBS-1 DSL adapter dashboard
+panels, OBS-2 calculator-skip alert). 1333 unit + 6 integration
+tests pass; CPU throughput lifted to 6–13 t/s. Pending Phase 6:
+entity_resolution_exhausted=61 / gpu_verifier_none=28 filter drops;
+audit provenance `rawContentId=null`; CPU throughput borderline for
+synchronous extraction (~50% timeout on long-output articles at
+900s budget). Sub-plan
+`atlas-dsl-poc-phase5-matrix-integration.md` pruned from main per
+PHASE_TAGS; recover via `git show dsl-poc-phase5-done:docs/plans/atlas-dsl-poc-phase5-matrix-integration.md`.
+
 ## Phase summaries
 
 ### Phase 2 — llama.cpp llama-server CPU sibling (DONE 2026-05-21, PR #387 @ 25cb33fa)
@@ -54,9 +69,12 @@ sub-arc (`atlas-dsl-poc-phase4-7-sft-cove-verifier.md`) is now subsumed
 by §11 of the canonical record; the full sub-plan is preserved at
 `pre-docs-consolidation-2026-05-26:docs/plans/atlas-dsl-poc-phase4-7-sft-cove-verifier.md`.
 
-### Phase 5 — Matrix integration (IN FLIGHT)
-See `docs/plans/atlas-dsl-poc-phase5-matrix-integration.md` for the
-current plan.
+### Phase 5 — Matrix integration (DONE 2026-05-28, see `dsl-poc-phase5-done` tag)
+PR #510 merged at `ff72eb8f`. CPU CoD cutover live; §17.4 path A
+`cells>0` met. Iteration history at
+`dsl-poc-phase5-done:docs/plans/atlas-dsl-poc-phase5-matrix-integration.md`.
+Parent plan `docs/plans/atlas-dsl-poc-plan.md` remains active for
+Phase 6.
 
 ## Going forward
 
