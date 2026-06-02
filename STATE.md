@@ -5,7 +5,7 @@ Supervisor memory. Read first, write last, each turn. **Current truth + pointers
 ## EACH TURN START HERE
 0. **FIRST TURN OF SESSION ONLY** — git audit before any dispatch: `git worktree list`, `git branch`, `git status`, `git fetch origin && git log --oneline HEAD..origin/main`. Flag stale worktree-agent branches, detached HEADs, dirty main, behind-main drift. Safe cleanup direct; destructive (worktree remove, branch/stash delete) needs user approval. Per [[feedback_git_session_start_discipline]] + [[feedback_git_verify_each_step]] + [[feedback_main_always_current]].
 1. Poll NTFY `atlas-claude-reply` (user input first).
-2. RE-READ the active driver — `docs/atlas-matrix-realignment-brief.md` §6/§7 + plan `~/.claude/plans/harmonic-wobbling-manatee.md` + this file. ("RE-READ", not "I read it earlier".) DSL-PoC pipeline plan `docs/plans/atlas-dsl-poc-plan.md` §8 = completed-pipeline reference.
+2. RE-READ the active driver — `docs/plans/atlas-ws3-completion-plan.md` (execution plan: sub-projects A/B/C, per-PR loop, autonomy envelope) + this file. ("RE-READ", not "I read it earlier".) Reference: `docs/atlas-matrix-realignment-brief.md` (the why) + `~/.claude/plans/harmonic-wobbling-manatee.md` (full realignment design); DSL-PoC plan `docs/plans/atlas-dsl-poc-plan.md` §8 = completed-pipeline reference.
 3. Walk the pipeline backward from this turn's target before dispatching.
 4. Plan vs production mismatch → STOP + NTFY architectural, don't dispatch.
 
@@ -50,14 +50,15 @@ Items the prior STATE carried as "open asks" that were **already resolved** (ver
 - **Gemini Google-Finance fallback (#328)** — ✅ ENABLED (`Extraction__GeminiFallbackEnabled=true` + `GeminiResolverEnabled=true` + `GeminiAutoRegisterNewInstruments=true`).
 
 ## IN FLIGHT [2026-06-02]
-- **PR #589 OPEN** — deploy: rebalance CPU cpuset partition (restore embed island capacity). Worktree `agent-a8322bae…` (locked).
-- **WS3 D4 cutover** — remaining implementation (decided Option A), not a user-ask. Next concrete step: confirm #585 deploy + build `ObservationCellProjector` in shadow mode.
+- **SUPERVISOR RUN — executing `docs/plans/atlas-ws3-completion-plan.md` under FULL autonomy.** Sub-project A (Option-A cutover: A1 projector-shadow → A2 validate → A3 cutover + delete Path-2) → C (Phase-4 dashboards, gated on A3); **B (backtesting harness B1–B4) runs in parallel**, worktree-isolated. Per-PR loop = impl → `/pr-review-toolkit:review-pr` (merge gate) + reviewers → fix → merge → deploy.
+- **A1 #591 (cutover spine)** — review-fix DONE (`3c24f924`; 761/761 unit + 56/56 MacroSubstrate + 2/2 integ; all 10 panel items). Also fixed a REAL prod bug: `MatrixCellRepository.IsIdempotencyConflict` exact-matched `ux_matrix_cells_idem`, but TimescaleDB hypertables raise on the chunk-qualified `_hyper_*_chunk_ux_matrix_cells_idem` → the 23505 dedup swallow NEVER fired (also affects legacy `MatrixCellSentinelWorker` + SectorRegime writer); suffix-match fix + integ tests. Fix-diff re-review dispatched (marker re-set) → merge → deploy shadow.
+- **B1-free #592** — code review: adjusted-close extraction CORRECT + Yahoo-v8 deviation SOUND (0 crit/imp; test-analyzer's 'silent-misalign' fear refuted — pandas raises loudly on unequal arrays). Small fix dispatched: doc overclaim ('dividend backed out / event-log alongside' → reality = Yahoo-delegated adjustment, no event cols), non-positive-price guard, defensive raise/invariant/sort tests. → merge → then **B2** (C# signal-replay; needs `backtest/` on main). **B re-sourced**: PR #590 CLOSED (paid data not justified).
+- ⚠ **FRED-coverage ROOT CAUSE (recon'd 2026-06-02):** dual-write (`DataCollectionService.WriteMacroObservationAsync`) is deployed + wired but gated `if(config.IsMacro)` — **0/76 active FRED series opted in** (manual opt-in PR #239 never run; `FredSeriesSignalIdentityTagger` = red herring, tags `series_configs` only). Fix = **DESIGN DECISION (NTFY'd)**: (a) EF-seed `IsMacro` for macro mnemonics, or (b) drop the flag + dual-write FRED series whose `SignalIdentityId` resolves to macro ([[feedback_drop_feature_flags]] — recommended). **Cutover-SAFE** (FRED stays on pattern-eval `CellProjector`); gates the disagreement PAYOFF (C2), not A's mechanics.
+- **PR #589 OPEN** — deploy: rebalance CPU cpuset partition. Worktree `agent-a8322bae…` (locked); independent of WS3.
 
-## REMAINING USER DECISIONS (genuinely open — plan `harmonic-wobbling-manatee.md` §"Open decisions"; NOT re-verified this pass, flag don't assert)
-- **Macro score's role** (handoff §8 open-Q1): derive-from-sector-scores / keep-separate-new-weights / retire (its categories are gone).
-- **Regime granularity** (§8 open-Q2): per-sector 11 regimes / single global / both; relation to the existing 6-state.
-- **Borderline CUTs:** `cu-au-ratio` (valid FRED, `enabled:false`), `baltic-freight-recession` (needs BDIY feed) — enable+realign or drop.
-- **`cyclical-gdp-share-declining`** — retire to components or keep as one explicit composite.
+## REMAINING USER DECISIONS (handled by the WS3 plan — see plan §Open-decision handling)
+- **#2 macro-score role + #3 regime granularity** — surface-and-proceed: plan A2 NTFYs recommended defaults (derive-from-sector-scores; per-sector-11 primary + keep the existing global 6-state), proceeds on default unless redirected.
+- **#4 borderline CUTs** (`cu-au-ratio`, `baltic-freight-recession`) + **#5 `cyclical-gdp-share-declining`** — deferred to B4 backtest evidence (enable+realign if historical IC, drop if not).
 
 ## DEPLOY / RUNTIME NOTES
 - Scoped per-service restart now EXISTS (#557/#569/#570): freshness-gated stop+rm+up (nerdctl 1.7.7; `--force-recreate` invalid). The old "ansible full restart cycles GPU + starts alert-service" footgun is mitigated — still verify the running digest after deploy ([[ansible_deploy_stale_image]]).
@@ -83,6 +84,7 @@ Items the prior STATE carried as "open asks" that were **already resolved** (ver
 
 ## SUPERVISOR OPERATING NOTES
 - All code/test/build/deploy work → background subagents (never direct). STATE.md / plans / CLAUDE.md = supervisor-owned (annotate ≤30 lines/turn; full rewrites only when directed, as here). STATE.md is *my* document to maintain — verify, don't ask the user to approve it.
+- **Autonomy envelope (WS3 run, user-set 2026-06-02): FULL** — dispatch / review / fix / merge AND prod deploy AND the Path-2 deletion all autonomous; NTFY (`atlas-claude-ask`) only on a genuine blocker, an unanticipated architectural fork, or sub-project completion (A/B/C). End each supervisor turn with `▶ continuing autonomously` or `🛑 DECISION NEEDED`.
 - Merge gate marker is set by INVOKING `/pr-review-toolkit:review-pr <N>` (the SKILL), not by dispatching review agents directly. Invoke once before merging a supervisor PR.
 - NTFY: publish `atlas-claude-ask`, poll `atlas-claude-reply`. Templates: `.claude/skills/supervisor-mode/templates/`.
 - Git: selective `git add -- <paths>`; never `-A`/`-u`/`.` with agents in flight.
