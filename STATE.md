@@ -50,7 +50,6 @@ Items the prior STATE carried as "open asks" that were **already resolved** (ver
 - **Gemini Google-Finance fallback (#328)** — ✅ ENABLED (`Extraction__GeminiFallbackEnabled=true` + `GeminiResolverEnabled=true` + `GeminiAutoRegisterNewInstruments=true`).
 
 ## IN FLIGHT [2026-06-02]
-- **PR #588 OPEN** — matrix-backtesting design spec (research harness, for review). Worktree `agent-ab59a98d…`.
 - **PR #589 OPEN** — deploy: rebalance CPU cpuset partition (restore embed island capacity). Worktree `agent-a8322bae…` (locked).
 - **WS3 D4 cutover** — remaining implementation (decided Option A), not a user-ask. Next concrete step: confirm #585 deploy + build `ObservationCellProjector` in shadow mode.
 
@@ -68,7 +67,7 @@ Items the prior STATE carried as "open asks" that were **already resolved** (ver
 - Pre-existing (predates WS3): threshold-engine CCSA/ICSA unregistered + a few patterns overdue — re-verify post-#580 cut-list.
 
 ## DEFERRED FOLLOW-UPS (non-blocking)
-- **Untracked in repo:** `docs/atlas-matrix-realignment-brief.md` (the user-facing decision brief) + `docs/benchmarks/cod-2026-05-17/corpus.jsonl.macro-bak` — commit-or-discard.
+- **Untracked in repo:** `docs/benchmarks/cod-2026-05-17/corpus.jsonl.macro-bak` — commit-or-discard. (The realignment brief is now tracked, landed via PR #588.)
 - **Orphan worktree dir** `.worktrees/epic-3-macro-observations/` — NOT in `git worktree list` (stale/unregistered) → investigate + `git worktree prune` / remove.
 - Test-hardening: #552 interleaved-blank-subject index-drift; #554 direct `BuildEvidenceWindow` snap/multi-`\n`; #555 `SecMasterNameResolver` wire-shape (stub HttpMessageHandler + canned JSON).
 - README-TEMPLATE 6-variant router verification (PR #543).
