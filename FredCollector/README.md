@@ -38,6 +38,7 @@ Instrument-attributed series (those resolved to a SecMaster signal-identity that
 - **Resilient HTTP** — Polly retry (3× exponential backoff), circuit breaker (5 failures / 60s break), 30s request timeout.
 - **Startup backfill** — `InitialDataBackfillWorker` backfills history for series with no observations (configurable depth and toggle).
 - **On-demand admin** — Add / toggle / delete series, trigger collection or backfill (fire-and-forget background tasks).
+- **ALFRED point-in-time vintage backfill** — `AlfredBackfillService` fetches the full FRED release-vintage history (`series/observations` with `realtime_start`/`realtime_end`, same FRED key) and writes each (observation date × revision) with `AsOf` = the actual vintage release date — not the ingestion timestamp. This gives the matrix backtest true point-in-time history to series inception. Runnable on demand; does not change the live collection cadence.
 - **Series search** — Search FRED catalog with filters (frequency, popularity, active-only, sort order) plus two SecMaster-gateway aliases (`/api/search`, `/api/discover`).
 - **SecMaster integration** — gRPC `RegisterSeries`, plus optional REST-based periodic re-tagging for ATLAS sectors and signal-identities.
 - **MacroSubstrate dual-write** — When the series' resolved `SignalIdentityId` classifies as macro-category (SecMaster taxonomy, fetched and cached by `SecMasterMacroSignalClassifier`), observations are additionally written to `macro_observations` for cross-collector substrate queries.
@@ -114,6 +115,8 @@ All `/api/admin/*` routes use the same `ApiKey__Enabled` gate. Source: `src/Endp
 | `/api/admin/series/{seriesId}` | DELETE | Delete a series (204) |
 | `/api/admin/series/{seriesId}/collect` | POST | Fire-and-forget immediate collection (`ToUpperInvariant` series id) |
 | `/api/admin/series/{seriesId}/backfill` | POST | Fire-and-forget backfill (query: `months`, default `1`) |
+| `/api/admin/series/{seriesId}/backfill-vintages` | POST | ALFRED point-in-time backfill: full release-vintage history for one series, `AsOf` = vintage date (synchronous; returns a summary) |
+| `/api/admin/backfill-vintages` | POST | ALFRED point-in-time backfill over a series set (body: `{seriesIds: [...]}`); non-FRED ids skipped; synchronous, returns a summary |
 
 ### gRPC services (port 5001, internal, HTTP/2 only)
 
