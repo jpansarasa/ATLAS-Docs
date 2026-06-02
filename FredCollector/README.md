@@ -19,21 +19,17 @@ flowchart LR
     FC -->|OTLP| OTEL[OpenTelemetry Collector]
 ```
 
-Quartz cron schedules trigger `SeriesCollectionJob`, which calls `DataCollectionService` to fetch observations from FRED through a Polly-protected typed `HttpClient` (token-bucket throttled). New observations are persisted via `ObservationRepository`, published over the `ObservationChannel` to gRPC subscribers, and — when `series_configs.IsMacro = true` — dual-written to the shared `macro_observations` substrate (`MacroSubstrate`). On startup, `InitialDataBackfillWorker` backfills any series with zero observations; the optional `FredSeriesSectorTagBackgroundService` and `FredSeriesSignalIdentityTagBackgroundService` periodically re-tag series against SecMaster's REST taxonomy.
+Quartz cron schedules trigger `SeriesCollectionJob`, which calls `DataCollectionService` to fetch observations from FRED through a Polly-protected typed `HttpClient` (token-bucket throttled). New observations are persisted via `ObservationRepository`, published over the `ObservationChannel` to gRPC subscribers, and — when the series' resolved `SignalIdentityId` classifies as macro-category (per the SecMaster taxonomy) — dual-written to the shared `macro_observations` substrate (`MacroSubstrate`). On startup, `InitialDataBackfillWorker` backfills any series with zero observations; the optional `FredSeriesSectorTagBackgroundService` and `FredSeriesSignalIdentityTagBackgroundService` periodically re-tag series against SecMaster's REST taxonomy.
 
-Schema is owned by EF Core migrations under `src/Data/Migrations/`. `series_configs` carries the SecMaster ATLAS-sector tag (`AtlasSectorCode`, EF-converted enum), the signal-identity tag (`SignalIdentityId`), and the `IsMacro` routing predicate. A check constraint (`ck_series_config_sector_xor_signal`) enforces that sector and signal-identity are mutually exclusive — a series is either macro-rolled by sector or instrument-attributed by signal-identity, never both.
+Schema is owned by EF Core migrations under `src/Data/Migrations/`. `series_configs` carries the SecMaster ATLAS-sector tag (`AtlasSectorCode`, EF-converted enum) and the signal-identity tag (`SignalIdentityId`). A check constraint (`ck_series_config_sector_xor_signal`) enforces that sector and signal-identity are mutually exclusive — a series is either macro-rolled by sector or instrument-attributed by signal-identity, never both.
 
 ### Series classification: macro vs. instrument-attributed
 
-`series_configs.IsMacro` controls whether a series dual-writes observations into the shared `macro_observations` substrate (owned by `MacroSubstrate/`). When the flag is `true`, every collected observation is also written to `macro_observations` with provenance `(source_collector="fred", source_id=<series mnemonic>, observation_time)`; the write is idempotent on that triple, so re-running a collection cycle does not double-write. The legacy `fred_observations` write path is unchanged — the substrate write is additive.
+Whether a series dual-writes observations into the shared `macro_observations` substrate (owned by `MacroSubstrate/`) is decided at collection time by classifying the series' resolved `SignalIdentityId` against the SecMaster taxonomy — there is no per-series opt-in flag. A series dual-writes when its `SignalIdentityId` resolves to an identity whose `category == "macro"`. A series with a null or unresolved `SignalIdentityId` never dual-writes. When a series is macro-classified, every collected observation is also written to `macro_observations` with provenance `(source_collector="fred", source_id=<series mnemonic>, observation_time)`; the write is idempotent on that triple, so re-running a collection cycle does not double-write. The legacy `fred_observations` write path is unchanged — the substrate write is additive.
 
-Series default to `IsMacro = false`. Pure macro series (e.g. `UNRATE`, `CPIAUCSL`) opt in:
+The macro id-set is owned by SecMaster, not configured here. `SecMasterMacroSignalClassifier` fetches it from SecMaster's `/api/signal-identities/by-category/macro` endpoint and caches it (15-minute TTL) so the per-series collection path makes at most one round-trip per TTL window. The cache holds **last-known-good**: a transient SecMaster failure with a populated cache retains the previously-loaded set rather than flapping the gate. A **cold-start** fetch failure (no cache yet) yields an empty set, so the gate **fails closed** — no series dual-writes until SecMaster recovers — and the failed fetch is not cached, so the next collection retries.
 
-```sql
-UPDATE series_configs SET "IsMacro" = true WHERE "SeriesId" = 'UNRATE';
-```
-
-Instrument-attributed series (those resolved to a SecMaster signal-identity that represents a specific instrument rather than a macro indicator) stay `IsMacro = false`; the per-series sector tag and signal-identity remain authoritative for that path.
+Instrument-attributed series (those resolved to a SecMaster signal-identity that represents a specific instrument rather than a macro indicator) never dual-write; the per-series sector tag and signal-identity remain authoritative for that path.
 
 ## Features
 
@@ -44,7 +40,7 @@ Instrument-attributed series (those resolved to a SecMaster signal-identity that
 - **On-demand admin** — Add / toggle / delete series, trigger collection or backfill (fire-and-forget background tasks).
 - **Series search** — Search FRED catalog with filters (frequency, popularity, active-only, sort order) plus two SecMaster-gateway aliases (`/api/search`, `/api/discover`).
 - **SecMaster integration** — gRPC `RegisterSeries`, plus optional REST-based periodic re-tagging for ATLAS sectors and signal-identities.
-- **MacroSubstrate dual-write** — When `IsMacro=true`, observations are additionally written to `macro_observations` for cross-collector substrate queries.
+- **MacroSubstrate dual-write** — When the series' resolved `SignalIdentityId` classifies as macro-category (SecMaster taxonomy, fetched and cached by `SecMasterMacroSignalClassifier`), observations are additionally written to `macro_observations` for cross-collector substrate queries.
 - **gRPC event stream** — `ObservationEventStream` proto (port 5001) for ThresholdEngine subscription, replay, and time-range queries.
 - **Observability** — OpenTelemetry traces, metrics, and Serilog structured logs exported via OTLP gRPC; ActivitySources include the shared `MacroSubstrate` source.
 - **RFC 9457 problem details** — Errors return `application/problem+json` with `traceId` extension.
@@ -67,7 +63,7 @@ Runtime configuration is provided via environment variables (`__` maps to `:` fo
 | `OpenTelemetry__ServiceName` | Service name resource attribute | `fred-collector` |
 | `OpenTelemetry__ServiceVersion` | Service version resource attribute | `1.0.0` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint (registration). When unset, `SecMasterRegistryClient` is not registered. | unset → no-op |
-| `SECMASTER_REST_ENDPOINT` | SecMaster REST endpoint (used by both sector and signal-identity taggers). When unset, both tagger workers no-op. | unset → no-op |
+| `SECMASTER_REST_ENDPOINT` | SecMaster REST endpoint (used by both sector and signal-identity taggers **and** the macro-classification dual-write gate). When unset, both tagger workers no-op **and** the macro gate is wired to `NullMacroSignalClassifier`, which classifies nothing as macro — so no series dual-writes to `macro_observations`. | unset → no-op |
 | `ApiKey__Enabled` | Enable `X-API-Key` / `?api_key=` authentication on `/api/*` (health endpoints stay anonymous) | `false` |
 | `ApiKey__Key` | Expected API key value (only checked when enabled) | unset |
 | `Kestrel__HttpPort` | REST / health-check listen port | `8080` |
@@ -206,7 +202,7 @@ No host port is mapped in `/opt/ai-inference/compose.yaml`; consumers reach the 
 
 - [ThresholdEngine](../ThresholdEngine/README.md) — Consumes the `ObservationEventStream` gRPC for pattern evaluation
 - [SecMaster](../SecMaster/README.md) — Instrument registration (gRPC) and sector / signal-identity REST taxonomy
-- [MacroSubstrate](../MacroSubstrate/src/MacroSubstrate/README.md) — Shared substrate consumed by the `IsMacro=true` dual-write path
+- [MacroSubstrate](../MacroSubstrate/src/MacroSubstrate/README.md) — Shared substrate consumed by the macro-classified dual-write path
 - [CalendarService](../CalendarService/README.md) — Federal Reserve holiday calendar provider
 - [Events](../Events/README.md) — Shared `.proto` contracts (`observation_events.proto`, `secmaster.proto`)
 - [FredCollector MCP](mcp/README.md) — MCP sidecar exposing FredCollector REST surface to AI assistants
