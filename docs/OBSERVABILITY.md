@@ -65,9 +65,13 @@ builder.Services.AddOpenTelemetry()
     .WithMetrics(m => m
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
+        .AddRuntimeInstrumentation()        // CLR: GC, heap, threadpool, cpu.count, exceptions
         .AddMeter(ServiceMeter.Name)
         .AddOtlpExporter());
 ```
+
+> **Runtime instrumentation is mandatory** on every .NET service (package
+> `OpenTelemetry.Instrumentation.Runtime`). See [.NET Runtime Metrics](#net-runtime-metrics-all-net-services).
 
 **Environment Variables** (configured in compose.yaml):
 ```yaml
@@ -136,6 +140,34 @@ Examples:
 | `alertservice.alerts.sent` | Counter | Alerts successfully sent |
 | `alertservice.alerts.failed` | Counter | Failed alert deliveries |
 | `alertservice.channel.send_duration` | Histogram | Channel send duration |
+
+### .NET Runtime Metrics (all .NET services)
+
+Every .NET service calls `.AddRuntimeInstrumentation()` (package `OpenTelemetry.Instrumentation.Runtime`),
+exporting the CLR's built-in `System.Runtime` counters. These arrive under the `dotnet.*` semconv
+namespace (Prometheus form shown), tagged with `exported_job="{service}"`:
+
+| Metric (Prometheus) | Description |
+|--------|-------------|
+| `dotnet_process_memory_working_set_bytes` | Process working set (RSS) |
+| `dotnet_process_cpu_count` | **CPUs the CLR sees** — driven by the cgroup `cpu.max` quota, *not* host cores |
+| `dotnet_gc_heap_allocated_bytes_total` | Cumulative managed allocations (rate ⇒ alloc pressure) |
+| `dotnet_gc_last_collection_heap_size_bytes{gc_heap_generation}` | Managed heap size per gen (gen0/1/2/loh/poh) |
+| `dotnet_gc_collections_total{gc_heap_generation}` | GC count per generation (gen2 rate ⇒ pressure) |
+| `dotnet_gc_pause_time_seconds_total` | Cumulative GC stop-the-world pause time |
+| `dotnet_thread_pool_thread_count_total` | ThreadPool thread count |
+| `dotnet_thread_pool_queue_length_total` | ThreadPool work-item queue depth (sustained >0 ⇒ starvation) |
+| `dotnet_monitor_lock_contentions_total` | `lock`/`Monitor` contention events |
+| `dotnet_exceptions_total` | Exceptions thrown |
+
+**Sizing lesson — cgroup quota drives the CLR.** .NET derives `Environment.ProcessorCount`
+(and sizes GC heaps, the ThreadPool, and all parallelism) from the cgroup CPU quota (`cpu.max`),
+**not** the host core count. A `cpus: '1.0'` limit on a 48-core host makes the CLR behave as a
+single-core machine and CFS-throttle bursts (`dotnet_process_cpu_count` reveals this directly).
+Size `deploy.resources.limits.cpus` to the service's real parallelism need. For memory, watch
+working set vs the `memory` limit — but separate managed-heap pressure (the `dotnet_gc_*` metrics
+above) from native/anonymous memory (cgroup `container_memory_anon_bytes`): a high working set is
+often native, not GC, and only the latter responds to GC tuning.
 
 ## Tracing
 
@@ -465,11 +497,14 @@ _counter.Add(count);  // Hours of no data
 
 ## Services Without Full Observability
 
-The following services are not yet fully instrumented with OpenTelemetry:
+All .NET services (FredCollector, AlphaVantageCollector, FinnhubCollector, OfrCollector,
+NasdaqCollector, ThresholdEngine, SecMaster, SentinelCollector, AlertService, CalendarService,
+Reports) are fully instrumented: traces + custom metrics + **runtime metrics** + Serilog/OTLP logs.
+
+The following remain partial:
 
 | Service | Status |
 |---------|--------|
-| CalendarService | No OTEL config (basic health checks only) |
 | WhisperService | Python service with basic OTEL via env vars |
 | MCP servers | Lightweight proxies, rely on parent service telemetry |
 

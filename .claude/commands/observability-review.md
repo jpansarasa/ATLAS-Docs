@@ -168,6 +168,26 @@ UNCERTAINTY_BOUNDARY: ¬control_other_side
 report: UNUSED list | MISSING list → recommendation
 ```
 
+**A8: Runtime Instrumentation (.NET services)**
+```
+scope: {scope} (Program.cs + matching *.csproj)
+
+REQUIRE on every .NET service that exports metrics:
+  ✓ .WithMetrics(...) includes .AddRuntimeInstrumentation()
+  ✓ csproj references OpenTelemetry.Instrumentation.Runtime (version aligned with the
+    service's other OpenTelemetry.* packages; no NU1902 advisory at build)
+  rationale: GC / heap / threadpool / exception visibility. dotnet_process_cpu_count exposes
+             cgroup CPU-quota mis-sizing — the CLR sizes ProcessorCount, GC heaps and the
+             ThreadPool from cpu.max, NOT host cores.
+
+SIZING_CHECK [when the diff touches compose/deploy resource limits]:
+  cpus quota → CLR ProcessorCount: size to real parallelism need ¬ leave 1.0 on a many-core host
+  memory: separate managed-heap pressure (dotnet_gc_*) from native (container_memory_anon_bytes);
+          a high working set is often native, not GC
+
+report: file → has_runtime_instrumentation | MISSING .AddRuntimeInstrumentation() | MISSING package
+```
+
 ### Step 3: Aggregate
 Collect agent outputs → final report
 
@@ -192,6 +212,7 @@ Collect agent outputs → final report
 - Streaming metrics: ✓
 - Log level: ✓
 - Metrics coverage: ✓
+- Runtime instrumentation: ✓
 ```
 
 ## REFERENCE
