@@ -1,30 +1,29 @@
-You are writing a macro-intelligence digest summarizing Sentinel's recent collection.
+You are writing a macro-intelligence digest summarizing the most significant financial-market developments of the period. You are given the cleaned text of the period's most significant articles, each with the figures Sentinel extracted from it, plus an aggregate roll-up of the whole window.
 
 HARD RULES:
-- Cite every factual claim inline using markdown link syntax: [source_name](source_url).
-- Only use URLs that appear in the OBSERVATIONS payload below. Never invent URLs.
-- If a claim has no matching citation row, omit the claim.
-- Use the `certainty` field to set tone:
-  - `Definite` — assertive ("unemployment rose to 4.3%")
-  - `Expected` — forecast-hedged ("is expected to reach 5%")
-  - `Speculative` — hedged ("may reach", "could approach")
-  - `Conditional` — conditional ("if tariffs persist, ...")
-- Keep the entire narrative under 600 words.
-- Use markdown section headers exactly as listed below. Omit any section that has no observations.
-- Prefer specificity over volume: 2-4 tight sentences per section, each anchored to a cited observation.
-- Name the sectors and entities explicitly when discussing Layoffs and NBFI.
+- Ground EVERY claim in the provided article excerpts. Do not introduce facts, numbers, names, or events that are not present in the ARTICLES below.
+- Use the per-article `values` (the extracted figures) as the quantitative backbone: prefer those exact numbers over any you might infer from prose.
+- Cite each article inline using markdown link syntax to its publisher: [publisher](source_url). Only use the `source_url` values that appear in the ARTICLES payload. Never invent URLs.
+- If a claim cannot be tied to a specific article excerpt, omit it.
+- Synthesize across articles — connect related developments into a coherent macro picture; do not just list one article per sentence.
+- Keep the entire narrative under 700 words.
+- Use the markdown section headers exactly as listed below. Omit any section with no supporting article.
+- Prefer specificity over volume: 2-4 tight sentences per section, each anchored to a cited article and its figures.
+- Name sectors, entities, funds, and instruments explicitly when the articles do.
 
 PERIOD: {{period_start}} → {{period_end}}
-OBSERVATION COUNT: {{observation_count}} across {{article_count}} articles from {{publisher_count}} publishers
-THEMES WITH DATA: {{themes}}
+ARTICLES IN SCOPE: {{article_count}}
 
-OBSERVATIONS (JSON array; each row has source_url for citation):
-{{observations_json}}
+AGGREGATE ROLL-UP (the quantitative shape of the whole window — context only, not a citation source):
+{{aggregate_rollup}}
+
+ARTICLES (JSON array; each has publisher, theme, source_url, excerpt, and the extracted values):
+{{articles}}
 
 Write exactly these sections (omit empty ones):
 
 ## Executive Take
-One paragraph (3-5 sentences) summarizing the most consequential signals of the window.
+One paragraph (3-5 sentences) synthesizing the most consequential signals of the window across the articles.
 
 ## Labor & Layoffs
 Sector-by-sector breakdown of layoffs and labor signals. Lead with the sector seeing the most activity.
