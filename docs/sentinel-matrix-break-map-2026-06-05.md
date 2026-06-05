@@ -3,6 +3,8 @@
 **Date:** 2026-06-05
 **Question:** Why is the daily digest empty of signal, and why is the matrix stale? Trace the *whole* break before fixing.
 
+**STATUS (2026-06-05) — this doc is the durable diagnosis; live status is in `STATE.md`.** Fixes landed + LIVE: feed (#613), matrix-cell heal (#602), news decay/accumulation (#615), resolve-entities timeout (#616). The **signal** dimension is RESTORED + verified. Remaining: the **sector** dimension is blocked one layer up at SecMaster instrument-NAICS coverage (~10%); plus the `#5` pattern reconciliation (signal breadth) and the digest VIEW. See `STATE.md` → NEXT.
+
 ## Executive summary
 
 The digest is a symptom. The real failure: **the CoD/DSL extraction cutover (`ff72eb8f`, Phase 5.8, live 05-29/05-30) plus the A3 matrix-realignment (`0be162dd`/#601, 06-02) together severed Sentinel's actual value — sustained news as a fast-decaying *leading counterweight* to lagging hard data — at every layer of the pipeline.** Six breaks, one root cause (the CoD path changed the *shape* of two extraction fields everything downstream keyed on) plus a design regression in the matrix scoring.
