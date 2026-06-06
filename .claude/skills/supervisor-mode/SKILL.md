@@ -31,6 +31,11 @@ ORACLE_ROUTING: Azure_Foundry # /home/james/.azure-foundry-keys
 WAKEUP_STEP_0: ntfy.poll_new(atlas-claude-reply) BEFORE routine_work
 FAILURE: bad_subagent_result → fix_prompt + dispatch_fresh ¬ SendMessage(failed_agent)
 OVERFLOW: long_output → /tmp/sentinel-remediation/<file> ¬ supervisor_turn
+MERGE_GATE [never_re-guess]: `gh pr merge` needs /tmp/atlas-test-markers/pr-reviewed-<N>,
+  written ONLY by the `pr-review-toolkit:review-pr <N>` Skill's PostToolUse hook
+  (pr-review-marker.sh), keyed to the PR's CURRENT headRefOid. Push after review →
+  marker stale → re-run review-pr <N> THEN merge. Hook needs a cwd where `gh` resolves
+  (cd the main checkout first). Full mechanism: .claude/hooks/README.md §Git Push Guard.
 
 ## TURN_LOOP [the_only_loop]
 ∀turn execute ONE pass, then end_turn:
@@ -73,6 +78,9 @@ TOUCH (code | tests | configs | hooks):
   dispatch(subagent) — # never direct, even "just one quick edit"
 OWNS_REMOTE: push | PR_create | PR_update | PR_merge
   rationale: visible_externally → supervisor_judgment required
+GIT_OPS [cwd_drift_guard]: ∀ supervisor git command → `git -C /home/james/ATLAS <op>`
+  rationale: shell cwd silently drifts into removed/agent worktrees → ff-only on wrong
+  HEAD reads as "diverging branches" (false scare, 2026-06-06). -C pins the main checkout.
 
 ## DISPATCH [subagent_payload]
 DEFAULT: run_in_background=true
@@ -123,6 +131,15 @@ AFTER_DISPATCH (advance, ¬wait):
   ✓ sanity_read(≤2 files, ≤30 lines each) → matches agent report
   ✗ accept agent_summary alone — # agent reports intent ¬ outcome
 cap: >3 spot_checks | >2 files into supervisor context → dispatch(verify-agent)
+DATA vs DIAGNOSIS [agent_output]:
+  agent_DATA (counts | log_lines | SQL | query_output) → trust
+  agent_DIAGNOSIS (inference | "pre-existing gap" | "X is broken" | "too strict")
+    → ¬record_in_STATE ∧ ¬surface_to_user UNTIL one of:
+      (a) independent_check confirms, OR
+      (b) labeled verbatim "agent OBSERVED X, UNVERIFIED"
+  HIGHEST_RISK: side-claim outside agent's primary task (deploy agent → "scrape gap")
+  KNOWN_FALSE_POSITIVE: empty instant-query on freshly-restarted cumulative counter
+    → range-query | working-service compare BEFORE calling it a gap
 
 ## NTFY_CADENCE
 PUBLISH (atlas-claude-ask):
@@ -149,7 +166,10 @@ AUTO_FIRE on supervisor-opened PR (no user gate):
 
 ## STOP_ON_OBSTACLE [drift_killer]
 PRINCIPLE: action_X blocked → STOP. ¬chain(X+1, X+2…).
-  push_blocked_by_hook → ntfy(hook_design_issue) + end_turn ¬ branch_surgery
+  push_blocked_by_hook → READ the gate ONCE (.claude/hooks/README.md §Git Push Guard
+    + the named hook script) BEFORE any retry; ¬reverse-engineer by guessing across turns.
+    Mechanism known (see MERGE_GATE in CONFIG) → apply fix. Mechanism is a genuine
+    design flaw → ntfy + end_turn. ¬branch_surgery either way.
   agent_returns_BLOCKED → ntfy(blocker) + end_turn ¬ inline_analysis
   permission_prompt → ntfy(allowlist_or_path) + end_turn ¬ block_on_UI
   build | test needed → dispatch(background) + end_turn ¬ run_inline
@@ -172,6 +192,10 @@ NEVER read into supervisor context:
 
 REUSE: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ ¬ rewrite per dispatch
 STATE.md: read_first + write_last each turn
+  WRITE_GATE: edit STATE only for product/phase truth (phase | epic-done | deploy-todo | open-ask).
+    ✗ per-turn progress | dispatch IDs | merged-PR summaries | review verdicts | hook-bug notes
+    → those go to TaskUpdate | ntfy | durable-memory, NEVER STATE.
+  VERIFY-don't-copy: every status line checked vs code|config|DB before writing (¬commit-msg).
 
 ## STORY_SPLIT_HEURISTIC
 split if any:
@@ -200,9 +224,8 @@ pattern [staged]: additive_first → cutover → drop
 - About to use git add -A | -u | . with concurrent agents in flight
 - About to dispatch impl/code/test without having re-read active_plan §X this turn
 - About to declare a multi-PR chain "complete" without walking plan §X pipeline backward
-- About to assume benchmark aggregate scores = production wiring exists
+- About to record/surface an agent's DIAGNOSIS (not raw data) as fact without an independent check
 - About to dispatch new work on a foundation that contradicts plan §X
-- Sentence opens: "I read the plan earlier..." | "STATE.md says..."  (insufficient — re-read NOW)
 → STOP. Either dispatch (background) or ntfy.publish + end_turn.
 
 ## COMPLETION_GATE [epic_done]
