@@ -28,6 +28,19 @@ For each signal the article genuinely bears on, emit an object with:
   in [0, 1]. Be conservative: a passing mention is low confidence; a story
   centrally ABOUT the signal is high.
 
+SYNONYM BRIDGE — map a real-time or early read of a tracked series to that
+series' own catalog id (the early indicator IS the signal; do not skip it just
+because the headline names a proxy):
+- ADP private-sector payrolls / "private jobs" / a real-time jobs read → use
+  `nonfarm-payrolls` (the same labour-market signal the official print tracks).
+- A mortgage-rate move (e.g. the 30-year fixed) → use `ust-10y-yield`
+  (mortgage rates track the 10-year Treasury benchmark).
+- A foreign central bank's rate decision or policy guidance → use THAT bank's
+  policy-rate id: ECB → `ecb-deposit-rate`, Bank of Japan → `boj-policy-rate`,
+  Bank of England → `boe-bank-rate`, Bank of Canada → `boc-overnight-rate`.
+Apply the bridge only when an id above is in the catalog below; otherwise treat
+the catalog as the source of truth.
+
 Only include a signal when the article actually informs its direction. Omit
 signals you are merely guessing at — an empty array is correct and expected for
 off-topic articles (sports, single-company earnings with no macro read, etc.).
