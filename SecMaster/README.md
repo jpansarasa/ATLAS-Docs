@@ -2,6 +2,8 @@
 
 Centralized instrument metadata and intelligent source resolution service for ATLAS.
 
+> 🤖 **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
+
 ## Overview
 
 SecMaster provides a single source of truth for financial instrument definitions and context-aware routing to data sources. Collectors register their series capabilities via gRPC, and consumers resolve symbols to the optimal data source based on frequency, latency, and collector preferences. Includes hybrid search combining SQL, fuzzy matching, vector similarity, and RAG-powered natural language queries via Ollama.
@@ -214,17 +216,24 @@ REST endpoints are split across the following endpoint groups under `src/Endpoin
 | `/api/admin/sector-overrides` | GET | List all currently-active instrument sector overrides (paginated, default limit 100) |
 | `/health` | GET | Health check (returns JSON with per-check status) |
 
-### gRPC Services (Port 5001)
 
-Proto: `Events/src/Events/Protos/secmaster.proto` (package `atlas.secmaster`).
+### gRPC
 
-| Service | Method | Description |
-|---------|--------|-------------|
-| `SecMasterRegistry` | `RegisterSeries` | Register single series (fire-and-forget) |
-| `SecMasterRegistry` | `RegisterSeriesBatch` | Batch registration via **client** streaming |
-| `SecMasterResolver` | `ResolveSymbol` | Resolve symbol to best data source |
-| `SecMasterResolver` | `ResolveBatch` | Batch resolution via **server** streaming |
-| `SecMasterResolver` | `LookupSource` | Reverse lookup by collector and source ID |
+Proto: `Events/src/Events/Protos/secmaster.proto` (package `atlas.secmaster`, C# namespace `ATLAS.SecMaster.Grpc`).
+
+**Exposes (server):**
+
+| Service | Method | Direction | Description |
+|---------|--------|-----------|-------------|
+| `SecMasterRegistry` | `RegisterSeries` | unary | Collectors register a single series (fire-and-forget) |
+| `SecMasterRegistry` | `RegisterSeriesBatch` | client-stream → unary | Batch registration; clients stream `SeriesRegistration` messages |
+| `SecMasterResolver` | `ResolveSymbol` | unary | Resolve canonical symbol → best `SourceMapping` |
+| `SecMasterResolver` | `ResolveBatch` | unary → server-stream | Batch symbol resolution; server streams `ResolveResponse` per symbol |
+| `SecMasterResolver` | `LookupSource` | unary | Reverse lookup: collector+source-id → canonical instrument |
+
+**Consumes (client):** none — SecMaster is a pure gRPC server on this transport.
+
+**Callers:** Collectors call `SecMasterRegistry` (fire-and-forget registration). ThresholdEngine calls `SecMasterResolver.ResolveBatch` at load time for pattern validation and `DataWarmupService` routing.
 
 ## Project Structure
 

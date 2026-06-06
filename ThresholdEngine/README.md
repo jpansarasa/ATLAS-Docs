@@ -2,6 +2,8 @@
 
 Pattern evaluation, sector projection, and matrix-cell persistence service for ATLAS.
 
+> 🤖 **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
+
 ## Overview
 
 ThresholdEngine consumes observation events from collectors over gRPC, evaluates Roslyn-compiled C# pattern expressions, projects per-pattern signals onto the 11-sector ATLAS sector grid, and persists the resulting matrix cells, sector regimes, and sector-phase aggregates to TimescaleDB. It also bridges Sentinel-producer DSL extractions onto `matrix_cells` and exposes a REST consumption surface for downstream consumers (dashboard, reports, MCP). Threshold-crossing events are published in-process and streamed to subscribers (`ThresholdEngineMcp`, alerting) via the gRPC event stream.
@@ -121,19 +123,31 @@ The gRPC `ThresholdEventStreamService` lives in `src/Grpc/Services/` and impleme
 
 OpenAPI JSON is always served at `/swagger/v1/swagger.json`. Interactive Swagger UI is enabled only when `ASPNETCORE_ENVIRONMENT=Development`.
 
-### gRPC Services (Port 5001)
 
-`ObservationEventStream` (proto: `Events/src/Events/Protos/observation_events.proto`):
+### gRPC
 
-| Method | Description |
-|--------|-------------|
-| `SubscribeToEvents` | Server-streamed real-time threshold/sector-crossing events |
-| `GetEventsSince` | Server-streamed historical events from a starting timestamp |
-| `GetEventsBetween` | Server-streamed historical events within a time range |
-| `GetLatestEventTime` | Timestamp of the most recent persisted threshold event |
-| `GetHealth` | gRPC health probe |
+Proto: `Events/src/Events/Protos/observation_events.proto` (service `ObservationEventStream`, C# namespace `ATLAS.Events.Grpc`).
+
+**Exposes (server) — ThresholdEngine re-publishes threshold/sector crossings:**
+
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `SubscribeToEvents` | server-stream | Real-time threshold + sector-crossing events from a checkpoint |
+| `GetEventsSince` | server-stream | Historical replay from a starting timestamp |
+| `GetEventsBetween` | server-stream | Historical replay across a closed time range |
+| `GetLatestEventTime` | unary | Timestamp of most recent persisted threshold event |
+| `GetHealth` | unary | Health probe + event-store statistics |
+
+**Consumes (client) — ThresholdEngine subscribes to every collector:**
+
+| Proto | Service | Direction | Caller | Description |
+|-------|---------|-----------|--------|-------------|
+| `observation_events.proto` | `ObservationEventStream` | server-stream (subscribe) | `MultiCollectorEventConsumerWorker` | Ingests `SeriesCollected`/`CollectionFailed` events from all 5 collectors |
+| `secmaster.proto` | `SecMasterResolver.ResolveBatch` | server-stream response | `SecMasterFrequencyResolver` (load-time) + `DataWarmupService` | Pattern validation + collector routing |
 
 gRPC reflection is enabled.
+
+The gRPC `ThresholdEventStreamService` lives in `src/Grpc/Services/` and implements the `ObservationEventStream` contract defined in `Events/src/Events/Protos/observation_events.proto`.
 
 ### Health Endpoints
 

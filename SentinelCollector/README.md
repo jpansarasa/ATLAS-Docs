@@ -2,9 +2,11 @@
 
 Alternative data collection and CPU-based DSL extraction service for ATLAS.
 
+> 🤖 **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
+
 ## Overview
 
-SentinelCollector collects unstructured web content from SearXNG news search, RSS feeds, and Cloudflare edge workers, then extracts economic observations via a CPU-based Chain-of-Density (CoD) DSL pipeline. Extracted observations are resolved against SecMaster (with Finnhub + AlphaVantage + Gemini fallbacks) and streamed to ThresholdEngine over gRPC. The service also runs a digest generator, a browser-based review UI, validation-trigger machinery, and a Phase 5.5 matrix-cell enrichment stream.
+SentinelCollector collects unstructured web content from SearXNG news search, RSS feeds, and Cloudflare edge workers, then extracts economic observations via a CPU-based Chain-of-Density (CoD) DSL pipeline. Extracted observations are resolved against SecMaster (with Finnhub + AlphaVantage + Gemini fallbacks) and streamed to ThresholdEngine over gRPC. The service also runs a digest generator, a browser-based review UI, and validation-trigger machinery. (The matrix-cell enrichment stream `MatrixUpdateStream` was retired in WS3-A3; only `ObservationEventStream` remains active.)
 
 ## Architecture
 
@@ -62,7 +64,7 @@ flowchart LR
     RES --> GEM
     EX --> PUB
     PUB -->|gRPC ObservationEventStream| TE
-    PUB -->|gRPC MatrixUpdateStream| TE
+    PUB -->|gRPC MatrixUpdateStream| TE ~~retired (WS3-A3)~~
     DG --> NTFY
 ```
 
@@ -87,7 +89,7 @@ Schema is owned by EF Core migrations under `src/Data/Migrations/`. Database mig
 - **Re-extract Background Service**: Optional one-shot recovery for legacy rows; supports `re-extract` and `resolve-only` modes with live-queue backpressure
 - **Review UI**: Server-rendered HTML queue at `/ui/review` (approve/reject/skip + inline corrections)
 - **Digest Service**: Daily / Weekly / Monthly digests with HTML / Markdown / JSON variants and ntfy push
-- **Event Streaming (gRPC)**: `ObservationEventStream` for observation events + `MatrixUpdateStream` for Phase 5.5 matrix-cell enrichments
+- **Event Streaming (gRPC)**: `ObservationEventStream` for observation events. `MatrixUpdateStream` retired (WS3-A3) — ThresholdEngine no longer subscribes; only ObservationEventStream remains.
 - **OpenTelemetry**: Traces (`SentinelCollector.*` activity sources), metrics (`SentinelCollector.*` meters incl. `EntityResolver`), and Serilog → OTLP logs
 
 ## Configuration
@@ -185,17 +187,31 @@ REST surface lives under `src/Endpoints/`:
 | `/health/ready` | GET | Readiness (database + ollama) |
 | `/health/live` | GET | Liveness |
 
-### gRPC API (Port 5001)
 
-| Service | Method | Description |
-|---------|--------|-------------|
-| `ObservationEventStream` | `SubscribeToEvents` | Server-streaming events from a `start_from` timestamp |
-| `ObservationEventStream` | `GetEventsSince` | Server-streaming replay since a timestamp |
-| `ObservationEventStream` | `GetEventsBetween` | Server-streaming replay across a time range |
-| `ObservationEventStream` | `GetLatestEventTime` | Unary — timestamp of the most recent event |
-| `ObservationEventStream` | `GetHealth` | Unary — health + event statistics |
-| `MatrixUpdateStream` | `SubscribeToMatrixCellUpdates` | Server-streaming Phase 5.5 matrix-cell enrichment updates |
-| `grpc.reflection.v1alpha.ServerReflection` | * | gRPC reflection (always on) |
+### gRPC
+
+Proto: `Events/src/Events/Protos/observation_events.proto` (service `ObservationEventStream`, C# namespace `ATLAS.Events.Grpc`); `Events/src/Events/Protos/secmaster.proto` (service `SecMasterRegistry`).
+
+**Exposes (server):**
+
+| Proto | Service | Method | Direction | Description |
+|-------|---------|--------|-----------|-------------|
+| `observation_events.proto` | `ObservationEventStream` | `SubscribeToEvents` | server-stream | Real-time events from a checkpoint |
+| `observation_events.proto` | `ObservationEventStream` | `GetEventsSince` | server-stream | Historical replay since a timestamp |
+| `observation_events.proto` | `ObservationEventStream` | `GetEventsBetween` | server-stream | Historical replay across a time range |
+| `observation_events.proto` | `ObservationEventStream` | `GetLatestEventTime` | unary | Timestamp of most recent event |
+| `observation_events.proto` | `ObservationEventStream` | `GetHealth` | unary | Health + event statistics |
+
+Note: `MatrixUpdateStream` (`matrix_updates.proto`) is retired: its server-side impl (`MatrixCellUpdateStreamService`) and ThresholdEngine's consumer (`MatrixCellSentinelWorker`) were removed in WS3-A3; `ThresholdEngine/src/DependencyInjection.cs` line 186 confirms no active subscription.
+
+**Consumes (client):**
+
+| Proto | Service | Method | Direction | Caller | Description |
+|-------|---------|--------|-----------|--------|-------------|
+| `observation_events.proto` | `ObservationEventStream` | `SubscribeToEvents` | server-stream | `ValidationEventConsumerWorker` | Receives `ThresholdCrossedEvent`/`SectorThresholdCrossedEvent` from ThresholdEngine |
+| `secmaster.proto` | `SecMasterRegistry` | `RegisterSeries` | unary | extracted-observation publish path | Fire-and-forget registration (optional; gated `SECMASTER_GRPC_ENDPOINT`) |
+
+gRPC reflection is enabled.
 
 ## Project Structure
 
@@ -207,7 +223,7 @@ SentinelCollector/
 │   ├── Endpoints/        # AdminEndpoints, ReviewUiEndpoints, DigestEndpoints
 │   ├── Entities/         # RawContent, ExtractedObservation, RssFeed, ValidationTrigger, ...
 │   ├── Extraction/       # CoVe, CoD, ExtractionSchemaV2, DSL adapter, prompt providers, tool-augmented variants
-│   ├── Grpc/             # EventStreamService, MatrixCellUpdateStreamService, repositories
+│   ├── Grpc/             # EventStreamService (active); MatrixCellUpdateStreamService retired (WS3-A3)
 │   ├── HealthChecks/     # DatabaseHealthCheck, OllamaHealthCheck
 │   ├── Publishers/       # EventPublisher (writes to events table for gRPC stream)
 │   ├── Semantic/         # EntityResolver, ClaimVerifier, SectorTagger, MatrixCellEnrichmentPublisher
@@ -265,12 +281,12 @@ Prompts are host-mounted: edit files under `/opt/ai-inference/prompts/sentinel/`
 | Port | Type | Description |
 |------|------|-------------|
 | 8080 | HTTP (container) | REST API, health checks, review UI, digests, Swagger (dev) |
-| 5001 | HTTP/2 (container) | gRPC `ObservationEventStream` + `MatrixUpdateStream` |
+| 5001 | HTTP/2 (container) | gRPC `ObservationEventStream` (MatrixUpdateStream retired WS3-A3) |
 | 5091 | HTTP (host-mapped) | Browser access to review UI + digest pages — maps to container `8080` |
 
 ## See Also
 
-- [ThresholdEngine](../ThresholdEngine/README.md) - Consumes observation + matrix-cell events via gRPC
+- [ThresholdEngine](../ThresholdEngine/README.md) - Consumes observation events via gRPC (MatrixUpdateStream retired WS3-A3; ObservationEventStream only)
 - [SecMaster](../SecMaster/README.md) - Instrument resolution and signal-identity catalog
 - [FinnhubCollector](../FinnhubCollector/README.md) - Symbol lookup upstream for the resolution cascade
 - [AlphaVantageCollector](../AlphaVantageCollector/README.md) - Nightly sweep upstream for unresolved rows

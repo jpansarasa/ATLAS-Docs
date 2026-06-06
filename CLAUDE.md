@@ -135,6 +135,20 @@ substrate: MacroSubstrate
 mcp: FredCollector/mcp, ThresholdEngine/mcp, FinnhubCollector/mcp, OfrCollector/mcp, SecMaster/mcp, WhisperService/mcp
 shared: Events/, deployment/, docs/
 
+## SERVICE_ARCHITECTURE [read-first] [HARD_STOP]
+BEFORE reasoning about a service's architecture / API / data-model / resolution flow:
+  READ <Service>/AGENT_README.md (the dense agent card) FIRST.
+  rationale: card front-loads negative-space (does-NOT / on-miss / invariants / DISTINCTIONS / GOTCHAS) an endpoint catalog can't convey.
+✗ guess a service's shape from method names / the endpoint table # read the card
+✗ "fix" a symptom by violating a card INVARIANT (e.g. bulk-preload, backfill-to-green, raw DB fix)
+cards:
+  SecMaster:         SecMaster/AGENT_README.md         # resolve-entities≠ResolveBatch; identity⊥collection; fuzzy-proposes/authoritative-confirms; ✗NotFound="not-in-table"; ✗bulk-preload; ✗gate-non-Equity-sector
+  ThresholdEngine:   ThresholdEngine/AGENT_README.md   # WS3-projector=ONLY wired matrix_cells writer; ObservationEventSubscriber=UNWIRED/dead; Confidence XML-doc"informational only"=FALSE; ✗live-FRED-gRPC-writes-matrix_cells; ✗ascending-projector-read
+  SentinelCollector: SentinelCollector/AGENT_README.md # news→matrix pipeline spans MacroSubstrate; `:sig:` infix=string contract change-all-or-none; signal-dim gates projection sector-dim does NOT; Shadow≠Off(same cells written); ✗gate-entry-on-sector; ✗check-Mode-before-concluding-broken
+  FredCollector:     FredCollector/AGENT_README.md     # catalog⊥instrument(SeriesId=FRED mnemonic≠instr-id); AlfredBackfillService deliberately¬touches LastCollectedAt; ObservationChannel no reader=memory-growth; ✗expect-WARN-GRPC-unset; ✗ALFRED-backfill=advances-LastCollectedAt
+  FinnhubCollector:  FinnhubCollector/AGENT_README.md  # candle/social/insider/calendars=dead-schema(tables ∅); ObservationChannel FullMode=Wait+no-reader→BLOCKS; GetLatestEventTime=UtcNow-on-empty(¬new-data-signal); ✗assume-non-Quote-data-flows
+  # … one line per service as its card lands
+
 ## DATA_FLOW
 Collectors →gRPC:5001→ ThresholdEngine →metrics→ Prometheus → Alertmanager → AlertService → ntfy|email
 Collectors →gRPC:5001→ SecMaster (registration, fire-and-forget)

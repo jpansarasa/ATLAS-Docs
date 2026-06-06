@@ -2,6 +2,8 @@
 
 Automated FRED economic data collection service for ATLAS.
 
+> 🤖 **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
+
 ## Overview
 
 FredCollector retrieves economic indicators from the Federal Reserve Economic Data (FRED) API and stores them in TimescaleDB. It schedules collection via Quartz, respects FRED API rate limits via a token bucket, backfills history on startup, exposes a REST surface for ThresholdEngine and the SecMaster catalog gateway, and streams observation events over gRPC for downstream consumers.
@@ -118,17 +120,28 @@ All `/api/admin/*` routes use the same `ApiKey__Enabled` gate. Source: `src/Endp
 | `/api/admin/series/{seriesId}/backfill-vintages` | POST | ALFRED point-in-time backfill: full release-vintage history for one series, `AsOf` = vintage date (synchronous; returns a summary) |
 | `/api/admin/backfill-vintages` | POST | ALFRED point-in-time backfill over a series set (body: `{seriesIds: [...]}`); non-FRED ids skipped; synchronous, returns a summary |
 
-### gRPC services (port 5001, internal, HTTP/2 only)
 
-`ObservationEventStream` (`Events/src/Events/Protos/observation_events.proto`). Reflection enabled.
+### gRPC
 
-| Method | Description |
-|--------|-------------|
-| `SubscribeToEvents(SubscriptionRequest) → stream Event` | Live event subscription (supports type/series filtering) |
-| `GetEventsSince(TimeRangeRequest) → stream Event` | Replay events from timestamp |
-| `GetEventsBetween(TimeRangeRequest) → stream Event` | Events in a closed time range |
-| `GetLatestEventTime(Empty) → Timestamp` | Latest event timestamp |
-| `GetHealth(Empty) → HealthResponse` | gRPC health + event-store statistics |
+Proto: `Events/src/Events/Protos/observation_events.proto` (service `ObservationEventStream`, C# namespace `ATLAS.Events.Grpc`); `Events/src/Events/Protos/secmaster.proto` (service `SecMasterRegistry`).
+
+**Exposes (server):**
+
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `SubscribeToEvents` | server-stream | Live subscription from a checkpoint; polls DB events table |
+| `GetEventsSince` | server-stream | Historical replay from a timestamp |
+| `GetEventsBetween` | server-stream | Historical replay across a time range |
+| `GetLatestEventTime` | unary | Timestamp of most recent event |
+| `GetHealth` | unary | Health + event-store statistics |
+
+**Consumes (client):**
+
+| Proto | Service | Method | Direction | Trigger | Description |
+|-------|---------|--------|-----------|---------|-------------|
+| `secmaster.proto` | `SecMasterRegistry` | `RegisterSeries` | unary (fire-and-forget) | `AddSeries` POST | Register the new series with SecMaster; silently skipped when `SECMASTER_GRPC_ENDPOINT` unset |
+
+gRPC reflection is enabled. The event stream polls the DB events table — it does NOT emit from an in-process channel (see `ObservationChannel` INV in the card above).
 
 ## Project Structure
 
