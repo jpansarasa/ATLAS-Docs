@@ -13,8 +13,9 @@ PATHS ({name each distinct code path; do NOT conflate}):
   {name} [{transport} {port} · {consumer}→{handler}]
     transport-tag REQUIRED: HTTP :8080 | gRPC :5001 | gRPC-stream :5001 | MCP :{port}
     gRPC is ATLAS's PRIMARY internal transport — REST/openapi is NOT the whole API surface.
-    does: {what it does}. ¬do: {the negative space — what agent will wrongly assume}.
-    miss: {miss contract — NotFound? Warning? enqueue? self-seed?}.
+    does: {what it does}.
+    does NOT: {the negative space — what agent will wrongly assume}.
+    on-miss: {miss contract — NotFound? Warning? enqueue? self-seed?}.
   {repeat per path}
 
 PROCESSING MODEL ("{governing maxim — one quoted phrase}"):
@@ -56,3 +57,21 @@ Density gate: card ≤ ~1 page / ~55 non-blank lines.
   Every claim must trace to code, NOT memory.
 
 Omit a block only if the service genuinely has no instance of it; say so explicitly.
+
+## AUDIT COMPLIANCE — literal labels REQUIRED [HARD_STOP]
+
+`scripts/audit.sh` checks for literal text labels. A generated card MUST include these
+exact strings or it will fail audit at generation time.
+
+Required section headings (HIGH severity if absent):
+  `DATA MODEL + INVARIANTS:` — the block heading (W3 also requires `INVARIANT ` (full word + space, e.g. `INVARIANT foo:`) or `⊥` inside it; the bare `INV ` abbreviation does NOT satisfy the grep)
+  `CROSS-SERVICE:` — including the trailing colon
+
+Required per PATH entry (MEDIUM W1/W2 if absent anywhere in PATHS):
+  `does NOT:` — the negative-space anti-guess lever (W1 fires if this literal is absent)
+  `on-miss:` — the miss contract (W2 fires if this literal is absent)
+
+The abbrev-DSL forms `¬do:` / `miss:` / `INV:` MAY be used as aliases within a path but
+do NOT satisfy the audit grep — the literals `does NOT` and `on-miss` MUST also appear.
+Rationale: rollout-2 cards used only the symbols and required 16 post-hoc fixes because
+`audit.sh` grep targets the literals, not the symbols.

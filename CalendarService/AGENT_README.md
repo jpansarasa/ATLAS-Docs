@@ -5,7 +5,7 @@ PURPOSE: temporal truth for ATLAS — NYSE trading-days/holidays + scheduled hig
 DATA MODEL + INVARIANTS (schema does NOT enforce):
   TRANSPORT: HTTP :8080 ONLY (internal, no host port). ¬gRPC :5001 despite monorepo DATA_FLOW — consumers reach via HTTP. Containerfile EXPOSE 8080.
   econ-source = FRED ONLY at runtime. Finnhub wired (client+opts+worker) but worker COMMENTED-OUT in DI (paid sub). Nager = on-demand passthrough, never collected.
-  INV curated-allow-list: FredReleasesClient.HighImpactReleases = ~21 hardcoded release_ids → unknown release_id SILENTLY SKIPPED (continue), ¬persisted. econ_events ≠ "all FRED releases".
+  INV curated-allow-list: FredReleasesClient.HighImpactReleases = ~18 hardcoded release_ids → unknown release_id SILENTLY SKIPPED (continue), ¬persisted. econ_events ≠ "all FRED releases".
   INV synthetic-times: FRED gives DATE only; event_time FABRICATED = 8:30 ET(High)|10:00 ET(Med), hardcoded etOffset=-5h → DST-UNAWARE (off by 1h during EDT). ¬actual release timestamp.
   INV provider⊥db: market endpoints read in-memory StaticNyseHolidays (computed: Easter/nth-weekday algos), ¬market_holidays table. DB = mirror for external consumers; API answers don't touch it.
   INV upsert-key = event_id(unique idx "FRED-{releaseId}-{yyyyMMdd}"), ¬PK id(long). Re-collect = UPDATE-by-event_id.
@@ -40,7 +40,7 @@ DISTINCTIONS:
 CROSS-SERVICE: ThresholdEngine → /api/market/* (HTTP, trading-day checks). AlphaVantageCollector/NasdaqCollector → CalendarService.Core lib (in-proc, ¬HTTP). OUT: FRED HTTP (econ calendar); Nager.Date HTTP (on-demand external holidays). FEEDS: econ_events table + market_holidays mirror.
 
 GOTCHAS:
-  ✗ assume-gRPC :5001 (HTTP-only) ✗ expect-all-FRED-releases (curated ~21) ✗ trust FRED event_time as real (synthetic, DST-off)
+  ✗ assume-gRPC :5001 (HTTP-only) ✗ expect-all-FRED-releases (curated ~18) ✗ trust FRED event_time as real (synthetic, DST-off)
   ✗ expect non-US in /upcoming|/high-impact (US-hardcoded) ✗ read holidays from DB (API uses provider)
   ✗ patch FRED client to return [] on error (re-introduces dead-man-gauge masking) ✗ believe README "OTEL unused"
   ✗ enable-Finnhub-worker without paid sub ✗ rely on Nager for closures (validation-only, swallows errors)

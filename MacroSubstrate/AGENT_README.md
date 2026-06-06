@@ -21,7 +21,7 @@ PATHS (distinct code — do not conflate):
     do: bounded filter (signal/collector/sector/kind/time/minTrust/version|as-of); DefaultLimit=200, hard Take(Limit≤1000); ordering: Descending=false → observation_time ASC + id ASC (chronological default), Descending=true → observation_time DESC + id DESC (newest-first, e.g. WS3 ObservationCellProjector); AsNoTracking.
     does NOT: ¬compute-cells ¬project-matrix ¬own-the-projector (that = ThresholdEngine).
     on-miss: as-of pre-history (no rollup covers date) → EMPTY (contract, INFO ¬WARN); as-of ∧ ¬version-lookup → MappingVersionLookupUnavailableException; null-label rows EXCLUDED from as-of slice.
-    guard: AsOfDate + MappingVersionLabel both set → ArgumentException (caller bug); EnsureValid() enforces mutual exclusion pre-query.
+    guard: AsOfDate + MappingVersionLabel both set → ArgumentException (caller bug); filter.EnsureValid() enforces mutual exclusion pre-query.
   GetByIdempotencyKeyAsync [IMacroObservationRepository · point-lookup · tests + downstream confirmation]
     do: single-row fetch by (sourceCollector, sourceId, observationTime) — the natural idempotency key; returns MacroObservationEntity? (null = not yet written).
     does NOT: ¬paginated ¬filtered ¬versioned.
@@ -38,7 +38,7 @@ DISTINCTIONS:
   heal-on-rewrite (DO UPDATE, last-write-wins) ≠ DO NOTHING (frozen first-write). Code = DO UPDATE.
   MinTrust floor narrows ONLY qualitative; numeric rows (Trust=null) ALWAYS pass irrespective of floor.
   GetObservationsAtDateAsync(version-equality slice) ≠ GetByIdRangeAsync(surrogate-id cursor, no version filter) ≠ GetByIdempotencyKeyAsync(single-row point-lookup by natural key — no version, no pagination).
-  QueryAsync(AsOfDate + MappingVersionLabel simultaneously) → ArgumentException (mutual-exclusion guard in EnsureValid); only one versioning axis may be specified.
+  QueryAsync(AsOfDate + MappingVersionLabel simultaneously) → ArgumentException (mutual-exclusion guard in filter.EnsureValid()); only one versioning axis may be specified.
   AtlasData conn (write target) ≠ SecMaster conn (version-label read only).
 
 CROSS-SERVICE: FredCollector/OfrCollector/SentinelCollector → WriteAsync(in-proc IMacroObservationWriter). ThresholdEngine ObservationCellProjector → QueryAsync(in-proc IMacroObservationRepository). SecMaster conn (OPTIONAL, read-only) → version-label lookup for as-of reads. FEEDS: macro_observations → ThresholdEngine matrix projection.
@@ -50,7 +50,7 @@ GOTCHAS:
   ✗ out-of-order same-idem-key writes — older value wins (no vintage gate).
   ✗ expect as-of read to error on pre-history — returns EMPTY by contract.
   ✗ versioned read without SecMaster conn — throws MappingVersionLookupUnavailableException.
-  ✗ set both AsOfDate and MappingVersionLabel on QueryAsync filter — ArgumentException from EnsureValid(); pick one versioning axis.
+  ✗ set both AsOfDate and MappingVersionLabel on QueryAsync filter — ArgumentException from filter.EnsureValid(); pick one versioning axis.
   ✗ skip OTEL registration — spans + `macro_substrate.mapping_version_lookup_failures_total` silently dropped.
   ✗ treat SignalIdentityId/AtlasSectorCode as PG-enforced FK — cross-DB soft FK.
   ✗ audit unlabeled rows by scanning manually — call `GetObservationCoverageByVersionAsync(ct)` on IMacroObservationRepository; returns `IReadOnlyList<MappingVersionCoverage>` (record: `string? VersionLabel`, `long RowCount`) ordered by descending count; null-label bucket = rows that missed version-stamping and are excluded from every as-of slice.

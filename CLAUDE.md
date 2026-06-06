@@ -151,7 +151,7 @@ cards:
   NasdaqCollector:   NasdaqCollector/AGENT_README.md   # DISABLED prod(NDL WAF); EventId=Ulid-per-read(¬stable-dedup-key); EventTypes filter=dead param; SecMaster Economic GUARD may silently reject; ✗treat-EventId-stable ✗assume-prod-running
   OfrCollector:      OfrCollector/AGENT_README.md      # FSI⊥macro/register; circuit-breaker=5 CONSECUTIVE fails→60s(¬sliding-window); dual-write non-fatal; gRPC GetLatestEventTime=now() placeholder; ✗conflate-gRPC-register-with-REST-tag ✗assume-FSI-macro
   AlertService:      AlertService/AGENT_README.md      # KEPT DOWN (non-scoped ansible resurrects); appsettings routing≠RoutingOptions class default; dedup=fingerprint-only; autofix rate-limit=static process-wide; ✗non-scoped-deploy ✗assume-202-means-sent
-  CalendarService:   CalendarService/AGENT_README.md   # HTTP-only(¬gRPC :5001); FRED allow-list ~21 releases(¬all); event_time=synthetic DST-unaware; market endpoints bypass DB; Finnhub worker disabled; ✗assume-gRPC ✗trust-FRED-event_time-real
+  CalendarService:   CalendarService/AGENT_README.md   # HTTP-only(¬gRPC :5001); FRED allow-list ~18 releases(¬all); event_time=synthetic DST-unaware; market endpoints bypass DB; Finnhub worker disabled; ✗assume-gRPC ✗trust-FRED-event_time-real
   MacroSubstrate:    MacroSubstrate/AGENT_README.md    # write=DO UPDATE heal-on-rewrite(¬DO NOTHING); QueryAsync(AsOfDate+MappingVersionLabel simultaneously)→ArgumentException; ¬a running service(library+migrator only); ✗trust-README-DO-NOTHING ✗set-both-version-axes
 
 ## DATA_FLOW
