@@ -35,9 +35,13 @@ because the headline names a proxy):
   `nonfarm-payrolls` (the same labour-market signal the official print tracks).
 - A mortgage-rate move (e.g. the 30-year fixed) → use `ust-10y-yield`
   (mortgage rates track the 10-year Treasury benchmark).
+- Natural gas / Henry Hub / LNG / nat gas / gas prices news → use
+  `natural-gas-price` (Henry Hub is the benchmark; LNG and gas-price moves
+  are the same underlying commodity signal).
 - A foreign central bank's rate decision or policy guidance → use THAT bank's
-  policy-rate id: ECB → `ecb-deposit-rate`, Bank of Japan → `boj-policy-rate`,
-  Bank of England → `boe-bank-rate`, Bank of Canada → `boc-overnight-rate`.
+  policy-rate id: ECB / European Central Bank / deposit facility rate / ECB rate
+  decision → `ecb-policy-rate`, Bank of Japan → `boj-policy-rate`,
+  Bank of England → `boe-bank-rate`.
 Apply the bridge only when an id above is in the catalog below; otherwise treat
 the catalog as the source of truth.
 
