@@ -2,6 +2,8 @@
 
 Market and economic calendar service providing temporal data for the ATLAS ecosystem.
 
+> **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
+
 ## Overview
 
 CalendarService tracks NYSE trading days/holidays and scheduled economic releases. It exposes a REST API and ships a shared library (`CalendarService.Core`) for in-process calendar use by other services. Two background workers persist data: holidays are seeded from the static NYSE list baked into Core, and FRED economic-release dates are collected on a schedule. Nager.Date is exposed as an on-demand passthrough only; Finnhub support is wired but its collection worker is currently disabled in `DependencyInjection.cs` (requires a paid Finnhub subscription).

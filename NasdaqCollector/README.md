@@ -2,6 +2,8 @@
 
 Collector service for financial time-series data from Nasdaq Data Link API.
 
+> **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
+
 ## Overview
 
 NasdaqCollector ingests daily financial data from Nasdaq Data Link (formerly Quandl). Configured series are collected on a 6-hour schedule, skipping NYSE/Nasdaq market holidays via `CalendarService.Core`. Observations are stored in TimescaleDB; an `ObservationEventStream` gRPC service is exposed for downstream consumers.

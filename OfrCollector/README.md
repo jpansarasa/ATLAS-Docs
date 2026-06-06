@@ -2,6 +2,8 @@
 
 Data collector service for Office of Financial Research (OFR) public datasets.
 
+> **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
+
 ## Overview
 
 OfrCollector retrieves financial stress and funding market data from the OFR public APIs (FSI, STFM, HFM) and stores them in TimescaleDB. It handles scheduled collection, backfill, and exposes data via REST API and gRPC event streams for downstream consumption by ThresholdEngine.

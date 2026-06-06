@@ -2,6 +2,8 @@
 
 EF-backed substrate for the `macro_observations` hypertable — the canonical write target for every ATLAS collector that emits macro data.
 
+> **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
+
 ## Overview
 
 `MacroSubstrate` is the shared write+read library for `atlas_data.macro_observations`. Collectors take an `IMacroObservationWriter` via DI and stay independent of the shared schema; the EF-backed implementation here owns the `DbContext`, repository, and (optional) cross-DB `IMappingVersionLookup` against `atlas_secmaster`. Schema deployment is handled by the sibling one-shot `MacroSubstrate.Migrator` console host wired into `compose.yaml` as `migrate-macro-substrate`, so no single collector owns the table.

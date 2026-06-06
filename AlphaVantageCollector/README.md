@@ -2,6 +2,8 @@
 
 Collector service for Alpha Vantage market data with strict daily-quota enforcement, token-bucket rate limiting, and priority-based scheduling.
 
+> **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
+
 ## Overview
 
 AlphaVantageCollector fetches commodities, economic indicators, equities (OHLCV), forex, and crypto from the Alpha Vantage HTTP API and persists them to TimescaleDB. A background worker (`CollectionWorker`) ticks every 4 hours, asks the scheduler for at most 4 series due for collection (priority-ordered), and pulls them respecting a 25-request daily cap. Downstream consumers subscribe to a gRPC `ObservationEventStream` for change notifications. SecMaster instrument registration is optional and fire-and-forget.
