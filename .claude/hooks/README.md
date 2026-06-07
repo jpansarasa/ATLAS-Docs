@@ -12,6 +12,7 @@ Context-aware hooks that inject patterns when working on specific file types.
 | `ef-migration-guard.sh` | Write `Migrations/*_*.cs` | **BLOCK** - prevents manual migration creation |
 | `ansible-gate-guard.sh` | Edit/Write on deployment/CI gate files | **ASK** - confirm intent before editing gates |
 | `deploy-smoke-reminder.sh` | Bash deploy/restart commands (PostToolUse) | **ADVISE** - inject smoke-test reminder |
+| `memory-density-guard.sh` | Write/Edit `*/memory/*.md` (PostToolUse) | **ADVISE** - nudge when MEMORY.md hook line or memory-file description violates the density bar |
 
 ## How It Works
 
