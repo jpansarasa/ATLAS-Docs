@@ -28,11 +28,12 @@ If not, truncating long articles collapses the prefill and multiplies throughput
 2. **Analytical / long-form** — incl. FOMC/Fed statements, analyst deep-dives.
 3. **Primary docs** — only if a distinct shape emerges in the sample.
 
-~50–100 **long** articles per stratum (short articles excluded — not the target). "Long" defined by full-body token count, threshold drawn from the prefill-cost distribution (≈ > 3–4K tokens, to be set from data).
+**75 long articles per stratum** (+ a 15-article fresh-control subset); short articles excluded — not the target. **"Long" default ≥ 4,000 body tokens** (prefill > ~60s — where the savings concentrate); the supervisor may refine the threshold from the observed token distribution.
 
 ### Truncation variants (shape × depth)
-- **Head-only** (news): `{ headline, +1 para, +2, +3, … , full }`.
-- **Head + tail** (analytical): `{ head-N + tail-M }` across a small depth grid.
+- **Head-only** (news): `{ headline-only, +1 para, +2, +3, full }`.
+- **Head + tail** (analytical): `{ head-2+tail-1, head-2+tail-2, head-3+tail-2, full }`.
+- Concrete starting grids; the supervisor may add a level if a curve's knee is unresolved.
 - **Paragraph-based** splitting (maps to inverted-pyramid structure); fall back to sentence/token boundaries where stored text lacks paragraph breaks.
 - **Control:** model, DSL prompt, and decoding params **identical** across all variants — *only the article-text slice changes*, so any output difference is attributable to input size alone.
 
@@ -61,10 +62,43 @@ Pure **offline batch** — no production disruption:
 
 ## Decision rule & rollout
 
-- **Per stratum**, select the cheapest `(shape, depth)` where **recall ≥ bar AND the judge finds zero *material* misses**.
+- **Per stratum**, select the cheapest `(shape, depth)` where **recall clears the bar AND the judge finds zero *material* misses**. Default bars: **wire news ≥ 0.95 recall; analytical ≥ 0.98 recall** (both with zero material misses). Tune within this conservatism from the data.
 - **Conservatism:** strict for **analytical** (high recall bar + zero material misses — a dropped FOMC fact is expensive); looser for **wire news**. Pick the data knee, then apply a safety margin.
 - **Rollout:** implement the per-stratum truncation in the live extraction path, applied to **long** articles only, *before* the CoD LLM call. Short articles unchanged. Keys off measurable features (source + length + structure) and errs conservative on classification.
 - **Validation:** post-rollout, confirm prefill (`sentinel_extraction_stage_duration_seconds{stage=cod_llm}` / llama-server `pp`) drops and aggregate throughput rises on the #638 dashboard; sample-audit live truncated extractions for material parity.
+
+## Execution plan (phased — for autonomous supervisor)
+
+Run heads-down through the gates below; each phase has an explicit done-condition the supervisor self-verifies before advancing. Track progress in STATE.md.
+
+**Phase 0 — Harness + matching validation [GATE].** Build the offline harness (sample → paragraph-split → truncate → CoD-extract each variant → score). Validate the LLM-judge observation-matching on a hand-labeled subset (~25 baseline↔truncated observation pairs): the judge's pairing must agree with the hand labels ≥ ~90%.
+- *Done:* harness runs end-to-end on ~5 articles; matching validated ≥ 90%.
+- *Escalate (NTFY) if:* matching can't clear ~90% — the recall metric would be untrustworthy and the approach needs a rethink.
+
+**Phase 1 — Pilot one stratum [GATE].** Run the full sweep on the strongest-hypothesis stratum (wire/RSS news) only; sanity-check the recall-curve shape + the harness outputs.
+- *Done:* a coherent recall-vs-depth curve for wire news + a miss breakdown.
+- *Escalate if:* the curve is incoherent/anomalous in a way that isn't a self-resolvable harness bug.
+
+**Phase 2 — Full sweep.** Run all strata × shapes × depths. Iterate freely on harness/prompt issues — autonomous, no gate.
+- *Done:* recall + precision + miss-classification data for every (stratum, shape, depth) cell.
+
+**Phase 3 — Analysis + policy proposal [GATE].** Produce per-stratum recall curves, the material-miss audit, and a concrete recommended per-stratum truncation policy (shape, depth, length-trigger) with the projected prefill/throughput gain.
+- *Done:* a written results doc + the proposed policy.
+- *Escalate (NTFY) with the policy proposal* — changing what the extractor reads is a product decision and a gate before touching production. Also escalate if **no safe truncation exists for a stratum** (hypotheses failed — needs direction).
+
+**Phase 4 — Rollout [USER-GATED].** Only after the user approves the policy: implement truncation in the live extraction path (long articles, pre-CoD) behind the per-stratum policy; deploy; validate the prefill drop + throughput rise on the #638 dashboard; sample-audit live parity. Production-behavior change → user-approved cutover.
+
+## Autonomy boundaries — decide vs escalate
+
+**Supervisor decides autonomously** (no NTFY): sample sizes + the long-token threshold (from the observed distribution), the truncation depth grids, harness/prompt implementation + iteration, the matching/judge prompts, the analysis, and recall-bar tuning *within* the stated conservatism (strict analytical, looser news).
+
+**Escalate via NTFY (`atlas-claude-ask`, single-line) only on:**
+1. **Phase-0 matching-validation failure** — the metric itself isn't trustworthy.
+2. **Hypotheses fail** — a stratum shows no truncation that preserves material recall (premise wrong → needs direction).
+3. **Phase-3 policy proposal** — present the per-stratum policy + projected gain for approval before any production change.
+4. **Phase-4 rollout** — the production cutover is user-gated.
+
+Otherwise: run heads-down, track in STATE.md, end each turn with `▶ continuing autonomously`. The user should not need to be at the keyboard for Phases 0–2.
 
 ## Non-goals / out of scope
 
