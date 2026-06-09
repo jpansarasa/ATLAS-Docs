@@ -40,6 +40,14 @@ synchronous extraction (~50% timeout on long-output articles at
 `atlas-dsl-poc-phase5-matrix-integration.md` pruned from main per
 PHASE_TAGS; recover via `git show dsl-poc-phase5-done:docs/plans/atlas-dsl-poc-phase5-matrix-integration.md`.
 
+### `gpu-cod-roleflip-2026-06-09` (@ 41e649b4)
+**GPU-CoD role-flip — DONE.** Sentinel extraction CoD moved from CPU
+llama-server (qwen3-30b-a3b) to GPU vLLM (Qwen2.5-32B-AWQ, JSON-schema
+output). ~25× throughput lift (~327 art/hr vs ~20); backlog drains ~20h.
+Distributed: GPU handles CoD emission + CoVe verification; CPU handles
+classifier + embeddings. Loop-guard added. Recall gate 0.79 (n=80).
+PRs #640 #642 #643 #644 #645 #646.
+
 ## Phase summaries
 
 ### Phase 2 — llama.cpp llama-server CPU sibling (DONE 2026-05-21, PR #387 @ 25cb33fa)
