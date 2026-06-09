@@ -4,7 +4,7 @@ CPU sidecar that wraps the benchmark CoD DSL parser + v2.3.1 verifier behind a F
 
 ## Overview
 
-A small Python FastAPI process (port `3120`) running in its own container. It exposes three endpoints — `POST /parse`, `POST /verify`, `GET /health` — and is consumed by `SentinelCollector.Services.DslParserClient` (`SentinelCollector/src/Services/DslParserClient.cs`) inside the CPU DSL extraction path (`CpuDslExtractionService`, enabled by `Extraction__Backend=LlamaServerDsl`).
+A small Python FastAPI process (port `3120`) running in its own container. It exposes four endpoints — `POST /parse`, `POST /parse_json`, `POST /verify`, `GET /health` — and is consumed by `SentinelCollector.Services.DslParserClient` (`SentinelCollector/src/Services/DslParserClient.cs`). `/parse` serves the CPU GBNF DSL path (`CpuDslExtractionService`, `Extraction__Backend=LlamaServerDsl`); `/parse_json` serves the additive GPU JSON-CoD role-flip path (plan `docs/plans/gpu-json-cod-rollout-2026-06-09.md`) — both lower to the **same** `Document` AST so `/verify` and everything downstream are format-agnostic.
 
 The parser/verifier source under `dsl/` is a verbatim copy of `docs/benchmarks/cod-2026-05-17/dsl/`. Do not edit those files in-place — re-copy from the benchmark directory if the upstream parser/verifier changes. Re-implementing the Lark/LALR parser + punctuation-tolerant word verifier in C# would fork the grounding contract; the sidecar exists to avoid that fork.
 
@@ -42,7 +42,8 @@ This sidecar has no runtime environment variables — it is pure-Python and list
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/parse` | POST | Parse DSL text into a `Document` AST; returns AST + any parse errors |
+| `/parse` | POST | Parse GBNF DSL text into a `Document` AST; returns AST + any parse errors |
+| `/parse_json` | POST | Lower a GPU JSON-CoD payload into the SAME `Document` AST; returns AST + salvage warnings |
 | `/verify` | POST | Run the v2.3.1 verifier over a `Document` AST against the source article |
 | `/health` | GET | Liveness check; 200 OK when parser + verifier modules imported cleanly |
 
@@ -72,6 +73,33 @@ Response (pydantic `ParseResponse`):
 ```
 
 Strict-parse failures land in `parse_errors[]` with `message`, `line`, `column`, `symbol`. The shape of `document_ast` mirrors `dataclasses.asdict(Document)` from `dsl/types.py` exactly.
+
+#### `POST /parse_json`
+
+Additive sibling of `/parse` for the GPU-JSON-CoD role-flip (plan `docs/plans/gpu-json-cod-rollout-2026-06-09.md` §2). The GPU vLLM CoD stage emits a single bounded JSON object (`{article_type, entities[], numbers[], events[], claims[]}`, schema mirrors `/tmp/sentinel-remediation/json-cod-quality/json_schema.py`) instead of GBNF DSL text. This endpoint lowers that JSON into the **same** `Document` AST `/parse` produces (`json_cod.parse_json_cod`), so `/verify`, the .NET `IDslToMergedExtractionAdapter`, and every downstream consumer are format-agnostic and unchanged.
+
+Request (pydantic `ParseJsonRequest`):
+
+```json
+{
+  "json_text": "{\"article_type\":\"earnings_announcement\",\"entities\":[...],\"numbers\":[...],\"events\":[...],\"claims\":[...]}",
+  "input_text": "Source article body text"
+}
+```
+
+- `json_text` (required): the raw JSON-CoD object. May be a truncated prefix (loop-guard `max_tokens` cutoff) — complete objects are salvaged.
+- `input_text` (default `""`): source article text, used to locate each verbatim copy slot's `[start,end)` `source_span`. Empty → every `source_span` is `None` (the verifier safe-degrades to its `expected in input_text` byte fallback).
+
+Response is the same `ParseResponse` shape `/parse` returns (`document_ast` + `parse_errors`), so the .NET `DslParserClient` reuses its deserialization.
+
+`parse_errors` semantics (HTTP 200, surface-as-data):
+- Truncated payload salvaged: `{"reason": "json_truncated_salvaged", "recovered_objects": N}`
+- Valid JSON dict without any CoD array keys (LLM refusal/garbage, e.g. `{}` or `{"error":"refused"}`): `{"reason": "json_no_cod_arrays"}` — distinguishable from a legitimately-empty article (all four arrays present but empty → `parse_errors: []`)
+- Normal CoD document (all four arrays present): `parse_errors: []`
+
+Non-200: non-JSON text (neither valid nor salvageable prefix) → 422; unexpected lowering crash → 500.
+
+**Span location.** JSON-CoD emits verbatim copy slots (entity `name`, num `source_text`, event `trigger`) but no `[start,end)` offset. The lowering finds each slot's first verbatim occurrence in `input_text` and emits the half-open `(start, end)` tuple the verifier's `_check_byte` expects (`input_text[start:end] == slot`). Word-grounding parity is preserved by synthesizing the v2.3 `source_words` slot (`|`-delimited words) from the same copy text. `/parse` (GBNF) is untouched — both endpoints coexist.
 
 #### `POST /verify`
 
@@ -126,8 +154,9 @@ Returns 200 when parser + verifier modules imported cleanly at startup. If eithe
 
 ```
 dsl-parser-mcp/
-├── app.py                  # FastAPI app: /parse, /verify, /health
-├── Containerfile           # python:3.11-slim, COPYs dsl/ + tests/ + app.py
+├── app.py                  # FastAPI app: /parse, /parse_json, /verify, /health
+├── json_cod.py             # GPU JSON-CoD → Document AST lowering (additive; targets dsl/'s AST)
+├── Containerfile           # python:3.11-slim, COPYs dsl/ + tests/ + app.py + json_cod.py
 ├── requirements.txt        # fastapi, uvicorn, lark, pydantic, httpx, pytest
 ├── dsl/                    # verbatim copy of docs/benchmarks/cod-2026-05-17/dsl/
 │   ├── __init__.py
@@ -143,7 +172,8 @@ dsl-parser-mcp/
     ├── test_parser_v2.py         # v2 parser unit tests
     ├── test_verifier.py          # v1/v2 verifier unit tests
     ├── test_verifier_v2_3_1.py   # v2.3.1 verifier unit tests
-    └── test_api.py               # FastAPI integration tests (/health, /parse, /verify)
+    ├── test_api.py               # FastAPI integration tests (/health, /parse, /verify)
+    └── test_parse_json.py        # /parse_json + json_cod lowering, span-locator, salvage tests
 ```
 
 Python dependencies (`requirements.txt`): `fastapi==0.115.6`, `uvicorn[standard]==0.32.1`, `lark==1.2.2`, `pydantic==2.9.2`, `httpx==0.27.2`, `pytest==8.3.3`. No native build deps — Lark + FastAPI are pure Python.
