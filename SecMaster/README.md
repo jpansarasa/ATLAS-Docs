@@ -66,15 +66,16 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `Ollama__GenerationModel` | Model for RAG synthesis (production override: `qwen2.5:7b-instruct`) | `qwen2.5:32b-instruct` |
 | `Ollama__MaxTextLength` | Truncate-before-embed character cap | `10000` |
 | `Ollama__MaxConcurrentGenerations` | Process-wide cap on in-flight generation requests (running + queued); a caller cancelled while queued never reaches Ollama | `2` |
-| `Ollama__GenerationMaxTokens` | `num_predict` cap per generation request; bounds compute on abandoned generations (≤0 sends -1 = unbounded) | `256` |
+| `Ollama__GenerationMaxTokens` | `num_predict` cap per generation request; bounds compute on abandoned generations (≤0 sends -1 = unbounded) | `64` |
 | `SemanticSearch__VectorHighConfidenceThreshold` | High-confidence similarity threshold | `0.8` |
 | `SemanticSearch__DefaultMinScore` | Default minimum similarity score | `0.75` |
 | `SemanticSearch__VectorSimilarityFloor` | Hard floor on cosine scores before CoVe / downstream verification (kill switch: `0`) | `0.5` |
 | `SemanticSearch__RagStrictMode` | Tightened prompt + NO_MATCH short-circuit + token-overlap verification + asset-class pre-filter | `true` |
 | `SemanticSearch__DefaultLimit` | Default search result limit | `10` |
-| `SemanticSearch__RagContextMaxTokens` | RAG context window cap (tokens) | `2000` |
+| `SemanticSearch__RagContextMaxTokens` | RAG candidate-context cap (estimator units ≈ chars/4); budget is split per candidate, long descriptions are snippet-truncated so candidate count is preserved | `600` |
 | `SemanticSearch__RagDefaultMinScore` | Default min similarity for RAG retrieval | `0.3` |
 | `SemanticSearch__RagDefaultLimit` | Default RAG retrieval result count | `5` |
+| `SemanticSearch__RagTimeoutSeconds` | Wall-clock budget for the RAG tier (vector search + gate wait + generation); on timeout the cascade degrades gracefully | `30` |
 | `SemanticSearch__MinLocalResultsBeforeDiscovery` | Trigger upstream discovery when local hits below this | `3` |
 | `SemanticSearch__MinScoreBeforeDiscovery` | Trigger upstream discovery when best local score below this | `0.8` |
 | `SemanticSearch__EmbeddingCacheSize` | LRU embedding cache size (entries) | `10000` |
