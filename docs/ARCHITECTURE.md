@@ -19,21 +19,24 @@ Deep-dives: [MATRIX.md](./MATRIX.md) (signal matrix), [SENTINEL-RLM.md](./SENTIN
   for Sentinel), `gemini-resolver-mcp` (port 9300, reached from containers via `host-gateway`),
   `apcupsd`.
 
-## 2. Two compose stacks + one standalone GPU container
+## 2. Two compose stacks
 
 | Stack | File | systemd unit | Contents |
 |---|---|---|---|
-| Main | `/opt/ai-inference/compose.yaml` (ansible-generated, ~1,400 lines) | `atlas.service` | DB, collectors, processing, alerting, sidecars, MCP servers, CPU inference |
+| Main | `/opt/ai-inference/compose.yaml` (ansible-generated, ~1,400 lines) | `atlas.service` | DB, collectors, processing, alerting, sidecars, MCP servers, GPU (vllm-server) + CPU inference |
 | OTEL | `/opt/otel/compose.otel.yaml` (templated from `deployment/artifacts/compose.otel.yaml.j2`) | `otel.service` | prometheus, grafana, loki, tempo, otel-collector, node/gpu/ups exporters |
-| — | **vllm-server**: standalone `nerdctl run` GPU container, in **neither** compose file | own deploy tag | the GPU inference engine |
 
 Both stacks share the external `ai-inference` network. `atlas.service` requires
-`otel.service` so the network exists first.
+`otel.service` so the network exists first. vllm-server is a main-compose service
+(since 2026-06-11; previously a standalone `nerdctl run` container) — GPU passthrough
+via `deploy.resources.reservations.devices`, image digest-pinned.
 
-> **Caveat that bites**: vllm-server and the OTEL services are invisible to both the full and
-> scoped compose restart paths. `scoped_restart` only reaches main-compose services; OTEL
-> services need `--tags otel` or a manual `nerdctl restart`; vllm-server has its own deploy
-> block (`--tags vllm-server`).
+> **Caveat that bites**: the OTEL services are invisible to both the full and scoped
+> compose restart paths of `deploy.yml`. `scoped_restart` only reaches main-compose
+> services; OTEL services need `--tags otel` or a manual `nerdctl restart`.
+> vllm-server is now in the main stack, so full-stack restarts cycle it (~3.5-4 min
+> GPU model reload); tag-scoped redeploys still need the opt-in `--tags vllm-server`
+> deploy block (recreate + `/health` wait + 1-token smoke).
 
 ### Service inventory (main stack, live)
 

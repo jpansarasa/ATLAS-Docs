@@ -41,7 +41,7 @@ flowchart TD
         S1[atlas.service → nerdctl compose up -d]
         S2[otel.service → nerdctl compose -f compose.otel.yaml up -d]
         S3[sandbox-manager → host systemd]
-        S4[vllm-server → standalone nerdctl run]
+        S4[vllm-server → compose service, GPU via device reservation]
     end
 
     A --> B
@@ -53,10 +53,10 @@ flowchart TD
     D1 --> S1
     D2 --> S2
     D9 --> S3
-    A -.->|nerdctl run -d --gpus all| S4
+    A -.->|compose service, GPU device reservation| S4
 ```
 
-The OTEL stack (`compose.otel.yaml`) and the ATLAS application stack (`compose.yaml`) are two separate compose files under two separate systemd units (`otel.service`, `atlas.service`) so that observability can stay up across application redeploys. `atlas.service` `Requires=otel.service` so the OTEL bridge network exists before app containers start. vLLM is launched standalone (not in either compose file) and managed directly via `nerdctl run` — see the audit note in `ansible/TAG_GATING_AUDIT.md` for why.
+The OTEL stack (`compose.otel.yaml`) and the ATLAS application stack (`compose.yaml`) are two separate compose files under two separate systemd units (`otel.service`, `atlas.service`) so that observability can stay up across application redeploys. `atlas.service` `Requires=otel.service` so the OTEL bridge network exists before app containers start. vllm-server is a main-compose service (since 2026-06-11; previously a standalone `nerdctl run` container) with GPU passthrough via `deploy.resources.reservations.devices` and a digest-pinned image. Full-stack restarts therefore cycle it (~3.5-4 min model reload); tag-scoped redeploys still must opt in via `--tags vllm-server` — see `ansible/TAG_GATING_AUDIT.md`.
 
 ## Features
 
@@ -73,7 +73,7 @@ All playbooks live in `ansible/playbooks/` and assume the working dir is `deploy
 
 | Playbook | Description |
 |----------|-------------|
-| `deploy.yml` | Main deployment: ZFS snapshot, atlas/containerd user+group, OTEL stack, compose template render, all service builds + image pulls, ThresholdEngine + SecMaster + Sentinel + CoD config sync, databases (`atlas_data`, `calendar_data`, `atlas_secmaster`), vLLM standalone container, llama-server + llama-cpu-rag + llama-cpu-embed, systemd units (atlas, autofix-runner, autofix-watcher, merged-pr-watcher, buildkit-prune, atlas-sentinel-quality-check, container-targets, sandbox-manager), and final container-status report. |
+| `deploy.yml` | Main deployment: ZFS snapshot, atlas/containerd user+group, OTEL stack, compose template render, all service builds + image pulls, ThresholdEngine + SecMaster + Sentinel + CoD config sync, databases (`atlas_data`, `calendar_data`, `atlas_secmaster`), vllm-server (compose service, opt-in tag), llama-server + llama-cpu-rag + llama-cpu-embed, systemd units (atlas, autofix-runner, autofix-watcher, merged-pr-watcher, buildkit-prune, atlas-sentinel-quality-check, container-targets, sandbox-manager), and final container-status report. |
 | `site.yml` | Thin wrapper: `import_playbook: deploy.yml`. |
 | `smoke-test.yml` | Health validation. Sub-tags: `health`, `containers`, `internal`, `mcp`, `logs`, `loki`, `docker`, `gpu`, `database`. |
 | `zfs-snapshot.yml` | Create a tagged ZFS snapshot manually (`-e snapshot_tag=NAME`). |
@@ -137,7 +137,7 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 
 | Tag | Scope |
 |-----|-------|
-| `vllm-server` | Stop+remove+recreate the standalone `vllm-server` container with GPU passthrough. Intentionally NOT `always` (see TAG_GATING_AUDIT.md). |
+| `vllm-server` | Recreate the `vllm-server` compose service (`compose rm -sf` + `up -d`), wait for `/health`, then a real 1-token completion smoke. Intentionally NOT `always` (see TAG_GATING_AUDIT.md). |
 | `llama-server` (alias: `dsl-poc`) | Pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-server`, wait on `/health`, fetch `/props` for model-identity check |
 | `llama-cpu-rag` (alias: `secmaster`) | Remove retired `ollama-cpu-gen` if present, pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-cpu-rag`, wait on `/health`, fetch `/props` for model-identity check |
 | `llama-cpu-embed` (alias: `models`) | Verify bge-m3 GGUF blob exists, remove retired `ollama-cpu-embed` if present, pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-cpu-embed`, wait on `/health`, fetch `/props`, 1024-dim `/v1/embeddings` smoke test |
@@ -298,7 +298,7 @@ ansible-playbook playbooks/deploy.yml --tags ofr-collector,ofr-mcp # multiple se
 ansible-playbook playbooks/deploy.yml --tags dashboards            # dashboards only (Grafana auto-reloads)
 ansible-playbook playbooks/deploy.yml --tags patterns              # ThresholdEngine pattern hot-reload (no rebuild)
 ansible-playbook playbooks/deploy.yml --tags sentinel-prompts      # sync Sentinel prompts to host mount
-ansible-playbook playbooks/deploy.yml --tags vllm-server           # cycle vllm-server (recreate the standalone container)
+ansible-playbook playbooks/deploy.yml --tags vllm-server           # cycle vllm-server (recreate the compose service + health/smoke gate)
 ansible-playbook playbooks/deploy.yml --tags edge,sentinel-edge    # Cloudflare Worker deploy (opt-in)
 ansible-playbook playbooks/deploy.yml -e create_snapshot=false     # skip ZFS pre-deploy snapshot
 ```

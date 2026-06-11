@@ -60,7 +60,7 @@ SentinelCollector turns headlines into matrix input and human-readable digests:
 
 All inference is local; no ollama remains (retired 2026-06-11):
 
-- **GPU**: `vllm-server` (standalone container, RTX 5090) serving Qwen2.5-32B-Instruct-AWQ at
+- **GPU**: `vllm-server` (main-compose service since 2026-06-11, RTX 5090) serving Qwen2.5-32B-Instruct-AWQ at
   32K context — extraction, news-signal classification, report narratives.
 - **CPU** (llama.cpp on pinned core islands): `llama-server` (30B, rollback extraction
   backend), `llama-cpu-rag` (7B, SecMaster RAG generation), `llama-cpu-embed` (bge-m3

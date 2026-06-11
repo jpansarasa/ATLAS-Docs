@@ -1,6 +1,17 @@
 # Ansible deploy.yml — Tag Gating Audit
 
 **Date:** 2026-05-14
+**2026-06-11 update:** vllm-server has since moved INTO compose.yaml (GPU via
+`deploy.resources.reservations.devices`, digest-pinned image). The tag-gating fix
+below still stands — the deploy block (now `compose rm -sf` + `up -d` + health +
+smoke) remains `[vllm-server]`-only. New consequence: full-stack restarts
+(`systemctl restart atlas` = compose down/up) cycle vLLM only when `compose_file`
+or one of the `*_build` registers changed AND the run is not scoped (`when: not
+(scoped_restart | bool)`). The standalone-container legacy-cleanup task (one-time
+cutover guard) also gates on `not (scoped_restart | bool)`, so a scoped run never
+stops the serving container. In summary: a full-stack restart bounces vLLM only
+when compose_file or a build changed; the systemd restart is itself gated by those
+conditions, not by `[always]` unconditionally.
 **Trigger:** vLLM outage caused by `ansible-playbook playbooks/deploy.yml --tags secmaster,sentinel-collector,spacy-ner`.
 **Root cause:** vllm-server deploy block tagged `[always, vllm-server]`.
 
@@ -38,14 +49,7 @@ incident so the next reader doesn't "helpfully" re-add `always`.
 
 - **Service identity / containerd setup** (L69–L116): `[always]` — required infra (uid/gid, sock perms). Idempotent file/group/user modules; do not restart vllm-server.
 - **OTEL stack** (L147–L198): `[otel, monitoring]` consistently — not pulled into selective deploys.
-- **compose.yaml regenerate** (L203 remove, L209 template, L744 reload, L751 systemd restart): `[always]`. The `state: restarted` is gated by `compose_file.changed OR any *_build.changed` (line 754 expression). vllm-server is **not** a service in compose.yaml — it's standalone (`nerdctl run -d`, L794). So the ATLAS-compose restart path does not touch vllm-server. Leaving these `always` is correct: every selective deploy needs the current compose.yaml present on disk and the systemd unit enabled (idempotent ops).
-- **Service build tasks** (L457–L645): each tagged `[<service>, build]`. Clean.
-- **SecMaster auxiliary tasks** (`pgvector` ext L919, `ollama` model pull L929): correctly tagged `[secmaster]` / `[secmaster, ollama, models]`.
-- **AutoFix, buildkit-prune, container-targets**: tagged appropriately for their domains.
-- **Sentinel prompts sync** (L569–L587): `[sentinel-collector, sentinel-prompts]`. Clean.
-- **sandbox-manager / sandbox-kernel** (L303–L448): `[sandbox-kernel, sandbox-manager, build]`. Clean.
-- **Edge / Cloudflare worker block** (L678–L714): `[edge, sentinel-edge, never]` — `never` is the right idiom (opt-in only).
-
+*(This bullet was superseded 2026-06-11: vllm-server is now a compose service — see the update section. Full-stack restarts triggered by compose/template or image-rebuild changes cycle it; tag-scoped runs do not.)*
 ### Notes / non-issues
 
 - The `Start or restart ATLAS infrastructure` task (L751) is `[always]` and
