@@ -81,22 +81,20 @@ MCP servers are SSE endpoints in the 3100-range; each lives next to (or inside) 
 |---|---|
 | [CLAUDE.md](./CLAUDE.md) | Project conventions (compose vs. docker-compose, deploy rules, EF migration rules, Sentinel sizing, git-push gate) — read this before generating code |
 | [STATE.md](./STATE.md) | Current epic / phase status |
+| [docs/README.md](./docs/README.md) | **Curated index of `docs/`** — what each doc is for, what was retired to git history |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Service topology, port allocation, event flow, regime states |
 | [docs/EXECUTIVE-SUMMARY.md](./docs/EXECUTIVE-SUMMARY.md) | Platform purpose, service status table, pattern library summary |
 | [docs/GRPC-ARCHITECTURE.md](./docs/GRPC-ARCHITECTURE.md) | gRPC streaming patterns and contracts |
 | [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) | OTEL pipeline, dashboards, tracing conventions |
 | [docs/THRESHOLDENGINE-PATTERNS.md](./docs/THRESHOLDENGINE-PATTERNS.md) | Pattern catalog and category weights |
-| [docs/SENTINEL-RLM.md](./docs/SENTINEL-RLM.md) | Sentinel extraction architecture |
-| [docs/sentinel-extraction-pipeline.md](./docs/sentinel-extraction-pipeline.md) | Extraction pipeline detail |
-| [docs/sentinel-product-spec-v2.md](./docs/sentinel-product-spec-v2.md) | Sentinel product spec |
+| [docs/SENTINEL-RLM.md](./docs/SENTINEL-RLM.md) | Sentinel extraction model/backend/VRAM constraints (pipeline detail: `SentinelCollector/README.md`) |
+| [docs/sentinel-product-spec-v2.md](./docs/sentinel-product-spec-v2.md) | Sentinel product spec (vision-level) |
 | [docs/RELEASES.md](./docs/RELEASES.md) | Phase / epic outcomes (paired with git tags) |
 | [docs/FRED_SERIES_REFERENCE.md](./docs/FRED_SERIES_REFERENCE.md) | FRED series catalog |
-| [docs/FRED_DATA_RESEARCH.md](./docs/FRED_DATA_RESEARCH.md) | FRED research notes |
 | [docs/Guide to Grafana Dashboards.md](./docs/Guide%20to%20Grafana%20Dashboards.md) | Dashboard authoring guide |
 | [docs/README-TEMPLATE.md](./docs/README-TEMPLATE.md) | Standard template for **per-service** READMEs |
-| [docs/plans/](./docs/plans/) | Active and historical implementation plans |
+| [docs/plans/](./docs/plans/) | Active implementation plans (completed phases retire to git history per PHASE_TAGS) |
 | [docs/research/](./docs/research/) | Research notes |
-| [docs/benchmarks/](./docs/benchmarks/) | Benchmark results |
 | [docs/grammars/](./docs/grammars/) | DSL / GBNF grammars |
 | [docs/llm/](./docs/llm/) | LLM-related artefacts |
 

@@ -24,7 +24,7 @@ Every architectural decision in this doc is judged against that frame. The pipel
 
 ## 3. Architectural intent vs implementation gap
 
-Canonical reference: [`docs/sentinel-extraction-pipeline.md`](../sentinel-extraction-pipeline.md). The Mermaid pipeline below is reproduced from that doc; each stage is annotated with what's actually happening in production today per the morning's OTEL recon.
+Canonical reference at the time of writing: `docs/sentinel-extraction-pipeline.md` (retired 2026-06-11 — superseded by `SentinelCollector/README.md` + `docs/ARCHITECTURE.md` after the DSL cutover and GPU role-flip; recover via git history). The Mermaid pipeline below is reproduced from that doc; each stage is annotated with what was actually happening in production at the 2026-05-17 OTEL recon.
 
 ```mermaid
 flowchart TD

@@ -3,6 +3,8 @@
 **Status:** PoC, exploratory. Iterate freely; data drives the next step.
 
 > **As of 2026-05-27**: Phases 0-4 PASS at recalibrated gates; Phase 5 implementation shipped (8 sub-phases) but demo at 0/10 cells. See [phase5-matrix-integration.md] §17 for current diagnosis.
+>
+> **Path note (2026-06-11 docs consolidation):** the benchmark tree `docs/benchmarks/cod-2026-05-17/` referenced throughout was retired from main — recover via `git show dsl-poc-phase5-done:<path>`; the production parser/verifier mirror is `SentinelCollector/dsl-parser-mcp/dsl/`. Phase-5 production has itself since been superseded by the GPU JSON-CoD role-flip (`gpu-cod-roleflip-2026-06-09`; CPU DSL = rollback path).
 
 **Goal:** CPU extraction → GPU verification pipeline that emits validated facts to the signal × sector × industry × time matrix with sufficient fidelity to feed scoring. North-star metric: per-article numeric+entity recall on financial news, with provenance traceable to a source span.
 **Non-goal:** premature production deployment. Production prompts at `/opt/ai-inference/prompts/` are not touched in this plan.

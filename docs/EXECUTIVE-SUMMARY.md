@@ -1,11 +1,11 @@
 # ATLAS Platform - Executive Summary
 
 **Status:** Active development (Phase 5 matrix-cell integration + Sentinel GPU-CoD role-flip DONE — extraction on GPU vLLM JSON-CoD; see `STATE.md`)
-**Updated:** 2026-06-10
+**Updated:** 2026-06-11
 
 ## Overview
 
-ATLAS is a real-time macroeconomic monitoring platform that ingests data from multiple sources (FRED, Alpha Vantage, Finnhub, OFR, SentinelCollector news / GPU vLLM JSON-CoD extraction), evaluates 79 pattern-based signals across nine categories, projects each signal onto an 11-sector ATLAS grid, classifies per-sector regimes, and delivers actionable alerts for portfolio allocation decisions.
+ATLAS is a real-time macroeconomic monitoring platform that ingests data from multiple sources (FRED, Alpha Vantage, Finnhub, OFR, SentinelCollector news / GPU vLLM JSON-CoD extraction), evaluates 72 pattern-based signals across nine categories, projects each signal onto an 11-sector ATLAS grid, classifies per-sector regimes, and delivers actionable alerts for portfolio allocation decisions.
 
 ## Architecture
 
@@ -72,8 +72,8 @@ flowchart LR
 | SentinelCollector | :white_check_mark: | News aggregation (SearXNG/RSS/edge) + GPU vLLM JSON-CoD extraction (CPU DSL = rollback) |
 | CalendarService | :white_check_mark: | NYSE trading days/holidays + FRED economic-release calendar |
 | SecMaster | :white_check_mark: | Instrument metadata, source resolution, hybrid SQL/fuzzy/vector/RAG search |
-| ThresholdEngine | :white_check_mark: | 79 patterns, 11-sector projection, per-sector regime classification, matrix-cell persistence |
-| AlertService | :warning: | Builds + deploys; intentionally not consuming alerts during PoC window (per `STATE.md`) |
+| ThresholdEngine | :white_check_mark: | 72 patterns, 11-sector projection, per-sector regime classification, matrix-cell persistence |
+| AlertService | :white_check_mark: | Webhook sink for Alertmanager — severity routing → ntfy / email / AutoFix (re-enabled + verified end-to-end 2026-06-10, PR #656) |
 | WhisperService | :white_check_mark: | YouTube transcription via faster-whisper |
 | FinBertSidecar | :white_check_mark: | FinBERT 768-d embeddings (no production consumer wired today) |
 
@@ -85,17 +85,17 @@ Pattern definitions live under `ThresholdEngine/config/patterns/<category>/*.jso
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Recession | 25 | Sahm Rule (official + variant), yield-curve inversion/steepening, initial/continuing claims, JOLTS, Beveridge, Challenger layoffs |
-| NBFI | 10 | HY spreads, standing/reverse repo stress, CCC/BB divergence, Chicago NFCI, bankruptcy clusters, financial-insider breadth |
-| Growth | 9 | GDP acceleration, industrial production, retail sales, durable goods, residential investment, housing starts |
-| Inflation | 9 | CPI/PCE acceleration + level, breakevens (5y/10y/5y5y), Truflation vs CPI, core CPI stickiness |
-| Liquidity | 9 | VIX L1/L2, credit spread widening, DXY risk-off, Fed liquidity, real rates (incl. TIPS), M2 growth |
+| Recession | 22 | Sahm Rule, yield-curve inversion/steepening, initial/continuing claims, JOLTS, Beveridge, Challenger layoffs |
+| Growth | 11 | GDP acceleration, industrial production, retail sales, durable goods, residential investment, housing starts, global PMI |
+| Liquidity | 9 | VIX level, credit spread widening, DXY risk-off, Fed liquidity, fed funds rate, real rates (incl. TIPS), M2 growth |
+| NBFI | 8 | standing/reverse repo stress, CCC/BB divergence, Chicago NFCI, St. Louis stress index, commercial-paper stress, financial-insider breadth |
 | OFR | 7 | FSI composite + sub-indices (credit, funding, volatility, EM), STFM repo stress, HFM leverage |
-| Valuation | 6 | CAPE, Buffett indicator (daily + monthly), equal-weight, forward P/E, equity risk premium |
-| Currency | 3 | DXY/EUR-USD, EM-FX weakness, JPY carry unwind |
-| Commodity | 1 | Copper/Gold ratio |
+| Inflation | 6 | CPI YoY level, PCE level + acceleration, inflation expectations, Truflation vs CPI, core CPI stickiness |
+| Currency | 5 | DXY, EUR-USD, EM-FX weakness, JPY carry unwind, ECB policy rate |
+| Commodity | 3 | Copper/Gold ratio, oil price, natgas price |
+| Valuation | 1 | Buffett indicator |
 
-**Total: 79 patterns across 9 categories.**
+**Total: 72 patterns (71 enabled, 1 disabled) across 9 categories.**
 
 ## Regime Detection
 

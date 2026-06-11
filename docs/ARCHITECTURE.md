@@ -2,7 +2,7 @@
 
 ## Overview
 
-ATLAS (Automated Threshold Logic and Alert System) is an event-driven platform for financial data collection, pattern evaluation, and per-sector regime detection. Collectors ingest from multiple sources, stream observation events to ThresholdEngine over gRPC, where 79 configurable patterns (72 enabled, 7 disabled) are evaluated by a Roslyn-compiled expression engine, projected onto the 11-sector ATLAS grid, persisted as matrix cells, and classified into per-sector regimes. SentinelCollector adds unstructured-content extraction via a GPU vLLM JSON Chain-of-Density (CoD) pipeline (Qwen2.5-32B-AWQ, `Extraction__Backend=VllmJson`) that grounds against a sidecar parser/verifier (the CPU `llama-server` DSL/GBNF pipeline is the rollback path). Threshold-crossing events surface to Prometheus, which routes via Alertmanager into AlertService for ntfy/email/AutoFix delivery.
+ATLAS (Automated Threshold Logic and Alert System) is an event-driven platform for financial data collection, pattern evaluation, and per-sector regime detection. Collectors ingest from multiple sources, stream observation events to ThresholdEngine over gRPC, where 72 configurable patterns (71 enabled, 1 disabled) are evaluated by a Roslyn-compiled expression engine, projected onto the 11-sector ATLAS grid, persisted as matrix cells, and classified into per-sector regimes. SentinelCollector adds unstructured-content extraction via a GPU vLLM JSON Chain-of-Density (CoD) pipeline (Qwen2.5-32B-AWQ, `Extraction__Backend=VllmJson`) that grounds against a sidecar parser/verifier (the CPU `llama-server` DSL/GBNF pipeline is the rollback path). Threshold-crossing events surface to Prometheus, which routes via Alertmanager into AlertService for ntfy/email/AutoFix delivery.
 
 ```mermaid
 flowchart LR
@@ -21,7 +21,7 @@ flowchart LR
     end
 
     subgraph Evaluation
-        TE[ThresholdEngine<br/>79 patterns / 11 sectors / matrix cells]
+        TE[ThresholdEngine<br/>72 patterns / 11 sectors / matrix cells]
     end
 
     subgraph Alerting
@@ -132,15 +132,15 @@ All `5001` ports speak gRPC `ObservationEventStream` (proto: `Events/src/Events/
 |---------|------|---------|
 | WhisperService | 8090 (host + container) | YouTube transcription via faster-whisper (Python FastAPI) |
 | FinBertSidecar | 8080 (internal) | FinBERT 768-dim L2-normalized embeddings (CPU) |
-| vllm-server | 8000 (host) | GPU inference (Qwen2.5-32B-Instruct-AWQ) — Sentinel JSON-CoD extraction (live, `Extraction__Backend=VllmJson`), claim verification, Reports news summarisation |
+| vllm-server | 8000 (host) | GPU inference (Qwen2.5-32B-Instruct-AWQ) — Sentinel JSON-CoD extraction (live, `Extraction__Backend=VllmJson`), news-signal classification, Reports news summarisation |
 | llama-server | 11437 → 8080 (host) | CPU llama.cpp serving qwen3:30b-a3b — Sentinel CPU DSL/GBNF CoD emission (rollback path; `Extraction__Backend=LlamaServerDsl`) |
-| ollama-cpu-gen | 11435 → 11434 (host) | CPU Ollama — Sentinel CoD summarisation, epistemic markers |
+| ollama-cpu-gen | 11435 → 11434 (host) | CPU Ollama — SecMaster RAG-tier generation (not a Sentinel extraction dependency) |
 | ollama-cpu-embed | 11436 → 11434 (host) | CPU Ollama — `bge-m3` embeddings for SecMaster semantic search |
 | trafilatura | 3109 (host) | HTML pre-wash for SentinelCollector content normalisation |
 | spacy-ner | internal only | spaCy NER sidecar — entity pre-pass for SentinelCollector V2 pipeline |
 | dsl-parser-mcp | 3120 (host) | FastAPI sidecar — Lark parser + v2.3.1 verifier; `/parse_json` lifts the GPU JSON-CoD document and `/parse` the CPU DSL document to the same `DocumentAst` (consumed by SentinelCollector) |
 
-> **Inference topology** (post GPU-CoD role-flip, `gpu-cod-roleflip-2026-06-09`): GPU `vllm-server` = JSON-CoD extraction emission (live) + claim verification + CoVe + report summarisation (Qwen2.5-32B-AWQ, largest model that fits 32GB VRAM on RTX 5090). CPU = classifier + embeddings + RAG + the DSL/GBNF CoD rollback path. (The prior "CoD never touches GPU" split was reversed by the role-flip — CoD emission now runs on the GPU.)
+> **Inference topology** (post GPU-CoD role-flip, `gpu-cod-roleflip-2026-06-09`): GPU `vllm-server` = JSON-CoD extraction emission (live) + news-signal classification / sector tagging + report summarisation (Qwen2.5-32B-AWQ, largest model that fits 32GB VRAM on RTX 5090). CPU = embeddings + SecMaster RAG + the DSL/GBNF CoD rollback path. (The prior "CoD never touches GPU" split was reversed by the role-flip — CoD emission now runs on the GPU. The GPU claim verifier (CoVe `SemanticVerifier`) was removed as dead code in PR #647: ~93% of GPU calls, output computed-and-discarded since its matrix consumer was retired by WS3-A3.)
 
 ### MCP Servers
 
@@ -204,7 +204,7 @@ Three MCP-style sidecars live outside any parent service:
 
 ### Configuration Over Code
 
-- 79 patterns defined in JSON with C# expressions, compiled by Roslyn at runtime
+- 72 patterns defined in JSON with C# expressions, compiled by Roslyn at runtime
 - Hot reload via `PatternConfigurationWatcher`, `BurstWindowConfigurationWatcher`, `SectorThresholdConfigurationWatcher`
 - Admin APIs for runtime series management on each collector
 - Prompts host-mounted (`/prompts`) — edits hot-reload without container rebuild
@@ -224,7 +224,7 @@ sequenceDiagram
     APIs->>COL: Economic/Market data
     COL->>DB: Store observations
     COL->>TE: ObservationCollectedEvent (gRPC)
-    TE->>TE: Evaluate 79 patterns (Roslyn)
+    TE->>TE: Evaluate 72 patterns (Roslyn)
     TE->>TE: Project onto 11 sectors (matrix cells)
     TE->>TE: Classify per-sector regimes
     TE->>DB: Persist matrix cells + sector regimes
@@ -244,17 +244,17 @@ Counts derive from `ThresholdEngine/config/patterns/<category>/*.json` (one patt
 
 | Category | Total | Enabled | Purpose | Representative Patterns |
 |----------|-------|---------|---------|-------------------------|
-| Recession | 25 | 24 | Contraction warnings | Sahm Rule (official + custom), yield-curve inversion / steepening, initial + continuing claims, Beveridge curve, Challenger layoffs, JOLTS |
-| NBFI | 10 | 8 | Shadow-banking stress | HY spreads, CCC-BB divergence, repo stress (standing + reverse), Chicago NFCI, KRE underperformance, NBFI escalation |
-| Growth | 9 | 9 | Expansion signals | GDP acceleration, industrial production, durable goods, equipment/residential investment, retail sales, housing starts |
-| Inflation | 9 | 9 | Price pressures | CPI YoY/acceleration, core CPI stickiness, PCE, breakevens (5Y/10Y/5Y5Y), Truflation divergence |
-| Liquidity | 9 | 9 | Market stress | VIX deployment L1/L2, credit-spread widening, Fed liquidity contraction, real rates / TIPS, M2 growth, DXY risk-off |
+| Recession | 22 | 21 | Contraction warnings | Sahm Rule, yield-curve inversion / steepening, initial + continuing claims, Beveridge curve, Challenger layoffs, JOLTS (Baltic-freight disabled) |
+| Growth | 11 | 11 | Expansion signals | GDP acceleration, industrial production, durable goods, equipment/residential investment, retail sales, housing starts, global PMI |
+| Liquidity | 9 | 9 | Market stress | VIX level, credit-spread widening, Fed liquidity contraction, fed funds rate, real rates / TIPS, M2 growth, DXY risk-off |
+| NBFI | 8 | 8 | Shadow-banking stress | CCC-BB divergence, repo stress (standing + reverse), Chicago NFCI, St. Louis stress index, commercial-paper stress, financial-insider breadth |
 | OFR | 7 | 7 | Financial stability | FSI (top-level + credit / volatility / funding / EM components), STFM repo stress, HFM leverage |
-| Valuation | 6 | 3 | Market levels | Buffett indicator (daily + monthly), CAPE, equity risk premium, forward P/E, equal-weight indicator |
-| Currency | 3 | 3 | Risk sentiment | EUR/USD dollar strength, EM currency weakness, JPY carry unwind |
-| Commodity | 1 | 0 | Real assets | Copper/Gold ratio |
+| Inflation | 6 | 6 | Price pressures | CPI YoY level, core CPI stickiness, PCE level + acceleration, inflation expectations, Truflation divergence |
+| Currency | 5 | 5 | Risk sentiment | DXY dollar index, EUR/USD dollar strength, EM currency weakness, JPY carry unwind, ECB policy rate |
+| Commodity | 3 | 3 | Real assets | Copper/Gold ratio, oil price, natgas price |
+| Valuation | 1 | 1 | Market levels | Buffett indicator |
 
-**Total: 79 patterns (72 enabled, 7 disabled) across 9 categories.**
+**Total: 72 patterns (71 enabled, 1 disabled) across 9 categories.**
 
 ## Sector Projection & Per-Sector Regime Classification
 
@@ -402,7 +402,7 @@ Full OpenTelemetry stack: traces (Tempo), metrics (Prometheus), logs (Loki), all
 Change a threshold? Edit JSON, patterns hot-reload. Add a series? Use the admin API. Edit a prompt? Edit the host-mounted file under `/opt/ai-inference/prompts/` and the prompt provider picks it up.
 
 ### AI-Native
-MCP servers let Claude directly query financial data and evaluate patterns. After the GPU-CoD role-flip the GPU `vllm-server` (Qwen2.5-32B-AWQ) runs the JSON-CoD structured extraction emission, while the CPU handles classification + embeddings + RAG; the CPU `llama-server` DSL/GBNF pipeline is retained as the rollback path (LLM-strength layering principle).
+MCP servers let Claude directly query financial data and evaluate patterns. After the GPU-CoD role-flip the GPU `vllm-server` (Qwen2.5-32B-AWQ) runs the JSON-CoD structured extraction emission and the news-signal classifier, while the CPU handles embeddings + SecMaster RAG; the CPU `llama-server` DSL/GBNF pipeline is retained as the rollback path (LLM-strength layering principle).
 
 ## See Also
 

@@ -4,9 +4,9 @@ CPU sidecar that wraps the benchmark CoD DSL parser + v2.3.1 verifier behind a F
 
 ## Overview
 
-A small Python FastAPI process (port `3120`) running in its own container. It exposes four endpoints — `POST /parse`, `POST /parse_json`, `POST /verify`, `GET /health` — and is consumed by `SentinelCollector.Services.DslParserClient` (`SentinelCollector/src/Services/DslParserClient.cs`). `/parse` serves the CPU GBNF DSL path (`CpuDslExtractionService`, `Extraction__Backend=LlamaServerDsl`); `/parse_json` serves the additive GPU JSON-CoD role-flip path (plan `docs/plans/gpu-json-cod-rollout-2026-06-09.md`) — both lower to the **same** `Document` AST so `/verify` and everything downstream are format-agnostic.
+A small Python FastAPI process (port `3120`) running in its own container. It exposes four endpoints — `POST /parse`, `POST /parse_json`, `POST /verify`, `GET /health` — and is consumed by `SentinelCollector.Services.DslParserClient` (`SentinelCollector/src/Services/DslParserClient.cs`). `/parse` serves the CPU GBNF DSL path (`CpuDslExtractionService`, `Extraction__Backend=LlamaServerDsl`); `/parse_json` serves the additive GPU JSON-CoD role-flip path (plan gpu-json-cod-rollout-2026-06-09.md, retired; recover via tag gpu-cod-roleflip-2026-06-09) — both lower to the **same** `Document` AST so `/verify` and everything downstream are format-agnostic.
 
-The parser/verifier source under `dsl/` is a verbatim copy of `docs/benchmarks/cod-2026-05-17/dsl/`. Do not edit those files in-place — re-copy from the benchmark directory if the upstream parser/verifier changes. Re-implementing the Lark/LALR parser + punctuation-tolerant word verifier in C# would fork the grounding contract; the sidecar exists to avoid that fork.
+The parser/verifier source under `dsl/` originated as a verbatim copy of the benchmark tree `docs/benchmarks/cod-2026-05-17/dsl/` (retired from main 2026-06-11 — `dsl/` here is now the canonical copy; the original is recoverable via `git show dsl-poc-phase5-done:docs/benchmarks/cod-2026-05-17/dsl/<file>`). Re-implementing the Lark/LALR parser + punctuation-tolerant word verifier in C# would fork the grounding contract; the sidecar exists to avoid that fork.
 
 ## Architecture
 
@@ -76,7 +76,7 @@ Strict-parse failures land in `parse_errors[]` with `message`, `line`, `column`,
 
 #### `POST /parse_json`
 
-Additive sibling of `/parse` for the GPU-JSON-CoD role-flip (plan `docs/plans/gpu-json-cod-rollout-2026-06-09.md` §2). The GPU vLLM CoD stage emits a single bounded JSON object (`{article_type, entities[], numbers[], events[], claims[]}`, schema mirrors `/tmp/sentinel-remediation/json-cod-quality/json_schema.py`) instead of GBNF DSL text. This endpoint lowers that JSON into the **same** `Document` AST `/parse` produces (`json_cod.parse_json_cod`), so `/verify`, the .NET `IDslToMergedExtractionAdapter`, and every downstream consumer are format-agnostic and unchanged.
+Additive sibling of `/parse` for the GPU-JSON-CoD role-flip (plan gpu-json-cod-rollout-2026-06-09.md §2, retired; recover via tag gpu-cod-roleflip-2026-06-09). The GPU vLLM CoD stage emits a single bounded JSON object (`{article_type, entities[], numbers[], events[], claims[]}`, schema mirrors `/tmp/sentinel-remediation/json-cod-quality/json_schema.py`) instead of GBNF DSL text. This endpoint lowers that JSON into the **same** `Document` AST `/parse` produces (`json_cod.parse_json_cod`), so `/verify`, the .NET `IDslToMergedExtractionAdapter`, and every downstream consumer are format-agnostic and unchanged.
 
 Request (pydantic `ParseJsonRequest`):
 
@@ -158,7 +158,7 @@ dsl-parser-mcp/
 ├── json_cod.py             # GPU JSON-CoD → Document AST lowering (additive; targets dsl/'s AST)
 ├── Containerfile           # python:3.11-slim, COPYs dsl/ + tests/ + app.py + json_cod.py
 ├── requirements.txt        # fastapi, uvicorn, lark, pydantic, httpx, pytest
-├── dsl/                    # verbatim copy of docs/benchmarks/cod-2026-05-17/dsl/
+├── dsl/                    # canonical parser/verifier source (originated from the retired benchmark tree)
 │   ├── __init__.py
 │   ├── parser.py           # v1 + v2 + v2.1 Lark parsers
 │   ├── parser_v2_3.py      # v2.3 parser (word-grounding supplement)
@@ -230,5 +230,5 @@ The C# wire types (`DocumentAst`, `DslEnt`/`DslNum`/`DslEvt`/`DslClaim`/`DslNote
 ## See Also
 
 - [`SentinelCollector/README.md`](../README.md) — parent service overview
-- [`docs/benchmarks/cod-2026-05-17/dsl/`](../../docs/benchmarks/cod-2026-05-17/dsl/) — canonical parser/verifier source (this sidecar's `dsl/` is a verbatim copy)
+- `dsl/` (this directory) — canonical parser/verifier source; originated from the benchmark tree `docs/benchmarks/cod-2026-05-17/dsl/` (retired to git history, tag `dsl-poc-phase5-done`)
 - [`SentinelCollector/src/Services/DslParserClient.cs`](../src/Services/DslParserClient.cs) — .NET consumer of this sidecar

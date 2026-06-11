@@ -3,7 +3,7 @@
 **Version:** 2.8
 **Date:** December 31, 2025
 **Product Owner:** Claude
-**Status:** Phase 1 MVP - In Progress  
+**Status:** Vision-level product spec. **Pending product-owner review (flagged 2026-06-11) — treat requirements and LLM do/don't-boundary sections as candidate-governing, not confirmed-current.** Everything *status-shaped* in this document (the "Implementation Status" section, phase progress, per-source schedules) is a December-2025 snapshot — current pipeline state lives in `SentinelCollector/README.md`, `docs/ARCHITECTURE.md`, and `STATE.md`. Extraction has since moved to GPU vLLM JSON-CoD (`Extraction__Backend=VllmJson`, see `docs/RELEASES.md` `gpu-cod-roleflip-2026-06-09`).
 
 ---
 
@@ -1137,7 +1137,7 @@ Daily automated validation:
 
 ---
 
-## Implementation Status (as of December 31, 2025)
+## Implementation Status (HISTORICAL — December 31, 2025 snapshot; see `STATE.md` for current)
 
 ### Deployment
 

@@ -1,6 +1,8 @@
 # DSL PoC — Phase 4 — GPU semantic verifier (plan §7.2)
 
 > **Status**: COMPLETED 2026-05-26. Tagged as `dsl-poc-phase4-done`. Kept as the canonical Phase 4 record (§11 gate-recalibration rationale).
+>
+> **Historical record:** the production `SemanticVerifier` this phase shipped was later removed as dead code (PR #647, 2026-06-09) — its matrix consumer was retired by WS3-A3 and the GPU-CoD role-flip (`gpu-cod-roleflip-2026-06-09`) made CoD emission the GPU's job. The topology rule below ("CPU = extraction, GPU = verification") was reversed by that role-flip. Benchmark-tree paths (`docs/benchmarks/cod-2026-05-17/…`) referenced throughout were retired from main in the 2026-06-11 docs consolidation — recover via `git show dsl-poc-phase5-done:<path>`.
 
 **Status:** scoping. No code, no deploy. Single source of truth for Phase 4
 work until split into stories and merged.
