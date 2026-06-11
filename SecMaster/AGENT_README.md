@@ -40,7 +40,7 @@ DISTINCTIONS:
 CROSS-SERVICE: collectors→register(f-a-f); ThresholdEngine→ResolveBatch(sync); Sentinel→resolve-entities(sync).
   OUT: collectors REST, OpenFIGI, Gemini, Ollama(embed/RAG). FEEDS: ThresholdEngine matrix via sector grounding.
   Ollama-gen resilience: breaker=process-SINGLETON(5 consecutive fails incl client-aborts→open 60s) + in-flight gate(2; cancelled-while-queued never sent) + num_predict cap(64); NO retry on generation — runner computes abandoned generations to completion, so re-sends/unbounded fan-in = self-sustaining saturation.
-  RAG latency budget (measured 2026-06-11): ollama-cpu-gen prefill ≈100 tok/s + ~4s floor, decode 0.2-0.8 s/tok (HT island shares physical cores with unpinned services) → ctx cap 600 est-tokens (per-candidate split, snippets clipped ¬candidates dropped) + one-sentence answer (21-30 tok) + 30s budget; pre-fix 2000-ctx/8s = prefill alone > budget = 100% timeout = dead tier. Budget>8s safe: gate caps fan-in, breaker bounds persistent failure.
+  RAG latency budget (measured 2026-06-11): ollama-cpu-gen prefill ≈100 tok/s + ~4s floor, decode 0.2-0.8 s/tok (HT island shares physical cores with unpinned services) → ctx cap 600 est-tokens (per-candidate split, snippets clipped ¬candidates dropped) + one-sentence answer (21-30 tok) + 60s budget (idle max 38.4s, 30s was below prod-load solo latency → 100% timeout); queued-budget guard: if <RagMinGenerationBudgetSeconds(default 25s) remain after vector search, abstain(rag_degraded{reason=insufficient_budget}) ¬send-doomed-generation. Budget>8s safe: gate caps fan-in, breaker bounds persistent failure.
 
 GOTCHAS:
   ✗ bulk-preload ✗ backfill-rows-to-green ✗ NotFound="not-in-table" ✗ gate-non-Equity-sector
