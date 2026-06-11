@@ -3,7 +3,7 @@
 PURPOSE: Alertmanager-webhook sink → severity-route → fan-out(ntfy/email/autofix). ¬DB ¬gRPC ¬MCP ¬metric-source ¬alert-rule-owner(rules live in Prometheus/Alertmanager). HTTP-only, internal :8080, no host port.
 
 DATA MODEL + INVARIANTS (schema/config does NOT enforce):
-  OPERATIONAL ⊥ deploy: service kept DOWN (PoC window — output not useful). restart=`unless-stopped` → ANY non-scoped ansible run RESURRECTS it. ✗scope: `-e scoped_restart=true scoped_services=...` to avoid. Webhook target + autofix-queue consumer stay wired while down.
+  OPERATIONAL: UP by design (re-enabled 2026-06-10 #656; verified end-to-end Alertmanager→alert-service→ntfy `atlas-alert`). restart=`unless-stopped`. Webhook target + autofix-queue consumer wired.
   INV queue⊥backpressure: `Channel.CreateUnbounded` → 503/QueueFull fires ONLY on writer cancel (shutdown), NEVER capacity. depth-gauge ≠ admission gate.
   INV route-table-divergence: appsettings.json (SHIPPED) = critical→[ntfy,email,autofix], warning→[ntfy,autofix], info→[ntfy]. C# `RoutingOptions` class default = critical→[ntfy,email], warning→[ntfy], info→[ntfy] (NO autofix). class default applies ONLY if `Routing` section absent entirely. ¬read class to know prod routing.
   INV dedup⊥direct: dedup keyed `fingerprint:(status ?? "firing")`, 30-min window, ONLY when Fingerprint non-empty. null Status treated as "firing" in the key. Alertmanager always sets Fingerprint → deduped; direct-format alerts usually lack it → NEVER deduped (every POST fires).
@@ -35,7 +35,6 @@ DISTINCTIONS:
 CROSS-SERVICE: Alertmanager → POST /alerts (webhook inbound). OUT: ntfy HTTP, SMTP email, autofix-queue file-write (host-mounted). ¬DB ¬gRPC ¬MCP ¬outbound-registration. FEEDS: host autofix runner (out-of-process).
 
 GOTCHAS:
-  ✗ non-scoped-ansible-deploy (resurrects a service the user keeps DOWN)
   ✗ treat-503-as-backpressure (unbounded → only shutdown)
   ✗ read-RoutingOptions-class-for-prod-routing (appsettings overrides)
   ✗ expect-dedup-on-direct-alerts (no fingerprint → none)

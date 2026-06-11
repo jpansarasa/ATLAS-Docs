@@ -4,7 +4,7 @@ Centralized alert routing and notification dispatch service for ATLAS.
 
 > **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
 
-> **Operational status (2026-05-27):** Container builds and deploys, but per user direction in `STATE.md` (PoC testing window) the service is intentionally not consuming alerts at the moment ("alert-service stays down — output not useful right now"). The Alertmanager webhook target (`http://alert-service:8080/alerts`) and the `autofix-queue/` consumer remain in place; restart when the PoC window ends.
+> **Operational status (2026-06-10):** UP by design — re-enabled and verified delivering end-to-end (Alertmanager → alert-service → ntfy `atlas-alert` topic) in #656. The Alertmanager webhook target (`http://alert-service:8080/alerts`) and the `autofix-queue/` consumer are wired and live.
 
 ## Overview
 
