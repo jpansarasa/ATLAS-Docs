@@ -28,7 +28,7 @@ PATHS (distinct code — do not conflate):
     on-miss: /health = full (database check, all checks); /health/ready = tag-filtered (ready+db tags); /health/live = echo only (Predicate=_=>false, no dep probe). /api/health = separate REST echo endpoint (ApiEndpoints.cs, ¬middleware).
 
 PROCESSING MODEL:
-  3 workers (Fsi/Stfm/HfmCollectionWorker) scheduled per-dataset → CollectionService → repo upsert (idempotent) + optional macro dual-write (is_macro). 3 OFR HTTP clients, distinct base URLs (FSI=CSV www., STFM=v1/, HFM=hf/v1/), each Polly retry 3× exp + breaker (5 consecutive failures → open; stays open 60s durationOfBreak, no sliding-window) + 30s timeout.
+  3 workers (Fsi/Stfm/HfmCollectionWorker) scheduled per-dataset → CollectionService → repo upsert (idempotent) + optional macro dual-write (is_macro). 3 OFR HTTP clients, distinct base URLs (FSI=CSV www., STFM=v1/, HFM=hf/v1/), each Polly retry 3× exp + breaker (5 consecutive failures → open; stays open 60s durationOfBreak, no sliding-window; ONE keyed-singleton breaker instance per client shared across requests — per-request construction inside the policy selector never accumulates, never opens; retry wraps breaker so retried attempts count individually) + 30s timeout.
   Dual-write provenance/idempotency key = (source_collector="ofr", source_id=<mnemonic>, observation_time). Re-run ¬double-writes.
 
 DISTINCTIONS:
