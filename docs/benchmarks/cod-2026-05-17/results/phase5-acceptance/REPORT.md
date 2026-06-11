@@ -25,7 +25,7 @@ prompt + v2.3 GBNF grammar mounted from `/opt/ai-inference/prompts/cod`.
 Spec coverage bands: PASS >= 8/10 - PARTIAL >= 5/10 - PROGRESS 1-4/10 - **FAIL 0/10**.
 
 This is NOT a regression of the architectural change. The CPU CoD pipeline is wired
-end-to-end and producing extractions; the new `sentinel_cpu_extraction_outcome_total{outcome="success"}=7`
+end-to-end and producing extractions; the new `sentinel_extraction_outcome_total{outcome="success"}=7`
 series proves PR #509 is on the hot path and PR #507's dsl-parser sidecar got
 `200 OK` on both `/parse` and `/verify` against live data. The 0-cell outcome is
 a downstream-grounding shortfall on the v8-baseline DSL shape, not a pipeline
@@ -106,7 +106,7 @@ much more aggressively than the v7 master prompt — but the per-observation
 `source_entity` field is consistently empty in the DSL emission, blocking the
 macro_signal_identity catalog lookup that drove all 3 PR #499 wins.
 
-## sentinel_cpu_extraction_outcome_total (PR #509 new metric)
+## sentinel_extraction_outcome_total (PR #509 new metric)
 
 | Outcome           | count | notes                                                                 |
 |-------------------|-------|-----------------------------------------------------------------------|
