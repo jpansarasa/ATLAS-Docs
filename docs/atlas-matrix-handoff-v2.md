@@ -74,7 +74,7 @@ this platform, not a greenfield build.
   FinnhubCollector, OfrCollector, SentinelCollector) push observations into
   TimescaleDB and stream events via gRPC.
 - **SecMaster** is the centralized instrument and series catalog with
-  hybrid search (SQL, fuzzy, vector via pgvector, RAG via Ollama) and
+  hybrid search (SQL, fuzzy, vector via pgvector, RAG via llama.cpp runners) and
   source-resolution routing.
 - **ThresholdEngine** evaluates hot-reloadable C# pattern expressions
   against streaming observations. Roslyn-compiled, hot-reloadable, with
@@ -87,7 +87,7 @@ this platform, not a greenfield build.
 - **MCP servers** expose every component to Claude conversations.
 - **Full OpenTelemetry stack**: Prometheus, Grafana, Loki, Tempo,
   Alertmanager.
-- **Local LLM stack**: Ollama (GPU + CPU), vLLM server, FinBERT embeddings,
+- **Local LLM stack**: vLLM server (GPU), llama.cpp runners (CPU), FinBERT embeddings,
   custom QLoRA fine-tune on Qwen 2.5 32B for financial extraction.
 
 ### What's preserved, what's changing, what's net-new

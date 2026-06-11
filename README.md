@@ -106,7 +106,7 @@ Authoritative rules live in [CLAUDE.md](./CLAUDE.md). Quick pointers:
 - **Deployments**: always via `ansible-playbook playbooks/deploy.yml --tags {service}`; never edit `/opt/ai-inference/compose.yaml` directly. [CLAUDE.md → DEPLOYMENT](./CLAUDE.md), [deployment/README.md](./deployment/README.md)
 - **Build & test before push**: `{Project}/.devcontainer/compile.sh` must pass (0 errors, 0 warnings, all tests) before `git push`. Enforced by `.claude/hooks/git-push-guard.sh`. [CLAUDE.md → GIT_PUSH](./CLAUDE.md)
 - **Database schema**: EF Core migrations only; no raw SQL scripts; seed via `HasData()` or app startup. [CLAUDE.md → DATABASE](./CLAUDE.md)
-- **Sentinel extraction**: ≥30B-parameter models, 32K context, `NUM_PARALLEL=1` on Ollama. [CLAUDE.md → SENTINEL](./CLAUDE.md)
+- **Sentinel extraction**: ≥30B-parameter models, 32K context; GPU inference via vLLM, CPU via llama.cpp (no ollama in the topology). [CLAUDE.md → SENTINEL](./CLAUDE.md)
 - **Container image naming**: kebab-case `{service-name}:latest` (e.g. `fred-collector`, not `fredcollector`). [CLAUDE.md → CONTAINER_BUILD](./CLAUDE.md)
 - **Service README template**: [docs/README-TEMPLATE.md](./docs/README-TEMPLATE.md).
 

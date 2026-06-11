@@ -6,7 +6,7 @@ Centralized instrument metadata and intelligent source resolution service for AT
 
 ## Overview
 
-SecMaster provides a single source of truth for financial instrument definitions and context-aware routing to data sources. Collectors register their series capabilities via gRPC, and consumers resolve symbols to the optimal data source based on frequency, latency, and collector preferences. Includes hybrid search combining SQL, fuzzy matching, vector similarity, and RAG-powered natural language queries (embeddings via Ollama, generation via llama.cpp llama-server).
+SecMaster provides a single source of truth for financial instrument definitions and context-aware routing to data sources. Collectors register their series capabilities via gRPC, and consumers resolve symbols to the optimal data source based on frequency, latency, and collector preferences. Includes hybrid search combining SQL, fuzzy matching, vector similarity, and RAG-powered natural language queries (embeddings and generation both via llama.cpp llama-server runners).
 
 ## Architecture
 
@@ -37,11 +37,11 @@ flowchart TD
     TE -->|Resolve Symbol| API
     MCP -->|Query Catalog| API
     API --> RES & SEM --> DB
-    SEM <-->|Embeddings| OLLAMA[ollama-cpu-embed]
+    SEM <-->|Embeddings| LCE[llama-cpu-embed]
     SEM -->|RAG generation| LCR[llama-cpu-rag]
 ```
 
-Collectors register series at startup via gRPC streaming (fire-and-forget). Consumers resolve symbols to optimal data sources. Semantic search uses Ollama (bge-m3) for embeddings and a llama.cpp llama-server (`llama-cpu-rag`, qwen2.5:7b) for RAG synthesis — the runner was swapped from ollama 2026-06-11 after benchmarks showed the ollama bundled CPU runner decoding the same GGUF ~30× slower than llama.cpp on this host. The `Ollama__*` config names and `IOllamaClient` seam are unchanged; only the generation wire protocol moved to llama.cpp's `/completion`.
+Collectors register series at startup via gRPC streaming (fire-and-forget). Consumers resolve symbols to optimal data sources. Semantic search uses llama.cpp llama-server runners for both halves: `llama-cpu-embed` (bge-m3, OpenAI-style `/v1/embeddings`) for embeddings and `llama-cpu-rag` (qwen2.5:7b, `/completion`) for RAG synthesis. Both replaced ollama runners on 2026-06-11 — generation first (the ollama bundled CPU runner decoded the same GGUF ~30× slower than llama.cpp on this host), then embeddings (same GGUF blob, vectors verified interchangeable with the existing pgvector store at cosine ≥ 0.999999, so no re-embed). No ollama container remains; the `Ollama__*` config names and `IOllamaClient` seam are unchanged — they are the config surface, not the engine.
 
 ## Features
 
@@ -62,8 +62,8 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `ConnectionStrings__SecMaster` | Primary PostgreSQL connection (atlas_secmaster) | Required |
 | `AtlasData__ConnectionString` | Cross-DB read connection for atlas_data (dedup grouping reads FRED/OFR/Sentinel observations). Empty/null short-circuits dedup providers to empty results. | empty |
 | `Ollama__Url` | Generation endpoint — a llama.cpp llama-server `/completion` base URL (production: `llama-cpu-rag`) | `http://llama-cpu-rag:8080` |
-| `Ollama__EmbeddingUrl` | Ollama API endpoint for embeddings (falls back to `Url` if unset — must then be an Ollama endpoint) | `http://ollama-cpu:11434` (appsettings) |
-| `Ollama__EmbeddingModel` | Model for vector embeddings | `bge-m3` (appsettings; options-class default is `nomic-embed-text`) |
+| `Ollama__EmbeddingUrl` | llama.cpp `/v1/embeddings` base URL (production: `llama-cpu-embed`; falls back to `Url` if unset — the fallback must then also serve `/v1/embeddings`) | `http://llama-cpu-embed:8080` (appsettings) |
+| `Ollama__EmbeddingModel` | Informational tag for metrics/traces and the stored `Model` column — llama-server has exactly one model loaded per process (production: `bge-m3`) | `bge-m3` (appsettings; options-class default is `nomic-embed-text`) |
 | `Ollama__GenerationModel` | Informational tag for metrics/traces — llama-server has exactly one model loaded per process (production: `qwen2.5:7b-instruct`) | `qwen2.5:32b-instruct` |
 | `Ollama__MaxTextLength` | Truncate-before-embed character cap | `10000` |
 | `Ollama__MaxConcurrentGenerations` | Process-wide cap on in-flight generation requests (running + queued); a caller cancelled while queued never reaches the runner. Sized to llama-cpu-rag's `--parallel 4` | `4` |

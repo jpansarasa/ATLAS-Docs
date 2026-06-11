@@ -105,7 +105,7 @@ Selected env vars (full list in `src/Configuration/*Options.cs`). Double-undersc
 | `Kestrel__HttpPort` / `Kestrel__GrpcPort` | Bound listen ports | `8080` / `5001` |
 | `Extraction__Backend` | `Ollama` \| `LlamaServer` \| `VllmServer` \| `LlamaServerDsl` \| `VllmJson` | `Ollama` (code default); production sets `VllmJson` (GPU JSON-CoD, live). `LlamaServerDsl` = CPU DSL rollback path |
 | `Extraction__Model` | LLM model id (passed verbatim to backend) | `llama3.1:70b-instruct-q4_K_M` (code) / `Qwen/Qwen2.5-32B-Instruct-AWQ` (prod) |
-| `Extraction__OllamaEndpoint` | Ollama endpoint | `http://ollama-gpu:11434` |
+| `Extraction__OllamaEndpoint` | Legacy `Ollama` backend endpoint (code default only — no ollama container exists in the topology; production backend is `VllmJson`) | `http://ollama-gpu:11434` |
 | `Extraction__LlamaServerEndpoint` | llama.cpp server endpoint | `http://llama-server:8080` |
 | `Extraction__VllmEndpoint` | vLLM endpoint (legacy V1/V2 path) | `http://vllm-server:8000` |
 | `Extraction__ContextWindowSize` | LLM context window | `32768` |
@@ -118,7 +118,7 @@ Selected env vars (full list in `src/Configuration/*Options.cs`). Double-undersc
 | `Extraction__GeminiResolverEnabled` / `__GeminiFallbackEnabled` | V2 Rule 2.5 + V1 Phase 7 Gemini fallback | `false` |
 | `CpuCod__DslParserEndpoint` | `dsl-parser-mcp` sidecar URL | `http://dsl-parser-mcp:3120` |
 | `CpuCod__PromptDirectory` / `__PromptFile` / `__GrammarFile` | CoD prompt + GBNF grammar (host-mounted) | `/prompts/cod` / `cod_dsl_v8_baseline.txt` / `cod-dsl-v2.3.gbnf` |
-| `CpuInference__Endpoint` / `__Model` / `__Enabled` | CPU ollama for CoD summarization + epistemic markers | `http://ollama-cpu:11434` / `qwen2.5:7b-instruct` / `true` (prod: `false`) |
+| `CpuInference__Endpoint` / `__Model` / `__Enabled` | Legacy CPU-inference client for CoD summarization + epistemic markers (disabled in prod; the default endpoint names a retired ollama container) | `http://ollama-cpu:11434` / `qwen2.5:7b-instruct` / `true` (prod: `false`) |
 | `EdgeSync__Endpoint` / `__ApiKey` | Cloudflare worker sync endpoint | **Required** |
 | `EdgeSync__BatchSize` / `__PollIntervalSeconds` | Edge sync batch size / poll interval | `100` / `300` |
 | `Searxng__Endpoint` | SearXNG instance URL | `https://searxng.elasticdevelopment.com` |
@@ -188,7 +188,7 @@ REST surface lives under `src/Endpoints/`:
 | `/ui/review/{id}/action` | POST | Form-encoded approve/reject/skip submission |
 | `/swagger` | GET | OpenAPI UI (development environment only) |
 | `/health` | GET | Aggregate health with per-check status |
-| `/health/ready` | GET | Readiness (database + ollama) |
+| `/health/ready` | GET | Readiness (database + LLM backend — the check is named `ollama` for legacy reasons but pings the active `IOllamaClient` binding, vLLM in production) |
 | `/health/live` | GET | Liveness |
 
 

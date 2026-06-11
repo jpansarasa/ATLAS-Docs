@@ -73,7 +73,7 @@ All playbooks live in `ansible/playbooks/` and assume the working dir is `deploy
 
 | Playbook | Description |
 |----------|-------------|
-| `deploy.yml` | Main deployment: ZFS snapshot, atlas/containerd user+group, OTEL stack, compose template render, all service builds + image pulls, ThresholdEngine + SecMaster + Sentinel + CoD config sync, databases (`atlas_data`, `calendar_data`, `atlas_secmaster`), vLLM standalone container, llama-server + llama-cpu-rag + ollama-cpu-embed, systemd units (atlas, autofix-runner, autofix-watcher, merged-pr-watcher, buildkit-prune, atlas-sentinel-quality-check, container-targets, sandbox-manager), and final container-status report. |
+| `deploy.yml` | Main deployment: ZFS snapshot, atlas/containerd user+group, OTEL stack, compose template render, all service builds + image pulls, ThresholdEngine + SecMaster + Sentinel + CoD config sync, databases (`atlas_data`, `calendar_data`, `atlas_secmaster`), vLLM standalone container, llama-server + llama-cpu-rag + llama-cpu-embed, systemd units (atlas, autofix-runner, autofix-watcher, merged-pr-watcher, buildkit-prune, atlas-sentinel-quality-check, container-targets, sandbox-manager), and final container-status report. |
 | `site.yml` | Thin wrapper: `import_playbook: deploy.yml`. |
 | `smoke-test.yml` | Health validation. Sub-tags: `health`, `containers`, `internal`, `mcp`, `logs`, `loki`, `docker`, `gpu`, `database`. |
 | `zfs-snapshot.yml` | Create a tagged ZFS snapshot manually (`-e snapshot_tag=NAME`). |
@@ -140,7 +140,7 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 | `vllm-server` | Stop+remove+recreate the standalone `vllm-server` container with GPU passthrough. Intentionally NOT `always` (see TAG_GATING_AUDIT.md). |
 | `llama-server` (alias: `dsl-poc`) | Pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-server`, wait on `/health`, fetch `/props` for model-identity check |
 | `llama-cpu-rag` (alias: `secmaster`) | Remove retired `ollama-cpu-gen` if present, pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-cpu-rag`, wait on `/health`, fetch `/props` for model-identity check |
-| `ollama-cpu-embed` (alias: `models`) | `ollama pull bge-m3` against the embed runner |
+| `llama-cpu-embed` (alias: `models`) | Verify bge-m3 GGUF blob exists, remove retired `ollama-cpu-embed` if present, pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-cpu-embed`, wait on `/health`, fetch `/props`, 1024-dim `/v1/embeddings` smoke test |
 
 ### Maintenance / supervisor / one-off
 
@@ -163,7 +163,7 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 | `atlas_repo_path` | `/home/james/ATLAS` | Monorepo source root (referenced by every `nerdctl build` chdir + template/copy `src:`) |
 | `deployment_base` | `/opt/ai-inference` | Target deployment root on mercury |
 | `logs_path` | `{{ deployment_base }}/logs` | Log + state volumes for grafana/loki/tempo/prometheus/alertmanager/autofix |
-| `models_path` | `{{ deployment_base }}/models` | Ollama + GGUF blob storage |
+| `models_path` | `{{ deployment_base }}/models` | GGUF blob storage (frozen ollama-format content-addressed store; runners bind-mount blobs read-only) |
 | `timeseries_path` | `{{ deployment_base }}/timeseries` | TimescaleDB data |
 | `dashboard_path` | `{{ deployment_base }}/dashboard` | Grafana persistent data |
 | `mcp_server_deploy_path` | `{{ deployment_base }}/mcp-server` | MCP server deploy root (declared; currently consumed only by `test-vars.yml`) |
@@ -172,7 +172,7 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 | `atlas_db_user` | env `ATLAS_DB_USER` or `atlas_user` | TimescaleDB application user |
 | `atlas_db_name` | env `ATLAS_DB_NAME` or `atlas_data` | Primary application database |
 | `llama_cpu_rag_url` | `http://llama-cpu-rag:8080` | SecMaster RAG generation runner (llama.cpp, qwen2.5:7b q4_K_M) — replaced ollama-cpu-gen 2026-06-11 (~30× decode gap) |
-| `ollama_cpu_embed_url` | `http://ollama-cpu-embed:11434` | CPU embedding runner (bge-m3) — split out 2026-05 to remove intra-container contention |
+| `llama_cpu_embed_url` | `http://llama-cpu-embed:8080` | CPU embedding runner (llama.cpp, bge-m3) — replaced ollama-cpu-embed 2026-06-11 (last ollama container retired; vectors verified compatible with the existing pgvector store) |
 | `llama_server_url` | `http://llama-server:8080` | llama.cpp GBNF-constrained extraction backend (DSL PoC Phase 2) |
 | `llama_server_ctx_size` | `32768` | llama-server total context (divided across `--parallel` slots) |
 | `llama_server_parallel` | `1` | llama-server concurrent slots; see all.yml header for ctx-vs-parallel math |
@@ -224,7 +224,7 @@ Source of truth is `ansible/group_vars/all.yml` (`ports_external`, `ports_mcp`, 
 | 3109 / 3110 | trafilatura / spacy-ner sidecars (host-mapped for cross-container reach) |
 | 9090 / 9093 / 9100 / 9835 | Prometheus / Alertmanager / node-exporter / gpu-exporter (internal) |
 | 11438 | llama-cpu-rag (SecMaster RAG generation runner; 11435 retired with ollama-cpu-gen 2026-06-11) |
-| 11436 | ollama-cpu-embed (embedding runner — internal-style, but host-mapped) |
+| 11439 | llama-cpu-embed (embedding runner; 11436 retired with ollama-cpu-embed 2026-06-11) |
 | 11437 | llama-server (CPU GBNF extraction) |
 | 4317 / 4318 / 8888 / 8889 | OTEL collector gRPC / HTTP / metrics / prom exporter (internal) |
 | 3100 / 3200 | Loki / Tempo (internal — Grafana proxies queries) |

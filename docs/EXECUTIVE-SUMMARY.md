@@ -32,7 +32,7 @@ flowchart LR
         VLLM[vllm-server<br/>GPU JSON-CoD emit + verify]
         LS[llama-server<br/>CPU DSL · rollback]
         DSL[dsl-parser-mcp<br/>parse + verify]
-        OL[llama-cpu-rag<br/>+ ollama-cpu-embed]
+        OL[llama-cpu-rag<br/>+ llama-cpu-embed]
         GR[gemini-resolver-mcp<br/>host systemd :9300]
     end
 
@@ -123,7 +123,7 @@ All services use internal ports (8080 REST, 5001 gRPC). Only services requiring 
 | whisper-service | 8090 | YouTube transcription |
 | vllm-server | 8000 | GPU LLM inference (Qwen2.5-32B-AWQ) — live JSON-CoD extraction + verification + report summaries |
 | llama-cpu-rag | 11438 | CPU llama.cpp (qwen2.5:7b, SecMaster RAG generation) |
-| ollama-cpu-embed | 11436 | CPU embeddings (bge-m3) |
+| llama-cpu-embed | 11439 | CPU embeddings (llama.cpp, bge-m3) |
 | llama-server | 11437 | llama.cpp CPU server (GBNF-constrained DSL CoD — rollback path) |
 
 ## MCP Servers (Claude Desktop / Claude Code)

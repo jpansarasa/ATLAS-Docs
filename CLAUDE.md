@@ -121,9 +121,11 @@ MODEL_SIZE: ≥30B parameters required # RLM needs coding ability
   ✗ 7b, 8b, 14b models # insufficient_quality
 CONTEXT: 32K required # RLM full-document decomposition
   ✗ reduce_context # breaks extraction, causes context_rot
-OLLAMA: NUM_PARALLEL=1 # fits 32K context + model on GPU
-  ✗ NUM_PARALLEL>1 # forces CPU offload, degrades performance
-GPU_OOM: restart_ollama_first ¬ downgrade_model ¬ reduce_context
+INFERENCE_TOPOLOGY: vLLM(GPU) + llama.cpp(CPU) # ollama fully retired 2026-06-11 (ollama exodus)
+  GPU: vllm-server (Qwen2.5-32B-AWQ; continuous batching/PagedAttention — no per-slot NUM_PARALLEL tuning)
+  CPU: llama-server(DSL/GBNF rollback) | llama-cpu-rag(SecMaster RAG gen) | llama-cpu-embed(bge-m3 embeddings)
+  ✗ propose_ollama # no ollama container/engine remains; GGUF blobs live in the frozen ollama-format store, ro-mounted
+GPU_OOM: restart_vllm_first ¬ downgrade_model ¬ reduce_context
 
 ## SERVICES [monorepo]
 collectors: FredCollector, AlphaVantageCollector, NasdaqCollector, FinnhubCollector, OfrCollector
