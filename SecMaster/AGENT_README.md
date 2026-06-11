@@ -39,11 +39,13 @@ DISTINCTIONS:
 
 CROSS-SERVICE: collectors→register(f-a-f); ThresholdEngine→ResolveBatch(sync); Sentinel→resolve-entities(sync).
   OUT: collectors REST, OpenFIGI, Gemini, Ollama(embed/RAG). FEEDS: ThresholdEngine matrix via sector grounding.
+  Ollama-gen resilience: breaker=process-SINGLETON(5 consecutive fails incl client-aborts→open 60s) + in-flight gate(2; cancelled-while-queued never sent) + num_predict cap(256); NO retry on generation — runner computes abandoned generations to completion, so re-sends/unbounded fan-in = self-sustaining saturation.
 
 GOTCHAS:
   ✗ bulk-preload ✗ backfill-rows-to-green ✗ NotFound="not-in-table" ✗ gate-non-Equity-sector
   ✗ Embed-1-1 ✗ trust-entity-default-model ✗ AtlasSectorCode/RollupVersionId-as-FK
   ✗ ALIAS_MATCH-emitted(dead-wire) ✗ Economic-from-untrusted-collector
   ✗ freq/lag/prefer-as-sort ✗ LookupSource-live-prod ✗ ContextFactor=0-as-lower
+  ✗ Polly-breaker-in-per-request-policy-selector # fresh state each request = never opens (7b retry-storm bug)
 
 SEE: README.md §Reference (API endpoints, config tables) · Events/src/Events/Protos/secmaster.proto (SecMasterRegistry+SecMasterResolver gRPC contracts) · EntityResolutionService.cs:1104-1115(ContextFactor) · ResolutionService.cs(ranking) · RegistrationService.cs:135-151(EvaluateGuard)

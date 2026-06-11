@@ -65,6 +65,8 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `Ollama__EmbeddingModel` | Model for vector embeddings | `bge-m3` (appsettings; options-class default is `nomic-embed-text`) |
 | `Ollama__GenerationModel` | Model for RAG synthesis (production override: `qwen2.5:7b-instruct`) | `qwen2.5:32b-instruct` |
 | `Ollama__MaxTextLength` | Truncate-before-embed character cap | `10000` |
+| `Ollama__MaxConcurrentGenerations` | Process-wide cap on in-flight generation requests (running + queued); a caller cancelled while queued never reaches Ollama | `2` |
+| `Ollama__GenerationMaxTokens` | `num_predict` cap per generation request; bounds compute on abandoned generations (≤0 sends -1 = unbounded) | `256` |
 | `SemanticSearch__VectorHighConfidenceThreshold` | High-confidence similarity threshold | `0.8` |
 | `SemanticSearch__DefaultMinScore` | Default minimum similarity score | `0.75` |
 | `SemanticSearch__VectorSimilarityFloor` | Hard floor on cosine scores before CoVe / downstream verification (kill switch: `0`) | `0.5` |
