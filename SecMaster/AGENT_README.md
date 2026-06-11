@@ -39,7 +39,7 @@ DISTINCTIONS:
 
 CROSS-SERVICE: collectors→register(f-a-f); ThresholdEngine→ResolveBatch(sync); Sentinel→resolve-entities(sync).
   OUT: collectors REST, OpenFIGI, Gemini, Ollama(embed/RAG). FEEDS: ThresholdEngine matrix via sector grounding.
-  Ollama-gen resilience: breaker=process-SINGLETON(5 consecutive fails incl client-aborts→open 60s) + in-flight gate(2; cancelled-while-queued never sent) + num_predict cap(256); NO retry on generation — runner computes abandoned generations to completion, so re-sends/unbounded fan-in = self-sustaining saturation.
+  Ollama-gen resilience: breaker=process-SINGLETON(5 consecutive fails incl client-aborts→open 60s) + in-flight gate(2; cancelled-while-queued never sent) + num_predict cap(64); NO retry on generation — runner computes abandoned generations to completion, so re-sends/unbounded fan-in = self-sustaining saturation.
 
 GOTCHAS:
   ✗ bulk-preload ✗ backfill-rows-to-green ✗ NotFound="not-in-table" ✗ gate-non-Equity-sector
