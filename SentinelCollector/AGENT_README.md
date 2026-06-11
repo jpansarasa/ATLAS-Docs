@@ -5,7 +5,7 @@ NOTE: this card covers the news→matrix pipeline which spans SentinelCollector 
 PURPOSE: news-article → `(signal×sector)` matrix tilt via GPU vLLM JSON-CoD extraction (Extraction:Backend=VllmJson, Qwen2.5-32B-AWQ) + `:sig:` rows in macro_observations. ¬gRPC cell push ¬digest ¬extraction/CoVe/CoD paths addressed here. (CPU llama-server DSL extraction = rollback path; CpuInference disabled.)
 
 DATA MODEL + INVARIANTS:
-  INV `:sig:` infix: news row identified SOLELY by literal `:sig:` in source_id (`{rawContentId}:sig:{signalId}`). ¬schema-enforced — string contract; THREE artefacts move together: producer + projector const + consumer. change-all-or-none.
+  INV `:sig:` infix: news row identified SOLELY by literal `:sig:` in source_id (`{rawContentId}:sig:{signalId}`). ¬schema-enforced — string contract; FOUR artefacts move together: producer (MacroObservationRouter) + projector const (ObservationCellProjector) + consumer (NewsMomentumQueryService) + digest reader (DigestQueryService.ArticleSignalsSql + TryParseRawContentId). change-all-or-none.
   INV signal⊥sector: signal_identity_id=SIGNAL dim gates projection; atlas_sector_code=SECTOR dim ¬gates. null-signal→never projects (qualitative rows skipped permanently).
   INV |v|≤1: `:sig:` rows carry |value|≲1; projector excludes |v|>1.5 (raw-value leak guard); drops non-`:sig:` rows from decay sum even if same group (G2 mixed-group drop).
   INV heal-on-rewrite: macro_observations = authoritative cell source; projector re-projects in place (DO UPDATE). ¬DO NOTHING.
