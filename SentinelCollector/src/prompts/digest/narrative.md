@@ -20,12 +20,12 @@ AGGREGATE ROLL-UP (the quantitative shape of the whole window — context only, 
 ARTICLES (JSON array; each has publisher, theme, source_url, excerpt, and the extracted values):
 {{articles}}
 
-The AGGREGATE ROLL-UP includes a `News-bias-vs-matrix` block listing the period's DIVERGENCEs (where the news collection bias leans against the FRED hard anchor, or leads a flat matrix), COVERAGE-GAPs (matrix carries an anchor but the news flow was silent), and EMERGENT narratives (news volume spiked while the matrix is still flat). When that block flags a DIVERGENCE, LEAD the Executive Take with it: name the signal/sector, state which way the news leans vs the matrix, and ground it in the cited articles. If only coverage gaps or emergent narratives are flagged, note the most significant one. Treat this block as orientation only — every concrete claim still must be grounded in a cited article excerpt below.
+The AGGREGATE ROLL-UP includes a `News-momentum` block: the per-signal direction of the sentinel news flow over the window, split into GAINING (tilt rising early→late) and FADING (tilt falling) movers, with a STEADY fallback when nothing crossed the trend band. Each line reads `KIND signal: tilt X (Δ±Y)[, accelerating], N obs` — `tilt` is the late-window signal lean, `Δ` the early→late change, and `N obs` the supporting article count. When the block flags GAINING or FADING movers, LEAD the Executive Take with the most significant one: name the signal/sector, state whether the news flow is building toward it (gaining/rising) or pulling away (fading/falling), and ground it in the cited articles. Treat this block as orientation only — every concrete claim still must be grounded in a cited article excerpt below.
 
 Write exactly these sections (omit empty ones):
 
 ## Executive Take
-One paragraph (3-5 sentences) synthesizing the most consequential signals of the window across the articles. If the roll-up flagged a top news-bias-vs-matrix divergence, open with it.
+One paragraph (3-5 sentences) synthesizing the most consequential signals of the window across the articles. If the roll-up flagged a top news-momentum mover (gaining or fading), open with it.
 
 ## Labor & Layoffs
 Sector-by-sector breakdown of layoffs and labor signals. Lead with the sector seeing the most activity.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-ATLAS (Automated Threshold Logic and Alert System) is an event-driven platform for financial data collection, pattern evaluation, and per-sector regime detection. Collectors ingest from multiple sources, stream observation events to ThresholdEngine over gRPC, where 79 configurable patterns (72 enabled, 7 disabled) are evaluated by a Roslyn-compiled expression engine, projected onto the 11-sector ATLAS grid, persisted as matrix cells, and classified into per-sector regimes. SentinelCollector adds unstructured-content extraction via a CPU Chain-of-Density (CoD) DSL pipeline that grounds against a sidecar parser/verifier and a GPU vLLM verification step. Threshold-crossing events surface to Prometheus, which routes via Alertmanager into AlertService for ntfy/email/AutoFix delivery.
+ATLAS (Automated Threshold Logic and Alert System) is an event-driven platform for financial data collection, pattern evaluation, and per-sector regime detection. Collectors ingest from multiple sources, stream observation events to ThresholdEngine over gRPC, where 79 configurable patterns (72 enabled, 7 disabled) are evaluated by a Roslyn-compiled expression engine, projected onto the 11-sector ATLAS grid, persisted as matrix cells, and classified into per-sector regimes. SentinelCollector adds unstructured-content extraction via a GPU vLLM JSON Chain-of-Density (CoD) pipeline (Qwen2.5-32B-AWQ, `Extraction__Backend=VllmJson`) that grounds against a sidecar parser/verifier (the CPU `llama-server` DSL/GBNF pipeline is the rollback path). Threshold-crossing events surface to Prometheus, which routes via Alertmanager into AlertService for ntfy/email/AutoFix delivery.
 
 ```mermaid
 flowchart LR
@@ -11,7 +11,7 @@ flowchart LR
         AV[AlphaVantageCollector<br/>Commodities/Forex/Equities]
         FH[FinnhubCollector<br/>Stocks/Calendars/Sentiment]
         OFR[OfrCollector<br/>FSI/STFM/HFM]
-        SC[SentinelCollector<br/>SearXNG/RSS/Edge + CPU CoD DSL]
+        SC[SentinelCollector<br/>SearXNG/RSS/Edge + GPU JSON-CoD]
         ND[NasdaqCollector<br/>disabled - WAF block]
         CS[CalendarService<br/>NYSE holidays + FRED releases]
     end
@@ -31,9 +31,9 @@ flowchart LR
     end
 
     subgraph AI["Inference Services"]
-        LS[llama-server<br/>CPU - CoD DSL emit]
+        VLLM[vllm-server<br/>GPU - JSON-CoD emit + verification + reports]
         DSL[dsl-parser-mcp<br/>parse + verify]
-        VLLM[vllm-server<br/>GPU - verification + reports]
+        LS[llama-server<br/>CPU - DSL emit · rollback]
         OG[ollama-cpu-gen<br/>CoD summarisation]
         OE[ollama-cpu-embed<br/>SecMaster embeddings]
         WS[WhisperService<br/>Transcription]
@@ -103,7 +103,7 @@ flowchart LR
 | AlphaVantageCollector | 8080 / 5001 | Alpha Vantage | Commodities, forex, equities (OHLCV), crypto, economic indicators |
 | FinnhubCollector | 8080 / 5001 | Finnhub | Stock quotes, candles, sentiment, analyst ratings, earnings/IPO calendars |
 | OfrCollector | 8080 / 5001 | OFR.gov | Financial Stress Index, STFM (short-term funding), HFM (hedge fund monitor) |
-| SentinelCollector | 8080 / 5001 / 5091 (host) | SearXNG / RSS / Cloudflare edge | News + filings + sentiment; CPU CoD DSL extraction → matrix cells |
+| SentinelCollector | 8080 / 5001 / 5091 (host) | SearXNG / RSS / Cloudflare edge | News + filings + sentiment; GPU vLLM JSON-CoD extraction → matrix cells |
 | NasdaqCollector | 8080 / 5001 (disabled) | Nasdaq Data Link | LBMA gold (compose entry commented out — datacenter IP blocked by WAF) |
 | CalendarService | 8080 | Nager.Date + FRED | NYSE trading days/holidays + FRED economic release schedule |
 
@@ -132,15 +132,15 @@ All `5001` ports speak gRPC `ObservationEventStream` (proto: `Events/src/Events/
 |---------|------|---------|
 | WhisperService | 8090 (host + container) | YouTube transcription via faster-whisper (Python FastAPI) |
 | FinBertSidecar | 8080 (internal) | FinBERT 768-dim L2-normalized embeddings (CPU) |
-| vllm-server | 8000 (host) | GPU inference (Qwen2.5-32B-Instruct-AWQ) — Sentinel claim verification, Reports news summarisation |
-| llama-server | 11437 → 8080 (host) | CPU llama.cpp serving qwen3:30b-a3b — Sentinel CPU CoD DSL emission with GBNF grammar |
+| vllm-server | 8000 (host) | GPU inference (Qwen2.5-32B-Instruct-AWQ) — Sentinel JSON-CoD extraction (live, `Extraction__Backend=VllmJson`), claim verification, Reports news summarisation |
+| llama-server | 11437 → 8080 (host) | CPU llama.cpp serving qwen3:30b-a3b — Sentinel CPU DSL/GBNF CoD emission (rollback path; `Extraction__Backend=LlamaServerDsl`) |
 | ollama-cpu-gen | 11435 → 11434 (host) | CPU Ollama — Sentinel CoD summarisation, epistemic markers |
 | ollama-cpu-embed | 11436 → 11434 (host) | CPU Ollama — `bge-m3` embeddings for SecMaster semantic search |
 | trafilatura | 3109 (host) | HTML pre-wash for SentinelCollector content normalisation |
 | spacy-ner | internal only | spaCy NER sidecar — entity pre-pass for SentinelCollector V2 pipeline |
-| dsl-parser-mcp | 3120 (host) | FastAPI sidecar — Lark parser + v2.3.1 verifier for the CPU CoD DSL pipeline (consumed by SentinelCollector) |
+| dsl-parser-mcp | 3120 (host) | FastAPI sidecar — Lark parser + v2.3.1 verifier; `/parse_json` lifts the GPU JSON-CoD document and `/parse` the CPU DSL document to the same `DocumentAst` (consumed by SentinelCollector) |
 
-> **Inference topology** (per project memory): GPU = extraction verifier + CoVe (largest model that fits 32GB VRAM on RTX 5090). CPU = CoD + RAG + small-model parallelism. CoD never touches GPU.
+> **Inference topology** (post GPU-CoD role-flip, `gpu-cod-roleflip-2026-06-09`): GPU `vllm-server` = JSON-CoD extraction emission (live) + claim verification + CoVe + report summarisation (Qwen2.5-32B-AWQ, largest model that fits 32GB VRAM on RTX 5090). CPU = classifier + embeddings + RAG + the DSL/GBNF CoD rollback path. (The prior "CoD never touches GPU" split was reversed by the role-flip — CoD emission now runs on the GPU.)
 
 ### MCP Servers
 
@@ -302,9 +302,8 @@ flowchart LR
         EW[Cloudflare edge]
         SX & RSS & EW --> SCNT[Content workers]
         SCNT --> NZ[Normalizer<br/>markitdown + trafilatura]
-        NZ --> CODX[CPU CoD DSL<br/>llama-server + dsl-parser-mcp]
-        CODX --> VRF[GPU verification<br/>vllm-server]
-        VRF --> RES[Resolution cascade<br/>SecMaster → Finnhub → AV → Gemini]
+        NZ --> CODX[GPU JSON-CoD<br/>vllm-server + dsl-parser-mcp grounding]
+        CODX --> RES[Resolution cascade<br/>SecMaster → Finnhub → AV → Gemini]
     end
 
     FC --> DB[(TimescaleDB)]
@@ -339,29 +338,27 @@ flowchart LR
 
 **MacroSubstrate Purpose**: Shared `macro_observations` hypertable owned by no single collector. Collectors take `IMacroObservationWriter` via DI and dual-write when their per-series `IsMacro` flag is `true`. Versioned as-of reads resolve the active mapping label via `atlas_secmaster.mapping_versions`.
 
-## SentinelCollector: CPU CoD DSL Extraction Pipeline
+## SentinelCollector: GPU vLLM JSON-CoD Extraction Pipeline
 
 ```mermaid
 flowchart LR
     SRC[SearXNG / RSS / Edge] --> CW[Collection Workers]
     CW --> NZ[markitdown + trafilatura]
     NZ --> SPACY[spacy-ner<br/>entity pre-pass]
-    SPACY --> LS[llama-server<br/>CPU CoD emit<br/>GBNF grammar]
-    LS --> DSL[dsl-parser-mcp<br/>parse + verify v2.3.1]
-    DSL --> VLLM[vllm-server<br/>GPU claim verification]
-    VLLM --> RES[ResolutionWorker]
+    SPACY --> VLLM[vllm-server<br/>GPU JSON-CoD emit<br/>response_format=json_schema]
+    VLLM --> DSL[dsl-parser-mcp<br/>/parse_json + grounding verify v2.3.1]
+    DSL --> RES[ResolutionWorker]
     RES --> SM[SecMaster]
     RES -.fallback.-> FH[Finnhub]
     RES -.fallback.-> AV[AlphaVantage]
     RES -.fallback.-> GEM[gemini-resolver-mcp]
     RES --> PUB[Event Publishers]
     PUB -->|ObservationEventStream| TE[ThresholdEngine]
-    PUB -->|MatrixUpdateStream| TE
 ```
 
-Production extraction backend is `Extraction__Backend=LlamaServerDsl` (set in compose). The CPU CoD model emits a grammar-constrained DSL document; the `dsl-parser-mcp` sidecar parses with Lark and verifies grounding word-by-word against the source article (v2.3.1 punctuation-tolerant + byte-verbatim). vLLM provides GPU-side claim verification. Resolution walks SecMaster → Finnhub → AlphaVantage → Gemini-grounded fallback.
+Production extraction backend is `Extraction__Backend=VllmJson` (set in compose). The GPU `vllm-server` (Qwen2.5-32B-AWQ) emits a JSON-schema-constrained CoD document; the `dsl-parser-mcp` sidecar's `/parse_json` lifts it to the same `DocumentAst` as the CPU DSL path and verifies grounding word-by-word against the source article (v2.3.1 punctuation-tolerant + byte-verbatim). Resolution walks SecMaster → Finnhub → AlphaVantage → Gemini-grounded fallback. (The per-article SemanticVerifier subsystem — discrete entity-resolution / sector-tag / claim-verify stage — was removed in #647; its matrix-cell bridge was already retired in WS3-A3 and the live matrix feed is classifier-fed.)
 
-Legacy Ollama / llama.cpp / vLLM extraction backends remain in `ExtractionOptions` and still drive shadow runs; the production `IMergedExtractionService` binding routes to the CPU DSL path post-PR #510.
+The CPU `llama-server` DSL/GBNF pipeline (`Extraction__Backend=LlamaServerDsl`) is the rollback path. Legacy Ollama / llama.cpp / vLLM extraction backends remain in `ExtractionOptions` and still drive shadow runs; the production `IMergedExtractionService` binding routes to the `VllmJson` GPU JSON-CoD path.
 
 ## MCP Integration
 
@@ -405,7 +402,7 @@ Full OpenTelemetry stack: traces (Tempo), metrics (Prometheus), logs (Loki), all
 Change a threshold? Edit JSON, patterns hot-reload. Add a series? Use the admin API. Edit a prompt? Edit the host-mounted file under `/opt/ai-inference/prompts/` and the prompt provider picks it up.
 
 ### AI-Native
-MCP servers let Claude directly query financial data and evaluate patterns. The CPU CoD DSL pipeline lets a small CPU model do pattern-recognition + verbatim copy + classification while the larger GPU model handles structured emission and verification (LLM-strength layering principle).
+MCP servers let Claude directly query financial data and evaluate patterns. After the GPU-CoD role-flip the GPU `vllm-server` (Qwen2.5-32B-AWQ) runs the JSON-CoD structured extraction emission, while the CPU handles classification + embeddings + RAG; the CPU `llama-server` DSL/GBNF pipeline is retained as the rollback path (LLM-strength layering principle).
 
 ## See Also
 
@@ -414,7 +411,7 @@ MCP servers let Claude directly query financial data and evaluate patterns. The 
 - [FinnhubCollector](../FinnhubCollector/README.md) — Market data, calendars, sentiment
 - [OfrCollector](../OfrCollector/README.md) — OFR financial stress data
 - [NasdaqCollector](../NasdaqCollector/README.md) — Nasdaq Data Link (disabled — WAF block)
-- [SentinelCollector](../SentinelCollector/README.md) — News aggregation + CPU CoD DSL extraction
+- [SentinelCollector](../SentinelCollector/README.md) — News aggregation + GPU vLLM JSON-CoD extraction
 - [SentinelCollector/dsl-parser-mcp](../SentinelCollector/dsl-parser-mcp/README.md) — DSL parser + verifier sidecar
 - [CalendarService](../CalendarService/README.md) — NYSE holidays + FRED release schedule
 - [ThresholdEngine](../ThresholdEngine/README.md) — Pattern evaluation, sector projection, regime classification

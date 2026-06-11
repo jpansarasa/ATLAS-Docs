@@ -110,7 +110,7 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 | `thresholdengine-mcp` | ThresholdEngineMcp image build |
 | `macro-substrate` | MacroSubstrate.Migrator one-shot image build |
 | `spacy-ner` | spaCy NER sidecar image build (entity resolution pre-pass) |
-| `dsl-parser-mcp` | DSL parser MCP sidecar image build (CPU CoD verifier) |
+| `dsl-parser-mcp` | DSL parser MCP sidecar image build (CPU parse + grounding verifier; `/parse` CPU DSL + `/parse_json` GPU JSON-CoD) |
 | `sandbox-kernel` | Persistent IPython kernel image (per-agent/CoVe session sandboxes) |
 | `sandbox-manager` | Host-systemd Python service that spawns sandbox-kernel containers; includes sudoers rule + nerdctl shim install |
 | `reports-daily` / `reports-weekly` / `reports-monthly` | Reports.{Daily,Weekly,Monthly}Host image builds |

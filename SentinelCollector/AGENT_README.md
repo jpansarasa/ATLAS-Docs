@@ -2,7 +2,7 @@
 
 NOTE: this card covers the news→matrix pipeline which spans SentinelCollector AND MacroSubstrate (see MacroSubstrate/README for the shared write path).
 
-PURPOSE: news-article → `(signal×sector)` matrix tilt via CPU CoD DSL extraction + `:sig:` rows in macro_observations. ¬gRPC cell push ¬digest ¬extraction/CoVe/CoD paths addressed here.
+PURPOSE: news-article → `(signal×sector)` matrix tilt via GPU vLLM JSON-CoD extraction (Extraction:Backend=VllmJson, Qwen2.5-32B-AWQ) + `:sig:` rows in macro_observations. ¬gRPC cell push ¬digest ¬extraction/CoVe/CoD paths addressed here. (CPU llama-server DSL extraction = rollback path; CpuInference disabled.)
 
 DATA MODEL + INVARIANTS:
   INV `:sig:` infix: news row identified SOLELY by literal `:sig:` in source_id (`{rawContentId}:sig:{signalId}`). ¬schema-enforced — string contract; THREE artefacts move together: producer + projector const + consumer. change-all-or-none.
@@ -31,7 +31,7 @@ PATHS (distinct code — do not conflate):
     ⚠ Shadow ¬dry-run: runs identical read+project+write as Authoritative (same cells written); only Off suppresses writes.
     ⚠ read DESC + hard cap → sustained ingest silently drops oldest (cap-induced staleness, metered).
 
-PROCESSING ORDER (per article): normalize → EntityResolutionPrepass(spaCy NER→SecMaster,fail-soft) → V2 pipeline → semantic verifier(GPU,fail-soft,enriches only ¬matrix bridge) → TryClassifyNewsSignalsAsync → per-signal preferredSector=grounded??classifier.Sector → plan → write → addRange.
+PROCESSING ORDER (per article): normalize → EntityResolutionPrepass(spaCy NER→SecMaster,fail-soft) → V2 pipeline → TryClassifyNewsSignalsAsync → per-signal preferredSector=grounded??classifier.Sector → plan → write → addRange.
 MAXIM: prepass output FEEDS classify as parameter → router derives grounded sector. Prepass=sector input ¬entry gate.
 
 DISTINCTIONS:

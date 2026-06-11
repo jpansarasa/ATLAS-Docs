@@ -1,11 +1,11 @@
 # ATLAS Platform - Executive Summary
 
-**Status:** Active development (Phase 5 matrix-cell integration + Sentinel CPU CoD DSL rollout in flight; see `STATE.md`)
-**Updated:** 2026-05-27
+**Status:** Active development (Phase 5 matrix-cell integration + Sentinel GPU-CoD role-flip DONE — extraction on GPU vLLM JSON-CoD; see `STATE.md`)
+**Updated:** 2026-06-10
 
 ## Overview
 
-ATLAS is a real-time macroeconomic monitoring platform that ingests data from multiple sources (FRED, Alpha Vantage, Finnhub, OFR, SentinelCollector news/DSL extraction), evaluates 79 pattern-based signals across nine categories, projects each signal onto an 11-sector ATLAS grid, classifies per-sector regimes, and delivers actionable alerts for portfolio allocation decisions.
+ATLAS is a real-time macroeconomic monitoring platform that ingests data from multiple sources (FRED, Alpha Vantage, Finnhub, OFR, SentinelCollector news / GPU vLLM JSON-CoD extraction), evaluates 79 pattern-based signals across nine categories, projects each signal onto an 11-sector ATLAS grid, classifies per-sector regimes, and delivers actionable alerts for portfolio allocation decisions.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ flowchart LR
         NC[Nasdaq<br/>disabled]
         FH[Finnhub]
         OFR[OfrCollector]
-        SC[SentinelCollector<br/>CPU CoD DSL]
+        SC[SentinelCollector<br/>GPU JSON-CoD]
     end
 
     subgraph Processing
@@ -29,7 +29,8 @@ flowchart LR
     subgraph AI
         WS[WhisperService]
         FB[FinBertSidecar]
-        LS[llama-server<br/>CPU CoD]
+        VLLM[vllm-server<br/>GPU JSON-CoD emit + verify]
+        LS[llama-server<br/>CPU DSL · rollback]
         DSL[dsl-parser-mcp<br/>parse + verify]
         OL[ollama-cpu-gen<br/>+ ollama-cpu-embed]
         GR[gemini-resolver-mcp<br/>host systemd :9300]
@@ -46,7 +47,8 @@ flowchart LR
     FC & AV & FH & OFR & SC -->|gRPC Events| TE
     FC & AV & FH & OFR & SC -->|gRPC Register| SM
     FC & AV & FH & OFR & SC --> DB
-    SC -->|CPU CoD DSL| LS
+    SC -->|GPU JSON-CoD live| VLLM
+    SC -.->|CPU DSL rollback| LS
     SC -->|parse + verify| DSL
     SC -->|resolve fallback| GR
     TE -->|gRPC Resolve| SM
@@ -67,7 +69,7 @@ flowchart LR
 | NasdaqCollector | :warning: | Disabled in `/opt/ai-inference/compose.yaml` — Nasdaq Data Link WAF blocks datacenter IPs (pending whitelist) |
 | FinnhubCollector | :white_check_mark: | Stock quotes, candles, sentiment, analyst ratings, calendars |
 | OfrCollector | :white_check_mark: | OFR Financial Stress Index, STFM, HFM data |
-| SentinelCollector | :white_check_mark: | News aggregation (SearXNG/RSS/edge) + CPU CoD DSL extraction + GPU verification |
+| SentinelCollector | :white_check_mark: | News aggregation (SearXNG/RSS/edge) + GPU vLLM JSON-CoD extraction (CPU DSL = rollback) |
 | CalendarService | :white_check_mark: | NYSE trading days/holidays + FRED economic-release calendar |
 | SecMaster | :white_check_mark: | Instrument metadata, source resolution, hybrid SQL/fuzzy/vector/RAG search |
 | ThresholdEngine | :white_check_mark: | 79 patterns, 11-sector projection, per-sector regime classification, matrix-cell persistence |
@@ -119,9 +121,10 @@ All services use internal ports (8080 REST, 5001 gRPC). Only services requiring 
 | sentinel-collector | 5091 | Review UI browser access |
 | timescaledb | 5432 | Database |
 | whisper-service | 8090 | YouTube transcription |
+| vllm-server | 8000 | GPU LLM inference (Qwen2.5-32B-AWQ) — live JSON-CoD extraction + verification + report summaries |
 | ollama-cpu-gen | 11435 | CPU LLM inference (qwen3:30b-a3b, generation) |
 | ollama-cpu-embed | 11436 | CPU embeddings (bge-m3) |
-| llama-server | 11437 | llama.cpp CPU server (GBNF-constrained CoD) |
+| llama-server | 11437 | llama.cpp CPU server (GBNF-constrained DSL CoD — rollback path) |
 
 ## MCP Servers (Claude Desktop / Claude Code)
 
@@ -137,7 +140,7 @@ MCP servers are consolidated into their parent service directories where applica
 | ofr-mcp | 3106 | HTTP MCP | FSI, funding markets, hedge fund data |
 | secmaster-mcp | 3107 | HTTP MCP | Instrument search, metadata query, semantic search |
 | whisper-service-mcp | 3108 | Streamable HTTP | YouTube transcription proxy |
-| dsl-parser-mcp | 3120 | HTTP | CPU DSL parser + v2.3.1 verifier sidecar for Sentinel CoD extraction |
+| dsl-parser-mcp | 3120 | HTTP | DSL + JSON parser (`/parse` + `/parse_json`) + v2.3.1 grounding verifier sidecar for Sentinel CoD extraction |
 | gemini-resolver-mcp | 9300 (host systemd) | HTTP JSON | Gemini grounded-search fallback resolver for Sentinel (not containerized) |
 | ntfy-mcp | n/a (stdio) | MCP/stdio | ntfy publish/poll bridge for the supervisor (`atlas-claude-ask` / `atlas-claude-reply`) |
 
