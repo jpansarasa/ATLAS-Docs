@@ -73,7 +73,7 @@ All playbooks live in `ansible/playbooks/` and assume the working dir is `deploy
 
 | Playbook | Description |
 |----------|-------------|
-| `deploy.yml` | Main deployment: ZFS snapshot, atlas/containerd user+group, OTEL stack, compose template render, all service builds + image pulls, ThresholdEngine + SecMaster + Sentinel + CoD config sync, databases (`atlas_data`, `calendar_data`, `atlas_secmaster`), vLLM standalone container, llama-server + ollama-cpu-gen + ollama-cpu-embed, systemd units (atlas, autofix-runner, autofix-watcher, merged-pr-watcher, buildkit-prune, atlas-sentinel-quality-check, container-targets, sandbox-manager), and final container-status report. |
+| `deploy.yml` | Main deployment: ZFS snapshot, atlas/containerd user+group, OTEL stack, compose template render, all service builds + image pulls, ThresholdEngine + SecMaster + Sentinel + CoD config sync, databases (`atlas_data`, `calendar_data`, `atlas_secmaster`), vLLM standalone container, llama-server + llama-cpu-rag + ollama-cpu-embed, systemd units (atlas, autofix-runner, autofix-watcher, merged-pr-watcher, buildkit-prune, atlas-sentinel-quality-check, container-targets, sandbox-manager), and final container-status report. |
 | `site.yml` | Thin wrapper: `import_playbook: deploy.yml`. |
 | `smoke-test.yml` | Health validation. Sub-tags: `health`, `containers`, `internal`, `mcp`, `logs`, `loki`, `docker`, `gpu`, `database`. |
 | `zfs-snapshot.yml` | Create a tagged ZFS snapshot manually (`-e snapshot_tag=NAME`). |
@@ -139,7 +139,7 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 |-----|-------|
 | `vllm-server` | Stop+remove+recreate the standalone `vllm-server` container with GPU passthrough. Intentionally NOT `always` (see TAG_GATING_AUDIT.md). |
 | `llama-server` (alias: `dsl-poc`) | Pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-server`, wait on `/health`, fetch `/props` for model-identity check |
-| `ollama` / `ollama-cpu-gen` | Pull pinned `ollama/ollama` image, recreate `ollama-cpu-gen` container, verify `ollama --version` |
+| `llama-cpu-rag` (alias: `secmaster`) | Remove retired `ollama-cpu-gen` if present, pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-cpu-rag`, wait on `/health`, fetch `/props` for model-identity check |
 | `ollama-cpu-embed` (alias: `models`) | `ollama pull bge-m3` against the embed runner |
 
 ### Maintenance / supervisor / one-off
@@ -171,7 +171,7 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 | `container_runtime` | `nerdctl` | Container runtime (kept as a var so podman/docker swap is a one-line change) |
 | `atlas_db_user` | env `ATLAS_DB_USER` or `atlas_user` | TimescaleDB application user |
 | `atlas_db_name` | env `ATLAS_DB_NAME` or `atlas_data` | Primary application database |
-| `ollama_cpu_gen_url` | `http://ollama-cpu-gen:11434` | CPU generation runner (qwen2.5:7b, sentinel-cod-v6) |
+| `llama_cpu_rag_url` | `http://llama-cpu-rag:8080` | SecMaster RAG generation runner (llama.cpp, qwen2.5:7b q4_K_M) — replaced ollama-cpu-gen 2026-06-11 (~30× decode gap) |
 | `ollama_cpu_embed_url` | `http://ollama-cpu-embed:11434` | CPU embedding runner (bge-m3) — split out 2026-05 to remove intra-container contention |
 | `llama_server_url` | `http://llama-server:8080` | llama.cpp GBNF-constrained extraction backend (DSL PoC Phase 2) |
 | `llama_server_ctx_size` | `32768` | llama-server total context (divided across `--parallel` slots) |
@@ -223,7 +223,7 @@ Source of truth is `ansible/group_vars/all.yml` (`ports_external`, `ports_mcp`, 
 | 8090 | WhisperService external API |
 | 3109 / 3110 | trafilatura / spacy-ner sidecars (host-mapped for cross-container reach) |
 | 9090 / 9093 / 9100 / 9835 | Prometheus / Alertmanager / node-exporter / gpu-exporter (internal) |
-| 11435 | ollama-cpu-gen (generation runner) |
+| 11438 | llama-cpu-rag (SecMaster RAG generation runner; 11435 retired with ollama-cpu-gen 2026-06-11) |
 | 11436 | ollama-cpu-embed (embedding runner — internal-style, but host-mapped) |
 | 11437 | llama-server (CPU GBNF extraction) |
 | 4317 / 4318 / 8888 / 8889 | OTEL collector gRPC / HTTP / metrics / prom exporter (internal) |

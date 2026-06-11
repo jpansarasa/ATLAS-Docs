@@ -34,7 +34,7 @@ flowchart LR
         VLLM[vllm-server<br/>GPU - JSON-CoD emit + verification + reports]
         DSL[dsl-parser-mcp<br/>parse + verify]
         LS[llama-server<br/>CPU - DSL emit · rollback]
-        OG[ollama-cpu-gen<br/>CoD summarisation]
+        LCR[llama-cpu-rag<br/>SecMaster RAG generation]
         OE[ollama-cpu-embed<br/>SecMaster embeddings]
         WS[WhisperService<br/>Transcription]
         FB[FinBertSidecar<br/>FinBERT embeddings]
@@ -76,6 +76,7 @@ flowchart LR
     SC --> MM
     SC -->|fallback resolver| GRM
     SM --> OE
+    SM -->|RAG generation| LCR
     TE -->|gRPC + REST| SM
     TE -->|metrics| PR
     PR --> AM
@@ -134,7 +135,7 @@ All `5001` ports speak gRPC `ObservationEventStream` (proto: `Events/src/Events/
 | FinBertSidecar | 8080 (internal) | FinBERT 768-dim L2-normalized embeddings (CPU) |
 | vllm-server | 8000 (host) | GPU inference (Qwen2.5-32B-Instruct-AWQ) — Sentinel JSON-CoD extraction (live, `Extraction__Backend=VllmJson`), news-signal classification, Reports news summarisation |
 | llama-server | 11437 → 8080 (host) | CPU llama.cpp serving qwen3:30b-a3b — Sentinel CPU DSL/GBNF CoD emission (rollback path; `Extraction__Backend=LlamaServerDsl`) |
-| ollama-cpu-gen | 11435 → 11434 (host) | CPU Ollama — SecMaster RAG-tier generation (not a Sentinel extraction dependency) |
+| llama-cpu-rag | 11438 → 8080 (host) | CPU llama.cpp serving qwen2.5:7b — SecMaster RAG-tier generation (replaced ollama-cpu-gen 2026-06-11, ~30× decode gap; not a Sentinel extraction dependency) |
 | ollama-cpu-embed | 11436 → 11434 (host) | CPU Ollama — `bge-m3` embeddings for SecMaster semantic search |
 | trafilatura | 3109 (host) | HTML pre-wash for SentinelCollector content normalisation |
 | spacy-ner | internal only | spaCy NER sidecar — entity pre-pass for SentinelCollector V2 pipeline |

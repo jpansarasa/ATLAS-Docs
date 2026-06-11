@@ -6,7 +6,7 @@ Centralized instrument metadata and intelligent source resolution service for AT
 
 ## Overview
 
-SecMaster provides a single source of truth for financial instrument definitions and context-aware routing to data sources. Collectors register their series capabilities via gRPC, and consumers resolve symbols to the optimal data source based on frequency, latency, and collector preferences. Includes hybrid search combining SQL, fuzzy matching, vector similarity, and RAG-powered natural language queries via Ollama.
+SecMaster provides a single source of truth for financial instrument definitions and context-aware routing to data sources. Collectors register their series capabilities via gRPC, and consumers resolve symbols to the optimal data source based on frequency, latency, and collector preferences. Includes hybrid search combining SQL, fuzzy matching, vector similarity, and RAG-powered natural language queries (embeddings via Ollama, generation via llama.cpp llama-server).
 
 ## Architecture
 
@@ -37,10 +37,11 @@ flowchart TD
     TE -->|Resolve Symbol| API
     MCP -->|Query Catalog| API
     API --> RES & SEM --> DB
-    SEM <-->|Embeddings| OLLAMA[Ollama]
+    SEM <-->|Embeddings| OLLAMA[ollama-cpu-embed]
+    SEM -->|RAG generation| LCR[llama-cpu-rag]
 ```
 
-Collectors register series at startup via gRPC streaming (fire-and-forget). Consumers resolve symbols to optimal data sources. Semantic search uses Ollama for embeddings and RAG synthesis.
+Collectors register series at startup via gRPC streaming (fire-and-forget). Consumers resolve symbols to optimal data sources. Semantic search uses Ollama (bge-m3) for embeddings and a llama.cpp llama-server (`llama-cpu-rag`, qwen2.5:7b) for RAG synthesis — the runner was swapped from ollama 2026-06-11 after benchmarks showed the ollama bundled CPU runner decoding the same GGUF ~30× slower than llama.cpp on this host. The `Ollama__*` config names and `IOllamaClient` seam are unchanged; only the generation wire protocol moved to llama.cpp's `/completion`.
 
 ## Features
 
@@ -60,13 +61,13 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 |----------|-------------|---------|
 | `ConnectionStrings__SecMaster` | Primary PostgreSQL connection (atlas_secmaster) | Required |
 | `AtlasData__ConnectionString` | Cross-DB read connection for atlas_data (dedup grouping reads FRED/OFR/Sentinel observations). Empty/null short-circuits dedup providers to empty results. | empty |
-| `Ollama__Url` | Ollama API endpoint for generation | `http://ollama-gpu:11434` |
-| `Ollama__EmbeddingUrl` | Ollama API endpoint for embeddings (falls back to `Url` if unset) | `http://ollama-cpu:11434` (appsettings) |
+| `Ollama__Url` | Generation endpoint — a llama.cpp llama-server `/completion` base URL (production: `llama-cpu-rag`) | `http://llama-cpu-rag:8080` |
+| `Ollama__EmbeddingUrl` | Ollama API endpoint for embeddings (falls back to `Url` if unset — must then be an Ollama endpoint) | `http://ollama-cpu:11434` (appsettings) |
 | `Ollama__EmbeddingModel` | Model for vector embeddings | `bge-m3` (appsettings; options-class default is `nomic-embed-text`) |
-| `Ollama__GenerationModel` | Model for RAG synthesis (production override: `qwen2.5:7b-instruct`) | `qwen2.5:32b-instruct` |
+| `Ollama__GenerationModel` | Informational tag for metrics/traces — llama-server has exactly one model loaded per process (production: `qwen2.5:7b-instruct`) | `qwen2.5:32b-instruct` |
 | `Ollama__MaxTextLength` | Truncate-before-embed character cap | `10000` |
-| `Ollama__MaxConcurrentGenerations` | Process-wide cap on in-flight generation requests (running + queued); a caller cancelled while queued never reaches Ollama | `2` |
-| `Ollama__GenerationMaxTokens` | `num_predict` cap per generation request; bounds compute on abandoned generations (≤0 sends -1 = unbounded) | `64` |
+| `Ollama__MaxConcurrentGenerations` | Process-wide cap on in-flight generation requests (running + queued); a caller cancelled while queued never reaches the runner. Sized to llama-cpu-rag's `--parallel 4` | `4` |
+| `Ollama__GenerationMaxTokens` | `n_predict` cap per generation request; bounds compute on abandoned generations (≤0 sends -1 = unbounded) | `64` |
 | `SemanticSearch__VectorHighConfidenceThreshold` | High-confidence similarity threshold | `0.8` |
 | `SemanticSearch__DefaultMinScore` | Default minimum similarity score | `0.75` |
 | `SemanticSearch__VectorSimilarityFloor` | Hard floor on cosine scores before CoVe / downstream verification (kill switch: `0`) | `0.5` |
@@ -75,7 +76,8 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `SemanticSearch__RagContextMaxTokens` | RAG candidate-context cap (estimator units ≈ chars/4); budget is split per candidate, long descriptions are snippet-truncated so candidate count is preserved | `600` |
 | `SemanticSearch__RagDefaultMinScore` | Default min similarity for RAG retrieval | `0.3` |
 | `SemanticSearch__RagDefaultLimit` | Default RAG retrieval result count | `5` |
-| `SemanticSearch__RagTimeoutSeconds` | Wall-clock budget for the RAG tier (vector search + gate wait + generation); on timeout the cascade degrades gracefully | `30` |
+| `SemanticSearch__RagTimeoutSeconds` | Wall-clock budget for the RAG tier (vector search + gate wait + generation); on timeout the cascade degrades gracefully. Sized vs measured llama-cpu-rag latency: p50 4.8s solo / 11.6s @c4 (max 12.5s) | `25` |
+| `SemanticSearch__RagMinGenerationBudgetSeconds` | Abstain (`rag_degraded{reason="insufficient_budget"}`) instead of dispatching generation when less than this remains of the RAG budget after vector search (≈ measured c4 p50) | `12` |
 | `SemanticSearch__MinLocalResultsBeforeDiscovery` | Trigger upstream discovery when local hits below this | `3` |
 | `SemanticSearch__MinScoreBeforeDiscovery` | Trigger upstream discovery when best local score below this | `0.8` |
 | `SemanticSearch__EmbeddingCacheSize` | LRU embedding cache size (entries) | `10000` |
