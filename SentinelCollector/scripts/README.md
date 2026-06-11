@@ -68,7 +68,7 @@ Operator + research scripts for Sentinel's extraction pipeline. Mix of one-shot 
 
 ## When to run these
 
-These scripts have specific phases attached to them (`v7_*`, `Phase 3.2*`, etc.). If the phase isn't currently active, the script is historical reference — don't re-run blindly. Check the plan in `docs/plans/` before invoking.
+These scripts have specific phases attached to them (`v7_*`, `Phase 3.2*`, etc.). If the phase isn't currently active, the script is historical reference — don't re-run blindly. The plans were retired to git history at phase completion (recovery via `docs/RELEASES.md`) — treat unreferenced scripts as historical.
 
 ## See Also
 

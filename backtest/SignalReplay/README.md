@@ -3,7 +3,8 @@
 Offline developer tool. **Not** a deployed service: absent from `compose.yaml` and
 ansible. It replays each production pattern's `signalExpression` over historical
 monthly eval-dates and emits the **signal-value dataset** that the Python harness
-(Component 3) consumes. See `docs/atlas-matrix-backtesting-spec.md` §"Component 1".
+(Component 3) consumes. Spec §"Component 1" (retired to git history:
+`git show 5cf265f7:docs/atlas-matrix-backtesting-spec.md`).
 
 ## What it does
 

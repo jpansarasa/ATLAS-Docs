@@ -82,21 +82,16 @@ MCP servers are SSE endpoints in the 3100-range; each lives next to (or inside) 
 | [CLAUDE.md](./CLAUDE.md) | Project conventions (compose vs. docker-compose, deploy rules, EF migration rules, Sentinel sizing, git-push gate) — read this before generating code |
 | [STATE.md](./STATE.md) | Current epic / phase status |
 | [docs/README.md](./docs/README.md) | **Curated index of `docs/`** — what each doc is for, what was retired to git history |
-| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Service topology, port allocation, event flow, regime states |
-| [docs/EXECUTIVE-SUMMARY.md](./docs/EXECUTIVE-SUMMARY.md) | Platform purpose, service status table, pattern library summary |
+| [docs/EXECUTIVE-SUMMARY.md](./docs/EXECUTIVE-SUMMARY.md) | What ATLAS is today: the signal matrix, Sentinel pipeline, inference topology, data fleet |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | The system as built: stacks, services, data flows, DB layout, deployment, observability |
+| [docs/MATRIX.md](./docs/MATRIX.md) | Signal-matrix deep-dive: cells, invariants, feeds, formula/decay/source-trust, consumption |
 | [docs/GRPC-ARCHITECTURE.md](./docs/GRPC-ARCHITECTURE.md) | gRPC streaming patterns and contracts |
 | [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) | OTEL pipeline, dashboards, tracing conventions |
 | [docs/THRESHOLDENGINE-PATTERNS.md](./docs/THRESHOLDENGINE-PATTERNS.md) | Pattern catalog and category weights |
 | [docs/SENTINEL-RLM.md](./docs/SENTINEL-RLM.md) | Sentinel extraction model/backend/VRAM constraints (pipeline detail: `SentinelCollector/README.md`) |
-| [docs/sentinel-product-spec-v2.md](./docs/sentinel-product-spec-v2.md) | Sentinel product spec (vision-level) |
-| [docs/RELEASES.md](./docs/RELEASES.md) | Phase / epic outcomes (paired with git tags) |
+| [docs/RELEASES.md](./docs/RELEASES.md) | Phase / epic outcomes (paired with git tags) + doc-retirement recovery pointers |
 | [docs/FRED_SERIES_REFERENCE.md](./docs/FRED_SERIES_REFERENCE.md) | FRED series catalog |
 | [docs/Guide to Grafana Dashboards.md](./docs/Guide%20to%20Grafana%20Dashboards.md) | Dashboard authoring guide |
-| [docs/README-TEMPLATE.md](./docs/README-TEMPLATE.md) | Standard template for **per-service** READMEs |
-| [docs/plans/](./docs/plans/) | Active implementation plans (completed phases retire to git history per PHASE_TAGS) |
-| [docs/research/](./docs/research/) | Research notes |
-| [docs/grammars/](./docs/grammars/) | DSL / GBNF grammars |
-| [docs/llm/](./docs/llm/) | LLM-related artefacts |
 
 ## Conventions (Index)
 
@@ -108,7 +103,7 @@ Authoritative rules live in [CLAUDE.md](./CLAUDE.md). Quick pointers:
 - **Database schema**: EF Core migrations only; no raw SQL scripts; seed via `HasData()` or app startup. [CLAUDE.md → DATABASE](./CLAUDE.md)
 - **Sentinel extraction**: ≥30B-parameter models, 32K context; GPU inference via vLLM, CPU via llama.cpp (no ollama in the topology). [CLAUDE.md → SENTINEL](./CLAUDE.md)
 - **Container image naming**: kebab-case `{service-name}:latest` (e.g. `fred-collector`, not `fredcollector`). [CLAUDE.md → CONTAINER_BUILD](./CLAUDE.md)
-- **Service README template**: [docs/README-TEMPLATE.md](./docs/README-TEMPLATE.md).
+- **Service README template**: [.claude/skills/readme-consistency/TEMPLATE.md](./.claude/skills/readme-consistency/TEMPLATE.md).
 
 ## Getting Started
 

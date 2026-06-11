@@ -18,8 +18,6 @@ story matters to the epic.}
   commit small reviewable commits; do NOT push; do NOT open PR)
 - The supervisor owns these files — do not touch:
   - STATE.md
-  - docs/plans/atlas-matrix/**
-  - docs/llm/**
   - .claude/skills/supervisor-mode/**
 
 ## Git ops hygiene (HARD_STOP — supervisor-edit preservation)
@@ -55,7 +53,6 @@ never hand-author migration .cs files."}
 - {epic plan file path} (Story {N.M.K})
 - /home/james/ATLAS/CLAUDE.md (HARD_STOPS — especially MIGRATIONS,
   GIT_PUSH, DEPLOYMENT)
-- /home/james/ATLAS/docs/atlas-matrix-mvp-plan.md (canonical AC)
 
 ## Stop conditions
 - Hit a blocker the supervisor must resolve → stop and report.

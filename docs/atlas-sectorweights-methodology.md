@@ -2,7 +2,7 @@
 
 *Status: rev1 — incorporates the #579 review. The five forks are now resolved (sign convention + 7-level scale + no ×3 LOCKED; cyclical-GDP composite kept; borderline CUTs kept; pure-macro reclassified — see the "Decisions" block at the end and §F). Still editable: glance over §F and the magnitudes, then bless. Nothing here is committed to a pattern file or to code — it is a methodology + a starter set of vectors. The blank-page problem (Decision 1 in the matrix-realignment brief) is what this document removes.*
 
-**Companion docs:** `~/.claude/plans/harmonic-wobbling-manatee.md` (the 79-pattern audit + unified signal model) and `docs/atlas-matrix-realignment-brief.md` (the plain-English brief). Read those for the *why*; this doc is the *how-to-fill-the-cells*.
+**Companion doc:** the matrix realignment brief (the plain-English *why*; retired to git history — `git show 5cf265f7:docs/atlas-matrix-realignment-brief.md`). This doc is the *how-to-fill-the-cells*; current matrix mechanics live in [MATRIX.md](./MATRIX.md).
 
 ---
 

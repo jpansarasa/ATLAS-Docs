@@ -11,8 +11,8 @@ This harness is **invoke-on-demand**. Nothing here runs in CI. Nothing
 here writes to production tables. It calls the live extraction stack
 (vLLM, SecMaster, spaCy NER sidecar, trafilatura) read-only.
 
-Source-of-truth spec:
-[`docs/plans/atlas-matrix/f4.6.4-openfigi-naics-rag-phase1.md §A/B test design`](../../docs/plans/atlas-matrix/f4.6.4-openfigi-naics-rag-phase1.md).
+Source-of-truth spec: the f4.6.4 OpenFIGI/NAICS/RAG phase-1 plan §A/B test
+design (retired to git history — recovery via `docs/RELEASES.md`).
 
 ## Files
 

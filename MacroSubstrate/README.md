@@ -217,4 +217,4 @@ N/A — no listener. All consumption is in-process via DI (`IMacroObservationWri
 - [MacroSubstrate.Migrator README](src/MacroSubstrate.Migrator/README.md) — one-shot migrator notes
 - [SecMaster](../SecMaster/README.md) — owner of `mapping_versions` (cross-DB read target)
 - [Reports.Substrate](../Reports/src/Reports.Substrate/README.md) — primary read-side consumer
-- [docs/README-TEMPLATE.md](../docs/README-TEMPLATE.md) — service README template
+- [.claude/skills/readme-consistency/TEMPLATE.md](../.claude/skills/readme-consistency/TEMPLATE.md) — service README template

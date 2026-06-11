@@ -1,433 +1,270 @@
-# ATLAS Architecture
+# ATLAS Architecture — the system as built
 
-## Overview
+Current-state reference for the running system on **mercury** (the single production host).
+Deep-dives: [MATRIX.md](./MATRIX.md) (signal matrix), [SENTINEL-RLM.md](./SENTINEL-RLM.md)
+(extraction model/backend constraints), [OBSERVABILITY.md](./OBSERVABILITY.md),
+[GRPC-ARCHITECTURE.md](./GRPC-ARCHITECTURE.md), per-service `README.md` +
+`AGENT_README.md` cards (read the card before reasoning about a service).
 
-ATLAS (Automated Threshold Logic and Alert System) is an event-driven platform for financial data collection, pattern evaluation, and per-sector regime detection. Collectors ingest from multiple sources, stream observation events to ThresholdEngine over gRPC, where 72 configurable patterns (71 enabled, 1 disabled) are evaluated by a Roslyn-compiled expression engine, projected onto the 11-sector ATLAS grid, persisted as matrix cells, and classified into per-sector regimes. SentinelCollector adds unstructured-content extraction via a GPU vLLM JSON Chain-of-Density (CoD) pipeline (Qwen2.5-32B-AWQ, `Extraction__Backend=VllmJson`) that grounds against a sidecar parser/verifier (the CPU `llama-server` DSL/GBNF pipeline is the rollback path). Threshold-crossing events surface to Prometheus, which routes via Alertmanager into AlertService for ntfy/email/AutoFix delivery.
+## 1. Host and resource topology
 
-```mermaid
-flowchart LR
-    subgraph Collection
-        FC[FredCollector<br/>FRED API]
-        AV[AlphaVantageCollector<br/>Commodities/Forex/Equities]
-        FH[FinnhubCollector<br/>Stocks/Calendars/Sentiment]
-        OFR[OfrCollector<br/>FSI/STFM/HFM]
-        SC[SentinelCollector<br/>SearXNG/RSS/Edge + GPU JSON-CoD]
-        ND[NasdaqCollector<br/>disabled - WAF block]
-        CS[CalendarService<br/>NYSE holidays + FRED releases]
-    end
+- mercury: 48 hardware threads, 125 GiB RAM, NVIDIA RTX 5090 (32,607 MiB; ~29.8 GiB held by
+  vLLM at 0.92 gpu-memory-utilization).
+- CPU islands via compose `cpuset` (CFS-throttle avoidance; islands sum to all 48 threads):
+  llama-server 0-23, llama-cpu-rag 24-39, llama-cpu-embed 40-47.
+- ZFS: `nvme-fast` (models, timeseries DB, dashboards, containers) + `sata-bulk` (logs,
+  raw-data, backups, archives, agent workspace).
+- UPS: APC via `apcupsd` + ups-exporter → Prometheus job `ups`.
+- Host systemd (non-container) services: `sandbox-manager` (spawns sandbox-kernel containers
+  for Sentinel), `gemini-resolver-mcp` (port 9300, reached from containers via `host-gateway`),
+  `apcupsd`.
 
-    subgraph Metadata
-        SM[SecMaster<br/>Instrument registry + resolution]
-    end
+## 2. Two compose stacks + one standalone GPU container
 
-    subgraph Evaluation
-        TE[ThresholdEngine<br/>72 patterns / 11 sectors / matrix cells]
-    end
+| Stack | File | systemd unit | Contents |
+|---|---|---|---|
+| Main | `/opt/ai-inference/compose.yaml` (ansible-generated, ~1,400 lines) | `atlas.service` | DB, collectors, processing, alerting, sidecars, MCP servers, CPU inference |
+| OTEL | `/opt/otel/compose.otel.yaml` (templated from `deployment/artifacts/compose.otel.yaml.j2`) | `otel.service` | prometheus, grafana, loki, tempo, otel-collector, node/gpu/ups exporters |
+| — | **vllm-server**: standalone `nerdctl run` GPU container, in **neither** compose file | own deploy tag | the GPU inference engine |
 
-    subgraph Alerting
-        PR[Prometheus]
-        AM[Alertmanager]
-        AS[AlertService<br/>ntfy + email + AutoFix]
-    end
+Both stacks share the external `ai-inference` network. `atlas.service` requires
+`otel.service` so the network exists first.
 
-    subgraph AI["Inference Services"]
-        VLLM[vllm-server<br/>GPU - JSON-CoD emit + verification + reports]
-        DSL[dsl-parser-mcp<br/>parse + verify]
-        LS[llama-server<br/>CPU - DSL emit · rollback]
-        LCR[llama-cpu-rag<br/>SecMaster RAG generation]
-        OE[llama-cpu-embed<br/>SecMaster embeddings]
-        WS[WhisperService<br/>Transcription]
-        FB[FinBertSidecar<br/>FinBERT embeddings]
-        TRF[trafilatura<br/>HTML pre-wash]
-        SPACY[spacy-ner<br/>Entity NER]
-    end
+> **Caveat that bites**: vllm-server and the OTEL services are invisible to both the full and
+> scoped compose restart paths. `scoped_restart` only reaches main-compose services; OTEL
+> services need `--tags otel` or a manual `nerdctl restart`; vllm-server has its own deploy
+> block (`--tags vllm-server`).
 
-    subgraph Reports
-        RP[reports-daily/weekly/monthly<br/>Markdown + HTML]
-    end
+### Service inventory (main stack, live)
 
-    subgraph MCP["MCP Servers (Claude)"]
-        FM[fredcollector-mcp]
-        TM[thresholdengine-mcp]
-        FHM[finnhub-mcp]
-        OM[ofr-mcp]
-        SMM[secmaster-mcp]
-        WSM[whisper-service-mcp]
-        MM[markitdown-mcp]
-        GRM[gemini-resolver-mcp<br/>host systemd]
-        NTM[ntfy-mcp<br/>host stdio]
-    end
+- **timescaledb** — timescale/timescaledb 2.23.1-pg16, host port 5432.
+- **migrate-macro-substrate** — one-shot EF migrator for `macro_observations`.
+- **Collectors**: fred-collector, alphavantage-collector, finnhub-collector, ofr-collector,
+  sentinel-collector (host 5091 review UI). **nasdaq-collector is commented out** (NDL WAF
+  blocks datacenter IPs — code complete, not running).
+- **Processing/metadata**: threshold-engine (12G mem), secmaster, calendar-service (own DB
+  `calendar_data`).
+- **Alerting**: alertmanager (internal), alert-service (ntfy topic `atlas-alert` + Gmail SMTP +
+  AutoFix queue).
+- **Sidecars**: trafilatura (3109), spacy-ner (internal 3110), finbert-sidecar, dsl-parser-mcp
+  (3120), markitdown-mcp (3102), whisper-service (8090) + whisper-service-mcp.
+- **MCP servers** (SSE, host 310x): fredcollector-mcp 3103, thresholdengine-mcp 3104,
+  finnhub-mcp 3105, ofr-mcp 3106, secmaster-mcp 3107, whisper-service-mcp 3108.
+- **Reports**: reports-daily/-weekly/-monthly (FireAtUtc 02:00; Markdown+HTML to
+  `/var/lib/atlas/reports/`; narrative via vllm-server).
+- **CPU inference**: llama-server, llama-cpu-rag, llama-cpu-embed (§3).
 
-    FC -->|gRPC stream| TE
-    AV -->|gRPC stream| TE
-    FH -->|gRPC stream| TE
-    OFR -->|gRPC stream| TE
-    SC -->|gRPC ObservationEventStream<br/>+ MatrixUpdateStream| TE
-    FC -->|gRPC register| SM
-    FH -->|gRPC register| SM
-    OFR -->|gRPC register| SM
-    AV -->|gRPC register| SM
-    SC -->|REST + gRPC resolve| SM
-    SC --> LS
-    SC --> DSL
-    SC --> VLLM
-    SC --> TRF
-    SC --> SPACY
-    SC --> MM
-    SC -->|fallback resolver| GRM
-    SM --> OE
-    SM -->|RAG generation| LCR
-    TE -->|gRPC + REST| SM
-    TE -->|metrics| PR
-    PR --> AM
-    AM -->|POST /alerts| AS
-    AS --> N[ntfy.sh]
-    AS --> E[Email]
-    AS --> AF[autofix-queue]
-    RP --> VLLM
+## 3. Inference topology (zero ollama)
 
-    FC -.-> FM
-    TE -.-> TM
-    FH -.-> FHM
-    OFR -.-> OM
-    SM -.-> SMM
-    WS -.-> WSM
+All CPU inference runs **llama.cpp** (`ghcr.io/ggml-org/llama.cpp:server`); the GPU runs
+**vLLM**. No ollama container or engine exists. GGUF blobs are read-only bind-mounts from the
+frozen ollama-format content store — digest-pinned; re-provisioning the store without updating
+digests would silently serve stale weights (deploy `/health`+`/props` checks are the guard).
+
+| Runtime | Port | Model | Role |
+|---|---|---|---|
+| **vllm-server** (GPU) | 8000 | Qwen/Qwen2.5-32B-Instruct-AWQ (awq_marlin, 32K ctx, max_num_seqs 16, fp8 KV cache) | Sentinel JSON-CoD extraction, news-signal classification, reports narrative |
+| llama-server (CPU 0-23) | 11437 | qwen3-30b-a3b-instruct (32K ctx) | CPU GBNF/DSL extraction backend — **rollback path only** (`Extraction__Backend=LlamaServerDsl`) |
+| llama-cpu-rag (CPU 24-39) | 11438 | qwen2.5-7b-instruct q4_K_M (8K ctx, 4 slots) | SecMaster RAG generation (sole consumer) |
+| llama-cpu-embed (CPU 40-47) | 11439 | bge-m3 (16K ctx, batch=ubatch=8192) | Embeddings; pgvector-compatible with all existing rows |
+
+LoRA is fully removed from extraction; the served model name is the canonical HF id.
+whisper (CPU faster-whisper) and finbert are separate model sidecars. SecMaster's `Ollama__*`
+config keys are a naming seam only — the engine behind them is llama.cpp.
+
+## 4. Data flow
+
+### 4a. Live threshold path (event-driven)
+
+```
+Collectors ──ObservationEventStream gRPC :5001──► ThresholdEngine
+              MultiCollectorEventConsumerWorker → ObservationCache → pattern eval
+              → ThresholdEvents on crossings → metrics → Prometheus → Alertmanager
+              → AlertService → ntfy | email | AutoFix queue
 ```
 
-## Services
+This path **never writes matrix cells**. gRPC is container-to-container only; HTTP is 8080
+internal / 50xx on the host.
 
-### Data Collectors
+### 4b. Matrix path (DB-polled) — see [MATRIX.md](./MATRIX.md)
 
-| Service | Ports (internal) | Data Source | Key Data |
-|---------|------------------|-------------|----------|
-| FredCollector | 8080 / 5001 | Federal Reserve | Economic series (UNRATE, CPIAUCSL, GDP, etc.); optional MacroSubstrate dual-write |
-| AlphaVantageCollector | 8080 / 5001 | Alpha Vantage | Commodities, forex, equities (OHLCV), crypto, economic indicators |
-| FinnhubCollector | 8080 / 5001 | Finnhub | Stock quotes, candles, sentiment, analyst ratings, earnings/IPO calendars |
-| OfrCollector | 8080 / 5001 | OFR.gov | Financial Stress Index, STFM (short-term funding), HFM (hedge fund monitor) |
-| SentinelCollector | 8080 / 5001 / 5091 (host) | SearXNG / RSS / Cloudflare edge | News + filings + sentiment; GPU vLLM JSON-CoD extraction → matrix cells |
-| NasdaqCollector | 8080 / 5001 (disabled) | Nasdaq Data Link | LBMA gold (compose entry commented out — datacenter IP blocked by WAF) |
-| CalendarService | 8080 | Nager.Date + FRED | NYSE trading days/holidays + FRED economic release schedule |
-
-All `5001` ports speak gRPC `ObservationEventStream` (proto: `Events/src/Events/Protos/observation_events.proto`). SentinelCollector additionally exposes `MatrixUpdateStream` on `5001` and host-maps container `8080` to host `5091` for the browser-based review UI + digest pages.
-
-### Processing & Alerting
-
-| Service | Ports | Responsibility |
-|---------|-------|----------------|
-| ThresholdEngine | 8080 / 5001 (internal) | Roslyn pattern evaluation, 11-sector projection, matrix-cell persistence, per-sector regime classification, threshold-crossing event stream |
-| AlertService | 8080 (internal) | Webhook sink for Alertmanager; severity routing → ntfy / email / AutoFix; fingerprint+status dedup (30 min window) |
-| SecMaster | 8080 / 5001 (internal) | Instrument registry, context-aware source resolution, hybrid search (SQL + fuzzy + vector + RAG), OpenFIGI/EDGAR enrichment, ATLAS sector / NAICS classification |
-
-### Substrate & Reports
-
-| Component | Type | Purpose |
-|-----------|------|---------|
-| MacroSubstrate | Library (no listener) | Shared EF writer for `atlas_data.macro_observations`; consumed by FredCollector, OfrCollector, SentinelCollector via DI. `migrate-macro-substrate` is a one-shot console host that owns schema deployment. |
-| Reports.DailyHost / WeeklyHost / MonthlyHost | Containers (internal :8080, scheduled) | Daily 02:00 UTC / Mon 02:00 UTC / 1st-of-month 02:00 UTC Markdown + HTML reports from MacroSubstrate; news summaries via vLLM. |
-| Events | Library | Shared gRPC protos (`observation_events.proto`) + `Events.Client` DTOs (incl. `AtlasSectorCode` enum). |
-| LlmBenchmark | xUnit harness (no listener) | Sentinel extraction-quality benchmarks (CoVe / CoD / epistemic markers) against a pinned golden dataset. |
-
-### AI / Inference Services
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| WhisperService | 8090 (host + container) | YouTube transcription via faster-whisper (Python FastAPI) |
-| FinBertSidecar | 8080 (internal) | FinBERT 768-dim L2-normalized embeddings (CPU) |
-| vllm-server | 8000 (host) | GPU inference (Qwen2.5-32B-Instruct-AWQ) — Sentinel JSON-CoD extraction (live, `Extraction__Backend=VllmJson`), news-signal classification, Reports news summarisation |
-| llama-server | 11437 → 8080 (host) | CPU llama.cpp serving qwen3:30b-a3b — Sentinel CPU DSL/GBNF CoD emission (rollback path; `Extraction__Backend=LlamaServerDsl`) |
-| llama-cpu-rag | 11438 → 8080 (host) | CPU llama.cpp serving qwen2.5:7b — SecMaster RAG-tier generation (replaced ollama-cpu-gen 2026-06-11, ~30× decode gap; not a Sentinel extraction dependency) |
-| llama-cpu-embed | 11439 → 8080 (host) | CPU llama.cpp serving bge-m3 — SecMaster semantic-search embeddings (replaced ollama-cpu-embed 2026-06-11; last ollama container retired — all CPU inference is llama.cpp, GPU is vLLM) |
-| trafilatura | 3109 (host) | HTML pre-wash for SentinelCollector content normalisation |
-| spacy-ner | internal only | spaCy NER sidecar — entity pre-pass for SentinelCollector V2 pipeline |
-| dsl-parser-mcp | 3120 (host) | FastAPI sidecar — Lark parser + v2.3.1 verifier; `/parse_json` lifts the GPU JSON-CoD document and `/parse` the CPU DSL document to the same `DocumentAst` (consumed by SentinelCollector) |
-
-> **Inference topology** (post GPU-CoD role-flip, `gpu-cod-roleflip-2026-06-09`): GPU `vllm-server` = JSON-CoD extraction emission (live) + news-signal classification / sector tagging + report summarisation (Qwen2.5-32B-AWQ, largest model that fits 32GB VRAM on RTX 5090). CPU = embeddings + SecMaster RAG + the DSL/GBNF CoD rollback path. (The prior "CoD never touches GPU" split was reversed by the role-flip — CoD emission now runs on the GPU. The GPU claim verifier (CoVe `SemanticVerifier`) was removed as dead code in PR #647: ~93% of GPU calls, output computed-and-discarded since its matrix consumer was retired by WS3-A3.)
-
-### MCP Servers
-
-MCP servers are consolidated under their parent service directories where applicable:
-
-- `FredCollector/mcp/` → `fredcollector-mcp`
-- `ThresholdEngine/mcp/` → `thresholdengine-mcp`
-- `FinnhubCollector/mcp/` → `finnhub-mcp`
-- `OfrCollector/mcp/` → `ofr-mcp`
-- `SecMaster/mcp/` → `secmaster-mcp`
-- `WhisperService/mcp/` → `whisper-service-mcp` (C# MCP child of the Python WhisperService)
-
-Three MCP-style sidecars live outside any parent service:
-
-- `SentinelCollector/dsl-parser-mcp/` → `dsl-parser-mcp` (FastAPI sidecar — not stdio MCP)
-- `gemini-resolver-mcp/` → host `systemd` unit, FastAPI on `:9300` (HTTP, not stdio MCP — name kept for symmetry with `ntfy-mcp`)
-- `ntfy-mcp/` → host stdio MCP, ntfy publish/poll for the Sentinel v2 supervisor
-- `markitdownMCP/` → upstream `mcp/markitdown:latest` container image (no source in this directory)
-
-| Server | Port (Host) | Transport | Purpose |
-|--------|-------------|-----------|---------|
-| markitdown-mcp | 3102 | StreamableHTTP `/mcp/` + SSE `/sse` | Document conversion (PDF/Office/HTML → Markdown) |
-| fredcollector-mcp | 3103 | Streamable HTTP | FRED data query + admin |
-| thresholdengine-mcp | 3104 | Streamable HTTP | Pattern evaluation, sector-regime status, matrix-cell queries |
-| finnhub-mcp | 3105 | Streamable HTTP | Market data, calendars, live quotes |
-| ofr-mcp | 3106 | Streamable HTTP | FSI, funding markets, hedge fund data |
-| secmaster-mcp | 3107 | Streamable HTTP | Instrument search, metadata query, semantic search |
-| whisper-service-mcp | 3108 | Streamable HTTP | YouTube transcription proxy |
-| dsl-parser-mcp | 3120 | FastAPI HTTP | DSL parse + v2.3.1 grounding verifier |
-| gemini-resolver-mcp | 9300 (host systemd) | FastAPI HTTP | Sentinel Phase 4.2 Gemini-grounded fallback resolver |
-| ntfy-mcp | n/a (stdio) | MCP stdio | ntfy publish/poll for supervisor ↔ user channel |
-
-### Infrastructure
-
-| Service | Port | Access | Purpose |
-|---------|------|--------|---------|
-| TimescaleDB | 5432 | Host | Time-series database (PostgreSQL + hypertables + pgvector) |
-| Prometheus | 9090 | Internal | Metrics storage (Grafana proxy) |
-| Alertmanager | 9093 | Internal | Alert routing — webhooks AlertService at `http://alert-service:8080/alerts` |
-| Grafana | 3000 | Host | Dashboards |
-| Loki | 3100 | Internal | Log aggregation (Grafana proxy) |
-| Tempo | 3200 | Internal | Distributed tracing (Grafana proxy) |
-| otel-collector | 4317 | Internal | OpenTelemetry pipeline (OTLP/gRPC) |
-
-## Design Principles
-
-### Single Responsibility
-
-- **Collectors**: Data ingestion only. No threshold logic.
-- **ThresholdEngine**: Pattern evaluation, sector projection, regime classification. No data collection.
-- **AlertService**: Notification delivery only. No business logic.
-- **MCP Servers**: API translation only. No data storage.
-
-### Event-Driven Communication
-
-- Collectors → ThresholdEngine: gRPC server-streamed `ObservationEventStream`
-- SentinelCollector → ThresholdEngine: `ObservationEventStream` + `MatrixUpdateStream` (Phase 5.5 DSL matrix-cell enrichments)
-- ThresholdEngine → Prometheus → Alertmanager → AlertService: metric-derived alert routing
-- ThresholdEngine → downstream subscribers: gRPC `ObservationEventStream` (threshold-crossing events, replay, time-range)
-- AlertService → ntfy / SMTP / AutoFix queue file
-
-### Configuration Over Code
-
-- 72 patterns defined in JSON with C# expressions, compiled by Roslyn at runtime
-- Hot reload via `PatternConfigurationWatcher`, `BurstWindowConfigurationWatcher`, `SectorThresholdConfigurationWatcher`
-- Admin APIs for runtime series management on each collector
-- Prompts host-mounted (`/prompts`) — edits hot-reload without container rebuild
-
-## Event Flow
-
-```mermaid
-sequenceDiagram
-    participant APIs as External APIs
-    participant COL as Collectors
-    participant DB as TimescaleDB
-    participant TE as ThresholdEngine
-    participant PR as Prometheus
-    participant AM as Alertmanager
-    participant AS as AlertService
-
-    APIs->>COL: Economic/Market data
-    COL->>DB: Store observations
-    COL->>TE: ObservationCollectedEvent (gRPC)
-    TE->>TE: Evaluate 72 patterns (Roslyn)
-    TE->>TE: Project onto 11 sectors (matrix cells)
-    TE->>TE: Classify per-sector regimes
-    TE->>DB: Persist matrix cells + sector regimes
-    TE->>PR: Threshold-crossing metrics
-    PR->>AM: Alert rule fires
-    AM->>AS: POST /alerts (webhook)
-    AS->>AS: Dedup (fingerprint:status, 30 min)
-    AS->>AS: Route by severity
-    AS-->>ntfy: Push notification
-    AS-->>Email: SMTP
-    AS-->>AutoFix: JSON file → host runner
+```
+Sentinel news ──GPU classifier──► macro_observations (":sig:" rows, value = tilt × confidence)
+FRED macro-classified series ──dual-write──► macro_observations
+OFR (wired, 0 series flagged → dormant) ──► macro_observations
+        ▼ (5-min DB poll)
+ThresholdEngine ObservationCellProjector ──► matrix_cells (11 sectors × signal × source)
 ```
 
-## Pattern Categories
+### 4c. Registration and resolution
 
-Counts derive from `ThresholdEngine/config/patterns/<category>/*.json` (one pattern per file). The `enabled` column is the subset with `"enabled": true`; the remainder are kept in-tree but turned off.
-
-| Category | Total | Enabled | Purpose | Representative Patterns |
-|----------|-------|---------|---------|-------------------------|
-| Recession | 22 | 21 | Contraction warnings | Sahm Rule, yield-curve inversion / steepening, initial + continuing claims, Beveridge curve, Challenger layoffs, JOLTS (Baltic-freight disabled) |
-| Growth | 11 | 11 | Expansion signals | GDP acceleration, industrial production, durable goods, equipment/residential investment, retail sales, housing starts, global PMI |
-| Liquidity | 9 | 9 | Market stress | VIX level, credit-spread widening, Fed liquidity contraction, fed funds rate, real rates / TIPS, M2 growth, DXY risk-off |
-| NBFI | 8 | 8 | Shadow-banking stress | CCC-BB divergence, repo stress (standing + reverse), Chicago NFCI, St. Louis stress index, commercial-paper stress, financial-insider breadth |
-| OFR | 7 | 7 | Financial stability | FSI (top-level + credit / volatility / funding / EM components), STFM repo stress, HFM leverage |
-| Inflation | 6 | 6 | Price pressures | CPI YoY level, core CPI stickiness, PCE level + acceleration, inflation expectations, Truflation divergence |
-| Currency | 5 | 5 | Risk sentiment | DXY dollar index, EUR/USD dollar strength, EM currency weakness, JPY carry unwind, ECB policy rate |
-| Commodity | 3 | 3 | Real assets | Copper/Gold ratio, oil price, natgas price |
-| Valuation | 1 | 1 | Market levels | Buffett indicator |
-
-**Total: 72 patterns (71 enabled, 1 disabled) across 9 categories.**
-
-## Sector Projection & Per-Sector Regime Classification
-
-Every pattern declares a weight per ATLAS sector (`SectorWeights` dictionary). `CellProjector` projects each pattern signal onto the 11-sector matrix column; `SectorAggregator` sums weighted contributions per sector per cycle.
-
-**The 11 ATLAS sectors** (DB form, from `Events.Client/AtlasSectorCode.cs`): `ENERGY`, `MATERIALS`, `INDUSTRIALS`, `CONS_DISC`, `CONS_STAPLES`, `HEALTHCARE`, `FINANCIALS`, `INFOTECH`, `COMM_SVC`, `UTILITIES`, `REAL_ESTATE`. The D5 sparsity policy requires every pattern to declare an explicit numeric weight (zero or non-zero) for all 11 sectors — partial maps are rejected by `PatternConfigurationLoader`.
-
-`SectorRegimeClassifier` resolves each sector's aggregated score against the default `SectorRegimeTaxonomy` — five contiguous, half-open, range-covering bands across the cell-value clamp range `[-3, +3]`:
-
-| Regime Code | Score Band | Meaning |
-|-------------|------------|---------|
-| `severe_contraction` | `[-3, -1.5)` | Saturated downside |
-| `contraction` | `[-1.5, -0.5)` | Meaningful negative tilt |
-| `neutral` | `[-0.5, +0.5)` | Within noise |
-| `expansion` | `[+0.5, +1.5)` | Meaningful positive tilt |
-| `overheating` | `[+1.5, +3]` | Saturated upside |
-
-Boundary rule: half-open lower-inclusive on every band except the topmost (closed on both sides so a clamp-saturating value lands in-band). The taxonomy is configurable but every band must be contiguous and gap-free — the constructor fails loud on broken invariants at config-time, not at classify-time.
-
-Per-sector regime trajectories and the derived `sector_phase_cells` materialised view are exposed under `/api/sector-regimes` and `/api/sector-phase-cells` on ThresholdEngine.
-
-## Data Flow by Source
-
-```mermaid
-flowchart LR
-    subgraph FRED["FRED"]
-        FA[FRED API] --> FC[FredCollector]
-    end
-
-    subgraph AV["Alpha Vantage"]
-        AVA[AV API] --> AVC[AlphaVantageCollector]
-    end
-
-    subgraph OFR["OFR (FSI / STFM / HFM)"]
-        OA[OFR API] --> OC[OfrCollector]
-    end
-
-    subgraph Finnhub["Finnhub"]
-        FHA[Finnhub API] --> FHC[FinnhubCollector]
-    end
-
-    subgraph Sentinel["SentinelCollector"]
-        SX[SearXNG]
-        RSS[RSS feeds]
-        EW[Cloudflare edge]
-        SX & RSS & EW --> SCNT[Content workers]
-        SCNT --> NZ[Normalizer<br/>markitdown + trafilatura]
-        NZ --> CODX[GPU JSON-CoD<br/>vllm-server + dsl-parser-mcp grounding]
-        CODX --> RES[Resolution cascade<br/>SecMaster → Finnhub → AV → Gemini]
-    end
-
-    FC --> DB[(TimescaleDB)]
-    AVC --> DB
-    OC --> DB
-    FHC --> DB
-    RES --> DB
-
-    FC -->|gRPC register| SM[SecMaster]
-    OC -->|gRPC register| SM
-    FHC -->|gRPC register| SM
-    AVC -->|gRPC register| SM
-    RES -->|REST + gRPC resolve| SM
-    SM --> PG[(atlas_secmaster<br/>+ pgvector)]
-
-    FC -->|IsMacro=true dual-write| MS[(macro_observations<br/>via MacroSubstrate)]
-    OC --> MS
-    RES --> MS
-
-    FC -.-> FM[fredcollector-mcp]
-    OC -.-> OM[ofr-mcp]
-    FHC -.-> FHM[finnhub-mcp]
-    SM -.-> SMM[secmaster-mcp]
-
-    FM -.-> C[Claude]
-    OM -.-> C
-    FHM -.-> C
-    SMM -.-> C
+```
+Collectors ──RegisterSeries gRPC :5001 (fire-and-forget)──► SecMaster
+ThresholdEngine ──ResolveBatch gRPC (pattern LOAD TIME only)──► SecMaster
+Sentinel ──POST /api/resolve-entities (HTTP, prepass)──► SecMaster
+FRED / OFR ──REST /api/signal-identities/* (macro gate, tagging)──► SecMaster
 ```
 
-**SecMaster Purpose**: Centralised instrument metadata, context-aware source resolution (frequency / latency / collector priority), hybrid search (SQL + fuzzy + vector + RAG), embedding backfill, OpenFIGI + EDGAR enrichment.
+CalendarService is **HTTP-only** (no gRPC :5001 despite older diagrams); its econ source at
+runtime is FRED only, via a curated allow-list of ~18 release ids, and its `event_time` is
+synthesized (8:30/10:00 ET, DST-unaware).
 
-**MacroSubstrate Purpose**: Shared `macro_observations` hypertable owned by no single collector. Collectors take `IMacroObservationWriter` via DI and dual-write when their per-series `IsMacro` flag is `true`. Versioned as-of reads resolve the active mapping label via `atlas_secmaster.mapping_versions`.
+## 5. The Sentinel pipeline (news → extraction → digest)
 
-## SentinelCollector: GPU vLLM JSON-CoD Extraction Pipeline
+Detail in `SentinelCollector/README.md`; the matrix-facing half in [MATRIX.md](./MATRIX.md).
 
-```mermaid
-flowchart LR
-    SRC[SearXNG / RSS / Edge] --> CW[Collection Workers]
-    CW --> NZ[markitdown + trafilatura]
-    NZ --> SPACY[spacy-ner<br/>entity pre-pass]
-    SPACY --> VLLM[vllm-server<br/>GPU JSON-CoD emit<br/>response_format=json_schema]
-    VLLM --> DSL[dsl-parser-mcp<br/>/parse_json + grounding verify v2.3.1]
-    DSL --> RES[ResolutionWorker]
-    RES --> SM[SecMaster]
-    RES -.fallback.-> FH[Finnhub]
-    RES -.fallback.-> AV[AlphaVantage]
-    RES -.fallback.-> GEM[gemini-resolver-mcp]
-    RES --> PUB[Event Publishers]
-    PUB -->|ObservationEventStream| TE[ThresholdEngine]
-```
+1. **Ingestion**: RSS feeds (DB-managed, per-feed poll intervals) and SearXNG queries (ET
+   schedule: 09:30/12:00/16:00/22:00 + 07:00 daily, Mondays weekly) submit URLs to the
+   Cloudflare edge worker; `EdgeSyncWorker` polls results back every 30s into
+   `sentinel.raw_content` (payloads on disk under `/opt/ai-inference/raw-data/sentinel/`).
+   A 30-day age guard prunes at startup and gates per-article.
+2. **Extraction** (production = **GPU JSON-CoD**, `Extraction__Backend=VllmJson`):
+   prompt+schema from host mount `/prompts/cod/` (hot-reloaded) → vLLM
+   `response_format=json_schema` → truncation salvage (brace-depth recovery; distinguishes
+   `truncated_salvaged` from `salvage_empty`) → `dsl-parser-mcp` `/parse_json` lifts JSON to a
+   `DocumentAst` → deterministic `/verify` span verifier (hard-failed blocks dropped; 12-25% of
+   articles is the normal baseline — a quality gate, not an error) → adapter persists
+   observations with sentence-snapped text quotes. Dispatch is continuous streaming with
+   `MaxConcurrent=8`; an `ObservationValueSanitizer` nulls un-storable values (|v| ≥ 1e16,
+   NaN/Inf) rather than clamping.
+3. **Resolution cascade** (per observation): LLM candidate-pick (≥0.7) → SecMaster hybrid
+   resolve → Gemini fallback (≥0.85, auto-registers new instruments) → Pending; an async
+   `ResolutionWorker` drains Pending via Finnhub (5 attempts → NoResolution), with a nightly
+   AlphaVantage sweep (25/day quota) behind it. A per-article `EntityResolutionPrepass` (spaCy
+   NER → SecMaster resolve-entities) grounds prompts and sector tags — it never gates entry.
+4. **Signal classification**: one structured vLLM call per article → `macro_observations`
+   `:sig:` rows (the matrix feed).
+5. **Digest** (Quartz, America/New_York: daily 07:00 Mon-Fri, weekly Fri 19:00, monthly
+   last-day 19:00): observations → themes (signal-derived via `SignalThemeMap`) → stats →
+   sector breakdown → news momentum (early/late tilt split) → cross-collector rollup →
+   LLM narrative (aggregate-first; token budget derived from the model context, shed-loop
+   drops lowest-ranked articles) → render (Chart.js theme radar) → ntfy push to `atlas-digest`.
+   Every enrichment degrades rather than failing the run — Tier-1 always ships.
 
-Production extraction backend is `Extraction__Backend=VllmJson` (set in compose). The GPU `vllm-server` (Qwen2.5-32B-AWQ) emits a JSON-schema-constrained CoD document; the `dsl-parser-mcp` sidecar's `/parse_json` lifts it to the same `DocumentAst` as the CPU DSL path and verifies grounding word-by-word against the source article (v2.3.1 punctuation-tolerant + byte-verbatim). Resolution walks SecMaster → Finnhub → AlphaVantage → Gemini-grounded fallback. (The per-article SemanticVerifier subsystem — discrete entity-resolution / sector-tag / claim-verify stage — was removed in #647; its matrix-cell bridge was already retired in WS3-A3 and the live matrix feed is classifier-fed.)
+AutoApprove is on: approve at extraction ≥0.9 ∧ resolution ≥0.8 ∧ InstrumentId; reject below
+0.5 extraction; else Pending.
 
-The CPU `llama-server` DSL/GBNF pipeline (`Extraction__Backend=LlamaServerDsl`) is the rollback path. Legacy Ollama / llama.cpp / vLLM extraction backends remain in `ExtractionOptions` and still drive shadow runs; the production `IMergedExtractionService` binding routes to the `VllmJson` GPU JSON-CoD path.
+## 6. SecMaster — identity, classification, resolution
 
-## MCP Integration
+Live `atlas_secmaster`: 16,580 instruments (10,054 Equity, 4,998 Indicator, 797 Economic, 350
+quarantined LoRA-era registrations), 7,994 source_mappings, 16,034 bge-m3 embeddings, 11
+atlas_sectors, 84 signal_identities in 7 categories (macro 33, rate 14, credit 13, liquidity 9,
+instrument 7, commodity 4, fx 4).
 
-MCP (Model Context Protocol) servers expose ATLAS data and capabilities to Claude:
+Core invariants:
 
-```mermaid
-flowchart TB
-    CD[Claude Desktop / Code] --> MM["markitdown-mcp<br/>StreamableHTTP+SSE :3102"]
-    CD --> FM["fredcollector-mcp<br/>HTTP :3103"]
-    CD --> TM["thresholdengine-mcp<br/>HTTP :3104"]
-    CD --> FHM["finnhub-mcp<br/>HTTP :3105"]
-    CD --> OFM["ofr-mcp<br/>HTTP :3106"]
-    CD --> SMM["secmaster-mcp<br/>HTTP :3107"]
-    CD --> WSM["whisper-service-mcp<br/>HTTP :3108"]
-    CD --> NTM["ntfy-mcp<br/>stdio (host)"]
+- **Identity ⊥ collection**: an instrument with zero source mappings still resolves with
+  identity+sector+NAICS (with a Warning). `NotFound` means "exhausted all machinery", never
+  "not in table".
+- **Sector gate is Equity-only**: ~87% of the catalog legitimately has null sector.
+- **Lazy-load**: the catalog self-seeds from entities seen in articles; bulk-preload is
+  forbidden by design.
 
-    SC[SentinelCollector] --> DSL["dsl-parser-mcp<br/>HTTP :3120"]
-    SC --> GRM["gemini-resolver-mcp<br/>HTTP :9300 (host systemd)"]
+Three distinct entry paths (do not conflate): `resolve-entities` (HTTP; Sentinel NER surfaces →
+instrument + NAICS + sector grounding), `ResolveBatch` (gRPC; ThresholdEngine symbol→best
+active source mapping, pattern load time only), `register` (gRPC; collector fire-and-forget,
+with a trusted-macro-collector guard on Economic asset classes).
 
-    MM -.- MT["convert_to_markdown"]
-    FM -.- FT["get_latest, get_observations,<br/>search, health..."]
-    TM -.- TT["evaluate, list_patterns,<br/>get_pattern, matrix-cell queries..."]
-    FHM -.- FHT["get_quote, get_earnings_calendar,<br/>get_live_*..."]
-    OFM -.- OFT["get_fsi_latest, list_stfm_series,<br/>add_series..."]
-    SMM -.- ST["search_instruments, semantic_search,<br/>resolve_source, ask_secmaster..."]
-    WSM -.- WT["transcribe, get_status,<br/>get_transcript, backfill..."]
-    NTM -.- NTT["ntfy_publish, ntfy_poll_new,<br/>ntfy_poll_since, ntfy_ack"]
-    DSL -.- DT["/parse, /verify"]
-    GRM -.- GT["/resolve"]
-```
+**Resolution cascade** ("fuzzy proposes, authoritative confirms"): local exact (0.95) / fuzzy
+(0.85) / vector (0.75) → SecmasterDirect 0.95 → EDGAR 0.90 → OpenFIGI 0.85-0.90 → signal-alias
+0.90 → upstream discovery proposes → confirmation cascade OpenFIGI → Finnhub → Gemini (0.85).
+Confirmed → persist + embed; unconfirmed → null + review queue. A non-overlapping article
+context zeroes a candidate's score (dropped, not down-ranked, below MinConfidence 0.8).
 
-## Why This Architecture?
+The synchronous hot path is the **hybrid cascade**: ExactSQL → FuzzySQL → pgvector cosine
+(bge-m3, hard similarity floor 0.5) → RAG hypothesis tier on llama-cpu-rag (25s budget,
+abstains under 12s remaining budget, 4 concurrent slots, circuit breaker, no retry on
+generation). Any RAG failure degrades to deterministic-tier candidates — never a 500.
 
-### Composability
-New data sources integrate by implementing the gRPC contract from `Events/`. OfrCollector and SentinelCollector were added without modifying ThresholdEngine.
+## 7. The data fleet (collectors, live scope)
 
-### Observability
-Full OpenTelemetry stack: traces (Tempo), metrics (Prometheus), logs (Loki), all visualised in Grafana via OTLP/gRPC.
+| Collector | Live scope | Notable absences (by design / dead schema) |
+|---|---|---|
+| **FRED** | 80 series configs (79 active, 55 signal-tagged); per-frequency Quartz crons; dual-writes macro-classified series to the substrate; two backfills (BackfillService advances `LastCollectedAt`; AlfredBackfillService deliberately does not) | ObservationChannel has no reader (memory-growth hazard); 0/80 sector-tagged |
+| **Finnhub** | 18 active Quote series — SPY/QQQ/IWM/VTI/DIA, all 11 SPDR GICS sector ETFs, GLD/TLT; 1-min collection loop; token bucket 60/min | candles/social/insider/calendar tables exist with zero writers — permanently empty; `GetLatestEventTime` returns UtcNow on empty |
+| **AlphaVantage** | 5 Commodity (scalar) series; 4h cycle, ≤4 per cycle; in-memory quota (25/day, resets on restart) | OHLCV schema unused; TechnicalIndicator type is a scaffold (never collected); gRPC stream is scalar-only, events carry no values |
+| **OFR** | FSI daily 10:00 UTC, STFM daily 14:00 UTC, HFM Fri 18:00 UTC; 109 STFM + 336 HFM series | FSI excluded from registration and the substrate; macro dual-write wired but 0 series flagged |
+| **Nasdaq** | **not running** (compose block commented out; NDL WAF) | events synthesized on read (EventId = fresh Ulid per read — not a dedup key) |
+| **CalendarService** | FRED releases (allow-list ~18), NYSE market calendar computed in-memory | no gRPC; Finnhub calendar worker disabled; fabricated event times (DST-unaware) |
 
-### Flexibility
-Change a threshold? Edit JSON, patterns hot-reload. Add a series? Use the admin API. Edit a prompt? Edit the host-mounted file under `/opt/ai-inference/prompts/` and the prompt provider picks it up.
+## 8. Database layout (TimescaleDB 2.23.1 / pg16)
 
-### AI-Native
-MCP servers let Claude directly query financial data and evaluate patterns. After the GPU-CoD role-flip the GPU `vllm-server` (Qwen2.5-32B-AWQ) runs the JSON-CoD structured extraction emission and the news-signal classifier, while the CPU handles embeddings + SecMaster RAG; the CPU `llama-server` DSL/GBNF pipeline is retained as the rollback path (LLM-strength layering principle).
+- **Databases**: `atlas_data` (collectors + matrix), `atlas_secmaster`, `calendar_data`
+  (+ `*_integration_test`).
+- **atlas_data public**: `series_configs`, `events`/`processed_events`, per-collector tables
+  (`fred_observations`, `alphavantage_*`, `nasdaq_*`, `ofr_*`, `finnhub_*`), matrix layer
+  (`macro_observations`, `matrix_cells`, `sector_regimes`), `threshold_alerts`,
+  `threshold_events`.
+- **atlas_data sentinel schema**: `raw_content`, `extracted_observations` (+ `_shadow`),
+  `digest_reports`, `rss_feeds`, `search_queries`, `validation_*`, `retention_policies`
+  (0 rows — unused mechanism; pruning is app-managed via the 30-day raw_content age guard +
+  startup pruner, §5).
+- **Hypertables** — exactly five: `nasdaq_observations`, `alphavantage_observations`,
+  `macro_observations`, `matrix_cells`, `sector_regimes`. Everything else (including
+  `fred_observations`, `finnhub_quotes`) is a plain table. No Timescale retention policies
+  are active (by design — retention is app-managed where it exists, see above).
+- **atlas_secmaster**: `instruments`, `aliases`, `instrument_embeddings` (pgvector),
+  `signal_identities`, `source_mappings`, `atlas_sectors`, `naics_*`, `edgar_filers`,
+  `openfigi_lookup_cache`, review queue. Extensions: pg_trgm + pgvector.
+- **Migrations**: EF Core, app-managed — each service migrates its own schema on startup;
+  `macro_observations` via the one-shot migrator container. Ansible only creates
+  DBs/users/extensions idempotently. No raw SQL schema scripts.
 
-## See Also
+## 9. Deployment machinery (`deployment/`)
 
-- [FredCollector](../FredCollector/README.md) — FRED economic data collection
-- [AlphaVantageCollector](../AlphaVantageCollector/README.md) — Commodities, forex, equities, crypto
-- [FinnhubCollector](../FinnhubCollector/README.md) — Market data, calendars, sentiment
-- [OfrCollector](../OfrCollector/README.md) — OFR financial stress data
-- [NasdaqCollector](../NasdaqCollector/README.md) — Nasdaq Data Link (disabled — WAF block)
-- [SentinelCollector](../SentinelCollector/README.md) — News aggregation + GPU vLLM JSON-CoD extraction
-- [SentinelCollector/dsl-parser-mcp](../SentinelCollector/dsl-parser-mcp/README.md) — DSL parser + verifier sidecar
-- [CalendarService](../CalendarService/README.md) — NYSE holidays + FRED release schedule
-- [ThresholdEngine](../ThresholdEngine/README.md) — Pattern evaluation, sector projection, regime classification
-- [ThresholdEngine/mcp](../ThresholdEngine/mcp/README.md) — MCP for pattern + matrix-cell queries
-- [SecMaster](../SecMaster/README.md) — Instrument metadata + resolution
-- [SecMaster/mcp](../SecMaster/mcp/README.md) — MCP for instrument search
-- [AlertService](../AlertService/README.md) — Notification routing
-- [WhisperService](../WhisperService/README.md) — YouTube transcription
-- [WhisperService/mcp](../WhisperService/mcp/README.md) — MCP for transcription
-- [FinBertSidecar](../FinBertSidecar/README.md) — FinBERT embeddings
-- [MacroSubstrate](../MacroSubstrate/README.md) — Shared macro-observations hypertable
-- [Events](../Events/README.md) — Shared gRPC contracts
-- [Reports](../Reports/README.md) — Daily/weekly/monthly report generation
-- [LlmBenchmark](../LlmBenchmark/README.md) — Sentinel extraction-quality benchmarks
-- [gemini-resolver-mcp](../gemini-resolver-mcp/README.md) — Gemini-grounded fallback resolver
-- [ntfy-mcp](../ntfy-mcp/README.md) — ntfy publish/poll MCP for supervisor channel
-- [markitdownMCP](../markitdownMCP/README.md) — Document → Markdown conversion (upstream image)
-- [Deployment](../deployment/README.md) — Infrastructure setup
+See `deployment/README.md` for the full reference. The essentials:
+
+- **Everything flows through ansible** (`ansible-playbook playbooks/deploy.yml --tags {svc}`).
+  Every run deletes and re-templates `/opt/ai-inference/compose.yaml` from
+  `deployment/artifacts/compose.yaml.j2` — **direct edits to the live compose file are always
+  clobbered**.
+- **ZFS snapshots** of timeseries+dashboard datasets precede each deploy; the rollback recipe
+  is written to `/opt/ai-inference/last-snapshot.txt`.
+- **Restart semantics**: FULL (default) restarts the whole stack when the template or an image
+  changed — and resurrects manually-stopped services (notably alert-service). SCOPED
+  (`-e "scoped_restart=true scoped_services='…'"`) recreates only the named main-compose
+  services. A freshness gate asserts every running service's image == local `:latest`.
+- **Hot-reload tags**: `dashboards`/`alerting` (Grafana auto-provisions, Prometheus SIGHUP),
+  `patterns` (ThresholdEngine hot-reload API), `sentinel-prompts`/`cpu-cod-prompts` (rsync repo
+  → `/opt/ai-inference/prompts/`, overwrites host edits; sentinel watches the mount — no
+  rebuild needed).
+- **AutoFix pipeline** (host-side): alert-service writes alert JSON to
+  `/opt/ai-inference/autofix-queue` → `autofix-runner.timer` (60s) spawns `claude --print`
+  per alert (defers while an interactive claude session exists) → `autofix-watcher.timer`
+  (5 min) deploys merged AutoFix PRs (skipped while an interactive session is live).
+  `merged-pr-watcher.timer` (same family, human-merged PRs) is installed but **intentionally
+  not enabled** — the operator enables it post-review.
+- **Git gates** (`.claude/hooks/`): pushes to main are blocked (docs-extension allowlist only);
+  feature-branch pushes require a tests-passed marker keyed on the git **tree** hash; `gh pr
+  merge` requires a review marker keyed on the GitHub headRefOid.
+
+## 10. Observability
+
+Pipeline: services emit OTLP → otel-collector:4317 → Loki (logs, 30d), Tempo (traces, 7d),
+Prometheus (metrics, 15s scrape). Grafana :3000 with provisioned datasources (Prometheus, Loki,
+Tempo, TimescaleDB, CalendarDB).
+
+Alert routing: Prometheus rules + Loki ruler → Alertmanager (severity routes critical /
+warning / info; critical inhibits warning per service) → alert-service webhook → ntfy
+`atlas-alert`, Gmail, AutoFix queue. **AlertService is UP by design** (verified end-to-end
+2026-06-10).
+
+Alert rule files (`deployment/artifacts/monitoring/alerts/`): `service-health.yml`,
+`collectors-deadman.yml` (dead-man windows sized past the longest normal idle gap),
+`fredcollector.yml`, `thresholdengine.yml` (incl. the matrix projector/persistence guards),
+`sentinel.yml` (extraction, digest, resolution, classifier guards), `calendarservice.yml`,
+plus Loki log-error rules.
+
+Dashboards are folder-provisioned from `/opt/ai-inference/monitoring/dashboards/`: Overview,
+Collectors & Services, Sentinel Pipeline, Signal Matrix, Calendar & Reports.
+
+## 11. Known dead paths and seams (do not "fix" casually)
+
+- ThresholdEngine `ObservationEventSubscriber` + `CellProjector` formula: unwired dead code.
+- Finnhub non-Quote schema, AlphaVantage OHLCV/TechnicalIndicator: dead schema/scaffold.
+- OFR `is_macro` flags all off → no OFR substrate rows yet.
+- SecMaster proto `ALIAS_MATCH` never emitted; `RagStrictMode` true in code but false in prod
+  via compose env.
+- `sentinel_ollama_*` metric names: legacy seam now recorded by the vLLM client.
+- `financial_news` database: legacy, pending orphan-cleanup drop.
+- CPU CoD path (`llama-server` + GBNF): compiled-in, inert, rollback-only.

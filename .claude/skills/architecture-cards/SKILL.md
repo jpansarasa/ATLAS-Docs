@@ -152,7 +152,7 @@ PROCESS:
    - per-service commit discipline: "one commit per service (AGENT_README.md + README.md)"
    - commit message format: "docs({service}): add/refresh AGENT_README.md architecture card"
    - HARD rules: ¬push, ¬PR, selective `git add -- <paths>`,
-     supervisor-owned files (STATE.md, docs/plans/**, docs/llm/**, .claude/skills/supervisor-mode/**) untouched
+     supervisor-owned files (STATE.md, .claude/skills/supervisor-mode/**) untouched
 2. dispatch via Agent tool, subagent_type=general-purpose, run_in_background=false
    (foreground because we need the result for Phase 4)
 3. on agent completion → record commit hashes for Phase 4 summary
@@ -192,7 +192,7 @@ For each service in the gap report:
    message `docs({service}): add/refresh AGENT_README.md architecture card`.
 
 DO NOT push. DO NOT open PR. Supervisor handles upstream.
-DO NOT touch STATE.md, docs/plans/**, docs/llm/**, .claude/skills/supervisor-mode/**.
+DO NOT touch STATE.md or .claude/skills/supervisor-mode/**.
 
 Report final commit hashes + validator fidelity scores."
 
@@ -233,7 +233,7 @@ behind its own PR. SecMaster ships as the worked exemplar (EXEMPLAR_SECMASTER.md
 ✗ card_over_1_page # density is the point; the catalog lives in README §Reference
 ✗ subagent_pushes # supervisor owns remote per CLAUDE.md
 ✗ subagent_opens_PR # same
-✗ touch_supervisor_owned # STATE.md, docs/plans/**, docs/llm/**, .claude/skills/supervisor-mode/**
+✗ touch_supervisor_owned # STATE.md, .claude/skills/supervisor-mode/**
 ✗ skip_re_audit # Phase 4 is non-optional; closes the loop
 ✗ infinite_recursion # ARCHITECTURECARDS_DEPTH guard
 ✗ derive_card_from_memory # every block traces to code/docs, not the model's prior

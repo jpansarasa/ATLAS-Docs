@@ -1,9 +1,14 @@
 # ATLAS Indicators → FRED Series Mapping
 
-**Status**: ✅ Implemented (66 series configured)
-**Last Updated**: 2026-01-19
+**Status**: ✅ Implemented — live catalog: 80 series configured, 79 active, 55 tagged with a SignalIdentityId (DB-verified)
+**Last Updated**: 2026-06-11
 
 This file maps ATLAS framework indicators to specific FRED series IDs for automated collection.
+The detailed entries below document the original 66-series framework mapping; the catalog has
+since grown to 80 configs. The live catalog is authoritative and queryable via the
+fred-collector MCP (`get_all_series_admin`) or `series_configs` in `atlas_data`. Collection
+cadence is a per-series Quartz cron derived from FRED frequency (Daily 18:00, Weekly Thu+Sat
+18:00, Monthly 1st/10th/20th 10:00, Quarterly Jan/Apr/Jul/Oct 1-14, Annual Jan 1-15).
 
 ## Framework Alignment
 
@@ -458,7 +463,7 @@ Commodity prices for Cu/Au ratio calculation:
 25-28: Valuation & Context (S&P 500, Wilshire 5000, GDP, Recession Probability)
 29-30: Commodities (Copper, Gold)
 
-**Total: 66 series from FRED for complete ATLAS coverage**
+**Total: 66 series in the original framework mapping (live catalog: 80 configured / 79 active)**
 
 **Additional Series Collected (Phase 2 Expansion):**
 - `BAMLC0A0CM` - Investment Grade Corporate Bond Spread
@@ -590,8 +595,8 @@ curl "https://api.stlouisfed.org/fred/series/observations?series_id=ICSA&api_key
 
 ---
 
-**Last Updated**: 2026-01-19
-**Status**: ✅ Implemented - 66 series configured and collecting
+**Last Updated**: 2026-06-11
+**Status**: ✅ Implemented - 80 series configured (79 active) and collecting
 **Owner**: James
 **Implementation**: FredCollector service + FredCollector MCP server
 

@@ -3,9 +3,9 @@
 **This is offline research tooling, not a deployed service.** Nothing here runs
 in `compose.yaml`, on the gRPC mesh, or under ansible. It runs on demand from a
 developer machine to produce datasets the matrix-backtesting harness analyzes
-(`docs/atlas-matrix-backtesting-spec.md`).
+(spec retired to git history: `git show 5cf265f7:docs/atlas-matrix-backtesting-spec.md`).
 
-The pieces, in build order (`docs/atlas-matrix-backtesting-spec.md`):
+The pieces, in build order (per that spec):
 
 - **B1** `fetch_etf_history.py` — 12 SPDR sector ETFs + SPY, adjusted daily close (Component 2's data dependency).
 - **B2** `SignalReplay/` (C#) — replays production `signalExpression`s over history → `data/signal_values.csv` (Component 1).

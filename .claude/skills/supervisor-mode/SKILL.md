@@ -100,7 +100,7 @@ PROMPT_SHAPE (≤400w):
   hard_rules: ¬push ¬PR ¬touch(supervisor_owned)
   output_capture: long results → /tmp/sentinel-remediation/<task_id>/<file> ¬ inline
   git_ops_hygiene [MANDATORY]: every code dispatch MUST include the stanza:
-    "If `git status` shows supervisor-owned files modified (STATE.md, docs/plans/**, etc.),
+    "If `git status` shows supervisor-owned files modified (STATE.md, etc.),
      DO NOT stash/restore/checkout-them. `git checkout -b` and `git pull --ff-only` preserve
      dirty tracked files when the new ref doesn't touch them — proceed as-is."
     ¬PATTERN: 'MUST be clean' as a precondition → agents silently `git restore STATE.md`

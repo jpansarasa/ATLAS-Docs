@@ -127,3 +127,36 @@ Per `CLAUDE.md ## PHASE_TAGS`: tag at phase completion
 (`<workstream>-phase<N>-done`), add an entry to this file, and delete
 phase-specific iteration-history docs from `docs/plans/`. Reference
 docs (architecture, specs, runbooks, schemas, grammars) stay on main.
+
+## Docs current-state rebuild (2026-06-11)
+
+The documentation set was rewritten to describe the system **as implemented**
+(code-grounded briefs, live config, live DB — see `docs/README.md` for the
+curation policy). The following were retired from main in the same change;
+recover any of them via `git show 5cf265f7:<path>` (the last commit that
+contains them all):
+
+- `docs/atlas-matrix-mvp-plan.md` — matrix MVP plan (superseded by `docs/MATRIX.md`)
+- `docs/atlas-matrix-handoff-v2.md` — matrix handoff brief (superseded by `docs/MATRIX.md`)
+- `docs/atlas-matrix-realignment-brief.md` — realignment brief (superseded by `docs/MATRIX.md`)
+- `docs/atlas-matrix-backtesting-spec.md` — backtesting spec (the `backtest/` tooling it
+  specified remains in-repo; its READMEs carry self-contained summaries)
+- `docs/f4.6.4-prepass-rollout.md` — prepass rollout working doc (prepass is live;
+  current behavior documented in `docs/ARCHITECTURE.md` §5 and `SentinelCollector/README.md`)
+- `docs/sentinel-product-spec-v2.md` — vision-level product spec (current behavior in
+  `docs/ARCHITECTURE.md` + `SentinelCollector/README.md`)
+- `docs/plans/` (entire tree): `atlas-dsl-poc-plan.md`,
+  `atlas-dsl-poc-phase4-gpu-semantic-verifier.md`, `atlas-ws3-completion-plan.md`,
+  `sentinel-edge-realization.md`, `atlas-matrix/README.md`,
+  `atlas-matrix/epic-6-consumption-surfaces.md` — all phases complete; outcomes
+  recorded above and tagged per PHASE_TAGS
+- `docs/research/dsl-prior-art.md` — research notes (DSL era closed)
+- `docs/llm/ACCEPTANCE_CRITERIA.md` — LoRA-era ratified criteria; the pinned copy
+  (`SentinelCollector/training/acceptance_criteria.json`, sha-locked) remains the
+  machine-readable record
+- `docs/grammars/` (cod-dsl v1–v2.3 GBNF): the production grammar mirror lives at
+  `SentinelCollector/src/cod-prompts/cod-dsl-v2.3.gbnf` (the CPU rollback backend);
+  earlier grammar versions are history
+- `docs/README-TEMPLATE*.md` (7 files) — README templates; the canonical copies used by
+  tooling live in `.claude/skills/readme-consistency/` (`TEMPLATE.md`,
+  `TEMPLATE_CONFIG.md`, `TEMPLATE_SCRIPTS.md`)
