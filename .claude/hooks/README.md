@@ -47,13 +47,17 @@ the actually-tested content. `mark-tests-passed.sh` emits a stderr warning
 when it detects a dirty working tree at marker-write time; commit before
 relying on the marker.
 
-**Marker scope (per-worktree)**: the marker file is suffixed with a short
-hash of the worktree toplevel path (`sha1(git rev-parse --show-toplevel)`),
-so two worktrees of the same repo on the same host do not silently share a
-marker even when their trees happen to coincide. Path:
-`/tmp/atlas-test-markers/tests-passed.<12-hex>`. Note: `/tmp` is cleared on
-reboot — markers need to be regenerated after host reboot (this is intended;
-re-running tests after a reboot is cheap insurance).
+**Marker scope (write=per-worktree, read=global)**: the marker file is
+written with a suffix derived from the worktree toplevel path
+(`sha1(git rev-parse --show-toplevel)`), so two worktrees writing markers
+cannot overwrite each other. Path:
+`/tmp/atlas-test-markers/tests-passed.<12-hex>`. However, the push guard
+READS by scanning every marker file in that directory and matching by
+tree-hash — so a marker written by any worktree (including an agent
+worktree that has since been torn down) satisfies the gate for any
+subsequent push of the same tree content. Note: `/tmp` is cleared on
+reboot — markers need to be regenerated after host reboot (this is
+intended; re-running tests after a reboot is cheap insurance).
 
 **Marker format (v2)**: the marker is a single line
 `v2 tree <tree_hash> <iso8601_timestamp>`. The push guard rejects any other

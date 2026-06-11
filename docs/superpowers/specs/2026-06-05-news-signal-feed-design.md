@@ -1,7 +1,7 @@
 # News → matrix signal feed (Fix #1) — design
 
 **Date:** 2026-06-05
-**Fixes break-map #1/#3** (`docs/sentinel-matrix-break-map-2026-06-05.md`): news stopped feeding `macro_observations` because the macro router gates on an exact-match of the catalog against the (now fragmented) CoD description, and the qualitative path hardcodes `signal_identity_id = null` (which the projector skips).
+**Fixes break-map #1/#3** (break-map retired — history recoverable via git log; architecture context: `docs/atlas-matrix-handoff-v2.md`): news stopped feeding `macro_observations` because the macro router gates on an exact-match of the catalog against the (now fragmented) CoD description, and the qualitative path hardcodes `signal_identity_id = null` (which the projector skips).
 
 ## Goal
 
@@ -58,4 +58,4 @@ After deploy: confirm `macro_observations` `source_collector='sentinel'` rows re
 - Classifier latency × ~250 articles/day on vLLM (shared with ClaimVerifier/SectorTagger) — measure; batch if needed.
 - Signal-identity catalog coverage: if the matrix tracks few signals, much news maps to nothing (correctly) — surfaces a catalog-coverage gap.
 - Magnitude calibration (Tilt × Confidence) is the input to #6's decay model — keep the scale sane (−1..+1) so the projector math is interpretable.
-- Sector classification here also fixes break-map #2 (news sector tags) for the macro feed, independent of the broken `atlas_sector_code` resolution path.
+- Sector classification here also fixes break-map #2 (news sector tags) for the macro feed, independent of the broken `atlas_sector_code` resolution path. (Break-map retired — history recoverable via git log; architecture context: `docs/atlas-matrix-handoff-v2.md`.)

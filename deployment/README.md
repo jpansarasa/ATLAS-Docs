@@ -62,7 +62,7 @@ The OTEL stack (`compose.otel.yaml`) and the ATLAS application stack (`compose.y
 
 - **Tag-based selective deployment** — rebuild a single service (or a focused subsystem like `autofix`, `quality-check`, `merged-pr-watcher`) without restarting the rest.
 - **ZFS snapshots** — automatic pre-deployment snapshot on `nvme-fast/timeseries` and `nvme-fast/dashboard`; manual playbooks for rollback and retention.
-- **Vault-encrypted secrets** — all credentials live in `ansible/group_vars/vault.yml`; vault password file is `~/.ansible_vault_pass` (set in `ansible.cfg`).
+- **Vault-encrypted secrets** — all credentials live in `ansible/group_vars/vault.yml`; vault password file is `/home/james/.ansible_vault_pass` (set in `ansible.cfg`).
 - **Smoke tests** — `smoke-test.yml` exercises container status, HTTP `/health` (internal services + MCP servers), TimescaleDB connectivity, GPU + vLLM, and recent Loki errors.
 - **AutoFix + merged-PR + quality-check + buildkit-prune** — four independent systemd timer subsystems orchestrating alert-driven Claude Code runs, auto-deploy on PR merge, weekly Sentinel quality sampling, and BuildKit cache trimming.
 - **sandbox-manager (host systemd)** — non-containerised because containerd-runtime-in-container fails snapshot-mount prep; runs as `atlas` user with a single-binary sudoers rule for `nerdctl`.
@@ -190,7 +190,7 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 
 ### Secrets (`ansible/group_vars/vault.yml`)
 
-Encrypted with Ansible Vault. The vault password is auto-loaded from `~/.ansible_vault_pass` (configured in `ansible.cfg`). Inventoried groups:
+Encrypted with Ansible Vault. The vault password is auto-loaded from `/home/james/.ansible_vault_pass` (configured in `ansible.cfg`). Inventoried groups:
 
 - **Database** — `postgres_password`, `atlas_db_password`
 - **Collector API keys** — `fred_api_key`, `alphavantage_api_key`, `finnhub_api_key`, `nasdaq_api_key`, `openfigi_api_key`

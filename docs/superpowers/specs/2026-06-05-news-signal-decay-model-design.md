@@ -4,7 +4,7 @@
 **Branch:** `feat/news-signal-decay`
 **Status:** DESIGN ONLY — no implementation, no build in this branch.
 **Scope:** ThresholdEngine `ObservationCellProjector` news path (`source_collector='sentinel'`).
-**Context doc:** `docs/sentinel-matrix-break-map-2026-06-05.md` §break-6.
+**Context:** matrix health restored via #618–#625; break-map retired — history recoverable via git log; architecture context: `docs/atlas-matrix-handoff-v2.md`.
 **Predecessor fixes:** #613 (Fix #1, restores news→`macro_observations` feed — LIVE);
 `docs/superpowers/specs/2026-06-05-news-signal-feed-design.md` (feed value contract).
 
@@ -33,7 +33,7 @@ observation time. Two defects follow:
    publication-frequency step with a 10% floor keyed to the *latest* obs age,
    not a per-article 24h half-life. A 5-day-old burst of coverage stays ~fully
    fresh; the fast-perishable nature of news is gone
-   (break-map §break-6c).
+   (break-map §break-6c — retired doc, recoverable via git log).
 
 The deleted `SignalMagnitudeCalculator`
 (`git show 0be162dd^:SentinelCollector/src/Semantic/SignalMagnitudeCalculator.cs`)

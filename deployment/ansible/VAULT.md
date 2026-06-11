@@ -1,6 +1,6 @@
 # Ansible Vault
 
-Sensitive credentials encrypted in `group_vars/vault.yml`. Vault password: `~/.ansible_vault_pass` (configured in `ansible.cfg`).
+Sensitive credentials encrypted in `group_vars/vault.yml`. Vault password: `/home/james/.ansible_vault_pass` (configured in `ansible.cfg`).
 
 ## Encrypted Variables
 
@@ -56,7 +56,7 @@ ansible-vault edit group_vars/vault.yml
 
 ## Security
 
-- Keep `~/.ansible_vault_pass` with `chmod 600`
+- Keep `/home/james/.ansible_vault_pass` with `chmod 600`
 - Never commit vault password file
 - Commit `vault.yml` (it's encrypted)
 - Use strong randomly-generated passwords

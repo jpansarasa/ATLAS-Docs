@@ -114,7 +114,7 @@ Illustrative excerpt from ATLAS — substitute your own variable names:
 
 Secrets are ansible-vault encrypted in `group_vars/vault.yml`. The vault
 password file path is configured in `ansible.cfg`; in ATLAS it's
-`~/.ansible_vault_pass`. Decrypt:
+`/home/james/.ansible_vault_pass`. Decrypt:
 
 ```bash
 ansible-vault view group_vars/vault.yml

@@ -10,8 +10,8 @@
   References phase-1 spec `docs/plans/atlas-matrix/f4.6.4-openfigi-naics-rag-phase1.md` (not on disk;
   recoverable via tag/git-log). Line 68: "Phase 2 handles [foreign issuers] via the existing
   `GeminiResolverClient`."
-- `docs/sentinel-matrix-break-map-2026-06-05.md` line 6: "the **sector** dimension is blocked one
-  layer up at SecMaster instrument-NAICS coverage (~10%)".
+- Break-map STATUS line (retired doc, recoverable via git log): "the **sector** dimension is blocked one
+  layer up at SecMaster instrument-NAICS coverage (~10%)". Architecture context: `docs/atlas-matrix-handoff-v2.md`.
 
 The DOCUMENTED design is a **fail-through cascade** that exhausts local catalog → instruments →
 edgar → OpenFIGI → signal-identity → upstream-discovery (parallel fan-out) → identifier-confirmation
