@@ -4,7 +4,10 @@ The Sentinel digest is rebuilt around the signal×sector matrix (`matrix_cells`,
 ThresholdEngine WS3 projector output) as its spine, replacing the theme taxonomy.
 Each phase ships green and independently deployable.
 
-## Phase 1 (this PR): matrix read layer + sector heat table — additive
+STATUS: Phase 1 merged (#693) · Phase 2 merged (#695) · Phase 3 merged (#697) ·
+Phase 5 merged (#694) · Phase 4 = this PR (final).
+
+## Phase 1 — merged (#693): matrix read layer + sector heat table — additive
 
 - New `MatrixSectorQueryService` (raw Npgsql, SELECT-only) reading the latest
   `matrix_cells` per (pattern, sector) over a lookback window (`obs:` prefix
@@ -24,7 +27,7 @@ Each phase ships green and independently deployable.
 - `DigestOptions.SectorMatrix`: LookbackDays=7, RegimeMaxAgeDays=7,
   TopSignalsPerSector=5, DetailedSectorCount=6 (+ validator clauses).
 
-## Phase 2: article→sector grounding
+## Phase 2 — merged (#695): article→sector grounding
 
 - `ArticleSignalsSql` gains `atlas_sector_code`.
 - `ArticleSectorResolver` precedence: max-|tilt| signal sector → first non-null
@@ -32,7 +35,7 @@ Each phase ships green and independently deployable.
 - Selector + narrative `ArticleBlock` keyed by sector; `NarrativePerThemeCap` →
   `NarrativePerSectorCap`.
 
-## Phase 3: sector-skeleton digest
+## Phase 3 — merged (#697): sector-skeleton digest
 
 - Renderer reordered: narrative → sector heat strip → per-sector blocks (top
   `DetailedSectorCount` by ArticleCount + |NetScore|, then Macro-wide) → momentum
@@ -42,14 +45,14 @@ Each phase ships green and independently deployable.
   Signals / Noteworthy One-Offs.
 - Push notification leads with top sector.
 
-## Phase 4: deletion sweep
+## Phase 4 — this PR (final): deletion sweep
 
 - Delete `ThemeClassifier.cs`, `DigestTheme`, `IThemeClassifier`, theme metric
   `sentinel_digest_theme_observations_total`, DI line, tests; grep gate zero.
 - Grafana `sentinel.json` theme panel → sector panel.
 - AGENT_README / docs/MATRIX.md updates.
 
-## Phase 5 (ThresholdEngine, parallel after Phase 1): regime publisher
+## Phase 5 — merged (#694) (ThresholdEngine, parallel after Phase 1): regime publisher
 
 - New `SectorRegimeProjectionWorker` publishing `SectorScoreEvent` per projector
   cycle from latest `matrix_cells` aggregates — the hosted

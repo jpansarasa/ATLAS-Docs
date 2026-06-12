@@ -37,7 +37,7 @@ MAXIM: prepass output FEEDS classify as parameter → router derives grounded se
 DISTINCTIONS:
   `:sig:` news row ≠ raw-legacy sentinel row — same table/group; only `:sig:` feeds projector decay sum; legacy raw values dropped (G2).
   signal-dim (signal_identity_id, gates projection) ≠ sector-dim (atlas_sector_code, ¬gates).
-  matrix feed (macro_observations→projector→matrix_cells) ≠ digest consumer (matrix_cells+sentinel rows, separate read) ≠ extracted_observations (legacy numeric fallback sink, ¬read by matrix or digest).
+  matrix feed (macro_observations→projector→matrix_cells) ≠ digest consumer (matrix_cells+sector_regimes+sentinel rows, separate read; theme taxonomy retired — sector is the only digest axis) ≠ extracted_observations (legacy numeric fallback sink, ¬read by matrix or digest).
   digest news-momentum SQL filters source_collector='sentinel' AND signal_identity_id IS NOT NULL AND value_numeric BETWEEN -1.5 AND 1.5 — ¬`:sig:` infix filter; splits window at midpoint for early→late per-signal tilt trend (replaces former bias-vs-FRED-matrix view, removed: FRED matrix too stale/sparse → fake divergence). Legacy non-`:sig:` sentinel numeric rows WITH signal_identity_id enter digest momentum avg but ARE dropped by projector (G2). Two consumers see DIFFERENT effective inputs.
   news magnitude=decay-weighted SUM(K·tanh(S/K)) ≠ hard-data mean(Σoᵢ/n × freshness scalar). Unexpected news cell magnitude → CHECK Matrix:NewsDecay K/H.
   ThresholdEngine projector(DB-polled) ≠ gRPC MatrixUpdateStream/ObservationEventStream (separate event surface; matrix feed is DB-polled ¬gRPC).

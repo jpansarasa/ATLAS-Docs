@@ -193,6 +193,13 @@ cell = magnitude × sourceTrust × freshness × temporal × confidence × sector
   `atlas-matrix-primary`, `atlas-disagreement` (cross-source disagreement),
   `atlas-direct-substrate`, `atlas-matrix-trajectory` — plus Sentinel Pipeline
   `sentinel-matrix-pipeline` and `thresholdengine` ops panels.
+- **Digest sector heat** — the Sentinel digest reads `matrix_cells` directly:
+  `MatrixSectorQueryService` (raw SELECT-only Npgsql) takes the latest cell per
+  (pattern, sector) over a lookback window (`obs:` rows only) plus the latest
+  `sector_regimes` per sector; `SectorMatrixBuilder` rolls these into the 11-sector
+  heat table and per-sector detail blocks. Regimes attach only when fresh and backed
+  by contributing patterns. (The theme taxonomy is retired — sector is the only
+  digest axis.)
 - **Digest momentum** — a consumer of the *feed*, not of `matrix_cells`:
   `NewsMomentumQueryService` reads `macro_observations` directly
   (`source_collector='sentinel' AND signal_identity_id IS NOT NULL AND value_numeric BETWEEN

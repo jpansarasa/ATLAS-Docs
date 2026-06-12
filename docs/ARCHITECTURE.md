@@ -138,10 +138,11 @@ Detail in `SentinelCollector/README.md`; the matrix-facing half in [MATRIX.md](.
 4. **Signal classification**: one structured vLLM call per article → `macro_observations`
    `:sig:` rows (the matrix feed).
 5. **Digest** (Quartz, America/New_York: daily 07:00 Mon-Fri, weekly Fri 19:00, monthly
-   last-day 19:00): observations → themes (signal-derived via `SignalThemeMap`) → stats →
-   sector breakdown → news momentum (early/late tilt split) → cross-collector rollup →
-   LLM narrative (aggregate-first; token budget derived from the model context, shed-loop
-   drops lowest-ranked articles) → render (Chart.js theme radar) → ntfy push to `atlas-digest`.
+   last-day 19:00): observations → sector grounding (signal-derived via `ArticleSectorResolver`)
+   → stats → matrix sector heat (`matrix_cells` + `sector_regimes`) → news momentum (early/late
+   tilt split) → cross-collector rollup → LLM narrative (aggregate-first; token budget derived
+   from the model context, shed-loop drops lowest-ranked articles) → render (sector heat strip
+   + per-sector detail blocks) → ntfy push to `atlas-digest` (leads with top sector).
    Every enrichment degrades rather than failing the run — Tier-1 always ships.
 
 AutoApprove is on: approve at extraction ≥0.9 ∧ resolution ≥0.8 ∧ InstrumentId; reject below

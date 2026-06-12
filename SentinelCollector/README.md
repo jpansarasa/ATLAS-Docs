@@ -91,7 +91,7 @@ Schema is owned by EF Core migrations under `src/Data/Migrations/`. Database mig
 - **AutoApprove Backfill**: Replays `AutoApprovePolicy` against the historical Pending backlog
 - **Re-extract Background Service**: Optional one-shot recovery for legacy rows; supports `re-extract` and `resolve-only` modes with live-queue backpressure
 - **Review UI**: Server-rendered HTML queue at `/ui/review` (approve/reject/skip + inline corrections)
-- **Digest Service**: Daily / Weekly / Monthly digests with HTML / Markdown / JSON variants and ntfy push
+- **Digest Service**: Daily / Weekly / Monthly digests built on the signal×sector matrix — sector heat table (`matrix_cells` + `sector_regimes`) and per-sector detail blocks — with HTML / Markdown / JSON variants and ntfy push
 - **Event Streaming (gRPC)**: `ObservationEventStream` for observation events. `MatrixUpdateStream` retired (WS3-A3) — ThresholdEngine no longer subscribes; only ObservationEventStream remains.
 - **OpenTelemetry**: Traces (`SentinelCollector.*` activity sources), metrics (`SentinelCollector.*` meters incl. `EntityResolver`), and Serilog → OTLP logs
 
