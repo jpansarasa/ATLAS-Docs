@@ -272,7 +272,7 @@ deployment/
 │   │   ├── loki-rules/              # Loki recording/alerting rules
 │   │   ├── scripts/                 # Monitoring-side helpers
 │   │   ├── gpu-exporter/            # Custom NVIDIA GPU exporter (built by compose.otel.yaml.j2)
-│   │   ├── ups-exporter/            # APC UPS exporter (built by compose.otel.yaml.j2)
+│   │   ├── ups-exporter/            # APC UPS exporter (dormant — UPS hardware dead 2026-06-11; re-add to compose.otel.yaml.j2 with replacement)
 │   │   ├── prometheus.yml / loki-config.yaml / tempo.yaml / alertmanager.yml / otel-collector-config.yaml / grafana.ini / robots.txt
 │   ├── sandbox-kernel/              # IPython kernel image build context (`sandbox-kernel:latest`)
 │   ├── sandbox-manager/             # FastAPI host service (manager_server.py, requirements.txt)
@@ -355,7 +355,7 @@ ansible-playbook playbooks/zfs-cleanup.yml -e snapshot_tag=pre-deploy-20260527T1
 | WhisperService API | http://mercury:8090 |
 | vLLM OpenAI API | http://mercury:8000 |
 
-Prometheus, Alertmanager, Loki, Tempo, and the OTEL collector are intentionally NOT host-mapped — Grafana proxies queries to them across the `ai-inference` container network. The exporters (node, gpu, ups) are scraped by Prometheus over the same network.
+Prometheus, Alertmanager, Loki, Tempo, and the OTEL collector are intentionally NOT host-mapped — Grafana proxies queries to them across the `ai-inference` container network. The exporters (node, gpu) are scraped by Prometheus over the same network.
 
 ## Hard Stops
 
