@@ -13,6 +13,22 @@ Or inspect a single file at a tag without checkout:
 
 ## Tags
 
+### `digest-matrix-redesign-done` (@ b8dcd2a2)
+**Matrix-first digest redesign — COMPLETE.** The Sentinel digest is now
+organized by the signal×sector matrix instead of the 7-theme taxonomy:
+Sector Heat strip + per-sector Detail blocks (net tilt, regime, top signals
+cross-referenced with news momentum, cited articles), articles grounded to
+sectors via their `:sig:` rows' `atlas_sector_code`, narrative prompt
+rewritten (Executive Take / Sector Watch / Cross-Sector Signals /
+Noteworthy One-Offs). ThresholdEngine `SectorRegimeProjectionWorker` now
+publishes SectorScoreEvents so `sector_regimes` populates (first rows ever,
+2026-06-12). ThemeClassifier/DigestTheme deleted; Grafana theme panel →
+sector panel. PRs #693 (matrix read + heat), #695 (sector grounding),
+#697 (sector skeleton), #698 (deletion sweep), #694 (regime publisher).
+Plan retired from `docs/plans/digest-matrix-redesign.md` — recover via
+`git show digest-matrix-redesign-done:docs/plans/digest-matrix-redesign.md`.
+
+
 ### `pre-docs-consolidation-2026-05-26`
 Anchor tag preserving the full `docs/plans/` tree as it existed before
 consolidation. Includes every iteration-history plan, recon doc, and spike
