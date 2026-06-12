@@ -90,6 +90,7 @@ Marked `Destructive` (except the read-only listing).
 | `toggle_series` | Enable/disable collection | `series_id` |
 | `delete_series` | Delete series | `series_id` |
 | `trigger_collection` | Trigger immediate collection | `series_id` |
+| `register_series_secmaster` | (Re-)register an existing series with SecMaster | `series_id` |
 
 ## Project Structure
 

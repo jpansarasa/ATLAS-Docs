@@ -24,6 +24,7 @@ PATHS (distinct code — do not conflate):
   register [gRPC :5001 · collectors; fire-and-forget]:
     GUARD: Economic/EconomicIndicator only TrustedMacroCollectors; non-macro len<2→reject.
     proto ALIAS_MATCH=3 exists; C# ¬emits → dead-on-wire.
+    metadata["alias"]→series_id alias ensure (post-success, best-effort): Symbol gets UPPERCASED + resolution is case-SENSITIVE, so collectors alias the verbatim consumer id (mixed-case OFR mnemonic, FH/{sym} stream id); conflict (alias resolves elsewhere) → skip+WARN ¬steal; failure never fails the registration (outcome appended to Message).
 
 RESOLUTION MODEL ("fuzzy proposes, authoritative confirms"):
   local(.95/.85/.75)→[ticker]secmaster(.95)→edgar(.90)→OpenFIGI[.85-.90]→signal-alias(.90)→discovery-PROPOSES→CONFIRM(OpenFIGI→Finnhub→Gemini)→persist+embed|review-queue.

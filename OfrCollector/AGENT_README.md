@@ -3,8 +3,9 @@
 PURPOSE: collect OFR public data (FSI · STFM · HFM) → TimescaleDB → gRPC event-stream + macro_observations dual-write. ¬identity/classification(SecMaster owns) ¬thresholding(ThresholdEngine owns) ¬price-store.
 
 DATA MODEL + INVARIANTS (schema does NOT enforce):
-  FSI ≠ STFM/HFM shape: FSI = ONE wide row (composite + 8 contribution cols), per-date. STFM/HFM = series×observation (per-mnemonic). FSI ⊥ macro-substrate ⊥ SecMaster-registration (excluded from both).
-  INV register⊥collect: SecMaster register fires ONLY on series-ADD (AddStfm/HfmSeriesAsync, fire-and-forget `_ = Register…`, guarded _secMasterClient≠null). Collection cycles ¬register. Seeder-upserted rows ¬register (seed path skips it).
+  FSI ≠ STFM/HFM shape: FSI = ONE wide row (composite + 8 contribution cols), per-date. STFM/HFM = series×observation (per-mnemonic). FSI ⊥ macro-substrate ⊥ auto-SecMaster-registration (excluded from both; FSI ids registrable ONLY via admin one-shot /api/admin/fsi/register, assetClass Index).
+  INV register⊥collect: SecMaster register fires ONLY on series-ADD (AddStfm/HfmSeriesAsync, fire-and-forget `_ = Register…`, guarded _secMasterClient≠null). Collection cycles ¬register. Seeder-upserted rows ¬register (seed path skips it). Backfill escape hatch: admin re-register endpoints (POST /api/admin/{stfm|hfm}/series/{mnemonic}/register, /api/admin/fsi/register) — awaited ¬f-a-f, idempotent (SecMaster already-exists), 503 when SECMASTER_GRPC_ENDPOINT unset.
+  INV register-case: SecMaster uppercases Symbol + resolves case-SENSITIVELY → mixed-case mnemonic (FNYR-SOFR_99Pctl-A) ships metadata["alias"]=verbatim mnemonic → SecMaster series_id alias → ThresholdEngine pattern symbols resolve verbatim.
   INV register⊥tag: gRPC register (RegisterSeries, asset-class str) ⊥ REST signal-identity tag (by-alias, kebab id). Different transports, different SecMaster surfaces, different consumers.
   INV is_macro⊥signal_identity: is_macro = dual-write routing predicate; SignalIdentityId = matrix-join handle. Both default false/null → migrations additive. A macro row writes substrate even with null signal_identity (counted, ¬blocked).
   INV dual-write non-fatal: legacy ofr_*_observations row persists FIRST; substrate failure logged+counted ¬rethrown (except host-shutdown OCE → propagates). null value SKIPPED (substrate CHECK = exactly-one numeric|qualitative).
@@ -47,4 +48,4 @@ GOTCHAS:
   ✗ conflate is_macro with SignalIdentityId ✗ conflate gRPC-register with REST-tag ✗ expect on-disk series config (embedded JSON only)
   ✗ both-tables-empty-and-run (fail-fast)
 
-SEE: README.md §API/Config/Ports · Events/src/Events/Protos/observation_events.proto (ObservationEventStream) + secmaster.proto (RegisterSeries) · MacroObservationDualWriter.cs (idempotency/null-skip) · EventStreamService.cs:283-310 (FSI fan-out) · SeriesManagementService.cs:69,239,396-458 (add-only register) · OfrSeriesSignalIdentityResolver.cs (by-alias) · DependencyInjection.cs:82-127 (conditional wiring)
+SEE: README.md §API/Config/Ports · Events/src/Events/Protos/observation_events.proto (ObservationEventStream) + secmaster.proto (RegisterSeries) · MacroObservationDualWriter.cs (idempotency/null-skip) · FsiEventSeries.cs (FSI fan-out catalog — single source for stream AND registration) · SeriesManagementService.cs (add-only register + Build*Registration specs + admin re-register) · OfrSeriesSignalIdentityResolver.cs (by-alias) · DependencyInjection.cs:82-127 (conditional wiring)

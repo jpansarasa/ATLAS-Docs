@@ -114,6 +114,7 @@ REST endpoints live in `src/Endpoints/` (`ApiEndpoints`, `LiveDataEndpoints`, `A
 | `/api/admin/series/{seriesId}` | DELETE | Delete a series |
 | `/api/admin/series/{seriesId}/collect` | POST | Queue immediate collection (returns 429 if queue full or already queued) |
 | `/api/admin/series/{seriesId}/collect/status` | GET | Last queued/collection result for a series |
+| `/api/admin/series/register?seriesId=...` | POST | (Re-)register an existing series with SecMaster (awaited; query param because legacy ids contain `/`) |
 
 
 ### gRPC

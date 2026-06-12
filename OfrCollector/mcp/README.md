@@ -92,6 +92,9 @@ FSI breakdowns: Credit, Equity Valuation, Funding, Safe Assets, Volatility (cate
 | `trigger_hfm_series_collection` | Trigger collection for one HFM series | `mnemonic` |
 | `trigger_hfm_series_backfill` | Trigger backfill for one HFM series | `mnemonic`, `start_date`, `end_date` |
 | `list_hfm_series_admin` | List all HFM series including inactive | none |
+| `register_stfm_series_secmaster` | (Re-)register an existing STFM series with SecMaster | `mnemonic` |
+| `register_hfm_series_secmaster` | (Re-)register an existing HFM series with SecMaster | `mnemonic` |
+| `register_fsi_secmaster` | Register all FSI event-stream ids with SecMaster | none |
 
 ## Project Structure
 

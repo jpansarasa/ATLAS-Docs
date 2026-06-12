@@ -42,7 +42,7 @@ DISTINCTIONS:
   DI(namespace FinnhubCollector,src/DependencyInjection.cs) ≠ DI(namespace FinnhubCollector.Services,src/Services/ApplicationDependencyInjection.cs). same class name, two namespaces.
 
 CROSS-SERVICE:
-  OUT(sync): Finnhub API (all data). OUT(f-a-f,optional): SecMaster RegisterSeriesAsync(assetClass=Equity; gated SECMASTER_GRPC_ENDPOINT; failures=WARN,non-blocking). OUT: OTLP→otel-collector.
+  OUT(sync): Finnhub API (all data). OUT(f-a-f,optional): SecMaster RegisterSeriesAsync(assetClass=Equity; symbol=ticker; metadata["alias"]=FH/{symbol} stream id → SecMaster series_id alias so ThresholdEngine pattern symbols resolve; gated SECMASTER_GRPC_ENDPOINT; failures=WARN,non-blocking). Backfill: POST /api/admin/series/register?seriesId=… (awaited, idempotent; query param because legacy FH/{sym} ids contain '/'). OUT: OTLP→otel-collector.
   IN(gRPC :5001): ThresholdEngine subscribes ObservationEventStream.
   FEEDS: ThresholdEngine via quote events; SecMaster catalog+sector via registration+/api/search+/api/discover gateway.
 

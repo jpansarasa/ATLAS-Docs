@@ -117,6 +117,9 @@ REST surface lives in `src/Endpoints/`:
 | `/api/admin/hfm/series/{mnemonic}/toggle` | PUT | Toggle HFM series active status |
 | `/api/admin/hfm/series/{mnemonic}/collect` | POST | Trigger collection for a specific HFM series |
 | `/api/admin/hfm/series/{mnemonic}/backfill` | POST | Backfill HFM series (body: `{startDate?, endDate?}`, ISO dates) |
+| `/api/admin/stfm/series/{mnemonic}/register` | POST | (Re-)register an existing STFM series with SecMaster (awaited; returns outcome) |
+| `/api/admin/hfm/series/{mnemonic}/register` | POST | (Re-)register an existing HFM series with SecMaster (awaited; returns outcome) |
+| `/api/admin/fsi/register` | POST | Register all FSI event-stream series ids with SecMaster (awaited; returns per-id outcomes) |
 
 All "trigger" admin endpoints are fire-and-forget — work is queued via `ThreadPool.QueueUserWorkItem` and the response returns immediately. Watch the structured logs for outcome.
 
