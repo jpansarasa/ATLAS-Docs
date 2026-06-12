@@ -5,7 +5,7 @@ PERIOD: {{period_start}} → {{period_end}}
 AGGREGATE ROLL-UP (PRIMARY — the quantitative shape of the whole window):
 {{aggregate_rollup}}
 
-ARTICLE EXCERPTS (SECONDARY — supporting color; {{article_count}} articles; JSON array, each with publisher, theme, source_url, excerpt, and the extracted values):
+ARTICLE EXCERPTS (SECONDARY — supporting color; {{article_count}} articles; JSON array, each with publisher, sector, source_url, excerpt, and the extracted values):
 {{articles}}
 
 HOW TO READ THE AGGREGATE ROLL-UP:
