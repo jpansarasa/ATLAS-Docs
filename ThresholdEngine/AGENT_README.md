@@ -13,10 +13,10 @@ DATA MODEL + INVARIANTS:
 
 PATHS (distinct code — do not conflate):
   WS3-projector [ObservationCellProjector · BackgroundService · 5-min cycle · ONLY WIRED matrix_cells writer]
-    does: reads macro_observations(Kind=Numeric,MaxLimit=1000/cycle); groups by (signal_identity_id,source_collector); Project→WriteBatchAsync upsert.
+    does: two windowed keyset-paged reads of macro_observations(Kind=Numeric) — hard-data 366d(SourceIdExcludes=:sig:) + news 7d(SourceIdContains=:sig:); concat→groups by (signal_identity_id,source_collector); Project→WriteBatchAsync upsert. PageSize=MaxLimit=1000/page; time-window-bounded, ¬per-cycle-row-cap.
     formula: magnitude×source_trust×freshness×temporal×Confidence×sector_weight. Confidence=PatternConfiguration.Confidence(STATIC,default 0.75).
     does NOT: ¬gRPC-stream ¬ObservationCache ¬ThresholdEvent.
-    on-miss(cap): hits 1000-row cap → logs read-capped-warning; sparse vs dense behave differently.
+    coverage: HardObsRead/NewsObsRead logged + traced per cycle (thin hard-data coverage visible); ¬read-cap (windows bound the read, paging drains them). news window = 7×Matrix:NewsDecay.HalfLifeHours(24h).
     mode: absent Matrix:ObservationProjectorMode→Authoritative; typo→Shadow(¬Authoritative,same writes)+deferred-startup-warning. Off→zero cells+no error.
   live-eval [gRPC :5001 · MultiCollectorEventConsumerWorker · SeriesCollected/CollectionFailed]
     does: updates ObservationCache; EvaluateAllEnabledAsync; persists ThresholdEvent on crossing.
