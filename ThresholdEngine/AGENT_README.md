@@ -29,7 +29,7 @@ PATHS (distinct code — do not conflate):
 PROCESSING MODEL (projector cycle, in order):
   read descending(freshest-first; ascending→freezes matrix on stale rows) → drop null signal_identity_id → build ONE per-cycle signal→pattern map(GetAllAsync; dup signal_identity_id→FIRST ENABLED wins) → per group: unknown_signal if no pattern; pattern_disabled if Enabled=false(DISTINCT counters; neither projected) → news/hard-data fork → Project → upsert.
   news-path: magnitude=K·tanh(S/K); S=Σvᵢ·exp(−ln2·ageᵢ/H) 24h-half-life decay; freshness=1.0(¬floor; perishable).
-  hard-data-path: magnitude=Welford mean + step-decay freshness(10% floor).
+  hard-data-path: magnitude=pattern.SignalExpression evaluated vs live ObservationCache (domain-tuned normalization, e.g. unemployment=-(UNRATE-4)*2; clamped ±3) — NOT the raw value_numeric mean (huge FRED levels saturated every cell to ±3). Welford mean is the FALLBACK only (eval fail→WARN+signal_expression_eval_failed_total counter, or Core unit-tested directly). freshness still=step-decay(10% floor) keyed to latest obs (unchanged). SignalExpression NEVER applied to news.
   ¬discriminator: source_collector='sentinel' — `:sig:` infix in source_id is the real discriminator.
 
 PATTERN AUTO-DISABLE (load-time ¬per-cycle):
