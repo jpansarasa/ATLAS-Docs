@@ -35,7 +35,7 @@ UPDATE ofr_hfm_series SET is_macro = true WHERE mnemonic = 'hf-aum-net-flow';
 UPDATE ofr_stfm_series SET is_macro = true WHERE mnemonic = 'repo-funding-volume';
 ```
 
-Instrument-attributed series (those resolved to a SecMaster signal-identity that represents a specific instrument rather than a macro indicator) stay `is_macro = false`; the per-series signal-identity remains authoritative for that path. FSI is excluded from this slice — its top-level aggregate plus contribution columns don't fit the per-mnemonic observation shape `macro_observations` expects.
+Instrument-attributed series (those resolved to a SecMaster signal-identity that represents a specific instrument rather than a macro indicator) stay `is_macro = false`; the per-series signal-identity remains authoritative for that path. FSI takes a separate, catalog-driven path (independent of the per-series `is_macro` flag): its composite + 4 patterned subindices (`OFR_FSI[_CREDIT|_FUNDING|_VOLATILITY|_EM]`) fan into `macro_observations` keyed by `source_id=<FsiEventSeries.SeriesId>` (raw values; FSI is already in the projector's ±3 range). The other 4 contributions (`_EQUITY`/`_SAFE_ASSETS`/`_US`/`_AE`) have no ThresholdEngine pattern and are deliberately excluded.
 
 ### Series seed catalog
 
