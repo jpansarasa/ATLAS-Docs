@@ -7,7 +7,7 @@ DATA MODEL + INVARIANTS:
   INV sector-xor-signal: ck_series_config_sector_xor_signal → AtlasSectorCode IS NULL OR SignalIdentityId IS NULL. both-NULL=legal(newborn pre-tagger); both-set=rejected. ¬read as XOR.
   INV AsOf: live+ordinary-backfill→AsOf=date(CollectedAt); ALFRED-vintage→AsOf=realtime_start. ¬conflate.
   INV LastCollectedAt: BackfillService advances it; AlfredBackfillService deliberately¬touches it (scheduler keys start-window off it; vintage backfill must¬move it; also avoids ThresholdEngine re-processing decades of historical revisions).
-  INV macro-gate: computed each cycle from SignalIdentityId vs SecMaster; ¬per-series is_macro col.
+  INV dual-write-gate: computed each cycle from SignalIdentityId vs SecMaster per-signal `matrix_benchmark` flag; ¬per-series is_macro col. Flag is per-signal, orthogonal to Category (cuts across macro/rate/commodity/fx/credit).
   INV ObservationChannel: unbounded Channel.CreateUnbounded; no in-service reader; ¬live fanout → memory-growth hazard on long-running deploy.
   INV dot-sentinel: "." value→Value=null row INSERTED fred_observations; macro dual-write skips null; insert itself NOT skipped.
 
@@ -23,23 +23,23 @@ PATHS (distinct code — do not conflate):
   taggers [periodic background]: resolve NAICS→AtlasSectorCode + mnemonic→SignalIdentityId → write-back series_configs.
     on-miss: null/NotFound/transport-fail=tag left unchanged.
 
-PROCESSING macro-dual-write gate ("SecMaster owns the macro id-set; classify signal-identity¬series; fail closed, serve last-known-good"):
-  1. isMacro=SecMasterMacroSignalClassifier.IsMacroAsync(config.SignalIdentityId) once per series. null/unresolved SignalIdentityId→never macro.
-  2. classifier: 15-min-TTL cache of /api/signal-identities/by-category/macro. transport-fail+populated-cache→last-known-good(¬flap); cold-start-fail→empty-set fail-closed(¬dual-write).
-  3. per obs: always INSERT fred_observations(incl null). isMacro∧value≠null→MacroObservationWriter.WriteAsync(upsert last-write-wins; idempotent on triple provenance=source_collector+source_id+obs_time). null→skip substrate only.
+PROCESSING macro_observations dual-write gate ("SecMaster owns the matrix-benchmark id-set; classify signal-identity¬series; fail closed, serve last-known-good"):
+  1. isMatrixBenchmark=SecMasterMatrixBenchmarkClassifier.IsMatrixBenchmarkAsync(config.SignalIdentityId) once per series. null/unresolved SignalIdentityId→not a matrix benchmark.
+  2. classifier: 15-min-TTL cache of /api/signal-identities/matrix-benchmarks (per-signal `matrix_benchmark` flag; cuts across categories). transport-fail+populated-cache→last-known-good(¬flap); cold-start-fail OR fetch-returns-zero→empty-set fail-closed(¬dual-write).
+  3. per obs: always INSERT fred_observations(incl null). isMatrixBenchmark∧value≠null→MacroObservationWriter.WriteAsync(upsert last-write-wins; idempotent on triple provenance=source_collector+source_id+obs_time). null→skip substrate only.
 
 DISTINCTIONS:
-  fred_observations(verbatim level ALL series, incl null rows) ≠ macro_observations(transformed, macro-classified only; additive¬replacing).
+  fred_observations(verbatim level ALL series, incl null rows) ≠ macro_observations(transformed, matrix-benchmark-flagged only; additive¬replacing).
   BackfillService(AddSeries+InitialWorker+manual-admin)=publishes channel+gRPC events+advances LastCollectedAt ≠ AlfredBackfillService=repo-write only¬publishes¬touches LastCollectedAt.
   EventPublisher(→DB events table) ≠ ObservationChannel(in-mem, no reader).
   FredCollector¬sets is_primary: only calls RegisterSeries; SecMaster decides primacy.
-  SECMASTER_GRPC_ENDPOINT(registration) ≠ SECMASTER_REST_ENDPOINT(taggers+macro-gate): each independently optional, different silent semantics.
-  GRPC unset→_secMasterClient=null→register silently skipped¬WARN. REST unset→NullMacroSignalClassifier wired→¬dual-write.
-  macro-classified(SignalIdentityId=macro,AtlasSectorCode=null) ≠ instrument-attributed(SignalIdentityId≠macro) ≠ sector-rolled(AtlasSectorCode set,SignalIdentityId=null) ≠ untagged(both null).
+  SECMASTER_GRPC_ENDPOINT(registration) ≠ SECMASTER_REST_ENDPOINT(taggers+dual-write-gate): each independently optional, different silent semantics.
+  GRPC unset→_secMasterClient=null→register silently skipped¬WARN. REST unset→NullMatrixBenchmarkClassifier wired→¬dual-write.
+  matrix-benchmark-flagged(SignalIdentityId has matrix_benchmark=true) ≠ non-benchmark(SignalIdentityId flag false/absent) ≠ sector-rolled(AtlasSectorCode set,SignalIdentityId=null) ≠ untagged(both null). matrix_benchmark is per-signal ⊥ Category — a benchmark signal may be any category.
 
 CROSS-SERVICE:
   OUT gRPC RegisterSeriesAsync→SecMaster on AddSeries(f-a-f; GRPC unset→silently skipped¬WARN; RPC throws→WARN¬block).
-  OUT sync(cached): REST sector/signal resolve+macro-category classify→SecMaster.
+  OUT sync(cached): REST sector/signal resolve+matrix-benchmark classify(per-signal `matrix_benchmark` flag)→SecMaster.
   OUT dual-write→macro_observations(ConnectionStrings:AtlasData→fallback AtlasDb).
   IN: upstream FRED HTTP (Polly: WaitAndRetry+CircuitBreaker on transient/429).
   FEEDS: ThresholdEngine←gRPC ObservationEventStream :5001. MCP sidecar: fredcollector-mcp=separate container; ONLY host-accessible surface.
