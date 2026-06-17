@@ -30,7 +30,7 @@ PATHS (distinct code — do not conflate):
     does: Subscribe/GetEventsSince/Between/GetLatestEventTime/GetHealth over finnhub_quotes only.
     does NOT: ¬candles ¬sentiment ¬calendars (never stored → never streamed).
     on-miss(empty table): GetLatestEventTime returns DateTime.UtcNow ¬null/sentinel → consumer polling "latest time" sees forever-advancing clock against empty table. ¬use as new-data signal naively.
-  ⚠ GOTCHA startup-log-stale: Program.cs logs "mapped on port 5008" — WRONG; actual gRPC port=5001. ¬trust that log line.
+  gRPC port: Program.cs logs the actual bound port from Kestrel:GrpcPort (default 5001). ThresholdEngine subscribes ObservationEventStream on :5001.
 
 PROCESSING MODEL: WaitForTokenAsync(token-bucket 60/min,RATE_LIMITER_CAPACITY) → Finnhub HTTP(Polly: 3x exp-retry, CB 5-fail/60s, 30s timeout) → upsert(UNIQUE idempotent) → UpdateLastCollectedAt.
 MAXIM: store-then-serve; DB table=event log; channel=not.
