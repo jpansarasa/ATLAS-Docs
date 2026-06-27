@@ -34,6 +34,7 @@ PATHS (distinct code — do not conflate):
 
 PROCESSING MODEL: WaitForTokenAsync(token-bucket 60/min,RATE_LIMITER_CAPACITY) → Finnhub HTTP(Polly: 3x exp-retry, CB 5-fail/60s, 30s timeout) → upsert(UNIQUE idempotent) → UpdateLastCollectedAt.
 MAXIM: store-then-serve; DB table=event log; channel=not.
+PROFILE2 NEGATIVE-CACHE: GetCompanyProfileAsync remembers symbols that returned a permanent 4xx (403=plan-uncovered foreign listing · 404=unknown) in a static (process-wide) cache and SKIPS re-calling them for ProfileNegativeCacheTtl (default 24h, `Finnhub:ProfileNegativeCacheTtlHours`) — stops per-cycle quota burn + WARN spam on uncovered listings. 429/5xx NOT cached (transient). First 403/404/429 logs Info (not WARN); subsequent skips are Debug-only.
 
 DISTINCTIONS:
   live(/api/live/* + /api/market/status + /api/symbols/search + /api/discover) ≠ stored(/api/quotes,/api/sentiment,/api/analyst,/api/company): live=Finnhub-each-call+¬persist; stored=DB-only.
