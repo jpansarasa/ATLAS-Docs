@@ -16,7 +16,7 @@ flowchart LR
     end
 
     subgraph LlmBenchmark
-        FX[OllamaFixture<br/>backend selector]
+        FX[LlmFixture<br/>backend selector]
         BM[Benchmarks/<br/>CoVe + CoD + Epistemic tests]
         SC[Metrics/<br/>scorers + report]
     end
@@ -40,7 +40,7 @@ flowchart LR
     RJ -.curated.-> LD
 ```
 
-`OllamaFixture` health-checks the chosen backend, loads/unloads models (Ollama only; llama.cpp pins a single model at server start), and constructs `ChainOfVerification` / `ChainOfDensity` against the production prompt directory. Each test runs all golden entries, scores them, and writes a per-run JSON report.
+`LlmFixture` health-checks the chosen backend, loads/unloads models (Ollama only; llama.cpp pins a single model at server start), and constructs `ChainOfVerification` / `ChainOfDensity` against the production prompt directory. Each test runs all golden entries, scores them, and writes a per-run JSON report.
 
 ## Features
 
@@ -91,7 +91,7 @@ Driven by environment variables read by `BenchmarkConfiguration.Default`:
 | CoD | Overall CoD score | ≥ 75% |
 | Epistemic | JSON parse success rate | ≥ 90% |
 
-Per-entry HTTP timeout: 10 min (CoVe full run, `OllamaFixture.PerEntryTimeout`). Model load timeout: 5 min.
+Per-entry HTTP timeout: 10 min (CoVe full run, `LlmFixture.PerEntryTimeout`). Model load timeout: 5 min.
 
 ## Project Structure
 
@@ -101,7 +101,7 @@ LlmBenchmark/
 │   ├── ExtractionAccuracyTests.cs   # CoVe: full + quick + debug
 │   ├── CoDAccuracyTests.cs          # CoD summarization tests
 │   ├── EpistemicMarkerTests.cs      # JSON marker-parse tests
-│   └── OllamaFixture.cs             # Backend health-check + client factory
+│   └── LlmFixture.cs                # Backend health-check + client factory
 ├── Infrastructure/             # Config + client adapters
 │   ├── BenchmarkConfiguration.cs    # Env-var driven config
 │   ├── BenchmarkLlamaServerClient.cs
