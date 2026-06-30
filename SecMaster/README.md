@@ -41,7 +41,7 @@ flowchart TD
     SEM -->|RAG generation| LCR[llama-cpu-rag]
 ```
 
-Collectors register series at startup via gRPC streaming (fire-and-forget). Consumers resolve symbols to optimal data sources. Semantic search uses llama.cpp llama-server runners for both halves: `llama-cpu-embed` (bge-m3, OpenAI-style `/v1/embeddings`) for embeddings and `llama-cpu-rag` (qwen2.5:7b, `/completion`) for RAG synthesis. Both replaced ollama runners on 2026-06-11 — generation first (the ollama bundled CPU runner decoded the same GGUF ~30× slower than llama.cpp on this host), then embeddings (same GGUF blob, vectors verified interchangeable with the existing pgvector store at cosine ≥ 0.999999, so no re-embed). No ollama container remains; the `Ollama__*` config names and `IOllamaClient` seam are unchanged — they are the config surface, not the engine.
+Collectors register series at startup via gRPC streaming (fire-and-forget). Consumers resolve symbols to optimal data sources. Semantic search uses llama.cpp llama-server runners for both halves: `llama-cpu-embed` (bge-m3, OpenAI-style `/v1/embeddings`) for embeddings and `llama-cpu-rag` (qwen2.5:7b, `/completion`) for RAG synthesis. Both replaced ollama runners on 2026-06-11 — generation first (the ollama bundled CPU runner decoded the same GGUF ~30× slower than llama.cpp on this host), then embeddings (same GGUF blob, vectors verified interchangeable with the existing pgvector store at cosine ≥ 0.999999, so no re-embed). No ollama container remains; the `Llm__*` config names and `ILlmClient` seam are engine-agnostic by design — they name the config surface, not a runtime.
 
 ## Features
 
@@ -61,13 +61,13 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 |----------|-------------|---------|
 | `ConnectionStrings__SecMaster` | Primary PostgreSQL connection (atlas_secmaster) | Required |
 | `AtlasData__ConnectionString` | Cross-DB read connection for atlas_data (dedup grouping reads FRED/OFR/Sentinel observations). Empty/null short-circuits dedup providers to empty results. | empty |
-| `Ollama__Url` | Generation endpoint — a llama.cpp llama-server `/completion` base URL (production: `llama-cpu-rag`) | `http://llama-cpu-rag:8080` |
-| `Ollama__EmbeddingUrl` | llama.cpp `/v1/embeddings` base URL (production: `llama-cpu-embed`; falls back to `Url` if unset — the fallback must then also serve `/v1/embeddings`) | `http://llama-cpu-embed:8080` (appsettings) |
-| `Ollama__EmbeddingModel` | Informational tag for metrics/traces and the stored `Model` column — llama-server has exactly one model loaded per process (production: `bge-m3`) | `bge-m3` (appsettings; options-class default is `nomic-embed-text`) |
-| `Ollama__GenerationModel` | Informational tag for metrics/traces — llama-server has exactly one model loaded per process (production: `qwen2.5:7b-instruct`) | `qwen2.5:32b-instruct` |
-| `Ollama__MaxTextLength` | Truncate-before-embed character cap | `10000` |
-| `Ollama__MaxConcurrentGenerations` | Process-wide cap on in-flight generation requests (running + queued); a caller cancelled while queued never reaches the runner. Sized to llama-cpu-rag's `--parallel 4` | `4` |
-| `Ollama__GenerationMaxTokens` | `n_predict` cap per generation request; bounds compute on abandoned generations (≤0 sends -1 = unbounded) | `64` |
+| `Llm__Url` | Generation endpoint — a llama.cpp llama-server `/completion` base URL (production: `llama-cpu-rag`) | `http://llama-cpu-rag:8080` |
+| `Llm__EmbeddingUrl` | llama.cpp `/v1/embeddings` base URL (production: `llama-cpu-embed`; falls back to `Url` if unset — the fallback must then also serve `/v1/embeddings`) | `http://llama-cpu-embed:8080` (appsettings) |
+| `Llm__EmbeddingModel` | Informational tag for metrics/traces and the stored `Model` column — llama-server has exactly one model loaded per process (production: `bge-m3`) | `bge-m3` (appsettings; options-class default is `nomic-embed-text`) |
+| `Llm__GenerationModel` | Informational tag for metrics/traces — llama-server has exactly one model loaded per process (production: `qwen2.5:7b-instruct`) | `qwen2.5:32b-instruct` |
+| `Llm__MaxTextLength` | Truncate-before-embed character cap | `10000` |
+| `Llm__MaxConcurrentGenerations` | Process-wide cap on in-flight generation requests (running + queued); a caller cancelled while queued never reaches the runner. Sized to llama-cpu-rag's `--parallel 4` | `4` |
+| `Llm__GenerationMaxTokens` | `n_predict` cap per generation request; bounds compute on abandoned generations (≤0 sends -1 = unbounded) | `64` |
 | `SemanticSearch__VectorHighConfidenceThreshold` | High-confidence similarity threshold | `0.8` |
 | `SemanticSearch__DefaultMinScore` | Default minimum similarity score | `0.75` |
 | `SemanticSearch__VectorSimilarityFloor` | Hard floor on cosine scores before CoVe / downstream verification (kill switch: `0`) | `0.5` |
@@ -245,7 +245,7 @@ Proto: `Events/src/Events/Protos/secmaster.proto` (package `atlas.secmaster`, C#
 ```
 SecMaster/
 ├── src/
-│   ├── Configuration/    # Options classes (Ollama, SemanticSearch, Collectors, AtlasData, Enrichment, OpenFigi, EdgarIngestion, EntityResolution, InstrumentConfiguration, NaicsImporter, AtlasSectorRollupImporter, SignalIdentityImporter, InstrumentClassificationBackfill)
+│   ├── Configuration/    # Options classes (Llm, SemanticSearch, Collectors, AtlasData, Enrichment, OpenFigi, EdgarIngestion, EntityResolution, InstrumentConfiguration, NaicsImporter, AtlasSectorRollupImporter, SignalIdentityImporter, InstrumentClassificationBackfill)
 │   ├── Data/
 │   │   ├── Configurations/  # EF entity configurations
 │   │   ├── Entities/        # 12 entities — see list below

@@ -72,7 +72,7 @@ digests would silently serve stale weights (deploy `/health`+`/props` checks are
 | llama-cpu-embed (CPU 40-47) | 11439 | bge-m3 (16K ctx, batch=ubatch=8192) | Embeddings; pgvector-compatible with all existing rows |
 
 LoRA is fully removed from extraction; the served model name is the canonical HF id.
-whisper (CPU faster-whisper) and finbert are separate model sidecars. SecMaster's `Ollama__*`
+whisper (CPU faster-whisper) and finbert are separate model sidecars. SecMaster's `Llm__*`
 config keys are a naming seam only — the engine behind them is llama.cpp.
 
 ## 4. Data flow
