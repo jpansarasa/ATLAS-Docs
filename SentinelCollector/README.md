@@ -6,7 +6,7 @@ Alternative data collection and GPU vLLM JSON-CoD extraction service for ATLAS.
 
 ## Overview
 
-SentinelCollector collects unstructured web content from SearXNG news search, RSS feeds, and Cloudflare edge workers, then extracts economic observations via a GPU vLLM JSON Chain-of-Density (CoD) pipeline (`Extraction__Backend=VllmJson`, Qwen2.5-32B-AWQ). (The CPU `llama-server` DSL/GBNF pipeline remains the rollback path — `Extraction__Backend=LlamaServerDsl`, `CpuInference__Enabled=false` in prod.) Extracted observations are resolved against SecMaster (with Finnhub + AlphaVantage + Gemini fallbacks) and streamed to ThresholdEngine over gRPC. The service also runs a digest generator, a browser-based review UI, and validation-trigger machinery. (The matrix-cell enrichment stream `MatrixUpdateStream` was retired in WS3-A3; only `ObservationEventStream` remains active.)
+SentinelCollector collects unstructured web content from SearXNG news search, RSS feeds, and Cloudflare edge workers, then extracts economic observations via a GPU vLLM JSON Chain-of-Density (CoD) pipeline (`Extraction__Backend=VllmJson`, Qwen2.5-32B-AWQ). (The CPU `llama-server` DSL/GBNF pipeline remains the rollback path — `Extraction__Backend=LlamaServerDsl`.) Extracted observations are resolved against SecMaster (with Finnhub + AlphaVantage + Gemini fallbacks) and streamed to ThresholdEngine over gRPC. The service also runs a digest generator, a browser-based review UI, and validation-trigger machinery. (The matrix-cell enrichment stream `MatrixUpdateStream` was retired in WS3-A3; only `ObservationEventStream` remains active.)
 
 ## Architecture
 
@@ -82,8 +82,8 @@ Schema is owned by EF Core migrations under `src/Data/Migrations/`. Database mig
 - **Validation Triggers**: Search-template triggers fired on data releases (e.g. GDP) or threshold crossings (e.g. Sahm-rule)
 - **Content Normalization**: HTML/PDF → markdown via `markitdown-mcp` + `trafilatura` pre-wash
 - **GPU vLLM JSON-CoD Extraction** (live): JSON-schema-constrained CoD against the GPU `vllm-server` (Qwen2.5-32B-AWQ, `response_format=json_schema`); the JSON document is lifted to the same `DocumentAst` via `dsl-parser-mcp` `/parse_json`, so the verifier + adapter + downstream consumers are unchanged (`Extraction__Backend=VllmJson`)
-- **CPU llama-server DSL Extraction** (rollback): Grammar-constrained CoD against `llama-server` on CPU; parsed + verified by `dsl-parser-mcp` (`Extraction__Backend=LlamaServerDsl`, `CpuInference__Enabled=false` in prod)
-- **CoVe + Chain of Density (legacy V1/V2 paths)**: `Ollama` / `LlamaServer` / `VllmServer` backends remain in `ExtractionOptions` and still drive shadow runs; production `IMergedExtractionService` binding routes to the `VllmJson` GPU JSON-CoD path
+- **CPU llama-server DSL Extraction** (rollback): Grammar-constrained CoD against `llama-server` on CPU; parsed + verified by `dsl-parser-mcp` (`Extraction__Backend=LlamaServerDsl`)
+- **CoVe + Chain of Density (legacy V1/V2 paths)**: `LlamaServer` / `VllmServer` backends remain in `ExtractionOptions` and still drive shadow runs; production `IMergedExtractionService` binding routes to the `VllmJson` GPU JSON-CoD path
 - **Tool-Augmented CoVe / Epistemic Markers** (opt-in): `Extraction__UseToolAugmented*` flags drive a sandbox-manager-backed code-execution loop
 - **Entity Resolution Pre-pass**: spaCy NER sidecar → SecMaster `/api/resolve-entities` grounding for the V2 pipeline
 - **SecMaster Resolution Cascade**: `ResolutionWorker` (Finnhub → SecMaster), nightly AlphaVantage sweep, optional Gemini fallback
@@ -103,9 +103,8 @@ Selected env vars (full list in `src/Configuration/*Options.cs`). Double-undersc
 |----------|-------------|---------|
 | `ConnectionStrings__AtlasDb` | PostgreSQL connection string | **Required** |
 | `Kestrel__HttpPort` / `Kestrel__GrpcPort` | Bound listen ports | `8080` / `5001` |
-| `Extraction__Backend` | `Ollama` \| `LlamaServer` \| `VllmServer` \| `LlamaServerDsl` \| `VllmJson` | `Ollama` (code default); production sets `VllmJson` (GPU JSON-CoD, live). `LlamaServerDsl` = CPU DSL rollback path |
+| `Extraction__Backend` | `LlamaServer` \| `VllmServer` \| `LlamaServerDsl` \| `VllmJson` | `VllmServer` (code default); production sets `VllmJson` (GPU JSON-CoD, live). `LlamaServerDsl` = CPU DSL rollback path |
 | `Extraction__Model` | LLM model id (passed verbatim to backend) | `llama3.1:70b-instruct-q4_K_M` (code) / `Qwen/Qwen2.5-32B-Instruct-AWQ` (prod) |
-| `Extraction__OllamaEndpoint` | Legacy `Ollama` backend endpoint (code default only — no ollama container exists in the topology; production backend is `VllmJson`) | `http://ollama-gpu:11434` |
 | `Extraction__LlamaServerEndpoint` | llama.cpp server endpoint | `http://llama-server:8080` |
 | `Extraction__VllmEndpoint` | vLLM endpoint (legacy V1/V2 path) | `http://vllm-server:8000` |
 | `Extraction__ContextWindowSize` | LLM context window | `32768` |
@@ -118,7 +117,6 @@ Selected env vars (full list in `src/Configuration/*Options.cs`). Double-undersc
 | `Extraction__GeminiResolverEnabled` / `__GeminiFallbackEnabled` | V2 Rule 2.5 + V1 Phase 7 Gemini fallback | `false` |
 | `CpuCod__DslParserEndpoint` | `dsl-parser-mcp` sidecar URL | `http://dsl-parser-mcp:3120` |
 | `CpuCod__PromptDirectory` / `__PromptFile` / `__GrammarFile` | CoD prompt + GBNF grammar (host-mounted) | `/prompts/cod` / `cod_dsl_v8_baseline.txt` / `cod-dsl-v2.3.gbnf` |
-| `CpuInference__Endpoint` / `__Model` / `__Enabled` | Legacy CPU-inference client for CoD summarization + epistemic markers (disabled in prod; the default endpoint names a retired ollama container) | `http://ollama-cpu:11434` / `qwen2.5:7b-instruct` / `true` (prod: `false`) |
 | `EdgeSync__Endpoint` / `__ApiKey` | Cloudflare worker sync endpoint | **Required** |
 | `EdgeSync__BatchSize` / `__PollIntervalSeconds` | Edge sync batch size / poll interval | `100` / `300` |
 | `Searxng__Endpoint` | SearXNG instance URL | `https://searxng.elasticdevelopment.com` |
@@ -188,7 +186,7 @@ REST surface lives under `src/Endpoints/`:
 | `/ui/review/{id}/action` | POST | Form-encoded approve/reject/skip submission |
 | `/swagger` | GET | OpenAPI UI (development environment only) |
 | `/health` | GET | Aggregate health with per-check status |
-| `/health/ready` | GET | Readiness (database + LLM backend — the check is named `ollama` for legacy reasons but pings the active `IOllamaClient` binding, vLLM in production) |
+| `/health/ready` | GET | Readiness (database + LLM backend — the `llm` check pings the active `ILlmClient` binding, vLLM in production) |
 | `/health/live` | GET | Liveness |
 
 
@@ -228,10 +226,10 @@ SentinelCollector/
 │   ├── Entities/         # RawContent, ExtractedObservation, RssFeed, ValidationTrigger, ...
 │   ├── Extraction/       # CoVe, CoD, ExtractionSchemaV2, DSL adapter, prompt providers, tool-augmented variants
 │   ├── Grpc/             # EventStreamService (active); MatrixCellUpdateStreamService retired (WS3-A3)
-│   ├── HealthChecks/     # DatabaseHealthCheck, OllamaHealthCheck
+│   ├── HealthChecks/     # DatabaseHealthCheck, LlmHealthCheck
 │   ├── Publishers/       # EventPublisher (writes to events table for gRPC stream)
 │   ├── Semantic/         # EntityResolver, ClaimVerifier, SectorTagger, MatrixCellEnrichmentPublisher
-│   ├── Services/         # HTTP clients (Ollama/LlamaServer/Vllm/Markitdown/Trafilatura/SpacyNer/SecMaster/Finnhub/AlphaVantage/Gemini), digest, normaliser, DSL extraction, CoVe verifier
+│   ├── Services/         # HTTP clients (LlamaServer/Vllm/Markitdown/Trafilatura/SpacyNer/SecMaster/Finnhub/AlphaVantage/Gemini), digest, normaliser, DSL extraction, CoVe verifier
 │   ├── Telemetry/        # SentinelActivitySource, SentinelMeter
 │   ├── Workers/          # EdgeSync, Extraction, Searxng + RSS schedulers, Resolution, ReExtract, Validation, Digest, AlphaVantageSweep, MacroSignalIdentityCatalogRefresh
 │   ├── prompts/          # Default prompt templates baked into the source tree (production uses host mount)

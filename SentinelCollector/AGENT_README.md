@@ -2,7 +2,7 @@
 
 NOTE: this card covers the news→matrix pipeline which spans SentinelCollector AND MacroSubstrate (see MacroSubstrate/README for the shared write path).
 
-PURPOSE: news-article → `(signal×sector)` matrix tilt via GPU vLLM JSON-CoD extraction (Extraction:Backend=VllmJson, Qwen2.5-32B-AWQ) + `:sig:` rows in macro_observations. ¬gRPC cell push ¬digest ¬extraction/CoVe/CoD paths addressed here. (CPU llama-server DSL extraction = rollback path; CpuInference disabled.)
+PURPOSE: news-article → `(signal×sector)` matrix tilt via GPU vLLM JSON-CoD extraction (Extraction:Backend=VllmJson, Qwen2.5-32B-AWQ) + `:sig:` rows in macro_observations. ¬gRPC cell push ¬digest ¬extraction/CoVe/CoD paths addressed here. (CPU llama-server DSL extraction = rollback path.)
 
 DATA MODEL + INVARIANTS:
   INV `:sig:` infix: news row identified SOLELY by literal `:sig:` in source_id (`{rawContentId}:sig:{signalId}`). ¬schema-enforced — string contract; FOUR artefacts move together: producer (MacroObservationRouter) + projector const (ObservationCellProjector) + consumer (NewsMomentumQueryService) + digest reader (DigestQueryService.ArticleSignalsSql + TryParseRawContentId). change-all-or-none.

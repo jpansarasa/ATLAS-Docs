@@ -1,6 +1,6 @@
 # LlmBenchmark
 
-C# xUnit harness that measures Sentinel LLM extraction quality (CoVe / CoD / epistemic markers) against a golden dataset, across configurable models and backends (Ollama, llama.cpp).
+C# xUnit harness that measures Sentinel LLM extraction quality (CoVe / CoD / epistemic markers) against a golden dataset, using a llama.cpp server as the inference backend.
 
 ## Overview
 
@@ -16,15 +16,12 @@ flowchart LR
     end
 
     subgraph LlmBenchmark
-        FX[LlmFixture<br/>backend selector]
+        FX[LlmFixture<br/>llama.cpp client]
         BM[Benchmarks/<br/>CoVe + CoD + Epistemic tests]
         SC[Metrics/<br/>scorers + report]
     end
 
-    subgraph Backends
-        OL[Ollama]
-        LC[llama.cpp server]
-    end
+    LC[llama.cpp server]
 
     subgraph Outputs
         RJ[Results/benchmark_results_*.json]
@@ -33,23 +30,22 @@ flowchart LR
 
     GD --> BM
     PR --> BM
-    FX --> OL
     FX --> LC
     BM --> SC
     SC --> RJ
     RJ -.curated.-> LD
 ```
 
-`LlmFixture` health-checks the chosen backend, loads/unloads models (Ollama only; llama.cpp pins a single model at server start), and constructs `ChainOfVerification` / `ChainOfDensity` against the production prompt directory. Each test runs all golden entries, scores them, and writes a per-run JSON report.
+`LlmFixture` health-checks the llama.cpp server and constructs `ChainOfVerification` / `ChainOfDensity` against the production prompt directory. The served model is pinned at the llama.cpp server's start, so the fixture's `LoadModelAsync` / `UnloadModelAsync` are no-ops kept only for test bookkeeping. Each test runs all golden entries, scores them, and writes a per-run JSON report.
 
 ## Features
 
 - **Three benchmark tracks**: CoVe extraction (`ExtractionAccuracyTests`), CoD summarization (`CoDAccuracyTests`), epistemic-marker JSON extraction (`EpistemicMarkerTests`)
 - **Quick-screen mode**: 2-entry / 5-min-per-entry / F1 ≥ 40% gate before committing to a full run
-- **Dual backend**: Ollama (per-test model load/unload) or llama.cpp server (fixed model, no swapping)
+- **Single backend**: llama.cpp server — model pinned at server start, no in-process swapping
 - **Production prompts**: reads from `SentinelCollector/src/prompts` — no test-local copies to drift
 - **Per-entry JSON reports**: written to `Results/` with full score breakdown + timing stats
-- **Convenience scripts**: backend selection, sequential multi-model runs, top-5 with VRAM recycling, tokens/sec validator
+- **Convenience scripts**: single run, sequential full run, quick screen, tokens/sec validator
 
 ## Test Categories
 
@@ -69,13 +65,11 @@ Driven by environment variables read by `BenchmarkConfiguration.Default`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `BENCHMARK_BACKEND` | `ollama` or `llamacpp` (also `llama.cpp`, `llama-cpp`) | `ollama` |
-| `BENCHMARK_MODEL` | Ollama model name to test (single-model run) | `qwen2.5:32b-instruct` |
-| `OLLAMA_ENDPOINT` | Ollama base URL | `http://localhost:11434` |
-| `LLAMA_SERVER_ENDPOINT` | llama.cpp server base URL | `http://localhost:8080` |
-| `LLAMA_CHAT_TEMPLATE` | Chat template for llama.cpp completions | Qwen2.5 ChatML |
-| `LLAMA_STOP_TOKENS` | Comma-separated stop tokens for llama.cpp | `<\|im_end\|>,<\|endoftext\|>` |
-| `OLLAMA_USE_SCHEMA` | `true` enables Ollama `format` schema enforcement (fine-tuned models only) | `false` |
+| `LLAMA_SERVER_ENDPOINT` | llama.cpp server base URL (the only backend) | `http://localhost:8080` |
+| `LLAMA_CHAT_TEMPLATE` | Chat template applied client-side; `{0}`/`{prompt}` placeholder. Empty string → prompt sent raw | Qwen2.5 ChatML (`<\|im_start\|>user\n{0}<\|im_end\|>\n<\|im_start\|>assistant\n`) |
+| `LLAMA_STOP_TOKENS` | Comma-separated stop tokens | `<\|im_end\|>,<\|endoftext\|>` |
+
+JSON-schema-constrained decoding is disabled by default (`BenchmarkConfiguration.UseLlamaCppJsonSchema = false`) because strict grammar constraints lower extraction accuracy; it is a code-level flag, not env-driven.
 
 ### Thresholds (hard-coded in test classes)
 
@@ -91,7 +85,7 @@ Driven by environment variables read by `BenchmarkConfiguration.Default`:
 | CoD | Overall CoD score | ≥ 75% |
 | Epistemic | JSON parse success rate | ≥ 90% |
 
-Per-entry HTTP timeout: 10 min (CoVe full run, `LlmFixture.PerEntryTimeout`). Model load timeout: 5 min.
+Per-entry extraction timeout: 10 min (`LlmFixture.PerEntryTimeout`); HTTP client timeout: 10 min (`LlmFixture.HttpTimeout`).
 
 ## Project Structure
 
@@ -118,41 +112,29 @@ LlmBenchmark/
 ├── TestData/                   # golden_dataset.json + raw_content/ (copied to build output)
 ├── eval-substrate/             # vLLM-acceptance criteria + scorecard sidecars
 ├── scripts/                    # Python harness for vLLM LoRA acceptance (see scripts/README.md)
-├── run-benchmarks.sh           # Single run with backend / model / filter flags
-├── run-all-benchmarks.sh       # Sequential overnight run across 5 models (in-container)
-├── run-top5-benchmark.sh       # QuickBenchmark with container recycling for clean VRAM
-├── validate-models.sh          # Tokens/sec smoke test via /api/generate (pass: ≥ 20 tok/s)
+├── run-benchmarks.sh           # Single run against the llama.cpp server, with --filter flags
+├── run-all-benchmarks.sh       # Sequential full-extraction run, timestamped log (in-container)
+├── run-top5-benchmark.sh       # QuickBenchmark screen against the llama.cpp server, timestamped log
+├── validate-models.sh          # Tokens/sec smoke test via llama.cpp /completion (pass: ≥ 20 tok/s)
 ├── BENCHMARKS.md               # Current leaderboard + key findings
 └── LlmBenchmark.csproj         # net10.0 xUnit test project; refs SentinelCollector
 ```
 
 ## Running Benchmarks
 
-The harness builds against `SentinelCollector`, so it runs inside the `SentinelCollector` devcontainer. The `run-benchmarks.sh` wrapper handles `nerdctl compose up/down` and env passthrough.
+The harness builds against `SentinelCollector`, so it runs inside the `SentinelCollector` devcontainer. The `run-benchmarks.sh` wrapper brings the devcontainer up/down and runs the tests against an already-running llama.cpp server (it does **not** start an inference backend). Point it at your server with `LLAMA_SERVER_ENDPOINT` (default: the `llama-server` container). The served model is whatever the llama.cpp server was started with.
 
-### Quick benchmark, Ollama default (qwen2.5:32b-instruct)
+### Quick benchmark (2-entry screen)
 
 ```bash
 cd LlmBenchmark
 ./run-benchmarks.sh
 ```
 
-### Specific Ollama model
+### Alternate llama.cpp endpoint
 
 ```bash
-./run-benchmarks.sh --model "qwen3:30b-a3b"
-```
-
-### llama.cpp backend (model pinned at server start)
-
-```bash
-./run-benchmarks.sh --backend llamacpp
-```
-
-### Alternate Ollama endpoint (e.g. CPU instance)
-
-```bash
-./run-benchmarks.sh --endpoint http://ollama-cpu:11434 --model "qwen2.5:7b-instruct"
+LLAMA_SERVER_ENDPOINT=http://my-llama-host:8080 ./run-benchmarks.sh
 ```
 
 ### Custom filter (full extraction run)
@@ -171,9 +153,9 @@ cd LlmBenchmark
 
 | Script | Use |
 |---|---|
-| `./run-all-benchmarks.sh` | Sequential full-extraction run across 5 hard-coded models, writes timestamped log. Must already be inside the devcontainer (`/workspace` paths). |
-| `./run-top5-benchmark.sh` | QuickBenchmark across top 5 models with `docker restart ollama-gpu` between each for clean VRAM. Writes per-model logs under `results_<ts>/`. |
-| `./validate-models.sh [results.json]` | Sends a representative extraction prompt to each model via `/api/generate`, reports tokens/sec, pass gate = 20 tok/s. |
+| `./run-all-benchmarks.sh` | Sequential full-extraction run against the running llama.cpp server, writes a timestamped log. Must already be inside the devcontainer (`/workspace` paths). |
+| `./run-top5-benchmark.sh` | QuickBenchmark screen against the running llama.cpp server, writes a timestamped log. (The model is pinned at server start; to compare models, restart llama-server per GGUF and re-run.) |
+| `./validate-models.sh [results.json]` | Sends a representative extraction prompt to the llama.cpp `/completion` endpoint, reports tokens/sec, pass gate = 20 tok/s. |
 
 ### Building / compiling separately
 
