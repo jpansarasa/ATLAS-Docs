@@ -150,6 +150,8 @@ Compose declares: image `finnhub-mcp:latest`, container `finnhub-mcp`, `depends_
 | 8080 | HTTP (Kestrel, in-container) — serves `/mcp` and `/health` |
 | 3105 | Host mapping → container 8080 |
 
+> **Not this project:** port `3120` is the shared `dsl-parser-mcp` compose sidecar (a separate service); it is neither served nor consumed by this MCP.
+
 Endpoints from the host: `http://mercury:3105/mcp` and `http://mercury:3105/health`.
 
 ## Claude Desktop Integration

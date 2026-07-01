@@ -89,6 +89,8 @@ All keys are bound from `appsettings.json` and can be overridden by environment 
 
 > The C# `RoutingOptions` class hard-codes a more conservative default (`critical→[ntfy,email]`, `warning→[ntfy]`, `info→[ntfy]`) that takes effect only if the `Routing` section is missing entirely. The values above are the as-shipped defaults from `appsettings.json` and override the class default in normal use.
 
+Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; the production compose file uses the `__` form. See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
+
 ## API Endpoints
 
 ### REST API (Port 8080, internal)

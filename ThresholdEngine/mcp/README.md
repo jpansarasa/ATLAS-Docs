@@ -49,9 +49,9 @@ Environment variables read by `Program.cs`:
 
 Logging is hard-wired to Serilog `MinimumLevel.Warning` with the compact JSON formatter in `Program.cs`; the `THRESHOLDENGINE_MCP_LOG_LEVEL` env var listed in the deployed compose is currently not read by the application.
 
-## MCP Tools
+## API Endpoints
 
-All tools are surfaced via MCP Streamable HTTP on `/mcp`. The transport is registered with `AddMcpServer().WithHttpTransport()` and mapped via `app.MapMcp("/mcp")` in `Program.cs`.
+The public API surface of this sidecar is its MCP tool set; the only plain HTTP endpoints are `POST /mcp` (MCP Streamable HTTP transport) and `GET /health`. All tools are surfaced via MCP Streamable HTTP on `/mcp`. The transport is registered with `AddMcpServer().WithHttpTransport()` and mapped via `app.MapMcp("/mcp")` in `Program.cs`.
 
 ### Evaluation
 
@@ -168,6 +168,8 @@ Edit `~/.config/Claude/claude_desktop_config.json` (Linux) or `~/Library/Applica
 |------|--------------------------------------------------------------------------|
 | 8080 | MCP + `/health` (container internal; Kestrel `ASPNETCORE_URLS`)          |
 | 3104 | Host-mapped passthrough of container `:8080` (compose `ports: 3104:8080`)|
+
+> **Not this project:** port `3120` is the shared `dsl-parser-mcp` compose sidecar (a separate service); it is neither served nor consumed by this MCP.
 
 Endpoints:
 - MCP Streamable HTTP: `http://mercury:3104/mcp`

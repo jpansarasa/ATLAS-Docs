@@ -33,9 +33,9 @@ The MCP server listens on container port `8080` (path `/mcp`) and is published t
 | `FREDCOLLECTOR_MCP_TIMEOUT_SECONDS` | `30` | HTTP client timeout for backend calls |
 | `FREDCOLLECTOR_MCP_LOG_LEVEL` | `Warning` | Declared in Containerfile/compose; **not currently read by `Program.cs`** (Serilog minimum level is hardcoded to `Warning`) |
 
-## MCP Tools
+## API Endpoints
 
-All tools are served over Streamable HTTP at `POST /mcp`. There is no separate REST API surface — tool invocations are MCP requests, not query-string GETs.
+The public API surface of this server is its MCP tool set (there is no REST query surface). All tools are served over Streamable HTTP at `POST /mcp` — tool invocations are MCP requests, not query-string GETs. The plain HTTP surface is limited to `POST /mcp` and `GET /health` (see [HTTP Endpoints](#http-endpoints)).
 
 ### Data Query Tools (read-only)
 
@@ -113,6 +113,8 @@ ansible-playbook playbooks/deploy.yml --tags fredcollector-mcp
 |------|-------|-------------|
 | `8080` | Container | Kestrel HTTP (MCP `/mcp` + `/health`) |
 | `3103` | Host | Published from container `8080` (see `ports_mcp.fred_collector` in `deployment/ansible/group_vars/all.yml`) |
+
+> **Not this project:** port `3120` is the shared `dsl-parser-mcp` compose sidecar (a separate service); it is neither served nor consumed by this MCP.
 
 MCP endpoint: `http://mercury:3103/mcp`
 

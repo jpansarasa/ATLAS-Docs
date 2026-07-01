@@ -136,6 +136,8 @@ Selected env vars (full list in `src/Configuration/*Options.cs`). Double-undersc
 | `MacroSignalIdentityCatalog__Categories` | SecMaster category allowlist for alias warmup | `["macro","rate"]` |
 | `OpenTelemetry__OtlpEndpoint` / `__ServiceName` / `__ServiceVersion` | OTLP collector + resource attrs | `http://otel-collector:4317` / `sentinel-collector` / `1.0.0` |
 
+Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; the production compose file uses the `__` form. See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
+
 ## API Endpoints
 
 REST surface lives under `src/Endpoints/`:

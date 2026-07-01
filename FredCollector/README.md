@@ -84,6 +84,8 @@ Runtime configuration is provided via environment variables (`__` maps to `:` fo
 >
 > **Design-time only** — `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` are read **only** by `FredCollectorDbContextFactory` for `dotnet ef migrations` at design time, with defaults `localhost` / `5432` / `atlas_data` / `atlas_user` / *(required)*. They have no effect on the running container, which always uses `ConnectionStrings__AtlasDb`.
 
+Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; the production compose file uses the `__` form. See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
+
 ## API Endpoints
 
 ### REST API (port 8080, internal)

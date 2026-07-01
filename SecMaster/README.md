@@ -136,6 +136,8 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `OpenTelemetry__ServiceName` | Service name tag in OTEL resource attributes | `SecMaster` |
 | `OpenTelemetry__ServiceVersion` | Service version tag in OTEL resource attributes | `1.0.0` |
 
+Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`) per standard .NET configuration binding; the production compose file uses the `__` form. See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
+
 ## API Endpoints
 
 REST endpoints are split across the following endpoint groups under `src/Endpoints/`:

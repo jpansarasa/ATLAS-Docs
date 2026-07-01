@@ -149,6 +149,8 @@ ansible-playbook deployment/ansible/playbooks/deploy.yml --tags ofr-mcp
 | 8080 | MCP streamable HTTP (container-internal) |
 | 3106 | Host port mapped to container 8080 |
 
+> **Not this project:** port `3120` is the shared `dsl-parser-mcp` compose sidecar (a separate service); it is neither served nor consumed by this MCP.
+
 MCP endpoint: `http://mercury:3106/mcp`
 Health endpoint: `http://mercury:3106/health`
 

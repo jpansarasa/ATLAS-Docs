@@ -59,6 +59,7 @@ Optional:
 Notes:
 - Database access is configured solely via the `ConnectionStrings__AtlasDb` connection string. There are no `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` environment variables in this service.
 - In production (`/opt/ai-inference/compose.yaml`), `OpenTelemetry__ServiceName` is overridden to `finnhub-collector`.
+- Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; compose uses the `__` form. See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
 
 ## API Endpoints
 

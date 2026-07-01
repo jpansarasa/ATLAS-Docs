@@ -162,6 +162,8 @@ ansible-playbook playbooks/deploy.yml --tags secmaster-mcp
 | 8080 | HTTP — `/mcp` (MCP Streamable HTTP) + `/health` (container-internal) |
 | 3107 | Host-mapped to container `8080` (per `/opt/ai-inference/compose.yaml`) |
 
+> **Not this project:** port `3120` is the shared `dsl-parser-mcp` compose sidecar (a separate service); it is neither served nor consumed by this MCP.
+
 ## Claude Desktop Integration
 
 Add to `~/.config/Claude/claude_desktop_config.json`:

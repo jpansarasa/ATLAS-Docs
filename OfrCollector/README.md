@@ -71,7 +71,7 @@ The canonical STFM and HFM catalog ships as embedded JSON resources at `src/Seri
 | `Kestrel__HttpPort` | HTTP/1.1 listener port (REST + health) | `8080` |
 | `Kestrel__GrpcPort` | HTTP/2 listener port (gRPC) | `5001` |
 
-Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`) per standard .NET configuration binding; the production compose file uses the `__` form.
+Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; the production compose file uses the `__` form. See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
 
 ## API Endpoints
 

@@ -46,6 +46,8 @@ flowchart LR
 
 Collectors stream observation events into the in-memory observation cache. Patterns are evaluated via Roslyn-compiled expressions; each pattern's signal is projected onto its declared `sectorWeights` and aggregated into sector scores. Matrix cells and sector regimes are persisted asynchronously through bounded channels; the sector-phase materialised view is REFRESHed on a weekly cadence by a background worker. SecMaster is consulted for signal-identity dedup and versioned macro-observation mapping resolution. Threshold-crossing events are pushed onto an in-process bus and streamed to subscribers on port 5001.
 
+As of the `MatrixCellsInvariantChecks` migration, `matrix_cells` enforces two DB `CHECK` constraints that promote previously code-only invariants into the schema: `cell_value` is clamped to `[-3, 3]`, and `sector_code` is restricted to the 11 ATLAS sector codes (`ENERGY`, `MATERIALS`, `INDUSTRIALS`, `CONS_DISC`, `CONS_STAPLES`, `HEALTHCARE`, `FINANCIALS`, `INFOTECH`, `COMM_SVC`, `UTILITIES`, `REAL_ESTATE`).
+
 ## Features
 
 - **Roslyn Compilation**: C# pattern expressions compiled at runtime with caching (`CompiledExpressionCache`).
@@ -68,20 +70,22 @@ Collectors stream observation events into the in-memory observation cache. Patte
 |----------|-------------|---------|
 | `ConnectionStrings__AtlasDb` | PostgreSQL/TimescaleDB connection string. Required — there is no env-var fallback; the value is supplied directly in `compose.yaml`. | Required |
 | `OpenTelemetry__OtlpEndpoint` (a.k.a. `OpenTelemetry:OtlpEndpoint`) | OTLP collector endpoint. | `http://otel-collector:4317` |
-| `OpenTelemetry__ServiceName` | Service name for telemetry/resource attributes. | `thresholdengine-service` (deployed: `threshold-engine-service`) |
-| `OpenTelemetry__ServiceVersion` | Service version for OTEL resource attributes. | `1.0.0` |
+| `OpenTelemetry__ServiceName` (a.k.a. `OpenTelemetry:ServiceName`) | Service name for telemetry/resource attributes. | `thresholdengine-service` (deployed: `threshold-engine-service`) |
+| `OpenTelemetry__ServiceVersion` (a.k.a. `OpenTelemetry:ServiceVersion`) | Service version for OTEL resource attributes. | `1.0.0` |
 | `Kestrel__HttpPort` | Kestrel HTTP/1.1+HTTP/2 listen port (REST + health). | `8080` |
 | `Kestrel__GrpcPort` | Kestrel HTTP/2-only listen port (gRPC). | `5001` |
 | `PatternConfig__Path` (a.k.a. `PatternConfig:Path`) | Pattern config root directory (patterns + schema + burst/threshold JSONs). | `./config` (dev), `/app/config` (prod) |
 | `PatternConfig__HotReload` | Enable file system watcher for pattern definitions. | `true` |
 | `PatternConfig__WatchInterval` | File watcher polling interval (ms). | `1000` |
-| `BurstWindow__ConfigFilePath` | Path to the burst-window JSON config (hot-reloaded by `BurstWindowConfigurationWatcher`). Malformed JSON at boot is fatal; missing file falls back to the 24h default per signal. | `./config/burst-windows.json` |
-| `SectorThreshold__ConfigFilePath` | Path to the sector-threshold JSON config (hot-reloaded by `SectorThresholdConfigurationWatcher`). Boot fails fast if unset *and* the default path does not exist. | `./config/sector-thresholds.json` |
+| `BurstWindow__ConfigFilePath` (a.k.a. `BurstWindow:ConfigFilePath`) | Path to the burst-window JSON config (hot-reloaded by `BurstWindowConfigurationWatcher`). Malformed JSON at boot is fatal; missing file falls back to the 24h default per signal. | `./config/burst-windows.json` |
+| `SectorThreshold__ConfigFilePath` (a.k.a. `SectorThreshold:ConfigFilePath`) | Path to the sector-threshold JSON config (hot-reloaded by `SectorThresholdConfigurationWatcher`). Boot fails fast if unset *and* the default path does not exist. | `./config/sector-thresholds.json` |
 | `SectorThreshold__FailOnEmptyConfiguration` | If `true`, refuse to boot when the loaded sector-threshold config has zero rules. | `false` |
 | `SecMaster__HttpBaseUrl` | HTTP base URL for SecMaster (versioned macro-observation mapping resolution). | `http://secmaster:8080` |
 | `SECMASTER_GRPC_ENDPOINT` | gRPC endpoint for SecMaster (signal-identity dedup, registration). | `http://secmaster:5001` |
 | `Collectors__Items__N__Name` / `__ServiceUrl` / `__Enabled` | Per-collector gRPC subscription config (indexed list, see `appsettings.json` and `compose.yaml`). | 5 collectors configured by default |
 | `ASPNETCORE_ENVIRONMENT` | `Development` enables Swagger UI and detailed gRPC errors. | `Production` in compose |
+
+> **Design-time only** — `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` are read **only** by `ThresholdEngineDbContextFactory` for `dotnet ef migrations` at design time, with defaults `localhost` / `5432` / `atlas_data` / `atlas_user` / *(required — throws if unset)*. They have no effect on the running container, which always uses `ConnectionStrings__AtlasDb`.
 
 ## API Endpoints
 

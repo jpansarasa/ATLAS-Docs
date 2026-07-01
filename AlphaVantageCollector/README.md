@@ -81,6 +81,8 @@ All env vars use `__` (double underscore) as the `:` separator per .NET configur
 | `ASPNETCORE_URLS` | Kestrel bind URLs (set in Containerfile) | `http://+:8080;http://+:5001` |
 | `ASPNETCORE_ENVIRONMENT` | Standard ASP.NET environment selector | `Production` (in compose) |
 
+Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; the production compose file uses the `__` form. See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
+
 ## API Endpoints
 
 ### REST API (Port 8080, internal)

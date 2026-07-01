@@ -86,6 +86,17 @@ WhisperService/mcp/
 
 The parent [WhisperService/](../README.md) is a Python service; this MCP child is C#/.NET 10 and is built independently. Source files live directly under `mcp/` (no nested `src/`), matching the sibling pattern used by `FredCollector/mcp/`, `ThresholdEngine/mcp/`, `FinnhubCollector/mcp/`, `OfrCollector/mcp/`, and `SecMaster/mcp/`.
 
+## Development
+
+### Prerequisites
+
+- .NET 10 SDK (the project has no dedicated `.devcontainer/`; it is built as part of the container image below)
+- A reachable `whisper-service` backend at `WHISPER_API_URL` to exercise the tools end-to-end
+
+### Getting Started
+
+There is no separate unit-test project for this thin proxy. Build the image (below), point `WHISPER_API_URL` at a running backend, and invoke tools over `POST /mcp`. Source lives directly under `mcp/` (no nested `src/`).
+
 ### Build Container
 
 ```bash
@@ -108,6 +119,8 @@ The container runs as a non-root user (uid 1001) with a 256 MB memory / 0.5 CPU 
 |------|----------|-------------|
 | 8080 | HTTP | MCP Streamable HTTP at `/mcp`, plus `/health` (container-internal) |
 | 3108 | HTTP | Host-mapped to container `8080` (see `compose.yaml`) |
+
+> **Not this project:** port `3120` is the shared `dsl-parser-mcp` compose sidecar (a separate service); it is neither served nor consumed by this MCP.
 
 ## Claude Desktop Integration
 
