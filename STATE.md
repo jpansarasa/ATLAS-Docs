@@ -7,7 +7,25 @@ Supervisor memory. Read first, write last. **Current truth + open items + pointe
 1. Poll NTFY `atlas-claude-reply` (user input first).
 2. Re-read this file + the active spec THIS turn; walk the pipeline backward before dispatching; plan-vs-prod mismatch → STOP + NTFY.
 
-## CURRENT WORK
+## CURRENT WORK — PR-A: OFR/FRED tagger readiness gate (get-to-clean before RAG experiment)
+GOAL: eliminate the ~2038 transport-error WARN/restart from OFR(1248)+FRED(790) signal-identity taggers hitting a not-ready SecMaster. Branch `fix/tagger-secmaster-readiness`.
+KEY REFRAMES (from code dig):
+ - nerdctl 1.7.7 does NOT execute compose healthchecks (compose.yaml.j2:52 "INERT") → `depends_on: service_healthy` is dead; repointing it is useless. Fix MUST be app-side.
+ - Taggers ALREADY have `RunStartupPassWithWarmupRetry` (Polly, gated Errors>0) — REACTIVE: fires 1248 doomed calls → all transport-fail (1248 WARN from resolver:134) → retries whole pass. Recovers functionally but the failed attempt(s) emit the 1248 WARN. THAT's the noise.
+ - signal_identities table PERSISTS (DB volume); importer = idempotent refresh, not first-load → by-alias serveable as soon as DB reachable. So readiness = DB reachable + catalog queryable; liveness = process-alive (DB-independent).
+PLAN:
+ 1. SecMaster: add `/health/live` (trivial self, DB-independent) + `/health/ready` (DatabaseHealthCheck, tagged). Keep `/health` aggregate. `AddCheck<DatabaseHealthCheck>("database", tags:["ready"])` + self check tags:["live"]; Program.cs MapHealthChecks with Predicate. (Compose healthcheck change SKIPPED — inert on nerdctl.)
+ 2. OFR+FRED signal-identity tagger workers: REPLACE reactive warmup-retry with PROACTIVE readiness wait — poll SecMaster `/health/ready` (bounded backoff) BEFORE the startup pass; gate periodic iterations too. Fires once clean → 0 doomed calls, 0 WARN. Residual genuine mid-pass transport errors stay visible (rare, real).
+ 3. Tests: SecMaster ready/live endpoints; tagger defers-when-not-ready.
+ CHECK: FRED sector tagger (FredSeriesSectorTagBackgroundService) — same race? apply gate if it warns. OFR has no sector tagger.
+ READINESS SCOPING (load-bearing, user-confirmed): /health/ready EXCLUDES RAG + embeddings (degrade-in-place; else a RAG-down SecMaster reports not-ready → cascades dependents into hard outage — directly relevant to the queued RAG experiment).
+VERIFY: compile SecMaster+OFR+FRED; deploy; restart-smoke = 0 by-alias transport WARN on restart.
+OBSERVABILITY-FIRST (user, 2026-07-01 — scar tissue: "too many services non-functional due to lack of observability"): the readiness gate SILENCES the expected transient startup race but MUST keep a VISIBLE Warning if SecMaster never becomes ready within the bounded wait (persistent-unavailability / boot-loop stays observable — NEVER silently defer forever).
+PR-B (demote startup banners) — **DROPPED**. Startup banners STAY at Warning BY DESIGN (boot-loop visibility at prod-default level). Do NOT demote observability to Info+metric without guaranteed restart alerting — it fails silently exactly when needed (how services boot-loop unobserved). "clean" = no SPURIOUS noise; intentional banners + genuine failures STAY visible. [[feedback_warn_vs_info_by_trigger]]
+REVIEW (PR #819, 4 agents, no criticals). FIXED: silent-failure HIGH — unified startup+periodic → `RunPassWhenReady` so a MID-LIFE SecMaster outage (healthy-start-then-dies) stays a VISIBLE Warning instead of Info-only silent-defer-forever; stale warmup-retry comments; `RunOneIteration`→`Task`; extracted `AddSecMasterHealthChecks` + tag-split test (a ready↔live swap silently defeats the whole fix); +readiness self-heal / TaskCanceled-filter tests; comment nits.
+DEFERRED FOLLOW-UPS (post-PR-A): (1) periodic-gate unit test needs a TimeProvider/delay seam (worker interval = 24h). (2) **SecMaster has NO deadman/up alert** — a SecMaster outage is currently only caught via downstream breakage (reviewer-surfaced PRE-EXISTING gap). Add an `absent()`-style deadman on a SecMaster-emitted metric (CalendarService + gemini-resolver already have these). Directly serves the user's observability mandate — strongest next follow-up.
+
+## DONE
 *(idle)* — **PR #818 SHIPPED 2026-07-01** (merged `6e13b012`; deployed secmaster+fred-collector+sentinel-collector + alerting; smoke-verified). FRED trash-routing: entity-resolution discovery no longer sends news-NER surfaces (all equity-kind) to FRED (`allowEconomicDiscovery:false` gate); not-found WARN→INFO backed by 2 new alerts; FredCollector duplicate log WARN→DEBUG; Sentinel `CandidateSurfaceFilter` drops leaked bullets + comma token-blobs. Smoke: `secmaster_fred_search_skipped_total{reason=equity_caller}` emitting (gate live), fred-collector FRED-timeout WARN & SecMaster deadline-tripped WARN → 0, 0 errors, both alerts loaded health=ok, /prompts mount intact, VRAM 29.7/32.6G.
 
 FOLLOW-UPS (non-blocking):
