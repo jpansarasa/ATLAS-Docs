@@ -14,8 +14,9 @@ Supervisor memory. Read first, write last. **Current truth + open items + pointe
 - OBSERVABILITY (user scar tissue — "too many services non-functional due to lack of observability"): never demote a visible signal to Info+metric without a WIRED alert; keep a VISIBLE Warning on any persistent dependency-unavailability; startup banners STAY at Warning (boot-loop visibility). [[feedback_warn_vs_info_by_trigger]]
 
 ## OPEN ITEMS (non-blocking)
-- **Microsoft.OpenApi 2.3.0 CVE** (NU1903, GHSA-v5pm-xwqc-g5wc, HIGH) — surfaces on every FredCollector build (transitive dep). Bump the package.
 - **SecMaster alert thresholds are still INITIAL estimates** — `SecMasterDiscoveryTimeoutsElevated` (timeout-fraction >0.5/30m) + `SecMasterFredSearchFastFailing` (fastfail ≥10/15m/30m); revisit against real traffic, tune if noisy/silent. Metric-name gotcha: OTEL appends `_total` → alert on `secmaster_fred_search_skipped_total` NOT the bare name (promtool won't catch it).
+- **SQLitePCLRaw.lib.e_sqlite3 2.1.11 CVE** (NU1903, GHSA-2m69-gcr7-jv3q, HIGH) — TEST-ONLY, surfaced during the OpenApi remediation: pulled transitively by `SecMaster.UnitTests` + `Reports.UnitTests` (SQLite = unit-test DB provider; prod is TimescaleDB). Bump the EF-SQLite test dep; not a runtime exposure.
+- **NasdaqCollector dependency line is stale** — `Microsoft.AspNetCore.Grpc.Swagger 0.8.7` → `Swashbuckle 6.4.0` → `Microsoft.OpenApi 1.2.3`. Clean for CVE-2026-49451 (1.2.3 is *below* the affected 2.x range) but an old chain worth a future refresh. (Nasdaq is DISABLED in prod anyway.)
 
 ## PARKED — #729 regime news-as-staleness redesign  (NOT current focus; spec = PR #729, DO-NOT-MERGE)
 Intent: FRED/OFR benchmark = slow grounding anchor; Sentinel news = fast-decaying coincident perturbation weighted by benchmark STALENESS; measure economic significance, not coverage volume. Phases 1 / 2a / 2b built + deployed (Phase 2b in **shadow**) — #730–#736. Open:
