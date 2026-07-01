@@ -50,6 +50,7 @@ CROSS-SERVICE:
 
 GOTCHAS:
   ✗ gate-news-entry-on-resolve-entities/sector ✗ route-news-via-gRPC-MatrixUpdateStream
+  ✗ assume-CandidateSurfaceFilter-catches-all-junk: conservative-by-design (false-neg cheaper), MISSES slugs(prg-1sw-*)|DOCTYPE|EPS/YoY|outlet-names → they reach SecMaster resolve → its PAID Gemini last-resort. The budget-safety gate lives in SecMaster IdentifierConfirmationService (company-name→ticker ONLY), ¬here; ungated it drained $100/6d (2026-06-30). [[COST_BOUNDARY]]
   ✗ extracted_observations-fallback-for-news ✗ assume-digest-sees-only-`:sig:`-rows
   ✗ qualitative(null-signal)-rows-reach-matrix_cells ✗ Shadow=dry-run
   ✗ zero-matrix_cells-no-error=broken(check-Mode-first) ✗ change-`:sig:`-infix-in-one-artefact

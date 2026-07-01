@@ -114,6 +114,19 @@ ESTIMATE_GATE [data | vram | model_tradeoff]:
   check: prior_results(this_project) before claiming tradeoffs
   rationale: conservative_defaults ≠ this_project_reality → wastes_correction_turn
 
+## COST_BOUNDARY [paid_external_calls] [HARD_STOP]
+scope: any call that spends real money per invocation — gemini-resolver (grounded search), Anthropic/Azure LLM, paid data APIs
+PRINCIPLE: money is a monitored resource like VRAM/CPU. A paid external call is a BOUNDARY that MUST carry ALL of:
+  1. INPUT_GATE: only eligible inputs reach it, gated at the chokepoint; count drops (bounded-cardinality metric).
+     example: gemini-resolver = company-name→ticker:exchange ONLY; ✗send-every-fallthrough(slugs|money|percent|boilerplate)
+  2. FAIL_CLOSED_CAP: hard daily call+spend cap set UNDER the budget; once hit → refuse WITHOUT calling (429) ¬silently_pass
+  3. BURN_ALERT: fire BEFORE depletion (spend/hr | projected $/day approaching cap) ¬post-hoc "calls>0 ∧ cost=$0" corpse_detector
+  4. BUSINESS_TEST: assert the MONEY outcome (paid_client ¬called for junk | refused past cap) THROUGH the real flow,
+     and it MUST fail on the pre-guard code (RED-on-unfixed). ¬performative (¬"assert predicate==false") [[feedback_tests_validate_business_outcomes]]
+  5. HONEST_HEALTH: /health exercises the real work path ¬cheap_reachability (models.list 200s while generateContent 429s = false-green)
+rationale: an ungated gemini-resolver fallthrough drained a $100 prepay in 6 days, undetected 12 days behind a green /health (2026-06-30). The principles existed (BOUNDARY_HANDLING, ALERTING.capacity_approaching) but were never applied to $ because $ wasn't named a resource.
+ANTI: ✗paid_call without gate+cap+alert+business_test | ✗health_probe that skips the paid work path | ✗rate_limit ≫ budget (a 24k/day cap "protecting" a $100 budget protects nothing)
+
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]
 MODEL_SIZE: ≥30B parameters required # RLM needs coding ability
   rationale: extraction_quality_requires_large_models
