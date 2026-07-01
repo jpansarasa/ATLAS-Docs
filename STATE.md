@@ -7,8 +7,15 @@ Supervisor memory. Read first, write last. **Current truth + open items + pointe
 1. Poll NTFY `atlas-claude-reply` (user input first).
 2. Re-read this file + the active spec THIS turn; walk the pipeline backward before dispatching; plan-vs-prod mismatch → STOP + NTFY.
 
-## CURRENT WORK
-*(new investigation — scope TBD; populate here as it's defined.)*
+## CURRENT WORK — FRED trash-search + not-found log noise  (branch `fix/secmaster-fred-trash-routing`)
+ROOT: SecMaster entity-resolution discovery sends news-NER surfaces (kind∈{TickerInQuote,Ticker,CompanyName} — ALL equity, none economic) to FRED. `EntityResolutionService.TryResolveViaUpstreamDiscoveryAsync` passes `assetClass:null` → `CatalogService` lets `QueryAnalyzer` string-infer, which mis-tags "federal reserve"/"employment"/"retail" as Economic → `_fredClient.SearchAsync` → FRED LIVE-API series search → 5s HttpClient timeout ×810/24h (WARN on fred-collector). Not-found is a valid signal, not a warning (OBSERVABILITY.md: Warn="unexpected"; FRED 0-result already logs Info).
+FIX (evidence-scoped to the proven path only):
+ 1. `ICatalogService`/`CatalogService.SearchAsync` +`bool allowEconomicDiscovery=true`; gate `ShouldSearchEconomic` branch on it. `EntityResolutionService:818` passes `false` (entity candidates are never economic). → FRED never called for entity resolution. LEFT default-true: EmbeddingService (LLM keyword semantic-discovery) + HybridResolutionService + CatalogEndpoints — general-purpose, FRED legit there, no evidence of trash.
+ 2. `EntityResolutionService:408` "degrading to not-found" WARN→INFO (valid signal; metric `DiscoveryFanOutTotal{outcome=timeout}` carries it). LEAVE RAG-circuit-open WARN (real degradation, separate live issue) + :263 boundary-deadline WARN.
+ 3. Sentinel `CandidateSurfaceFilter`: +bullet glyphs to CodeChars ("• Employment") + lowercase hyphen/comma token-blob regex ("prg-1sw-...,...") → CodeToken. REJECTED subagent's blanket-comma (drops "Yum! Brands, Inc.") + institution-prefix (drops real ASX "Treasury Wine Estates"); "Federal Reserve Facebook" LEFT (neutralized by fix #1). +unit tests.
+ 4. FredCollector `ApiEndpoints:563` duplicate "Unified search failed" WARN→DEBUG (client `FredApiClient:641` already logs the cause; keep that one).
+VERIFY: compile.sh (w/tests) SecMaster + SentinelCollector + FredCollector; post-deploy smoke: fred-collector search WARN rate→~0, SecMaster "degrading to not-found" WARN gone.
+SECONDARY (left as-is): `SmartRouter` (`CollectorEndpoints.SearchCollectors` MCP `search_collectors`) fans out to ALL 4 collectors incl FRED unconditionally — agent-driven, low-vol ("Sports Illustrated"), free-text (no Kind to gate on).
 
 ## PARKED — #729 regime news-as-staleness redesign  (NOT current focus; spec = PR #729, DO-NOT-MERGE)
 Intent: FRED/OFR benchmark = slow grounding anchor; Sentinel news = fast-decaying coincident perturbation weighted by benchmark STALENESS; measure economic significance, not coverage volume. Phases 1 / 2a / 2b built + deployed (Phase 2b in **shadow**) — #730–#736. Open:
