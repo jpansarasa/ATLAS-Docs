@@ -50,7 +50,7 @@ Configuration binds from `appsettings.json` and environment variables (double-un
 | `OpenTelemetry__ServiceVersion` | Service version tag | `1.0.0` |
 | `SECMASTER_GRPC_ENDPOINT` | SecMaster gRPC endpoint (optional; enables registration on series add) | _(unset)_ |
 
-Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; the production compose file uses the `__` form. See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
+Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; the compose file uses the `__` form (Nasdaq's service block is commented out in prod — see **Deployment status** above). See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
 
 ## API Endpoints
 

@@ -71,7 +71,7 @@ flowchart TD
 | `OpenTelemetry__ServiceName` | OTEL service name (unused — see above) | Unused |
 | `OpenTelemetry__ServiceVersion` | OTEL service version (unused — see above) | Unused |
 
-Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; the production compose file uses the `__` form. See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
+Configuration keys may also be expressed with `:` (e.g. `OpenTelemetry:OtlpEndpoint`, `OpenTelemetry:ServiceName`, `OpenTelemetry:ServiceVersion`) per standard .NET configuration binding; the production compose file uses the `__` form. CalendarService does not currently export OTEL — the keys above are inert (no exporter wired in `Program.cs`). See [docs/OBSERVABILITY.md](../docs/OBSERVABILITY.md) for the standard OTEL export config.
 
 ## API Endpoints
 
