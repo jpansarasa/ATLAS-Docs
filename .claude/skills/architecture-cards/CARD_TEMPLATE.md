@@ -32,8 +32,9 @@ GOTCHAS: ✗{anti-pattern agent will reach for} ✗{do-NOT-propose-X} ✗{sympto
 
 DECISIONS:
   D-n {slug}: INTENT {why} / PRECOND {condition} / GUARD {Class.Method} @ {file:line} / TEST {TestClass.TestName}
-  {repeat per decision — or replace the whole block with the single line
-   `DECISIONS: none — no exception paths` when the service genuinely has none}
+  {repeat per decision — or replace the whole block with a single escape line:
+   `DECISIONS: none — no exception paths` when the service was audited and genuinely
+   has none, or the not-yet-audited form — see §DECISIONS BLOCK "Two escape forms"}
 
 SEE: README §Reference · {Code.cs:line(what to read)} · {openapi/proto for exhaustive catalog}
   gRPC contracts: SEE MUST reference the .proto file for any gRPC path (e.g. SEE: Events/src/Events/Protos/observation_events.proto).
@@ -43,12 +44,13 @@ SEE: README §Reference · {Code.cs:line(what to read)} · {openapi/proto for ex
 ## TEMPLATE NOTATION
 
 Plain terse ASCII preferred over unicode operators (measured 2026-07-02: symbols cost
-same-or-more tokens than the words AND break literal grep). Two symbols stay because
-`audit.sh` greps them literally:
+same-or-more tokens than the words AND break literal grep). `audit.sh` accepts the
+ASCII forms as W3/W4 anchors, so no glyph is required; glyphs remain accepted for
+existing cards — converge to ASCII on touch, never mass-rewrite:
   NOT / never   negation — write the word, not a symbol
   ->            implies / leads to / flows to
-  ⊥             independent of (two things that can exist without each other) — audit-greppable, keep the symbol
-  ≠             distinct from / not the same as — audit-greppable, keep the symbol
+  INV {name}:   invariant / independence label — satisfies W3 (or `INVARIANT `; the ⊥ glyph still accepted)
+  !=            distinct from / not the same as — satisfies W4 (the ≠ glyph still accepted)
   x             multiplied / factor
 
 Section priority (load-bearing first, long-tail to SEE):
@@ -90,21 +92,28 @@ Scope discipline (not everything is a decision):
   ✗ ordinary mechanism — a service may declare `DECISIONS: none — no exception paths`
   >~6 entries = smell (scope creep dilutes the signal); card stays <= ~1 page.
 
+Two escape forms — the wording carries a CLAIM, pick the honest one:
+  `DECISIONS: none — no exception paths`
+    the AUDITED form: the service was reviewed and verifiably has no exception paths.
+  `DECISIONS: none recorded yet — accrete on touch (not audited for exception paths; see CLAUDE.md INTENT_FIDELITY MECHANICS).`
+    the NOT-YET-AUDITED form: no D-entry sweep has been done; record decisions as the
+    service is touched. Never "upgrade" this line to the audited form without doing the sweep.
+
 ## AUDIT COMPLIANCE — literal labels REQUIRED [HARD_STOP]
 
 `scripts/audit.sh` checks for literal text labels. A generated card MUST include these
 exact strings or it will fail audit at generation time.
 
 Required section headings (HIGH severity if absent):
-  `DATA MODEL + INVARIANTS:` — the block heading (W3 also requires `INVARIANT ` (full word + space, e.g. `INVARIANT foo:`) or `⊥` inside it; the bare `INV ` abbreviation does NOT satisfy the grep)
+  `DATA MODEL + INVARIANTS:` — the block heading (W3 also requires an invariant statement: `INVARIANT ` or `INV ` (word + space, e.g. `INV foo:`) or the `⊥` glyph; `INV:` with no space does NOT satisfy the grep)
   `CROSS-SERVICE:` — including the trailing colon
 
 Required per PATH entry (MEDIUM W1/W2 if absent anywhere in PATHS):
   `does NOT:` — the negative-space anti-guess lever (W1 fires if this literal is absent)
   `on-miss:` — the miss contract (W2 fires if this literal is absent)
 
-The abbrev-DSL forms `¬do:` / `miss:` / `INV:` MAY be used as aliases within a path but
-do NOT satisfy the audit grep — the literals `does NOT` and `on-miss` MUST also appear.
+The abbrev-DSL forms `¬do:` / `miss:` MAY be used as aliases within a path but do NOT
+satisfy the audit grep — the literals `does NOT` and `on-miss` MUST also appear.
 Rationale: rollout-2 cards used only the symbols and required 16 post-hoc fixes because
 `audit.sh` grep targets the literals, not the symbols.
 

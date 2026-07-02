@@ -5,7 +5,8 @@ This is the gold-standard worked instance. Notice how value concentrates in
 none of which an endpoint catalog conveys. When generating a new card, match
 this density and negative-space depth, not a thinner endpoint summary.
 
-The block below is the card exactly as it leads `SecMaster/README.md`.
+The block below is the card as of the exemplar snapshot (the live card leading
+`SecMaster/README.md` has since accreted DECISIONS + newer blocks).
 
 ---
 
