@@ -6,13 +6,42 @@ Context-aware hooks that inject patterns when working on specific file types.
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
-| `testing-context.sh` | Edit/Write `*Tests.cs`, `*_test.*`, `test_*.*` | Inject AAA, naming, assertions patterns |
+| `testing-context.sh` | Edit/Write `*Tests.cs`, `*_test.*`, `test_*.*` | Inject AAA, naming, assertions patterns + outbound-boundary guard-test contract |
 | `benchmark-context.sh` | Edit/Write `*Benchmark*.cs`, `*_bench.*` | Inject BenchmarkDotNet, Release mode |
 | `git-push-guard.sh` | Bash `git push*` | **BLOCK** - requires tests pass first |
 | `ef-migration-guard.sh` | Write `Migrations/*_*.cs` | **BLOCK** - prevents manual migration creation |
 | `ansible-gate-guard.sh` | Edit/Write on deployment/CI gate files | **ASK** - confirm intent before editing gates |
 | `deploy-smoke-reminder.sh` | Bash deploy/restart commands (PostToolUse) | **ADVISE** - inject smoke-test reminder |
 | `memory-density-guard.sh` | Write/Edit `*/memory/*.md` (PostToolUse) | **ADVISE** - nudge when MEMORY.md hook line or memory-file description violates the density bar |
+| `design-intent-dispatch-guard.sh` | Agent dispatch with impl-shaped prompt | **BLOCK** - requires DESIGN INTENT stanza in the brief (presence only, content-agnostic). Harness-shape anomaly → open + loud; jq missing → degraded raw-grep, stays closed |
+| `service-decisions-context.sh` | Edit/Write `<Service>/src/**` | **ADVISE** - inject the service card's DECISIONS block (skipped on `DECISIONS: none`). Neutral (empty output) on no-op; anomalies neutral + loud |
+| `plan-retirement-guard.sh` | Bash `git rm` of `docs/proposals/**`, `*PLAN*.md`, `*-design.md` | **ASK** - migration checklist before a plan doc is retired (not a block: a script cannot verify migration semantics). Anomaly → open + loud; jq missing → degraded raw-grep, still asks on match |
+
+## Failure Direction (intent-fidelity hooks)
+
+Infrastructure failure inside a hook must pick a direction per hook level,
+and must never die silently — every anomaly path emits a stderr line naming
+the hook and the reason (`[hook-name] ANOMALY: <reason> — failing open` /
+`[hook-name] DEGRADED: ...`).
+
+- **BLOCK** (`design-intent-dispatch-guard.sh`): harness-shape drift (empty
+  stdin, non-JSON, missing `.tool_input.prompt`) fails **open + loud** —
+  harness drift must not brick dispatching. Losing jq fails **closed where
+  scoped**: a degraded raw-stdin grep still denies stanza-less impl briefs.
+- **ASK** (`plan-retirement-guard.sh`): all infra failures fail **open +
+  loud** (this hook runs on every Bash call). jq-less degraded mode raw-greps
+  stdin and still asks on a plan-doc match — it never falls back to
+  ask-everything.
+- **ADVISE** (`service-decisions-context.sh`): no-op paths emit **nothing**
+  (empty stdout, exit 0) so the permission flow is untouched — an active
+  `allow` would widen permissions. The injection path emits
+  `additionalContext` without a `permissionDecision`. Infra failures
+  (jq missing, unreadable card, awk failure) are neutral + loud.
+
+**Harness timeout caveat**: if the harness kills a hook on timeout, that is
+fail-open by harness semantics — a killed hook emits no decision. Mitigated
+by keeping these hooks subsecond (no network, no repo scans) and by the live
+smoke suite (`test/run-intent-fidelity-smoke.sh`) exercising every path.
 
 ## How It Works
 
