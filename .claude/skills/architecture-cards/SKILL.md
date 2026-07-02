@@ -122,8 +122,9 @@ PROVEN LOOP (replaces single-pass generation):
      a. reconstruct service behavior from card ONLY (simulate fresh-agent reading)
      b. score load-bearing fidelity: for each INV/PATH/DISTINCTION/GOTCHAS item — does the
         code support the claim? cite file:line or flag as "unsupported"
-     c. identify: omitted ¬do / missed miss-contract / wrong terminal semantics / prose
-        where abbrev-dsl symbol (¬/⊥/→/≠) would be more precise
+     c. identify: omitted does-NOT / missed miss-contract / wrong terminal semantics / rambling
+        prose that should be one terse line (plain words + "->"; NOT unicode operators —
+        measured 2026-07-02: ¬/∧/⊥ cost same-or-more tokens than "not"/"and" and break literal grep)
      d. emit: {supported: N, unsupported: N, gaps: [...], suggestions: [...]}
   3. FIX: generator incorporates validator findings.
   4. ITERATE: repeat VALIDATE → FIX until:
@@ -131,7 +132,7 @@ PROVEN LOOP (replaces single-pass generation):
      b. all load-bearing anti-patterns covered in GOTCHAS
      c. card ≤ ~1 page (density gate)
   rationale: single-pass generation drifts from code; adversarial validate catches
-    unsupported claims, missing negative-space, and prose where symbols compress better.
+    unsupported claims, missing negative-space, and rambling prose that should be terse lines.
   model_economy: validator can be a smaller/cheaper model — it reads the card + one code
     file per claim, not the whole codebase. Generator does the expensive full-read pass.
 
