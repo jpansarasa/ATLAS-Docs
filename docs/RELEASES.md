@@ -13,6 +13,25 @@ Or inspect a single file at a tag without checkout:
 
 ## Tags
 
+### `okf-rag-spike-done` (@ d519fcf1, NEGATIVE RESULT — not merged)
+**OKF / LLM-wiki RAG feasibility spike — NO-GO as a subsystem** (2026-07-02).
+Investigated whether the Karpathy LLM-wiki / Google Open-Knowledge-Format pattern
+(LLM curates a compounding folder of cross-linked markdown) should augment or replace
+ATLAS RAG. Verdict: no. The wiki is squeezed out from both sides — grounded/structural
+retrieval is done better, cheaper, and more context-efficiently by the existing
+bge-m3 + pgvector RAG (the 7b arm truncated 8/14 ingests because whole-page YAML reads
+exhaust its real 2048-token slot under `--parallel 4` — the context cost a targeted
+vector retrieval avoids); and news alpha is fast-decaying and must NOT accumulate into a
+compounding store (reinforcement bias) — it belongs in the numeric benchmark-staleness
+pipeline (#729). The 32b "GO" only cleared quality bars by burning 32K context, which is
+orthogonal to the small-model/context-economy goal. Structural finding worth keeping: the
+video's "LLMs mangle markdown at scale" skepticism was refuted for both arms (0 invented
+links / 28 ingests) — format was never the problem; fit was. Keepers: the adversarial
+eval-gate harness (caught a rigged eval-set pre-inference) + the measured local 2048-token
+slot reality. Baseline `pre-okf-rag-investigation` @ c558bb52 was the revert point; main
+was never touched, so no revert was needed. Full artifacts recoverable:
+`git checkout okf-rag-spike-done`.
+
 ### `intent-fidelity-done` (@ 84569aac)
 **Intent-fidelity enforcement epic — COMPLETE** (shipped 2026-07-02).
 D-entry decision records (AGENT_README `DECISIONS` blocks, atomic with
