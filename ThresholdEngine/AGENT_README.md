@@ -4,7 +4,7 @@ PURPOSE: owns matrix_cells(11-sector), sector-regimes, sector-phase-view; Roslyn
 
 DATA MODEL + INVARIANTS:
   INV cells: 1 row per (pattern_id,sector_code,evaluated_at); upsert ON CONFLICT DO UPDATE IS DISTINCT FROM. every projection=11 rows(explicit-zero ¬sparse).
-  INV clamp: [-3,+3] at projector; MatrixCellPersistenceWorker re-clamps defence-in-depth — row still persists.
+  INV clamp: [-3,+3] at projector (D-3); MatrixCellPersistenceWorker re-clamps defence-in-depth — row still persists.
   INV provenance: denormalized multiplicative-factor copies; audit re-derives ¬re-reads observations.
   INV projector-key: pattern_id="obs:{signal_identity_id}:{source_collector}" (synthetic); evaluated_at=group's latest obs time.
   INV coexistence: FRED⊥Sentinel same signal → distinct rows differ by source_collector ¬overwrite.
@@ -22,9 +22,7 @@ PATHS (distinct code — do not conflate):
     does: updates ObservationCache; EvaluateAllEnabledAsync; persists ThresholdEvent on crossing.
     does NOT: ¬CellProjector ¬matrix_cells ¬CellProjectedEvent.
     on-miss: exponential-backoff retry 5s→300s.
-  ObservationEventSubscriber [UNWIRED / dead for cell-writes]
-    ¬registered in AddWorkers. MatrixCellPersistenceWorker subscribes but RECEIVES NOTHING at runtime. formula(CellProjector.cs)=DEAD CODE. ¬describe as live producer.
-  Sentinel-gRPC-bridge: DELETED(MatrixCellSentinelWorker removed WS3-A3). README mermaid(SMW node,MatrixCellUpdate edge)=STALE.
+  ObservationEventSubscriber [UNWIRED / dead for cell-writes]: ¬registered in AddWorkers. MatrixCellPersistenceWorker subscribes but RECEIVES NOTHING at runtime. formula(CellProjector.cs)=DEAD CODE. ¬describe as live producer. Sentinel-gRPC-bridge: DELETED(MatrixCellSentinelWorker removed WS3-A3); README mermaid(SMW node,MatrixCellUpdate edge)=STALE.
 
 PROCESSING MODEL (projector cycle, in order):
   read descending(freshest-first; ascending→freezes matrix on stale rows) → drop null signal_identity_id → build ONE per-cycle signal→pattern map(GetAllAsync; dup signal_identity_id→FIRST ENABLED wins) → per group: unknown_signal if no pattern; pattern_disabled if Enabled=false(DISTINCT counters; neither projected) → news/hard-data fork → Project → upsert.
@@ -33,8 +31,7 @@ PROCESSING MODEL (projector cycle, in order):
   ¬discriminator: source_collector='sentinel' — `:sig:` infix in source_id is the real discriminator.
 
 PATTERN AUTO-DISABLE (load-time ¬per-cycle):
-  JSON Enabled:false→dropped at LoadAllAsync BEFORE SecMaster check. JSON-enabled: AllReferencedMnemonics→ResolveBatch gRPC → any series ¬Found/PrimarySource→pattern.Enabled=false+ERROR.
-  PatternValidation:Strict=true→accumulated misses throw at boot(fail-fast) ¬soft-disable.
+  JSON Enabled:false→dropped at LoadAllAsync BEFORE SecMaster check. JSON-enabled: AllReferencedMnemonics→ResolveBatch gRPC → any series ¬Found/PrimarySource→pattern.Enabled=false+ERROR. PatternValidation:Strict=true→accumulated misses throw at boot(fail-fast) ¬soft-disable.
   SecMasterFrequencyResolver: ¬frequency param; NO prefix-fallback; NO exception-swallowing; outage→exception(strict) or mass-auto-disable(soft).
 
 DISTINCTIONS:
@@ -48,8 +45,7 @@ CROSS-SERVICE:
   IN: collector gRPC :5001 → live eval(threshold events only; ¬matrix_cells).
   OUT→SecMaster gRPC ResolveBatch: SecMasterFrequencyResolver(load-time) + DataWarmupService(collector-routing).
   OUT→ThresholdEngineMcp+AlertService via gRPC ObservationEventStream. REST :8080(macro-observation mapping,dashboards).
-  macro_observations: written by SentinelCollector/MacroSubstrate; ThresholdEngine reads only.
-  SectorPhaseViewRefreshWorker: 7-day cadence; DB outage→silent stale dashboard.
+  macro_observations: written by SentinelCollector/MacroSubstrate; ThresholdEngine reads only. SectorPhaseViewRefreshWorker: 7-day cadence; DB outage→silent stale dashboard.
 
 GOTCHAS:
   ✗ live-FRED-gRPC-writes-matrix_cells(ThresholdEvent only) ✗ ObservationEventSubscriber/CellProjector-as-live-producer
@@ -57,5 +53,12 @@ GOTCHAS:
   ✗ prefix-fallback-to-SecMasterFrequencyResolver ✗ typo-config→Authoritative(→Shadow) ✗ Sentinel-bridge-as-live(deleted)
   ✗ ascending-projector-read ✗ unknown_signal/pattern_disabled-shared-counter ✗ freshness-floor-on-news-path
   ✗ ResolveBatch-per-cycle(load-time only) ✗ README-mermaid-SMW/MatrixCellSentinel-as-current(stale)
+
+DECISIONS:
+  D-1 news-contract-exclusion: INTENT `:sig:` news rows carry tilt×confidence |v|≲1; a raw-value leak entering the decay sum slams the cell to a fake saturated burst masquerading as real coverage / PRECOND |v|≤1.5 to enter the news sum, violating rows EXCLUDED (WARN+counted); a group whose :sig: rows are ALL excluded skips — NEVER falls back to its raw legacy rows / GUARD ObservationCellProjector.BuildCellsAsync @ src/Workers/ObservationCellProjector.cs:550 / TEST ObservationCellProjectorTests.BuildCellsAsync_SigRow_ContractBreach_ExcludedFromCell_StaysBounded
+  D-2 mixed-group-legacy-drop: INTENT legacy non-:sig: sentinel rows carry RAW economic values (cpi 332, jobless 1.82e6) that must never blend into the news tilt / PRECOND in a group with ≥1 :sig: row ONLY :sig: rows feed the magnitude; the drop is counted+logged / GUARD ObservationCellProjector.BuildCellsAsync @ src/Workers/ObservationCellProjector.cs:576 / TEST ObservationCellProjectorTests.BuildCellsAsync_MixedGroup_RawValuedNonSigRow_ExcludedFromDecaySum
+  D-3 cell-clamp-pm3: INTENT matrix consumers assume cell∈[-3,+3] (legacy ref D12) regardless of upstream magnitude/trust blowups / PRECOND every projected cell hard-clamped in the Core — the ONLY wired write-path enforcement (persistence re-clamp is on the dead path); AnyClamped flags saturation / GUARD ObservationCellProjectorCore.Project @ src/Services/ObservationCellProjectorCore.cs:165 / TEST ObservationCellProjectorCoreTests.Project_ClampsCellToPlusMinusThree
+  D-4 all-11-sectors-or-skip: INTENT explicit zero ≠ omission (legacy ref D5): a partial or silently-zero-defaulted cell-set corrupts the sector vector / PRECOND SectorWeights missing any of the 11 → Core THROWS, worker skips the WHOLE group (0 cells, WARN+counted, siblings unaffected) / GUARD ObservationCellProjectorCore.Project @ src/Services/ObservationCellProjectorCore.cs:151 / TEST ObservationCellProjectorTests.BuildCellsAsync_InvalidSectorWeights_SkipsWholeGroup_SiblingsUnaffected
+  D-5 mode-off-only-suppressor: INTENT Off is the projector kill-switch; Shadow ≠ dry-run — it writes the SAME cells as Authoritative (flag-reversibility, telemetry-only tag) / PRECOND write suppression ONLY via the Off short-circuit before any scope/read; gating writes on Shadow silently zeroes the matrix feed / GUARD ObservationCellProjector.ExecuteAsync @ src/Workers/ObservationCellProjector.cs:253 / TEST ObservationCellProjectorTests.ExecuteAsync_Off_WritesNoCells_EvenWithObservationsPresent
 
 SEE: README.md §Reference (REST/gRPC/health endpoint catalog; config keys; mermaid SMW+MatrixCellSentinel=stale) · Events/src/Events/Protos/observation_events.proto (ObservationEventStream gRPC contract — both consumed from collectors and exposed to downstream) · Events/src/Events/Protos/secmaster.proto (SecMasterResolver.ResolveBatch — consumed at load time) · ThresholdEngine/src/Workers/ObservationCellProjector.cs · src/Workers/ObservationEventSubscriber.cs (UNWIRED)
