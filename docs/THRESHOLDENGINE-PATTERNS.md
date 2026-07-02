@@ -29,8 +29,8 @@ ThresholdEngine evaluates economic patterns and projects each pattern's signal o
 
 **Weighted Scoring Formula**:
 ```
-weightedSignal = signal × weight × freshnessFactor × temporalMultiplier × confidence
-cellSignal[sector] = weightedSignal × sectorWeights[sector]
+weightedSignal = signal * weight * freshnessFactor * temporalMultiplier * confidence
+cellSignal[sector] = weightedSignal * sectorWeights[sector]
 ```
 
 Signal range: -3 to +3. Per-cell projections inherit that range, scaled by the sector weight.
@@ -295,9 +295,9 @@ Applied unconditionally per cell projection — leading indicators are amplified
 
 | Temporal Type | Multiplier |
 |---------------|------------|
-| Leading | **1.3×** |
-| Coincident | 1.0× |
-| Lagging | **0.7×** |
+| Leading | **1.3x** |
+| Coincident | 1.0x |
+| Lagging | **0.7x** |
 
 ### Multi-Series Patterns
 
@@ -305,7 +305,7 @@ For patterns with multiple `requiredSeries`: use the **oldest** observation date
 
 ```csharp
 // NBFI Escalation uses HY spreads (0d), Repo (1d), NFCI (30d)
-// If NFCI is 40 days old → pattern is 10 days overdue
+// If NFCI is 40 days old -> pattern is 10 days overdue
 ```
 
 **Rationale**: Pattern only "current" when ALL data is current.
@@ -416,12 +416,12 @@ Patterns are grouped into theme subfolders under `config/patterns/` (recession, 
 GetWeightedSignal(pattern, rawSignal):
     freshness = CalculateFreshnessFactor(pattern)
     temporalMultiplier = GetTemporalMultiplier(pattern)
-    return rawSignal × pattern.weight × freshness × temporalMultiplier × pattern.confidence
+    return rawSignal * pattern.weight * freshness * temporalMultiplier * pattern.confidence
 
 CalculateEffectiveWeight(pattern):
     freshness = CalculateFreshnessFactor(pattern)
     temporalMultiplier = GetTemporalMultiplier(pattern)
-    return pattern.weight × freshness × temporalMultiplier × pattern.confidence
+    return pattern.weight * freshness * temporalMultiplier * pattern.confidence
 
 CalculateFreshnessFactor(pattern):
     // Find oldest observation across all required series

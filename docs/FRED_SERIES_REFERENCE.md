@@ -1,4 +1,4 @@
-# ATLAS Indicators → FRED Series Mapping
+# ATLAS Indicators -> FRED Series Mapping
 
 **Status**: ✅ Implemented — live catalog: 80 series configured, 79 active, 55 tagged with a SignalIdentityId (DB-verified)
 **Last Updated**: 2026-06-11
@@ -390,7 +390,7 @@ Supporting data for Buffett Indicator and market analysis:
 - **Full Name**: Wilshire 5000 Full Cap Price Index
 - **Frequency**: Daily (business days)
 - **Units**: Index
-- **Category**: Valuation (for Buffett Indicator = Wilshire / GDP × 100)
+- **Category**: Valuation (for Buffett Indicator = Wilshire / GDP x 100)
 - **Cron**: `0 0 18 * * MON-FRI` (6 PM ET daily)
 
 ### 27. Real GDP (Quarterly)
@@ -443,7 +443,7 @@ Commodity prices for Cu/Au ratio calculation:
 - **Category**: Commodity (for Cu/Au ratio calculation)
 - **Cron**: `0 0 18 * * MON-FRI`
 
-**Cu/Au Ratio Calculation**: Copper Price ÷ Gold Price
+**Cu/Au Ratio Calculation**: Copper Price / Gold Price
 
 - Thresholds: <0.15 (bear), 0.15-0.22 (neutral), >0.22 (bull)
 
@@ -518,7 +518,7 @@ These indicators may require alternative data sources:
 
 - **Status**: ⚠️ Components may be in FRED, ratio needs calculation
 - **FRED Series**: Check for `RU2000PR` (Russell 2000) and `SP500`
-- **Calculation**: Russell 2000 ÷ S&P 500
+- **Calculation**: Russell 2000 / S&P 500
 - **Thresholds**: <0.50 (bear), 0.50-0.65 (neutral), >0.65 (bull)
 - **Phase**: Phase 2 (calculated indicators)
 
@@ -532,8 +532,8 @@ These indicators may require alternative data sources:
 ### Buffett Indicator (Market Cap / GDP)
 
 - **Status**: ⚠️ Components in FRED, needs calculation
-- **FRED Series**: `WILSHIRE5000PRFC` (market cap) ÷ `GDP`
-- **Calculation**: Wilshire 5000 ÷ GDP × 100
+- **FRED Series**: `WILSHIRE5000PRFC` (market cap) / `GDP`
+- **Calculation**: Wilshire 5000 / GDP x 100
 - **Threshold**: >217% (extreme bubble, per sigma.md)
 - **Phase**: Phase 2 (calculated indicators)
 

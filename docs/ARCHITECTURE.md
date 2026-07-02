@@ -14,7 +14,7 @@ Deep-dives: [MATRIX.md](./MATRIX.md) (signal matrix), [SENTINEL-RLM.md](./SENTIN
   llama-server 0-23, llama-cpu-rag 24-39, llama-cpu-embed 40-47.
 - ZFS: `nvme-fast` (models, timeseries DB, dashboards, containers) + `sata-bulk` (logs,
   raw-data, backups, archives, agent workspace).
-- UPS: APC via `apcupsd` + ups-exporter → Prometheus job `ups`.
+- UPS: APC via `apcupsd` + ups-exporter -> Prometheus job `ups`.
 - Host systemd (non-container) services: `sandbox-manager` (spawns sandbox-kernel containers
   for Sentinel), `gemini-resolver-mcp` (port 9300, reached from containers via `host-gateway`),
   `apcupsd`.
@@ -80,10 +80,10 @@ config keys are a naming seam only — the engine behind them is llama.cpp.
 ### 4a. Live threshold path (event-driven)
 
 ```
-Collectors ──ObservationEventStream gRPC :5001──► ThresholdEngine
-              MultiCollectorEventConsumerWorker → ObservationCache → pattern eval
-              → ThresholdEvents on crossings → metrics → Prometheus → Alertmanager
-              → AlertService → ntfy | email | AutoFix queue
+Collectors --ObservationEventStream gRPC :5001--> ThresholdEngine
+              MultiCollectorEventConsumerWorker -> ObservationCache -> pattern eval
+              -> ThresholdEvents on crossings -> metrics -> Prometheus -> Alertmanager
+              -> AlertService -> ntfy | email | AutoFix queue
 ```
 
 This path **never writes matrix cells**. gRPC is container-to-container only; HTTP is 8080
@@ -92,27 +92,27 @@ internal / 50xx on the host.
 ### 4b. Matrix path (DB-polled) — see [MATRIX.md](./MATRIX.md)
 
 ```
-Sentinel news ──GPU classifier──► macro_observations (":sig:" rows, value = tilt × confidence)
-FRED macro-classified series ──dual-write──► macro_observations
-OFR (wired, 0 series flagged → dormant) ──► macro_observations
-        ▼ (5-min DB poll)
-ThresholdEngine ObservationCellProjector ──► matrix_cells (11 sectors × signal × source)
+Sentinel news --GPU classifier--> macro_observations (":sig:" rows, value = tilt x confidence)
+FRED macro-classified series --dual-write--> macro_observations
+OFR (wired, 0 series flagged -> dormant) --> macro_observations
+        v (5-min DB poll)
+ThresholdEngine ObservationCellProjector --> matrix_cells (11 sectors x signal x source)
 ```
 
 ### 4c. Registration and resolution
 
 ```
-Collectors ──RegisterSeries gRPC :5001 (fire-and-forget)──► SecMaster
-ThresholdEngine ──ResolveBatch gRPC (pattern LOAD TIME only)──► SecMaster
-Sentinel ──POST /api/resolve-entities (HTTP, prepass)──► SecMaster
-FRED / OFR ──REST /api/signal-identities/* (macro gate, tagging)──► SecMaster
+Collectors --RegisterSeries gRPC :5001 (fire-and-forget)--> SecMaster
+ThresholdEngine --ResolveBatch gRPC (pattern LOAD TIME only)--> SecMaster
+Sentinel --POST /api/resolve-entities (HTTP, prepass)--> SecMaster
+FRED / OFR --REST /api/signal-identities/* (macro gate, tagging)--> SecMaster
 ```
 
 CalendarService is **HTTP-only** (no gRPC :5001 despite older diagrams); its econ source at
 runtime is FRED only, via a curated allow-list of ~18 release ids, and its `event_time` is
 synthesized (8:30/10:00 ET, DST-unaware).
 
-## 5. The Sentinel pipeline (news → extraction → digest)
+## 5. The Sentinel pipeline (news -> extraction -> digest)
 
 Detail in `SentinelCollector/README.md`; the matrix-facing half in [MATRIX.md](./MATRIX.md).
 
@@ -122,30 +122,30 @@ Detail in `SentinelCollector/README.md`; the matrix-facing half in [MATRIX.md](.
    `sentinel.raw_content` (payloads on disk under `/opt/ai-inference/raw-data/sentinel/`).
    A 30-day age guard prunes at startup and gates per-article.
 2. **Extraction** (production = **GPU JSON-CoD**, `Extraction__Backend=VllmJson`):
-   prompt+schema from host mount `/prompts/cod/` (hot-reloaded) → vLLM
-   `response_format=json_schema` → truncation salvage (brace-depth recovery; distinguishes
-   `truncated_salvaged` from `salvage_empty`) → `dsl-parser-mcp` `/parse_json` lifts JSON to a
-   `DocumentAst` → deterministic `/verify` span verifier (hard-failed blocks dropped; 12-25% of
-   articles is the normal baseline — a quality gate, not an error) → adapter persists
+   prompt+schema from host mount `/prompts/cod/` (hot-reloaded) -> vLLM
+   `response_format=json_schema` -> truncation salvage (brace-depth recovery; distinguishes
+   `truncated_salvaged` from `salvage_empty`) -> `dsl-parser-mcp` `/parse_json` lifts JSON to a
+   `DocumentAst` -> deterministic `/verify` span verifier (hard-failed blocks dropped; 12-25% of
+   articles is the normal baseline — a quality gate, not an error) -> adapter persists
    observations with sentence-snapped text quotes. Dispatch is continuous streaming with
-   `MaxConcurrent=8`; an `ObservationValueSanitizer` nulls un-storable values (|v| ≥ 1e16,
+   `MaxConcurrent=8`; an `ObservationValueSanitizer` nulls un-storable values (|v| >= 1e16,
    NaN/Inf) rather than clamping.
-3. **Resolution cascade** (per observation): LLM candidate-pick (≥0.7) → SecMaster hybrid
-   resolve → Gemini fallback (≥0.85, auto-registers new instruments) → Pending; an async
-   `ResolutionWorker` drains Pending via Finnhub (5 attempts → NoResolution), with a nightly
+3. **Resolution cascade** (per observation): LLM candidate-pick (>=0.7) -> SecMaster hybrid
+   resolve -> Gemini fallback (>=0.85, auto-registers new instruments) -> Pending; an async
+   `ResolutionWorker` drains Pending via Finnhub (5 attempts -> NoResolution), with a nightly
    AlphaVantage sweep (25/day quota) behind it. A per-article `EntityResolutionPrepass` (spaCy
-   NER → SecMaster resolve-entities) grounds prompts and sector tags — it never gates entry.
-4. **Signal classification**: one structured vLLM call per article → `macro_observations`
+   NER -> SecMaster resolve-entities) grounds prompts and sector tags — it never gates entry.
+4. **Signal classification**: one structured vLLM call per article -> `macro_observations`
    `:sig:` rows (the matrix feed).
 5. **Digest** (Quartz, America/New_York: daily 07:00 Mon-Fri, weekly Fri 19:00, monthly
-   last-day 19:00): observations → sector grounding (signal-derived via `ArticleSectorResolver`)
-   → stats → matrix sector heat (`matrix_cells` + `sector_regimes`) → news momentum (early/late
-   tilt split) → cross-collector rollup → LLM narrative (aggregate-first; token budget derived
-   from the model context, shed-loop drops lowest-ranked articles) → render (sector heat strip
-   + per-sector detail blocks) → ntfy push to `atlas-digest` (leads with top sector).
+   last-day 19:00): observations -> sector grounding (signal-derived via `ArticleSectorResolver`)
+   -> stats -> matrix sector heat (`matrix_cells` + `sector_regimes`) -> news momentum (early/late
+   tilt split) -> cross-collector rollup -> LLM narrative (aggregate-first; token budget derived
+   from the model context, shed-loop drops lowest-ranked articles) -> render (sector heat strip
+   + per-sector detail blocks) -> ntfy push to `atlas-digest` (leads with top sector).
    Every enrichment degrades rather than failing the run — Tier-1 always ships.
 
-AutoApprove is on: approve at extraction ≥0.9 ∧ resolution ≥0.8 ∧ InstrumentId; reject below
+AutoApprove is on: approve at extraction >=0.9 AND resolution >=0.8 AND InstrumentId; reject below
 0.5 extraction; else Pending.
 
 ## 6. SecMaster — identity, classification, resolution
@@ -157,26 +157,26 @@ instrument 7, commodity 4, fx 4).
 
 Core invariants:
 
-- **Identity ⊥ collection**: an instrument with zero source mappings still resolves with
+- **Identity indep of collection**: an instrument with zero source mappings still resolves with
   identity+sector+NAICS (with a Warning). `NotFound` means "exhausted all machinery", never
   "not in table".
 - **Sector gate is Equity-only**: ~87% of the catalog legitimately has null sector.
 - **Lazy-load**: the catalog self-seeds from entities seen in articles; bulk-preload is
   forbidden by design.
 
-Three distinct entry paths (do not conflate): `resolve-entities` (HTTP; Sentinel NER surfaces →
-instrument + NAICS + sector grounding), `ResolveBatch` (gRPC; ThresholdEngine symbol→best
+Three distinct entry paths (do not conflate): `resolve-entities` (HTTP; Sentinel NER surfaces ->
+instrument + NAICS + sector grounding), `ResolveBatch` (gRPC; ThresholdEngine symbol->best
 active source mapping, pattern load time only), `register` (gRPC; collector fire-and-forget,
 with a trusted-macro-collector guard on Economic asset classes).
 
 **Resolution cascade** ("fuzzy proposes, authoritative confirms"): local exact (0.95) / fuzzy
-(0.85) / vector (0.75) → SecmasterDirect 0.95 → EDGAR 0.90 → OpenFIGI 0.85-0.90 → signal-alias
-0.90 → upstream discovery proposes → confirmation cascade OpenFIGI → Finnhub → Gemini (0.85).
-Confirmed → persist + embed; unconfirmed → null + review queue. A non-overlapping article
+(0.85) / vector (0.75) -> SecmasterDirect 0.95 -> EDGAR 0.90 -> OpenFIGI 0.85-0.90 -> signal-alias
+0.90 -> upstream discovery proposes -> confirmation cascade OpenFIGI -> Finnhub -> Gemini (0.85).
+Confirmed -> persist + embed; unconfirmed -> null + review queue. A non-overlapping article
 context zeroes a candidate's score (dropped, not down-ranked, below MinConfidence 0.8).
 
-The synchronous hot path is the **hybrid cascade**: ExactSQL → FuzzySQL → pgvector cosine
-(bge-m3, hard similarity floor 0.5) → RAG hypothesis tier on llama-cpu-rag (25s budget,
+The synchronous hot path is the **hybrid cascade**: ExactSQL -> FuzzySQL -> pgvector cosine
+(bge-m3, hard similarity floor 0.5) -> RAG hypothesis tier on llama-cpu-rag (25s budget,
 abstains under 12s remaining budget, 4 concurrent slots, circuit breaker, no retry on
 generation). Any RAG failure degrades to deterministic-tier candidates — never a 500.
 
@@ -186,8 +186,8 @@ generation). Any RAG failure degrades to deterministic-tier candidates — never
 |---|---|---|
 | **FRED** | 80 series configs (79 active, 55 signal-tagged); per-frequency Quartz crons; dual-writes macro-classified series to the substrate; two backfills (BackfillService advances `LastCollectedAt`; AlfredBackfillService deliberately does not) | ObservationChannel has no reader (memory-growth hazard); 0/80 sector-tagged |
 | **Finnhub** | 18 active Quote series — SPY/QQQ/IWM/VTI/DIA, all 11 SPDR GICS sector ETFs, GLD/TLT; 1-min collection loop; token bucket 60/min | candles/social/insider/calendar tables exist with zero writers — permanently empty; `GetLatestEventTime` returns UtcNow on empty |
-| **AlphaVantage** | 5 Commodity (scalar) series; 4h cycle, ≤4 per cycle; in-memory quota (25/day, resets on restart) | OHLCV schema unused; TechnicalIndicator type is a scaffold (never collected); gRPC stream is scalar-only, events carry no values |
-| **OFR** | FSI daily 10:00 UTC, STFM daily 14:00 UTC, HFM Fri 18:00 UTC; 109 STFM + 336 HFM series | FSI excluded from gRPC auto-registration (admin one-shot only); FSI composite + 4 patterned subindices (`OFR_FSI[_CREDIT\|_FUNDING\|_VOLATILITY\|_EM]`) now dual-write raw to the substrate (the other 4 contributions have no pattern → excluded); STFM/HFM macro dual-write wired but 0 series `is_macro`-flagged |
+| **AlphaVantage** | 5 Commodity (scalar) series; 4h cycle, <=4 per cycle; in-memory quota (25/day, resets on restart) | OHLCV schema unused; TechnicalIndicator type is a scaffold (never collected); gRPC stream is scalar-only, events carry no values |
+| **OFR** | FSI daily 10:00 UTC, STFM daily 14:00 UTC, HFM Fri 18:00 UTC; 109 STFM + 336 HFM series | FSI excluded from gRPC auto-registration (admin one-shot only); FSI composite + 4 patterned subindices (`OFR_FSI[_CREDIT\|_FUNDING\|_VOLATILITY\|_EM]`) now dual-write raw to the substrate (the other 4 contributions have no pattern -> excluded); STFM/HFM macro dual-write wired but 0 series `is_macro`-flagged |
 | **Nasdaq** | **not running** (compose block commented out; NDL WAF) | events synthesized on read (EventId = fresh Ulid per read — not a dedup key) |
 | **CalendarService** | FRED releases (allow-list ~18), NYSE market calendar computed in-memory | no gRPC; Finnhub calendar worker disabled; fabricated event times (DST-unaware) |
 
@@ -230,11 +230,11 @@ See `deployment/README.md` for the full reference. The essentials:
   services. A freshness gate asserts every running service's image == local `:latest`.
 - **Hot-reload tags**: `dashboards`/`alerting` (Grafana auto-provisions, Prometheus SIGHUP),
   `patterns` (ThresholdEngine hot-reload API), `sentinel-prompts`/`cpu-cod-prompts` (rsync repo
-  → `/opt/ai-inference/prompts/`, overwrites host edits; sentinel watches the mount — no
+  -> `/opt/ai-inference/prompts/`, overwrites host edits; sentinel watches the mount — no
   rebuild needed).
 - **AutoFix pipeline** (host-side): alert-service writes alert JSON to
-  `/opt/ai-inference/autofix-queue` → `autofix-runner.timer` (60s) spawns `claude --print`
-  per alert (defers while an interactive claude session exists) → `autofix-watcher.timer`
+  `/opt/ai-inference/autofix-queue` -> `autofix-runner.timer` (60s) spawns `claude --print`
+  per alert (defers while an interactive claude session exists) -> `autofix-watcher.timer`
   (5 min) deploys merged AutoFix PRs (skipped while an interactive session is live).
   `merged-pr-watcher.timer` (same family, human-merged PRs) is installed but **intentionally
   not enabled** — the operator enables it post-review.
@@ -244,12 +244,12 @@ See `deployment/README.md` for the full reference. The essentials:
 
 ## 10. Observability
 
-Pipeline: services emit OTLP → otel-collector:4317 → Loki (logs, 30d), Tempo (traces, 7d),
+Pipeline: services emit OTLP -> otel-collector:4317 -> Loki (logs, 30d), Tempo (traces, 7d),
 Prometheus (metrics, 15s scrape). Grafana :3000 with provisioned datasources (Prometheus, Loki,
 Tempo, TimescaleDB, CalendarDB).
 
-Alert routing: Prometheus rules + Loki ruler → Alertmanager (severity routes critical /
-warning / info; critical inhibits warning per service) → alert-service webhook → ntfy
+Alert routing: Prometheus rules + Loki ruler -> Alertmanager (severity routes critical /
+warning / info; critical inhibits warning per service) -> alert-service webhook -> ntfy
 `atlas-alert`, Gmail, AutoFix queue. **AlertService is UP by design** (verified end-to-end
 2026-06-10).
 
@@ -266,7 +266,7 @@ Collectors & Services, Sentinel Pipeline, Signal Matrix, Calendar & Reports.
 
 - ThresholdEngine `ObservationEventSubscriber` + `CellProjector` formula: unwired dead code.
 - Finnhub non-Quote schema, AlphaVantage OHLCV/TechnicalIndicator: dead schema/scaffold.
-- OFR `is_macro` flags all off → no OFR substrate rows yet.
+- OFR `is_macro` flags all off -> no OFR substrate rows yet.
 - SecMaster proto `ALIAS_MATCH` never emitted; `RagStrictMode` true in code but false in prod
   via compose env.
 - `sentinel_ollama_*` metric names: legacy seam now recorded by the vLLM client.

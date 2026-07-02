@@ -8,21 +8,21 @@ ingests financial news (RSS + search via a Cloudflare edge worker), extracts str
 observations from that news with a local 32B LLM, and fuses both worlds into a single derived
 dataset — the **signal matrix** — alongside threshold alerting, daily digests, and scheduled
 reports. Everything runs in containers under nerdctl/containerd, deployed by ansible, observed
-through an OTEL → Prometheus/Loki/Tempo → Grafana stack.
+through an OTEL -> Prometheus/Loki/Tempo -> Grafana stack.
 
 ## The signal matrix
 
-The matrix is the system's centerpiece: a continuously re-projected table of **signal × sector
+The matrix is the system's centerpiece: a continuously re-projected table of **signal x sector
 contributions** (`matrix_cells`, TimescaleDB). Every macro/market signal — whether it arrived
 as a FRED data point or as the tilt of a news article — is projected onto the 11 ATLAS sectors
 (ENERGY … REAL_ESTATE) as a value in [-3, +3], every 5 minutes, with full multiplicative
-provenance (magnitude × source trust × freshness × temporal × confidence × sector weight) on
+provenance (magnitude x source trust x freshness x temporal x confidence x sector weight) on
 every row.
 
 Two properties define it:
 
 - **One funnel**: all matrix input flows through the `macro_observations` substrate table.
-  Sentinel news writes `tilt × confidence` per classified signal; FRED dual-writes its
+  Sentinel news writes `tilt * confidence` per classified signal; FRED dual-writes its
   macro-classified series; OFR is wired but dormant (0 series flagged). ThresholdEngine's
   `ObservationCellProjector` polls that table — the live gRPC event path never writes cells.
 - **Sources coexist, never overwrite**: cells are keyed per source collector, so FRED and news
@@ -40,7 +40,7 @@ Full detail: [MATRIX.md](./MATRIX.md).
 
 SentinelCollector turns headlines into matrix input and human-readable digests:
 
-- **Ingestion**: DB-managed RSS feeds + scheduled SearXNG queries → Cloudflare edge worker →
+- **Ingestion**: DB-managed RSS feeds + scheduled SearXNG queries -> Cloudflare edge worker ->
   `raw_content` (30-day retention guard).
 - **Extraction**: GPU vLLM JSON Chain-of-Density (`Qwen2.5-32B-Instruct-AWQ`,
   `response_format=json_schema`), continuous streaming at 8 concurrent articles; a
@@ -48,7 +48,7 @@ SentinelCollector turns headlines into matrix input and human-readable digests:
   failing verification is the normal quality-gate baseline). The former CPU GBNF/DSL path is
   retained as rollback only.
 - **Resolution**: spaCy NER prepass + SecMaster's "fuzzy proposes, authoritative confirms"
-  cascade (local SQL/vector tiers → OpenFIGI/Finnhub/Gemini confirmation), with async Finnhub
+  cascade (local SQL/vector tiers -> OpenFIGI/Finnhub/Gemini confirmation), with async Finnhub
   and nightly AlphaVantage sweeps behind it.
 - **Signal classification**: one structured GPU call per article scores tilt and confidence
   against a 77-signal catalog — this is the matrix's news feed.
@@ -87,7 +87,7 @@ design).
 - **Deployment**: ansible-only; the live compose file is regenerated every run. ZFS snapshots
   before each deploy; scoped restarts for surgical changes; prompt/dashboard/pattern updates
   hot-reload without rebuilds.
-- **Alerting**: Prometheus + Loki rules → Alertmanager → AlertService → ntfy/email, plus an
+- **Alerting**: Prometheus + Loki rules -> Alertmanager -> AlertService -> ntfy/email, plus an
   **AutoFix** pipeline that spawns a Claude session per actionable alert and auto-deploys
   merged fixes (deferring while an interactive session is live).
 - **Observability**: OTEL everywhere; per-domain dashboards (Overview, Collectors, Sentinel

@@ -151,12 +151,12 @@ namespace (Prometheus form shown), tagged with `exported_job="{service}"`:
 |--------|-------------|
 | `dotnet_process_memory_working_set_bytes` | Process working set (RSS) |
 | `dotnet_process_cpu_count` | **CPUs the CLR sees** — driven by the cgroup `cpu.max` quota, *not* host cores |
-| `dotnet_gc_heap_allocated_bytes_total` | Cumulative managed allocations (rate ⇒ alloc pressure) |
+| `dotnet_gc_heap_allocated_bytes_total` | Cumulative managed allocations (rate => alloc pressure) |
 | `dotnet_gc_last_collection_heap_size_bytes{gc_heap_generation}` | Managed heap size per gen (gen0/1/2/loh/poh) |
-| `dotnet_gc_collections_total{gc_heap_generation}` | GC count per generation (gen2 rate ⇒ pressure) |
+| `dotnet_gc_collections_total{gc_heap_generation}` | GC count per generation (gen2 rate => pressure) |
 | `dotnet_gc_pause_time_seconds_total` | Cumulative GC stop-the-world pause time |
 | `dotnet_thread_pool_thread_count_total` | ThreadPool thread count |
-| `dotnet_thread_pool_queue_length_total` | ThreadPool work-item queue depth (sustained >0 ⇒ starvation) |
+| `dotnet_thread_pool_queue_length_total` | ThreadPool work-item queue depth (sustained >0 => starvation) |
 | `dotnet_monitor_lock_contentions_total` | `lock`/`Monitor` contention events |
 | `dotnet_exceptions_total` | Exceptions thrown |
 
@@ -378,7 +378,7 @@ Record metrics where you don't control the other side—not everywhere:
 - Repository methods (would double-count with service layer)
 - Delegation methods
 
-**Metric value test**: A metric is worthwhile if it's `actionable ∧ variable ∧ observed`:
+**Metric value test**: A metric is worthwhile if it's `actionable AND variable AND observed`:
 - **Actionable**: Degradation leads to clear investigation path
 - **Variable**: Value changes over time (not always the same)
 - **Observed**: Dashboarded or alerted on
@@ -477,7 +477,7 @@ _counter.Add(count);  // Hours of no data
 
 1. Verify ActivitySource is registered in `.AddSource()`
 2. Check trace sampling (default 100%)
-3. Confirm Tempo is receiving: Grafana → Explore → Tempo
+3. Confirm Tempo is receiving: Grafana -> Explore -> Tempo
 
 ### Logs Not Correlated
 

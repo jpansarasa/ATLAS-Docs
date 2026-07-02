@@ -12,10 +12,10 @@ The Sentinel extraction pipeline uses Chain-of-Density (CoD) structured-output p
 
 | Stage | Backend | Technique | Purpose |
 |-------|---------|-----------|---------|
-| Content normalization | Trafilatura / Markitdown | HTML→markdown, PDF→markdown | Clean input for LLM |
+| Content normalization | Trafilatura / Markitdown | HTML->markdown, PDF->markdown | Clean input for LLM |
 | JSON-CoD emission | GPU (vLLM, Qwen2.5-32B-AWQ) | JSON-schema `response_format` decode | Structured CoD document (entities / numbers / events / claims) |
 | Parse + grounding | dsl-parser-mcp `/parse_json` | Deterministic Lark/AST lift + v2.3.1 verifier | Same `DocumentAst` contract as the CPU DSL path |
-| News-signal classification | GPU (vLLM) | Per-article classification | `:sig:` signal identities → `macro_observations` → matrix projector |
+| News-signal classification | GPU (vLLM) | Per-article classification | `:sig:` signal identities -> `macro_observations` -> matrix projector |
 
 Rollback path: CPU `llama-server` (qwen3-30b-a3b) GBNF-constrained DSL emission (`Extraction__Backend=LlamaServerDsl`), parsed by the same sidecar via `/parse`.
 
@@ -57,7 +57,7 @@ PagedAttention allocates KV cache in pages on demand per request, avoiding the f
 
 - Extraction quality requires strong instruction-following and JSON formatting ability
 - 7B/8B models produce more schema violations and lower confidence scores
-- The CPU rollback path also uses a ≥30B-class model (qwen3-30b-a3b MoE, ~3B active params)
+- The CPU rollback path also uses a >=30B-class model (qwen3-30b-a3b MoE, ~3B active params)
 
 ## Troubleshooting
 

@@ -28,14 +28,14 @@ the `intent-fidelity-done` tag).
 
 ### `digest-matrix-redesign-done` (@ b8dcd2a2)
 **Matrix-first digest redesign — COMPLETE.** The Sentinel digest is now
-organized by the signal×sector matrix instead of the 7-theme taxonomy:
+organized by the signal x sector matrix instead of the 7-theme taxonomy:
 Sector Heat strip + per-sector Detail blocks (net tilt, regime, top signals
 cross-referenced with news momentum, cited articles), articles grounded to
 sectors via their `:sig:` rows' `atlas_sector_code`, narrative prompt
 rewritten (Executive Take / Sector Watch / Cross-Sector Signals /
 Noteworthy One-Offs). ThresholdEngine `SectorRegimeProjectionWorker` now
 publishes SectorScoreEvents so `sector_regimes` populates (first rows ever,
-2026-06-12). ThemeClassifier/DigestTheme deleted; Grafana theme panel →
+2026-06-12). ThemeClassifier/DigestTheme deleted; Grafana theme panel ->
 sector panel. PRs #693 (matrix read + heat), #695 (sector grounding),
 #697 (sector skeleton), #698 (deletion sweep), #694 (regime publisher).
 Plan retired from `docs/plans/digest-matrix-redesign.md` — recover via
@@ -49,7 +49,7 @@ note that's now removed from main. Use this tag to recover any of the
 deleted Phase 2 / Phase 3 / recon documents.
 
 ### `dsl-poc-phase4-done` (@ 93fd94d0)
-**Phase 4 GPU semantic verifier — PASS** at recalibrated ≥80% Foundry
+**Phase 4 GPU semantic verifier — PASS** at recalibrated >=80% Foundry
 agreement gate. 80.64% via prompt iter-2-axis-C + IsSelfReferential
 short-circuit on Qwen2.5-32B-Instruct-AWQ. Recalibration rationale in
 `docs/plans/atlas-dsl-poc-phase4-gpu-semantic-verifier.md §11`.
@@ -72,7 +72,7 @@ PHASE_TAGS; recover via `git show dsl-poc-phase5-done:docs/plans/atlas-dsl-poc-p
 ### `gpu-cod-roleflip-2026-06-09` (@ 41e649b4)
 **GPU-CoD role-flip — DONE.** Sentinel extraction CoD moved from CPU
 llama-server (qwen3-30b-a3b) to GPU vLLM (Qwen2.5-32B-AWQ, JSON-schema
-output). ~25× throughput lift (~327 art/hr vs ~20); backlog drains ~20h.
+output). ~25x throughput lift (~327 art/hr vs ~20); backlog drains ~20h.
 Distributed: GPU handles CoD emission + CoVe verification; CPU handles
 classifier + embeddings. Loop-guard added. Recall gate 0.79 (n=80).
 PRs #640 #642 #643 #644 #645 #646.
@@ -87,7 +87,7 @@ PRs #640 #642 #643 #644 #645 #646.
   (~4,500 files: corpora, prompts, results, training runs, scripts).
   Contained in tags `dsl-poc-phase4-done` / `dsl-poc-phase5-done`; the
   production parser/verifier mirror is `SentinelCollector/dsl-parser-mcp/dsl/`.
-- `docs/benchmarks/cod-cove-acceptance/` — CoD→CoVe acceptance harness;
+- `docs/benchmarks/cod-cove-acceptance/` — CoD->CoVe acceptance harness;
   the CoVe claim verifier it validated was removed in #647.
 - `docs/plans/gpu-json-cod-rollout-2026-06-09.md` — rollout DONE; tag
   `gpu-cod-roleflip-2026-06-09` contains the plan.
@@ -121,10 +121,10 @@ Phase 3 schema iteration. Full plan at
 `pre-docs-consolidation-2026-05-26:docs/plans/atlas-dsl-poc-phase2-llama-server.md`.
 
 ### Phase 3 — v2 schema + word-grounding arc (DONE 2026-05-24)
-Multi-PR iteration: v2 baseline (#390) → v2.1 no-offset (#392, #393) →
-ENT-ref cleanup (#394) → v6 leaner prompt (#400) → context-aware /
-RAG / leaner-prompt sweep (#404–#412) → v2.2 token-grounding shelved
-(#425) → v2.3 word-grounding (#426–#428) → v15 compound chunked
+Multi-PR iteration: v2 baseline (#390) -> v2.1 no-offset (#392, #393) ->
+ENT-ref cleanup (#394) -> v6 leaner prompt (#400) -> context-aware /
+RAG / leaner-prompt sweep (#404–#412) -> v2.2 token-grounding shelved
+(#425) -> v2.3 word-grounding (#426–#428) -> v15 compound chunked
 (#429, #431, #432). Outcome: word-grounding v2.3.1 + chunked compound
 v15 are the leading production candidates; T=0 A/B verdict
 DESIGN-SOUND. Deterministic Python verifier shipped as

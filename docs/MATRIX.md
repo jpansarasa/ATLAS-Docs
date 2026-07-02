@@ -1,7 +1,7 @@
 # The ATLAS Signal Matrix
 
 The matrix is ATLAS's central derived dataset: a continuously re-projected time series of
-**signal × sector contributions** stored in the `matrix_cells` hypertable (`atlas_data`,
+**signal x sector contributions** stored in the `matrix_cells` hypertable (`atlas_data`,
 TimescaleDB). It answers "what is each macro/market signal currently saying about each of the
 11 ATLAS sectors, from each data source, and how strongly?" — with full multiplicative
 provenance on every row.
@@ -15,7 +15,7 @@ there and detailed in `SentinelCollector/README.md`.
 One row of `matrix_cells` is keyed **(pattern_id, sector_code, evaluated_at)** (unique index
 `ux_matrix_cells_idem`). The single wired writer — ThresholdEngine's `ObservationCellProjector`
 — keys rows with a synthetic `pattern_id = "obs:{signal_identity_id}:{source_collector}"`, so
-the effective cell identity is **(signal × sector × source collector) at evaluation time**.
+the effective cell identity is **(signal x sector x source collector) at evaluation time**.
 
 Every projection emits exactly **11 rows — one per ATLAS sector** — writing explicit zeros
 rather than sparse rows. A missing sector weight raises and skips the whole group; partial
@@ -40,19 +40,19 @@ audit can re-derive `cell_value` without re-reading the underlying observations.
 ## 2. Data flow end to end
 
 ```
-news article ──► ExtractionProcessor ──► NewsSignalClassifier (GPU vLLM, structured JSON)
-                                              │ per-signal {id, tilt, confidence, sector?}
-                                              ▼
+news article --> ExtractionProcessor --> NewsSignalClassifier (GPU vLLM, structured JSON)
+                                              | per-signal {id, tilt, confidence, sector?}
+                                              v
                  MacroObservationRouter.TryPlanNewsSignalWrite
-                   value_numeric = tilt × confidence
+                   value_numeric = tilt * confidence
                    source_id = "{rawContentId}:sig:{signalId}", source_collector = "sentinel"
-                                              ▼
-FRED collector ──(macro-classified series)──► macro_observations (MacroSubstrate upsert, heal-on-rewrite)
-OFR  collector ──(is_macro flag; currently 0 flagged)──┘
-                                              ▼  (DB poll, NOT gRPC)
+                                              v
+FRED collector --(macro-classified series)--> macro_observations (MacroSubstrate upsert, heal-on-rewrite)
+OFR  collector --(is_macro flag; currently 0 flagged)--'
+                                              v  (DB poll, NOT gRPC)
                  ThresholdEngine ObservationCellProjector (5-min cycle)
-                   group by (signal_identity_id, source_collector) → 11-sector projection
-                                              ▼
+                   group by (signal_identity_id, source_collector) -> 11-sector projection
+                                              v
                  matrix_cells (upsert ON CONFLICT DO UPDATE, IS DISTINCT FROM guarded)
 ```
 
@@ -71,8 +71,8 @@ Validation drops hallucinated ids, non-finite values, and anything below the 0.5
 floor — every drop is metered by reason. The classifier is fail-soft: timeout, parse failure,
 empty catalog, or unenforced schema all return `Empty` and extraction proceeds.
 
-Per-article order: normalize → `EntityResolutionPrepass` (spaCy NER → SecMaster
-`/api/resolve-entities`, fail-soft) → classify → write. The prepass feeds **sector grounding
+Per-article order: normalize -> `EntityResolutionPrepass` (spaCy NER -> SecMaster
+`/api/resolve-entities`, fail-soft) -> classify -> write. The prepass feeds **sector grounding
 only**; it never gates matrix entry — sectorless articles still classify and write.
 
 **The catalog is 77 signals**: `atlas_secmaster.signal_identities` holds 84 rows; the
@@ -84,7 +84,7 @@ repo-\*) surfaces are part of the allowlist.
 ### 2b. The router (Sentinel write)
 
 `MacroObservationRouter.TryPlanNewsSignalWrite` plans one `macro_observations` row per
-classified signal: `value_numeric = tilt × confidence` (signed, |v| ≤ 1), idempotency key
+classified signal: `value_numeric = tilt * confidence` (signed, |v| <= 1), idempotency key
 `(source_collector="sentinel", source_id="{rawContentId}:sig:{signalId}", observation_time)`.
 
 Sector reconciliation: a SecMaster entity-grounded sector wins over the classifier's guess. A
@@ -110,7 +110,7 @@ CHECK (`ck_macro_obs_value_xor`) plus client-side `EnsureValid()`.
 - **FRED** (`FredCollector/src/Services/DataCollectionService.cs`): a per-series gate consults
   SecMaster REST `/api/signal-identities/by-category/macro` (cached). Macro-classified series
   dual-write `source_collector="fred"`, `source_id={SeriesId}`, after a value transform that
-  maps index levels → YoY for the inflation family (a null transform result means skip, never a
+  maps index levels -> YoY for the inflation family (a null transform result means skip, never a
   fabricated value). 27 distinct signal ids have flowed from FRED (24 within
   the projector's 120-day lookback; DB-verified 2026-06-11).
 - **OFR** (`OfrCollector/src/Services/MacroObservationDualWriter.cs`): shared HFM/STFM
@@ -134,7 +134,7 @@ value falls back with a startup WARN.
 Per cycle:
 
 1. Drop null-`signal_identity_id` rows (counted).
-2. Build one signal→pattern map from the full pattern catalog, first-enabled-wins on
+2. Build one signal->pattern map from the full pattern catalog, first-enabled-wins on
    duplicates.
 3. Per (signal, collector) group, skip `unknown_signal` / `pattern_disabled` (distinct
    counters).
@@ -152,17 +152,17 @@ Per cycle:
 Per sector:
 
 ```
-cell = magnitude × sourceTrust × freshness × temporal × confidence × sectorWeight   (clamped ±3)
+cell = magnitude * sourceTrust * freshness * temporal * confidence * sectorWeight   (clamped ±3)
 ```
 
 - **News magnitude (decay-weighted sum + saturation)**:
-  `S = Σ vᵢ·exp(−ln2·ageᵢ/H)`, then `magnitude = K·tanh(S/K)`. Sustained same-direction
+  `S = sum_i v_i*exp(-ln2*age_i/H)`, then `magnitude = K*tanh(S/K)`. Sustained same-direction
   coverage accumulates; tanh saturates a burst gracefully before the ±3 clamp. News uses
   `freshness = 1.0` and **no floor**: an idle signal's cell self-heals toward 0 as ages advance
   each cycle and the DO-UPDATE re-projection overwrites in place. Live tunables
   (`Matrix:NewsDecay`): `HalfLifeHours=24.0`, `SaturationScale=2.0` (bind-time validated,
   `NewsDecayOptions`).
-- **Hard-data magnitude**: Welford running mean (Σoᵢ/n) × step-decay freshness derived from
+- **Hard-data magnitude**: Welford running mean (sum(o_i)/n) x step-decay freshness derived from
   publication frequency, with a 10% freshness floor.
 - **Confidence is STATIC**: `PatternConfiguration.Confidence` (default 0.75). Its XML-doc
   claim of "informational only" is **false** for the wired path — it multiplies into every
@@ -203,7 +203,7 @@ cell = magnitude × sourceTrust × freshness × temporal × confidence × sector
 - **Digest momentum** — a consumer of the *feed*, not of `matrix_cells`:
   `NewsMomentumQueryService` reads `macro_observations` directly
   (`source_collector='sentinel' AND signal_identity_id IS NOT NULL AND value_numeric BETWEEN
-  -1.5 AND 1.5`), splitting its window at the midpoint for an early→late per-signal tilt trend.
+  -1.5 AND 1.5`), splitting its window at the midpoint for an early->late per-signal tilt trend.
   Note this filter admits legacy non-`:sig:` sentinel rows that the projector drops — the two
   consumers see different effective inputs. The digest JSON key `bias_matrix` survives for
   schema compatibility but carries the momentum payload.
@@ -216,11 +216,11 @@ cell = magnitude × sourceTrust × freshness × temporal × confidence × sector
 | measure | value |
 |---|---|
 | matrix_cells total | 24,324 (24,101 projector `obs:` rows; 223 legacy NULL-collector) |
-| cells by collector | sentinel 23,936 · fred 165 |
+| cells by collector | sentinel 23,936; fred 165 |
 | distinct signals in cells | 30 |
-| macro_observations total | 4,191 (sentinel 4,047 · fred 144 · ofr 0) |
+| macro_observations total | 4,191 (sentinel 4,047; fred 144; ofr 0) |
 | `:sig:` news rows | 3,968 |
-| last 24 h | 717 obs ingested (715 `:sig:`, 6 fred) → 4,785 cell writes |
+| last 24 h | 717 obs ingested (715 `:sig:`, 6 fred) -> 4,785 cell writes |
 | max \|cell_value\| | 3.0000 (clamp + CHECK holding) |
 
 **Patterns**: 72 JSON files under `ThresholdEngine/config/patterns/`, 44 carrying
@@ -239,7 +239,7 @@ guard), and the extraction dead-man chain upstream of the feed.
 
 ## 7. What does NOT feed the matrix (by design)
 
-- **The live gRPC path**: collectors → ThresholdEngine `MultiCollectorEventConsumerWorker`
+- **The live gRPC path**: collectors -> ThresholdEngine `MultiCollectorEventConsumerWorker`
   (:5001) updates the ObservationCache and persists ThresholdEvents on crossings — it never
   writes `matrix_cells`.
 - **`ObservationEventSubscriber` is unwired** dead code (absent from hosted-service
