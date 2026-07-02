@@ -21,13 +21,15 @@ NTFY:
   mcp: sentinel-ntfy # registered in ~/.claude.json; tools: ntfy_publish | poll_new | poll_since | ack
 WAKE_LISTENER [event-driven ¬ cron-poll — idle ticks = context rot + per-tick full cache miss]:
   arm at session start (persistent Monitor, supervisor session ONLY — subagents NEVER Monitor [[feedback_agent_long_wait_pattern]]):
-    Monitor(command: curl -sN -K ~/.config/ntfy/claude-reply.curlrc
+    Monitor(command: while true; do curl -sN -K ~/.config/ntfy/claude-reply.curlrc
               'https://ntfy.elasticdevelopment.com/atlas-claude-reply/json'
-              | jq --unbuffered -c 'select(.event=="message")',
+              | jq --unbuffered -c 'select(.event=="message")';
+              echo "$(date -u +%FT%TZ) stream closed, reconnecting" >&2; sleep 5; done,
             description: "atlas-claude-reply (user → supervisor)", persistent: true)
   jq filter is LOAD-BEARING: stream emits open/keepalive ~45s — unfiltered they re-create the tick rot 20×
-  on event → ntfy_poll_new via MCP (MCP = ack cursor + source of truth; monitor = wake signal ONLY) → TURN_LOOP
-  on monitor-exit notification (connection drop) → re-arm; poll_new on re-arm covers the gap window
+  reconnect loop is LOAD-BEARING: proxy cuts held streams (observed: clean close post-event, 2026-07-02) — without it every drop = a wake turn; reconnect logs to stderr (output file) ¬events
+  on event → ntfy_poll_new via MCP (MCP = ack cursor + source of truth; monitor = wake signal ONLY; poll also covers any reconnect-gap messages) → TURN_LOOP
+  on monitor-exit notification (only the loop itself dying now) → re-arm + poll_new
   ✗ 15-min wakeup cron # retired 2026-07-02: 25 identical tick pairs/night = transcript rot + stale-prompt drift + ~290k uncached tokens/tick
 
 ORACLE_ROUTING: Azure_Foundry # /home/james/.azure-foundry-keys
