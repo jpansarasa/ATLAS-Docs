@@ -13,6 +13,19 @@ Or inspect a single file at a tag without checkout:
 
 ## Tags
 
+### `intent-fidelity-done` (@ 84569aac)
+**Intent-fidelity enforcement epic — COMPLETE** (shipped 2026-07-02).
+D-entry decision records (AGENT_README `DECISIONS` blocks, atomic with
+INTENT(D-n) comments + guards + RED-capable guard tests) for
+SentinelCollector, ThresholdEngine, and SecMaster; enforcement hooks
+(dispatch-guard BLOCK / decisions-injector ADVISE / plan-retirement ASK)
+plus the testing-context outbound-boundary line; `intent-review` skill
+wired into REVIEW_FIX_LOOP and the deploy skill; CLAUDE.md MECHANICS.
+PRs #826–#830. Note: the spec doc
+`docs/proposals/intent-fidelity-enforcement.md` retirement is PENDING
+(awaits the human-confirmed plan-retirement-guard ask; recovery pointer =
+the `intent-fidelity-done` tag).
+
 ### `digest-matrix-redesign-done` (@ b8dcd2a2)
 **Matrix-first digest redesign — COMPLETE.** The Sentinel digest is now
 organized by the signal×sector matrix instead of the 7-theme taxonomy:
