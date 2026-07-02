@@ -107,7 +107,7 @@ PROMPT_SHAPE (≤400w):
     ¬PATTERN: 'MUST be clean' as a precondition → agents silently `git restore STATE.md`
     rationale: 9 historical stashes of lost STATE.md edits prove the bug is real
     canonical: templates/story-implementation.md "Git ops hygiene" stanza
-  design_intent [MANDATORY — every impl brief]:
+  DESIGN INTENT [MANDATORY — every impl brief; spell it with the space — the #826 dispatch-guard greps the literal phrase 'DESIGN INTENT', an underscore label alone gets denied]:
     decisions: in-scope D-entries copied VERBATIM from <Service>/AGENT_README.md DECISIONS block ¬paraphrase — # paraphrase = the compression step where WHY dies (leak point 1); "none — no D-entries in scope" is valid
     supersedes: D-n | none — # named explicitly; touching a guard without a named supersession = conflict
     guard_tests: one deliverable per new/changed guard — # contract: .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT (violation constructed, refusal AT the boundary, RED-on-guard-delete)
