@@ -19,6 +19,16 @@ NTFY:
   publish_topic: atlas-claude-ask # supervisor → user (asks, blockers, milestones)
   poll_topic: atlas-claude-reply # user → supervisor (replies, redirects)
   mcp: sentinel-ntfy # registered in ~/.claude.json; tools: ntfy_publish | poll_new | poll_since | ack
+WAKE_LISTENER [event-driven ¬ cron-poll — idle ticks = context rot + per-tick full cache miss]:
+  arm at session start (persistent Monitor, supervisor session ONLY — subagents NEVER Monitor [[feedback_agent_long_wait_pattern]]):
+    Monitor(command: curl -sN -K ~/.config/ntfy/claude-reply.curlrc
+              'https://ntfy.elasticdevelopment.com/atlas-claude-reply/json'
+              | jq --unbuffered -c 'select(.event=="message")',
+            description: "atlas-claude-reply (user → supervisor)", persistent: true)
+  jq filter is LOAD-BEARING: stream emits open/keepalive ~45s — unfiltered they re-create the tick rot 20×
+  on event → ntfy_poll_new via MCP (MCP = ack cursor + source of truth; monitor = wake signal ONLY) → TURN_LOOP
+  on monitor-exit notification (connection drop) → re-arm; poll_new on re-arm covers the gap window
+  ✗ 15-min wakeup cron # retired 2026-07-02: 25 identical tick pairs/night = transcript rot + stale-prompt drift + ~290k uncached tokens/tick
 
 ORACLE_ROUTING: Azure_Foundry # /home/james/.azure-foundry-keys
   gold | architecture: claude-opus-4-7
@@ -28,7 +38,7 @@ ORACLE_ROUTING: Azure_Foundry # /home/james/.azure-foundry-keys
   cap: 500K_tpm_client_side
   ledger: /opt/ai-inference/training-data/azure-oracle-ledger.jsonl
 
-WAKEUP_STEP_0: ntfy.poll_new(atlas-claude-reply) BEFORE routine_work
+WAKEUP_STEP_0: on ANY wake (monitor event | task-notification | user turn) → ntfy.poll_new(atlas-claude-reply) BEFORE routine_work; verify WAKE_LISTENER armed (re-arm if dead)
 FAILURE: bad_subagent_result → fix_prompt + dispatch_fresh ¬ SendMessage(failed_agent)
 OVERFLOW: long_output → /tmp/sentinel-remediation/<file> ¬ supervisor_turn
 MERGE_GATE [never_re-guess]: `gh pr merge` needs /tmp/atlas-test-markers/pr-reviewed-<N>,
