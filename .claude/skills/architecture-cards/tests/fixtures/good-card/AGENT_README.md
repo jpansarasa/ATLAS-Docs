@@ -21,4 +21,7 @@ CROSS-SERVICE: collectors→register(f-a-f); processor→ResolveBatch(sync); FEE
 
 GOTCHAS: ✗ bulk-preload to fix a miss · ✗ NotFound≠"not in table".
 
+DECISIONS:
+  D-1 frontier-last-resort: INTENT cheap lookups fan out; frontier call is the RARE earned exception / PRECOND all-cheap-failed ∧ genuinely-hard entity / GUARD WidgetGuard.Apply @ src/Services/WidgetGuard.cs:6 / TEST WidgetGuardTests.Should_not_invoke_frontier_when_cheap_path_succeeds
+
 SEE: README.md §Reference · EntityResolutionService.cs · ResolutionService.cs.

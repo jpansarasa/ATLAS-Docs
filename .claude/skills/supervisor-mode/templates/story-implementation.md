@@ -37,6 +37,20 @@ EF migration step explicitly per CLAUDE.md HARD_STOP:
 "Use `nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project {path}` —
 never hand-author migration .cs files."}
 
+## Design intent (MANDATORY stanza — supervisor fills VERBATIM, never paraphrases)
+- decisions: {the in-scope D-entries copied VERBATIM from
+  <Service>/AGENT_README.md DECISIONS block — full lines, not summaries;
+  or "none — no D-entries in scope for the touched code"}
+- supersedes: {D-n | none}
+- guard_tests: {one deliverable per new/changed guard — construct the
+  violation, assert refusal AT the boundary through the real flow, mock
+  ONLY the external client, RED if the guard is deleted; contract:
+  .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT}
+- Conflict rule: if this brief contradicts a D-entry without a named
+  supersession above → STOP and report; never route around it, never
+  obey the stale entry. (The entry may be outdated OR the brief wrong —
+  the supervisor/human decides, not you.)
+
 ## Build / verify
 - `bash {Service}/.devcontainer/compile.sh` (with tests). Per CLAUDE.md
   GIT_PUSH HARD_STOP: 0 errors / 0 warnings / all tests pass.

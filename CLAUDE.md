@@ -128,6 +128,12 @@ PRINCIPLE: every line is intentional, traceable to a design decision WITH its ju
   a privileged/expensive/EXCEPTION path (frontier last-resort, raw-DB write, host restart, --user flag) exists for a SPECIFIC EARNED case → GUARD it so it can't silently become a primary path, and WRITE the precondition where the code lives.
   worked example: gemini-resolver INTENT = "cheap lookups fan out in parallel; the frontier call is the RARE exception, earned only when all-cheap-failed on a genuinely hard entity, because THERE it pays dividends." Code kept the mechanism (call-on-miss) but lost the precondition (rare ∧ hard ∧ dividend-paying) → trash firehose to a frontier model = ethic violation, invisible until it hit a bill.
 ENFORCE (at a scarce-resource boundary — $/GPU/quota; apply as warranted ¬dogmatic): gate(eligible-only) + fail-closed-cap(refuse past budget ¬silent-pass) + burn-alert(BEFORE depletion ¬"calls>0 ∧ cost=$0" corpse-detector) + honest-health(exercise the real work path ¬cheap-reachability) + business-test(RED-on-unfixed [[feedback_tests_validate_business_outcomes]]).
+MECHANICS [D-entries — format spec: .claude/skills/architecture-cards/CARD_TEMPLATE.md §DECISIONS BLOCK]:
+  D_ENTRY: `D-n <slug>: INTENT <why> / PRECOND <condition> / GUARD <class.method> @ file:line / TEST <TestClass.TestName>` in <Service>/AGENT_README.md DECISIONS block # scoped: exception paths | scarce-resource boundaries | non-obvious preconditions; `DECISIONS: none` legal; >~6 = smell
+  ATOMIC_SET [change-all-or-none]: D-entry + `// INTENT(D-n):` comment at guard site + guard code + guard test # same discipline as the `:sig:` infix
+  SUPERSESSION: rewrite the entry in the SAME PR as the code change; briefs name "supersedes D-n" explicitly; no tombstones
+  CONFLICT [HARD_STOP]: brief contradicts a D-entry without named supersession → STOP + report ¬route-around ¬obey-stale # human/supervisor arbitrates, ¬the implementing agent
+  GUARD_TEST: required per D-entry — construct the violation, assert refusal AT the boundary through the real flow, RED if the guard is deleted # contract: .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT
 
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]
 MODEL_SIZE: ≥30B parameters required # RLM needs coding ability
@@ -158,6 +164,7 @@ BEFORE reasoning about a service's architecture / API / data-model / resolution 
   rationale: card front-loads negative-space (does-NOT / on-miss / invariants / DISTINCTIONS / GOTCHAS) an endpoint catalog can't convey.
 ✗ guess a service's shape from method names / the endpoint table # read the card
 ✗ "fix" a symptom by violating a card INVARIANT (e.g. bulk-preload, backfill-to-green, raw DB fix)
+cards carry DECISIONS (numbered, guarded D-entries): touching a guard ∨ contradicting an entry without a named "supersedes D-n" → STOP # rule: INTENT_FIDELITY MECHANICS
 cards:
   SecMaster:         SecMaster/AGENT_README.md         # resolve-entities≠ResolveBatch; identity⊥collection; fuzzy-proposes/authoritative-confirms; ✗NotFound="not-in-table"; ✗bulk-preload; ✗gate-non-Equity-sector
   ThresholdEngine:   ThresholdEngine/AGENT_README.md   # WS3-projector=ONLY wired matrix_cells writer; ObservationEventSubscriber=UNWIRED/dead; Confidence XML-doc"informational only"=FALSE; ✗live-FRED-gRPC-writes-matrix_cells; ✗ascending-projector-read

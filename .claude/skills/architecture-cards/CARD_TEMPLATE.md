@@ -30,6 +30,11 @@ CROSS-SERVICE: IN {who→this, sync|f-a-f}; OUT {this→who, sync|f-a-f}; FEEDS:
 
 GOTCHAS: ✗{anti-pattern agent will reach for} ✗{do-NOT-propose-X} ✗{symptom-fix that violates INV}
 
+DECISIONS:
+  D-n {slug}: INTENT {why} / PRECOND {condition} / GUARD {Class.Method} @ {file:line} / TEST {TestClass.TestName}
+  {repeat per decision — or replace the whole block with the single line
+   `DECISIONS: none — no exception paths` when the service genuinely has none}
+
 SEE: README §Reference · {Code.cs:line(what to read)} · {openapi/proto for exhaustive catalog}
   gRPC contracts: SEE MUST reference the .proto file for any gRPC path (e.g. SEE: Events/src/Events/Protos/observation_events.proto).
   REST contracts: openapi.json or §API Endpoints. Both surfaces must be documented — REST reference ≠ complete API surface.
@@ -58,6 +63,31 @@ Density gate: card ≤ ~1 page / ~55 non-blank lines.
 
 Omit a block only if the service genuinely has no instance of it; say so explicitly.
 
+## DECISIONS BLOCK — per-service design-decision record [D_ENTRY_SPEC]
+
+Numbered decisions (`D-1`, `D-2`, …). Line format (exact — audit.sh greps it):
+  `D-n <slug>: INTENT <why> / PRECOND <condition> / GUARD <class.method> @ file:line / TEST <TestClass.TestName>`
+  file:line is relative to the service root (the dir containing AGENT_README.md).
+
+ATOMIC SET (change-all-or-none — same discipline as the `:sig:` infix string contract):
+  1. D-entry in the card
+  2. `// INTENT(D-n):` comment at the guard site
+  3. guard code
+  4. guard test
+
+Supersession: rewrite the entry IN THE SAME PR as the code change. No tombstones —
+main = current-state, git log = archive. Dispatch briefs must name **"supersedes D-n"**
+explicitly. A brief that contradicts a D-entry without a named supersession → STOP and
+report; never route-around, never obey-stale (the entry may be outdated OR the brief
+wrong — a human/supervisor decides, not the implementing agent).
+
+Scope discipline (¬everything is a decision):
+  ✓ exception paths (frontier last-resort, raw-DB write, privileged op)
+  ✓ scarce-resource boundaries ($/GPU/quota)
+  ✓ invariants with non-obvious preconditions
+  ✗ ordinary mechanism — a service may declare `DECISIONS: none — no exception paths`
+  >~6 entries = smell (scope creep dilutes the signal); card stays ≤ ~1 page.
+
 ## AUDIT COMPLIANCE — literal labels REQUIRED [HARD_STOP]
 
 `scripts/audit.sh` checks for literal text labels. A generated card MUST include these
@@ -75,3 +105,14 @@ The abbrev-DSL forms `¬do:` / `miss:` / `INV:` MAY be used as aliases within a 
 do NOT satisfy the audit grep — the literals `does NOT` and `on-miss` MUST also appear.
 Rationale: rollout-2 cards used only the symbols and required 16 post-hoc fixes because
 `audit.sh` grep targets the literals, not the symbols.
+
+DECISIONS block (advisory findings — NOT blocks; lint-blocking was rejected, spec §OUT_OF_SCOPE):
+  `DECISIONS` literal absent anywhere in the card → MEDIUM W8 (`DECISIONS: none — no
+  exception paths` satisfies it).
+  Each `D-n` entry missing a `GUARD <class.method> @ file:line` or `TEST <TestClass.TestName>`
+  citation → HIGH D_entry_no_citation. The TEST citation must be DOTTED
+  (`TestClass.TestName`) — a bare `TEST word` does not count. A malformed GUARD
+  (missing `:line`) is reported as MISSING, not as a distinct malformed signal.
+  Dead citation — GUARD file missing under the service root, or the TEST method name not
+  greppable in the service's test project (*.cs whose path RELATIVE to the service root
+  contains *test*) → HIGH D_entry_dead_citation.

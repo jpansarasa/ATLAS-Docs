@@ -66,7 +66,8 @@ exceeded → ntfy.publish(state) + end_turn ¬ "just one more"
   2. walk(plan pipeline diagram backward from current target | current failure)
   3. confirm: each pipeline stage has impl OR explicit-stub OR explicit-out-of-scope
   4. confirm: benchmark scores being cited as evidence are NOT mistaken for production capability
-  5. IF mismatch found between plan + production reality → STOP + NTFY (architectural) ¬ dispatch
+  5. extract in-scope design decisions (plan § + card D-entries) into the brief VERBATIM ¬paraphrased — # paraphrase is where WHY dies; the implementing agent must see the precondition, not a summary of it
+  6. IF mismatch found between plan + production reality → STOP + NTFY (architectural) ¬ dispatch
 rationale: STATE.md captures session reality; active_plan captures architectural intent. Drifting from plan because session reality contradicts it is how we ship to wrong foundations.
 
 ## ROLE_BOUNDARY [supervisor_owns_index]
@@ -106,6 +107,12 @@ PROMPT_SHAPE (≤400w):
     ¬PATTERN: 'MUST be clean' as a precondition → agents silently `git restore STATE.md`
     rationale: 9 historical stashes of lost STATE.md edits prove the bug is real
     canonical: templates/story-implementation.md "Git ops hygiene" stanza
+  design_intent [MANDATORY — every impl brief]:
+    decisions: in-scope D-entries copied VERBATIM from <Service>/AGENT_README.md DECISIONS block ¬paraphrase — # paraphrase = the compression step where WHY dies (leak point 1); "none — no D-entries in scope" is valid
+    supersedes: D-n | none — # named explicitly; touching a guard without a named supersession = conflict
+    guard_tests: one deliverable per new/changed guard — # contract: .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT (violation constructed, refusal AT the boundary, RED-on-guard-delete)
+    conflict_rule [include verbatim in the brief]: "If this brief contradicts a D-entry without a named supersession above → STOP and report; never route-around, never obey the stale entry."
+    canonical: templates/story-implementation.md "Design intent" stanza
 
 PARALLELISM:
   same_branch + concurrent → SEQUENCE (race risk)
@@ -157,7 +164,7 @@ POLL (atlas-claude-reply): TURN_LOOP step 1 + WAKEUP_STEP_0
 
 ## REVIEW_FIX_LOOP [PR_ready]
 AUTO_FIRE on supervisor-opened PR (no user gate):
-  1. dispatch(review-pr + observability-review) | parallel | background
+  1. dispatch(review-pr + observability-review + intent-review) | parallel | background
   2. aggregate findings: {critical, important, suggestion}
   3. dispatch_fix per severity | commit-as-you-go | selective_pathspec
   4. push only after critical+important addressed
