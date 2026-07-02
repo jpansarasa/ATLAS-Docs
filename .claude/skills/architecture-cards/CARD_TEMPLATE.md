@@ -1,16 +1,16 @@
 # ARCHITECTURE — {ServiceName}   [read-first]
 
-PURPOSE: {what it IS} ¬{what it IS NOT — the boundary people assume wrong}.
+PURPOSE: {what it IS} NOT {what it IS NOT — the boundary people assume wrong}.
 
 DATA MODEL + INVARIANTS:
-  {Relations: `A 1—N B · 1—1 C ; →FK D`. Compact notation.}
-  INV {name}: {rule}. {why it bites if violated}. ¬{the wrong assumption}.
+  {Relations: `A 1—N B · 1—1 C ; ->FK D`. Compact notation.}
+  INV {name}: {rule}. {why it bites if violated}. NOT {the wrong assumption}.
   {⊥ independence facts: `X ⊥ Y` — two things that can coexist without each other.
    These are silent-bug breeding ground; name them explicitly.}
   TRUST: {real trust signal IS vs. what LOOKS like it but isn't}
 
 PATHS ({name each distinct code path; do NOT conflate}):
-  {name} [{transport} {port} · {consumer}→{handler}]
+  {name} [{transport} {port} · {consumer}->{handler}]
     transport-tag REQUIRED: HTTP :8080 | gRPC :5001 | gRPC-stream :5001 | MCP :{port}
     gRPC is ATLAS's PRIMARY internal transport — REST/openapi is NOT the whole API surface.
     does: {what it does}.
@@ -19,14 +19,14 @@ PATHS ({name each distinct code path; do NOT conflate}):
   {repeat per path}
 
 PROCESSING MODEL ("{governing maxim — one quoted phrase}"):
-  {cascade as ordered chain with →. Name stages.}
-  {terminal semantics: what "empty"/"miss" MEANS — "exhausted everything" ¬ "absent from local table"}
+  {cascade as ordered chain with ->. Name stages.}
+  {terminal semantics: what "empty"/"miss" MEANS — "exhausted everything" not "absent from local table"}
 
 DISTINCTIONS:
   {A}(callerX,transportY) ≠ {B}(callerZ,transportW) — {because…different consumers/code/semantics}.
   {pairs people conflate; each line kills one class of wrong-guess}
 
-CROSS-SERVICE: IN {who→this, sync|f-a-f}; OUT {this→who, sync|f-a-f}; FEEDS: {downstream artifact: matrix cell|alert|digest}.
+CROSS-SERVICE: IN {who->this, sync|f-a-f}; OUT {this->who, sync|f-a-f}; FEEDS: {downstream artifact: matrix cell|alert|digest}.
 
 GOTCHAS: ✗{anti-pattern agent will reach for} ✗{do-NOT-propose-X} ✗{symptom-fix that violates INV}
 
@@ -37,28 +37,30 @@ DECISIONS:
 
 SEE: README §Reference · {Code.cs:line(what to read)} · {openapi/proto for exhaustive catalog}
   gRPC contracts: SEE MUST reference the .proto file for any gRPC path (e.g. SEE: Events/src/Events/Protos/observation_events.proto).
-  REST contracts: openapi.json or §API Endpoints. Both surfaces must be documented — REST reference ≠ complete API surface.
+  REST contracts: openapi.json or §API Endpoints. Both surfaces must be documented — REST reference != complete API surface.
 
 ---
 ## TEMPLATE NOTATION
 
-Symbols preferred over words:
-  ¬   not / does not / never
-  ⊥   independent of (two things that can exist without each other)
-  →   implies / leads to / flows to
-  ≠   distinct from / not the same as
-  ×   multiplied / factor
+Plain terse ASCII preferred over unicode operators (measured 2026-07-02: symbols cost
+same-or-more tokens than the words AND break literal grep). Two symbols stay because
+`audit.sh` greps them literally:
+  NOT / never   negation — write the word, not a symbol
+  ->            implies / leads to / flows to
+  ⊥             independent of (two things that can exist without each other) — audit-greppable, keep the symbol
+  ≠             distinct from / not the same as — audit-greppable, keep the symbol
+  x             multiplied / factor
 
 Section priority (load-bearing first, long-tail to SEE):
   1. INV / ⊥ independence facts — the unenforced schema rules that bite
-  2. PATHS ¬do + miss — the negative space and miss contract
+  2. PATHS does-NOT + on-miss — the negative space and miss contract
   3. DISTINCTIONS — conflated pairs
   4. PROCESSING MODEL maxim + terminal semantics
   5. GOTCHAS — named do-not anti-patterns
   6. CROSS-SERVICE — wiring + feeds
 
-Density gate: card ≤ ~1 page / ~55 non-blank lines.
-  Exhaustive catalog → README.md §Reference (pointed to by SEE:).
+Density gate: card <= ~1 page / ~55 non-blank lines.
+  Exhaustive catalog -> README.md §Reference (pointed to by SEE:).
   Every claim must trace to code, NOT memory.
 
 Omit a block only if the service genuinely has no instance of it; say so explicitly.
@@ -77,16 +79,16 @@ ATOMIC SET (change-all-or-none — same discipline as the `:sig:` infix string c
 
 Supersession: rewrite the entry IN THE SAME PR as the code change. No tombstones —
 main = current-state, git log = archive. Dispatch briefs must name **"supersedes D-n"**
-explicitly. A brief that contradicts a D-entry without a named supersession → STOP and
+explicitly. A brief that contradicts a D-entry without a named supersession -> STOP and
 report; never route-around, never obey-stale (the entry may be outdated OR the brief
 wrong — a human/supervisor decides, not the implementing agent).
 
-Scope discipline (¬everything is a decision):
+Scope discipline (not everything is a decision):
   ✓ exception paths (frontier last-resort, raw-DB write, privileged op)
   ✓ scarce-resource boundaries ($/GPU/quota)
   ✓ invariants with non-obvious preconditions
   ✗ ordinary mechanism — a service may declare `DECISIONS: none — no exception paths`
-  >~6 entries = smell (scope creep dilutes the signal); card stays ≤ ~1 page.
+  >~6 entries = smell (scope creep dilutes the signal); card stays <= ~1 page.
 
 ## AUDIT COMPLIANCE — literal labels REQUIRED [HARD_STOP]
 
@@ -107,12 +109,12 @@ Rationale: rollout-2 cards used only the symbols and required 16 post-hoc fixes 
 `audit.sh` grep targets the literals, not the symbols.
 
 DECISIONS block (advisory findings — NOT blocks; lint-blocking was rejected, spec §OUT_OF_SCOPE):
-  `DECISIONS` literal absent anywhere in the card → MEDIUM W8 (`DECISIONS: none — no
+  `DECISIONS` literal absent anywhere in the card -> MEDIUM W8 (`DECISIONS: none — no
   exception paths` satisfies it).
   Each `D-n` entry missing a `GUARD <class.method> @ file:line` or `TEST <TestClass.TestName>`
-  citation → HIGH D_entry_no_citation. The TEST citation must be DOTTED
+  citation -> HIGH D_entry_no_citation. The TEST citation must be DOTTED
   (`TestClass.TestName`) — a bare `TEST word` does not count. A malformed GUARD
   (missing `:line`) is reported as MISSING, not as a distinct malformed signal.
   Dead citation — GUARD file missing under the service root, or the TEST method name not
   greppable in the service's test project (*.cs whose path RELATIVE to the service root
-  contains *test*) → HIGH D_entry_dead_citation.
+  contains *test*) -> HIGH D_entry_dead_citation.

@@ -13,9 +13,9 @@ Context-aware hooks that inject patterns when working on specific file types.
 | `ansible-gate-guard.sh` | Edit/Write on deployment/CI gate files | **ASK** - confirm intent before editing gates |
 | `deploy-smoke-reminder.sh` | Bash deploy/restart commands (PostToolUse) | **ADVISE** - inject smoke-test reminder |
 | `memory-density-guard.sh` | Write/Edit `*/memory/*.md` (PostToolUse) | **ADVISE** - nudge when MEMORY.md hook line or memory-file description violates the density bar |
-| `design-intent-dispatch-guard.sh` | Agent dispatch with impl-shaped prompt | **BLOCK** - requires DESIGN INTENT stanza in the brief (presence only, content-agnostic). Harness-shape anomaly → open + loud; jq missing → degraded raw-grep, stays closed |
+| `design-intent-dispatch-guard.sh` | Agent dispatch with impl-shaped prompt | **BLOCK** - requires DESIGN INTENT stanza in the brief (presence only, content-agnostic). Harness-shape anomaly -> open + loud; jq missing -> degraded raw-grep, stays closed |
 | `service-decisions-context.sh` | Edit/Write `<Service>/src/**` | **ADVISE** - inject the service card's DECISIONS block (skipped on `DECISIONS: none`). Neutral (empty output) on no-op; anomalies neutral + loud |
-| `plan-retirement-guard.sh` | Bash `git rm` of `docs/proposals/**`, `*PLAN*.md`, `*-design.md` | **ASK** - migration checklist before a plan doc is retired (not a block: a script cannot verify migration semantics). Anomaly → open + loud; jq missing → degraded raw-grep, still asks on match |
+| `plan-retirement-guard.sh` | Bash `git rm` of `docs/proposals/**`, `*PLAN*.md`, `*-design.md` | **ASK** - migration checklist before a plan doc is retired (not a block: a script cannot verify migration semantics). Anomaly -> open + loud; jq missing -> degraded raw-grep, still asks on match |
 
 ## Failure Direction (intent-fidelity hooks)
 
@@ -60,11 +60,11 @@ the current working tree exists. The marker is **tree-hash-keyed** (stores
 the tree hash of the most recent commit — committed content only, uncommitted
 edits do not change the tree hash), so it survives:
 
-- `compile.sh` → `git commit` (commit hash changes, tree unchanged)
+- `compile.sh` -> `git commit` (commit hash changes, tree unchanged)
 - `git cherry-pick` / `git rebase` of a tested commit (tree preserved)
 - Unrelated commits (e.g. STATE.md edits) that don't change source content
 
-Different tree content → different tree hash → marker mismatch → re-test
+Different tree content -> different tree hash -> marker mismatch -> re-test
 required. This is the safety property: untested source changes are blocked,
 but workflow churn that doesn't change source content is not.
 

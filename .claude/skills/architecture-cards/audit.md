@@ -26,7 +26,7 @@ anywhere in the file):
 
 A pure collector with no resolution cascade may legitimately have a thin
 `PROCESSING/RESOLUTION MODEL` — but the label must still be present (stating "n/a —
-straight ingest→persist, no cascade") so the absence is intentional, not forgotten.
+straight ingest->persist, no cascade") so the absence is intentional, not forgotten.
 
 ## Agent-read-first rule
 
@@ -39,13 +39,13 @@ multi-kilobyte README. `README.md` carries a 1-line pointer immediately after it
 
 | ID | Signal | Cheap implementation |
 |----|--------|----------------------|
-| W1 | No `does NOT:` anywhere in PATHS | grep card body for `does NOT` (case-insensitive). Absent → fire. The negative space is the #1 anti-guess lever. |
-| W2 | No `on-miss:` anywhere in PATHS | grep card for `on-miss`. Absent → the miss contract is undocumented. |
-| W3 | No invariant / independence fact | grep card for `INVARIANT` or `⊥`. Absent → schema-unenforced rules undocumented. |
-| W4 | DISTINCTIONS block has no `≠` pair | DISTINCTIONS present but no `≠` line → degenerate; it documents no conflation. |
-| W5 | CROSS-SERVICE has no FEEDS / direction | grep card for `FEEDS` or `→`. Absent → downstream artifact / call direction missing. |
-| W6 | Stub card | `AGENT_README.md` has < 12 non-blank lines → card is a stub. |
-| W7 | Card oversized | card body > ~55 non-blank lines → density lost; the catalog belongs in `README.md §Reference`. |
+| W1 | No `does NOT:` anywhere in PATHS | grep card body for `does NOT` (case-insensitive). Absent -> fire. The negative space is the #1 anti-guess lever. |
+| W2 | No `on-miss:` anywhere in PATHS | grep card for `on-miss`. Absent -> the miss contract is undocumented. |
+| W3 | No invariant / independence fact | grep card for `INVARIANT` or `⊥`. Absent -> schema-unenforced rules undocumented. |
+| W4 | DISTINCTIONS block has no `≠` pair | DISTINCTIONS present but no `≠` line -> degenerate; it documents no conflation. |
+| W5 | CROSS-SERVICE has no FEEDS / direction | grep card for `FEEDS` or `→`. Absent -> downstream artifact / call direction missing. |
+| W6 | Stub card | `AGENT_README.md` has < 12 non-blank lines -> card is a stub. |
+| W7 | Card oversized | card body > ~55 non-blank lines -> density lost; the catalog belongs in `README.md §Reference`. |
 
 Each signal that fires emits one finding. A single service can accumulate multiple
 findings across signals.
@@ -67,7 +67,7 @@ findings across signals.
 The audit set is the canonical `## SERVICES` list in CLAUDE.md (collectors / processing /
 alerting / calendar / metadata / substrate), resolved to top-level service dirs, NOT a
 filesystem glob — so a new service shows as a CRITICAL gap the moment it's added to
-CLAUDE.md, even before its AGENT_README.md exists. Sentinel's news→matrix pipeline spans
+CLAUDE.md, even before its AGENT_README.md exists. Sentinel's news->matrix pipeline spans
 two dirs (`SentinelCollector` for news/NER, `MacroSubstrate` for the matrix); both are
 in scope.
 

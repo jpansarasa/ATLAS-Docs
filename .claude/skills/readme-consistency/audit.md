@@ -47,7 +47,7 @@ multiple findings across signals.
 ## Project enumeration rules
 
 A path is a target if it has any of:
-- `*.csproj` (any depth ≤ 2)
+- `*.csproj` (any depth <= 2)
 - `pyproject.toml`
 - `package.json`
 

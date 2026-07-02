@@ -1,4 +1,4 @@
-# Subagent template — story implementation (≤400 words)
+# Subagent template — story implementation (<=400 words)
 
 Use this for ATLAS Matrix epic stories that involve code changes. The
 supervisor fills in the placeholders and dispatches via the Agent tool
@@ -47,7 +47,7 @@ never hand-author migration .cs files."}
   ONLY the external client, RED if the guard is deleted; contract:
   .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT}
 - Conflict rule: if this brief contradicts a D-entry without a named
-  supersession above → STOP and report; never route around it, never
+  supersession above -> STOP and report; never route around it, never
   obey the stale entry. (The entry may be outdated OR the brief wrong —
   the supervisor/human decides, not you.)
 
@@ -56,9 +56,9 @@ never hand-author migration .cs files."}
   GIT_PUSH HARD_STOP: 0 errors / 0 warnings / all tests pass.
 - Do NOT deploy. Do NOT push. Do NOT open PR.
 
-## Reporting back (final reply, ≤200 words)
+## Reporting back (final reply, <=200 words)
 - Branch + final commit hash
-- Files touched (paths, ≤20 lines)
+- Files touched (paths, <=20 lines)
 - Build status: errors / warnings / tests pass
 - Deviations from spec + rationale
 - Anything blocked / needed from supervisor
@@ -69,9 +69,9 @@ never hand-author migration .cs files."}
   GIT_PUSH, DEPLOYMENT)
 
 ## Stop conditions
-- Hit a blocker the supervisor must resolve → stop and report.
-- Build fails after a reasonable fix attempt → stop and report.
-- Spec ambiguous in a way that materially changes the result →
+- Hit a blocker the supervisor must resolve -> stop and report.
+- Build fails after a reasonable fix attempt -> stop and report.
+- Spec ambiguous in a way that materially changes the result ->
   pick the lower-risk option, document the choice, continue.
 ```
 

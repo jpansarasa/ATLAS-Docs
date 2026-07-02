@@ -16,7 +16,7 @@ are the rollout, applied one service per PR. This note is the spec.
    ```
    > 🤖 **Agents:** read **[AGENT_README.md](AGENT_README.md)** first — the dense architecture card.
    ```
-3. Density gate: `AGENT_README.md` ≤ ~1 page / ~55 non-blank lines. Anything exhaustive
+3. Density gate: `AGENT_README.md` <= ~1 page / ~55 non-blank lines. Anything exhaustive
    (endpoint tables, config matrices, project-structure trees) stays in `README.md §Reference`.
 
 ### Service file layout after rollout
@@ -88,10 +88,10 @@ downstream artifacts go first.
 |---|---|---|---|
 | 0 | **SecMaster** | identity ⊥ collection + fuzzy/authoritative cascade; most-misread service; root of #619 | DONE |
 | 1 | **ThresholdEngine** | central processing hub; evaluation cascade; pattern-vs-threshold conflation; calls SecMaster ResolveBatch | DONE |
-| 2 | **SentinelCollector + MacroSubstrate** (news→matrix) | spans two dirs; classifier-gates-entry vs sector-is-a-dim is the recurring confusion (#615/#616); matrix FEED | DONE |
+| 2 | **SentinelCollector + MacroSubstrate** (news->matrix) | spans two dirs; classifier-gates-entry vs sector-is-a-dim is the recurring confusion (#615/#616); matrix FEED | DONE |
 | 3 | **FredCollector** | upstream FRED catalog is a SEPARATE table reconciled INTO instruments (the TRUST signal); is_primary source-mapping | DONE |
 | 4 | **FinnhubCollector** | live quote/news-sentiment vs stored series; confirm-source in SecMaster cascade | DONE |
-| 5 | AlphaVantageCollector, NasdaqCollector, OfrCollector | remaining collectors; mostly ingest→persist (thin RESOLUTION MODEL, but card still names the boundary) | TODO |
+| 5 | AlphaVantageCollector, NasdaqCollector, OfrCollector | remaining collectors; mostly ingest->persist (thin RESOLUTION MODEL, but card still names the boundary) | TODO |
 | 6 | AlertService, CalendarService | edge consumers; smaller blast radius | TODO |
 
 Each row = one PR: create `AGENT_README.md`, add pointer to `README.md`, add the

@@ -17,40 +17,40 @@ AUTHORITATIVE STANDARD (consult, don't duplicate):
 - Skip only for docs/config/test-only diffs with no instrumentation surface.
 
 ## SCOPE
-`$ARGUMENTS` | default: `git diff --name-only` → `*.cs` (whole PR: `git diff main...HEAD`).
+`$ARGUMENTS` | default: `git diff --name-only` -> `*.cs` (whole PR: `git diff main...HEAD`).
 
 ## EXECUTION
 
 ### Step 1: LSP (blocking)
-`mcp__ide__getDiagnostics` → catch compile errors before reviewing instrumentation.
+`mcp__ide__getDiagnostics` -> catch compile errors before reviewing instrumentation.
 
 ### Step 2: the 8 checks
-Large diff → dispatch in parallel via Task `subagent_type: "general-purpose"`; small diff → run inline. Each reports `file:line → verdict`.
+Large diff -> dispatch in parallel via Task `subagent_type: "general-purpose"`; small diff -> run inline. Each reports `file:line -> verdict`.
 
 **A1 — Metrics boundary** (`docs/OBSERVABILITY.md` Best Practices §1)
 ```
 grep: `Meter\.|_counter|\.Add\(1|\.Record\(`
-✓ *Endpoints.cs|*GrpcService.cs→service_edge · *ApiClient.cs→external_api · *Worker.cs:ExecuteAsync→background · BackfillService|*CollectionService→long_running · gRPC client→cross_process
-✗ *Repository.cs duplicating a service metric→double_count · internal helpers→use_traces
-METRIC_VALUE_TEST: actionable ∧ variable ∧ observed(dashboarded|alerted)
-report: file:line → OK_boundary | VIOLATION_double_count
+✓ *Endpoints.cs|*GrpcService.cs->service edge · *ApiClient.cs->external api · *Worker.cs:ExecuteAsync->background · BackfillService|*CollectionService->long-running · gRPC client->cross-process
+✗ *Repository.cs duplicating a service metric->double count · internal helpers->use traces
+METRIC_VALUE_TEST: actionable AND variable AND observed(dashboarded|alerted)
+report: file:line -> OK_boundary | VIOLATION_double_count
 ```
 
 **A2 — Exception tracing** (`docs/OBSERVABILITY.md` "Recording Exceptions" + Best Practices §3)
 ```
 grep: `catch.*Exception` -C10
-RULE_1 explicit activity in scope → require BOTH: activity?.SetStatus(ActivityStatusCode.Error, ex.Message) ∧ activity?.AddException(ex)
-RULE_2 swallowed catch (returns fallback 0/null/[] ¬rethrow) in a TRACED caller → require BOTH on the ambient span:
-  Activity.Current?.SetStatus(ActivityStatusCode.Error, ex.Message) ∧ Activity.Current?.AddException(ex)
-  DETECT: catch returns default ¬rethrows; VERIFY: a caller in-project starts an activity that would be active
-report: file:line → missing SetStatus | missing AddException | missing Activity.Current
+RULE_1 explicit activity in scope -> require BOTH: activity?.SetStatus(ActivityStatusCode.Error, ex.Message) AND activity?.AddException(ex)
+RULE_2 swallowed catch (returns fallback 0/null/[], does not rethrow) in a TRACED caller -> require BOTH on the ambient span:
+  Activity.Current?.SetStatus(ActivityStatusCode.Error, ex.Message) AND Activity.Current?.AddException(ex)
+  DETECT: catch returns default, does not rethrow; VERIFY: a caller in-project starts an activity that would be active
+report: file:line -> missing SetStatus | missing AddException | missing Activity.Current
 ```
 
 **A3 — Structured logging** (`docs/OBSERVABILITY.md` "Structured Logging")
 ```
-grep: `Log(Information|Warning|Error|Debug)\(\$"`  → string interpolation in log = VIOLATION
+grep: `Log(Information|Warning|Error|Debug)\(\$"`  -> string interpolation in log = VIOLATION
 fix: structured template Log…("…{Param}", param)
-report: file:line → string_interpolation_in_log
+report: file:line -> string_interpolation_in_log
 ```
 
 **A4 — Tag cardinality** (`docs/OBSERVABILITY.md` Best Practices §2 / "Required Tags")
@@ -58,33 +58,33 @@ report: file:line → string_interpolation_in_log
 grep: `SetTag.*_id"`
 BOUNDED ✓: series_id(<100) | method | status | source_collector
 UNBOUNDED ✗: user_id | request_id | event_id | correlation_id
-report: file:line → cardinality_assessment
+report: file:line -> cardinality_assessment
 ```
 
 **A5 — Streaming metrics** (`docs/OBSERVABILITY.md` Best Practices §4)
 ```
 grep: `await foreach`
-long_running_stream → counter INSIDE loop (per-event visibility) ✓ · counter after loop → acceptable only for short streams ⚠
-report: file:line → assessment
+long-running stream -> counter INSIDE loop (per-event visibility) ✓ · counter after loop -> acceptable only for short streams ⚠
+report: file:line -> assessment
 ```
 
 **A6 — Log-level classification** (`docs/OBSERVABILITY.md` "Log Levels" + CLAUDE.md LOG_RULES)
 ```
-LogInformation→LogDebug: "(Processing|Checking|Iterating)" | "item \d+ of" | "[Ss]kipping.*already exists"   # verbose/loop/dup-handling
-LogInformation→LogWarning/Error: "[Ff]ailed" | "[Ee]rror"
-LogWarning→LogInformation: "(Client|User).*(subscribed|connected|started)" | "Successfully"
-LogError→LogWarning (system continues = degraded, not Error): "will retry" | "[Tt]ransient" | "[Cc]ontinuing" | "[Ss]kipping" | "[Ff]alling back" | "[Uu]sing default" | "[Pp]artial" | "[Dd]egraded" | "next (item|query|record)"
-RULES: Debug=debug_sessions_only · Info=runtime_diagnostics|routine|expected_retries|client_disconnect · Warn=unexpected_recoverable|degraded|service_startup · Error=failures|requires_attention
-EXCEPTION: service_startup banner ("Starting.*Service") → LogWarning (restart visibility)
-report: file:line → suggested_level
+LogInformation->LogDebug: "(Processing|Checking|Iterating)" | "item \d+ of" | "[Ss]kipping.*already exists"   # verbose/loop/dup-handling
+LogInformation->LogWarning/Error: "[Ff]ailed" | "[Ee]rror"
+LogWarning->LogInformation: "(Client|User).*(subscribed|connected|started)" | "Successfully"
+LogError->LogWarning (system continues = degraded, not Error): "will retry" | "[Tt]ransient" | "[Cc]ontinuing" | "[Ss]kipping" | "[Ff]alling back" | "[Uu]sing default" | "[Pp]artial" | "[Dd]egraded" | "next (item|query|record)"
+RULES: Debug=debug sessions only · Info=runtime diagnostics|routine|expected retries|client disconnect · Warn=unexpected recoverable|degraded|service startup · Error=failures|requires attention
+EXCEPTION: service startup banner ("Starting.*Service") -> LogWarning (restart visibility)
+report: file:line -> suggested_level
 ```
 
 **A7 — Metrics coverage**
 ```
-PART_A unused: *Meter.cs CreateCounter|CreateHistogram|CreateGauge with no .Add(/.Record( → defined_but_unused (dead code | missing instrumentation)
-PART_B missing at uncertainty_boundaries: *ApiClient.cs→duration+error_counter · BackfillService→duration+processed · *CollectionService→duration+items · *Worker.cs(long_running)→duration+batch · gRPC endpoints→duration+errors
+PART_A unused: *Meter.cs CreateCounter|CreateHistogram|CreateGauge with no .Add(/.Record( -> defined_but_unused (dead code | missing instrumentation)
+PART_B missing at uncertainty boundaries: *ApiClient.cs->duration+error_counter · BackfillService->duration+processed · *CollectionService->duration+items · *Worker.cs(long-running)->duration+batch · gRPC endpoints->duration+errors
 NOT_REQUIRED (use traces): internal helpers | repository | delegation
-report: UNUSED list | MISSING list → recommendation
+report: UNUSED list | MISSING list -> recommendation
 ```
 
 **A8 — Runtime instrumentation** (`docs/OBSERVABILITY.md` "Service Configuration" + ".NET Runtime Metrics") — the check generic reviewers miss
@@ -94,11 +94,11 @@ REQUIRE on every .NET service exporting metrics:
   ✓ .WithMetrics(...).AddRuntimeInstrumentation()
   ✓ csproj refs OpenTelemetry.Instrumentation.Runtime (version aligned w/ other OpenTelemetry.* pkgs; no NU1902)
   rationale: GC/heap/threadpool/exception + dotnet_process_cpu_count (cgroup cpu.max, NOT host cores) visibility
-SIZING_CHECK (diff touches compose/deploy cpus|memory limits): size cpus to real parallelism (CLR ProcessorCount ← cpu.max); separate managed-heap (dotnet_gc_*) from native (container_memory_anon_bytes)
-report: file → has_runtime_instrumentation | MISSING .AddRuntimeInstrumentation() | MISSING package
+SIZING_CHECK (diff touches compose/deploy cpus|memory limits): size cpus to real parallelism (CLR ProcessorCount <- cpu.max); separate managed-heap (dotnet_gc_*) from native (container_memory_anon_bytes)
+report: file -> has_runtime_instrumentation | MISSING .AddRuntimeInstrumentation() | MISSING package
 ```
 
-### Step 3: Aggregate → OUTPUT_FORMAT
+### Step 3: Aggregate -> OUTPUT_FORMAT
 
 ## OUTPUT_FORMAT
 ```
@@ -106,9 +106,9 @@ report: file → has_runtime_instrumentation | MISSING .AddRuntimeInstrumentatio
 ## LSP Diagnostics
 [errors from mcp__ide__getDiagnostics]
 ## CRITICAL (must fix)
-- [file:line] description → fix
+- [file:line] description -> fix
 ## WARNING (should fix)
-- [file:line] description → fix
+- [file:line] description -> fix
 ## PASSED
 - A1 metrics boundary ✓ · A2 exception tracing ✓ · A3 structured logging ✓ · A4 tag cardinality ✓
 - A5 streaming metrics ✓ · A6 log level ✓ · A7 metrics coverage ✓ · A8 runtime instrumentation ✓
@@ -136,6 +136,6 @@ catch (Exception ex)
     return fallbackValue;
 }
 ```
-- metrics location ✓ service_edge|external_api|database_bulk|cross_process|long_running · ✗ internal_method|double_count
-- metric_value_test: actionable ∧ variable ∧ observed
+- metrics location ✓ service edge|external api|database bulk|cross-process|long-running · ✗ internal method|double count
+- metric value test: actionable AND variable AND observed
 - canonical OTel `Program.cs` (with `.AddRuntimeInstrumentation()`), metric naming `{service}.{component}.{metric}`, and per-service metric catalogs live in `docs/OBSERVABILITY.md` — cite it for the standard rather than guessing.

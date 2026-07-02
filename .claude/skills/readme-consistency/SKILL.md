@@ -11,10 +11,10 @@ staleness heuristics. Severity-bucket findings, dispatch a fix subagent under
 user confirmation (interactive) or directly (non-interactive), then re-audit.
 
 ## ETHOS
-audit_first ¬ assume_clean
-template_canonical ¬ project_specific
-fix_via_subagent ¬ direct_edit
-re_audit ¬ trust_first_pass
+audit first, never assume clean
+template canonical, not project-specific
+fix via subagent, not direct edit
+re-audit, never trust first pass
 
 ## PHASES
 1. ENUMERATE+AUDIT (read-only)
@@ -29,14 +29,14 @@ flags:
   --json                        # machine-parseable output (all modes)
 
 mode_detection [HARD_STOP]:
-  IF flag explicit → respect
-  ELIF env READMECONSISTENCY_DEPTH >= 1 → force_non_interactive
-  ELIF !isatty(stdin) → force_non_interactive
+  IF flag explicit -> respect
+  ELIF env READMECONSISTENCY_DEPTH >= 1 -> force non-interactive
+  ELIF !isatty(stdin) -> force non-interactive
   ELSE interactive
 
 recursion_guard:
-  on_invoke: export READMECONSISTENCY_DEPTH=$((${READMECONSISTENCY_DEPTH:-0} + 1))
-  IF depth > 2 → abort with error (prevents infinite recursion if subagent calls skill)
+  on invoke: export READMECONSISTENCY_DEPTH=$((${READMECONSISTENCY_DEPTH:-0} + 1))
+  IF depth > 2 -> abort with error (prevents infinite recursion if subagent calls skill)
 
 ## PHASE_1 [audit, read-only]
 1. cd into repo root (must contain CLAUDE.md or .git/)
@@ -46,8 +46,8 @@ recursion_guard:
    `bash .claude/skills/readme-consistency/scripts/audit.sh <dir>`
    collect findings
 4. emit aggregated gap report:
-   IF --json → emit single JSON object aggregating all findings
-   ELSE → emit human-readable text grouped by severity
+   IF --json -> emit single JSON object aggregating all findings
+   ELSE -> emit human-readable text grouped by severity
 
 ## REPORT_FORMAT [text]
 === readme-consistency audit ===
@@ -70,26 +70,26 @@ Total: {N} findings.
 }
 
 ## PHASE_2 [confirm, interactive only]
-TRIGGER: mode == interactive ∧ findings > 0
+TRIGGER: mode == interactive AND findings > 0
 
 PROCESS:
 1. emit gap report (Phase 1 output)
 2. ask user via AskUserQuestion:
    "Dispatch fix subagent for these findings?"
    options:
-     - "Fix all (dispatch subagent)" → proceed to PHASE_3 with full findings list
-     - "Select subset" → present multi-select picker over findings; proceed with selection
-     - "Cancel" → exit cleanly (no Phase 3)
-3. IF user_response == cancel → exit
-4. IF user_response == select → re-prompt with multi-select per-finding
-5. ELSE → proceed to PHASE_3 with full list
+     - "Fix all (dispatch subagent)" -> proceed to PHASE_3 with full findings list
+     - "Select subset" -> present multi-select picker over findings; proceed with selection
+     - "Cancel" -> exit cleanly (no Phase 3)
+3. IF user response == cancel -> exit
+4. IF user response == select -> re-prompt with multi-select per-finding
+5. ELSE -> proceed to PHASE_3 with full list
 
 SKIP_CONDITIONS:
   - mode in {non_interactive, audit_only}
   - findings == 0
 
 ## PHASE_3 [fix dispatch]
-TRIGGER: PHASE_2_approved ∨ mode == non_interactive
+TRIGGER: PHASE_2 approved or mode == non_interactive
 
 PROCESS:
 1. construct subagent prompt:
@@ -98,10 +98,10 @@ PROCESS:
    - gold example: literal pointer "SecMaster/README.md (resolve relative to repo root)"
    - per-project commit discipline: "one commit per project README"
    - commit message format: "docs({project}): refresh README per readme-consistency audit"
-   - HARD rules from CLAUDE.md SUPERVISOR_MODE: ¬push, ¬PR, selective `git add -- <paths>`, supervisor-owned files (STATE.md, .claude/skills/supervisor-mode/**) untouched
+   - HARD rules from CLAUDE.md SUPERVISOR_MODE: never push, never PR, selective `git add -- <paths>`, supervisor-owned files (STATE.md, .claude/skills/supervisor-mode/**) untouched
 2. dispatch via Agent tool, subagent_type=general-purpose, run_in_background=false
    (foreground because we need the result for Phase 4; non-interactive callers can wrap in their own background dispatch)
-3. on agent completion → record commit hashes for Phase 4 summary
+3. on agent completion -> record commit hashes for Phase 4 summary
 
 PROMPT_TEMPLATE [pseudo]:
 "You are fixing README gaps identified by the readme-consistency skill.
@@ -128,12 +128,12 @@ DO NOT touch STATE.md or .claude/skills/supervisor-mode/**.
 Report final commit hashes."
 
 ## PHASE_4 [re-audit]
-TRIGGER: PHASE_3_completed
+TRIGGER: PHASE_3 completed
 
 PROCESS:
 1. re-run PHASE_1 (audit) with same scope
 2. compare new findings vs. pre-fix:
-   resolved = pre_findings - new_findings
+   resolved = pre findings - new findings
    remaining = findings still present
    regressed = findings net-new (rare, but possible)
 3. emit final summary:
@@ -144,21 +144,21 @@ PROCESS:
    resolved:          {N}
    remaining:         {N}
    regressed:         {N}
-   exit_status:       {0 if clean ∨ 1 if remaining}
+   exit_status:       {0 if clean or 1 if remaining}
    ```
 4. IF mode == non_interactive: exit with status code (0 = clean, 1 = remaining, 3 = phase_3 dispatch failed)
 5. IF mode == interactive: print summary; if remaining > 0 ask user: "Dispatch follow-up?" (multi-select)
 
 ## ANTI [skill HARD_STOP]
-✗ subagent_pushes # supervisor owns remote per CLAUDE.md
-✗ subagent_opens_PR # same
-✗ touch_supervisor_owned # STATE.md, .claude/skills/supervisor-mode/**
-✗ skip_re_audit # Phase 4 is non-optional; closes the loop
-✗ infinite_recursion # READMECONSISTENCY_DEPTH guard
-✗ assume_isatty_under_subagent # always check explicit flag first
+✗ subagent pushes # supervisor owns remote per CLAUDE.md
+✗ subagent opens PR # same
+✗ touch supervisor-owned # STATE.md, .claude/skills/supervisor-mode/**
+✗ skip re-audit # Phase 4 is non-optional; closes the loop
+✗ infinite recursion # READMECONSISTENCY_DEPTH guard
+✗ assume isatty under subagent # always check explicit flag first
 
 ## COMPLETION_GATE
-¬declare_done UNTIL ALL:
+never declare done UNTIL ALL:
   1. PHASE_1 audit emitted gap report
   2. (interactive) user confirmed | (non-interactive) flag set
   3. PHASE_3 subagent reported completion with commit hashes
@@ -166,12 +166,12 @@ PROCESS:
   5. exit status reported (0|1|3 per mode)
 
 ## TRIGGER_PATTERNS [skill]
-IF user_invokes(/readme-consistency [...flags]) THEN
-  check(ENTRY mode_detection) →
-  PHASE_1 audit →
-  IF findings == 0 THEN exit_clean
-  IF mode == audit_only THEN emit_report → exit
-  PHASE_2 confirm IF interactive →
-  PHASE_3 fix_dispatch →
-  PHASE_4 re_audit →
+IF user invokes /readme-consistency [...flags] THEN
+  check(ENTRY mode_detection) ->
+  PHASE_1 audit ->
+  IF findings == 0 THEN exit clean
+  IF mode == audit_only THEN emit report -> exit
+  PHASE_2 confirm IF interactive ->
+  PHASE_3 fix dispatch ->
+  PHASE_4 re-audit ->
   COMPLETION_GATE

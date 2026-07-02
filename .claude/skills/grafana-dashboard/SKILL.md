@@ -5,34 +5,34 @@ description: Authoring, editing, debugging, or reviewing Grafana dashboards and 
 
 # GRAFANA_DASHBOARDS [SKILL v1] [json_provisioning]
 
-ETHOS: query_correctness > visual_polish | scrape-aware_intervals > hardcoded | bounded_cardinality > convenient_tags
+ETHOS: query correctness > visual polish | scrape-aware intervals > hardcoded | bounded cardinality > convenient tags
 
-COMMON_FAILURES: "No data" | duplicate_values | broken_viz | heatmap_fail
-  root_cause: config_mistakes → predictable → eliminable
+COMMON_FAILURES: "No data" | duplicate values | broken viz | heatmap fail
+  root cause: config mistakes -> predictable -> eliminable
 
 ## DASHBOARD_STRUCTURE
-id: null # grafana_assigns_on_save
-uid: [a-z0-9-]{8,40} # stable_urls_across_envs
-schemaVersion: 41 # current_2025
-version: 0 # new_dashboards
+id: null # grafana assigns on save
+uid: [a-z0-9-]{8,40} # stable URLs across envs
+schemaVersion: 41 # current 2025
+version: 0 # new dashboards
 required_fields: {time, timezone, panels, editable, refresh}
 
 ## PANEL_STRUCTURE
-id: unique_int # duplicate → import_fail
-gridPos: {x:[0-23], y:int, w:[1-24], h:[3+]} # 24col_grid, ~30px/unit
-datasource: {type, uid} # ¬string_name, ¬${DS_NAME}
+id: unique int # duplicate -> import fail
+gridPos: {x:[0-23], y:int, w:[1-24], h:[3+]} # 24-col grid, ~30px/unit
+datasource: {type, uid} # not a string name, not ${DS_NAME}
 required: {targets, fieldConfig.defaults, options}
 
 ## STAT_PANEL [prevent_duplicates]
-reduceOptions.values: false # true → shows_all_rows → duplicates
-reduceOptions.calcs: ["lastNotNull"] # "last" → may_return_null
-reduceOptions.fields: "" # empty → all_numeric, ¬"/.*/"
-query: sum(metric{...}) # aggregate → single_series
-instant: true ∧ range: false # ¬both_true → duplicate_data
-rationale: multiple_series | range_query | values:true → duplicates
+reduceOptions.values: false # true -> shows all rows -> duplicates
+reduceOptions.calcs: ["lastNotNull"] # "last" -> may return null
+reduceOptions.fields: "" # empty -> all numeric, not "/.*/"
+query: sum(metric{...}) # aggregate -> single series
+instant: true AND range: false # never both true -> duplicate data
+rationale: multiple series | range query | values:true -> duplicates
 
 ## TIMESERIES_PANEL
-fieldConfig.defaults.custom: required # omit → broken_render
+fieldConfig.defaults.custom: required # omit -> broken render
   drawStyle: line | bars | points
   lineInterpolation: linear | smooth | stepBefore | stepAfter
   lineWidth: [1-10], fillOpacity: [0-100], gradientMode: none | opacity | hue
@@ -44,37 +44,37 @@ color: {mode: palette-classic | fixed | thresholds}
 options: {legend: {displayMode, placement, showLegend}, tooltip: {mode, sort}}
 
 ## TABLE_PANEL
-transformations_required:
-  multiple_queries → [{id: "merge"}]
-  time_series_data → [{id: "seriesToRows"}]
-  sparklines → [{id: "timeSeriesTable"}]
-  column_control → [{id: "organize", options: {excludeByName, renameByName}}]
+transformations required:
+  multiple queries -> [{id: "merge"}]
+  time series data -> [{id: "seriesToRows"}]
+  sparklines -> [{id: "timeSeriesTable"}]
+  column control -> [{id: "organize", options: {excludeByName, renameByName}}]
 fieldConfig.defaults.custom: {align, cellOptions: {type}, filterable}
-overrides: matcher{byName|byRegexp|byType} → properties{cellOptions, width}
+overrides: matcher{byName|byRegexp|byType} -> properties{cellOptions, width}
 
 ## HEATMAP_PANEL
-calculate: true # grafana_buckets_data
+calculate: true # grafana buckets data
 calculation: {xBuckets: {mode, value}, yBuckets: {mode, value}}
-prometheus_histogram: calculate: false ∧ legendFormat: "{{le}}" ∧ yBucketBound: "upper"
+prometheus histogram: calculate: false AND legendFormat: "{{le}}" AND yBucketBound: "upper"
 
 ## LOG_PANEL [loki]
-query_type: log_query # ¬metric_query
+query type: log query # not metric query
 options: {showTime, wrapLogMessage, prettifyLogMessage, enableLogDetails, dedupStrategy, sortOrder}
-✗ rate() | count_over_time() # these → timeseries_panel
+✗ rate() | count_over_time() # these -> timeseries panel
 
 ## PROMQL [prometheus_queries]
-rate_interval: $__rate_interval # ¬[1m] ¬[5m] # auto_adjusts_to_scrape
-  rationale: hardcoded < scrape_interval → "No data"
-container_filter: container!="POD", container!="" # always
-aggregation: sum by (label1, label2) # control_cardinality
-memory: container_memory_working_set_bytes # ¬usage_bytes (includes_cache)
-legendFormat: "{{pod}} - {{container}}" # explicit ¬ auto_generated
-  rationale: post_aggregation {{__name__}} → empty
+rate interval: $__rate_interval # not [1m], not [5m] # auto-adjusts to scrape
+  rationale: hardcoded < scrape interval -> "No data"
+container filter: container!="POD", container!="" # always
+aggregation: sum by (label1, label2) # control cardinality
+memory: container_memory_working_set_bytes # not usage_bytes (includes cache)
+legendFormat: "{{pod}} - {{container}}" # explicit, not auto-generated
+  rationale: post-aggregation {{__name__}} -> empty
 
 ## LOGQL [loki_queries]
-log_panel: {job="app"} |= "error" | json # no_aggregation
-timeseries_panel: sum by (level) (count_over_time({job="app"} | json [5m]))
-unwrap: | unwrap field | __error__="" # always_filter_parse_errors
+log panel: {job="app"} |= "error" | json # no aggregation
+timeseries panel: sum by (level) (count_over_time({job="app"} | json [5m]))
+unwrap: | unwrap field | __error__="" # always filter parse errors
 
 ## TRACEQL [tempo_queries]
 queryType: "traceql"
@@ -82,7 +82,7 @@ operators: span.attr | resource.attr | status | span:duration
 example: {resource.service.name="frontend" && status=error}
 
 ## POSTGRES [timescaledb]
-time_column: required # named "time", datetime | unix_epoch
+time column: required # named "time", datetime | unix epoch
 order: ORDER BY time ASC # mandatory
 filter: WHERE $__timeFilter(column)
 format: "time_series"
@@ -95,29 +95,29 @@ rate: Bps | bps | KBps | MBps
 percent: percent(0-100) | percentunit(0-1)
 throughput: reqps | ops | rps | iops
 
-## PANEL_TYPE ↔ QUERY_TYPE [match_required]
-log_panel ↔ log_query (LogQL without aggregation)
-timeseries_panel ↔ metric_query (PromQL, or LogQL with rate/count_over_time)
-stat_panel ↔ single_value (instant query or aggregated range)
-table_panel ↔ tabular_result (instant or LogQL with parsing)
-✗ mismatch → empty_panel | render_error
+## PANEL_TYPE <-> QUERY_TYPE [match_required]
+log panel <-> log query (LogQL without aggregation)
+timeseries panel <-> metric query (PromQL, or LogQL with rate/count_over_time)
+stat panel <-> single value (instant query or aggregated range)
+table panel <-> tabular result (instant or LogQL with parsing)
+✗ mismatch -> empty panel | render error
 
 ## ANTI [HARD_STOP @end_for_recency]
-✗ ${DS_NAME} # templated_datasource → provisioning_fail
-✗ rate(metric[1m]) # hardcoded_interval → "No data"
-✗ omit fieldConfig.defaults # → broken_render
-✗ reduceOptions.values: true # → duplicates
-✗ stat_panel + multiple_series + no_aggregation # → duplicates
-✗ instant: true ∧ range: true # → duplicate_data
-✗ log_query → timeseries_panel # → no_results
-✗ metric_query → log_panel # → no_results
-✗ editing dashboard JSON in Grafana UI when deployed via IaC # → drift_with_next_deploy
+✗ ${DS_NAME} # templated datasource -> provisioning fail
+✗ rate(metric[1m]) # hardcoded interval -> "No data"
+✗ omit fieldConfig.defaults # -> broken render
+✗ reduceOptions.values: true # -> duplicates
+✗ stat panel + multiple series + no aggregation # -> duplicates
+✗ instant: true AND range: true # -> duplicate data
+✗ log query -> timeseries panel # -> no results
+✗ metric query -> log panel # -> no results
+✗ editing dashboard JSON in Grafana UI when deployed via IaC # -> drift with next deploy
 
 ## DEBUG_FLOW [no_data | wrong_data]
-1. confirm panel_type ↔ query_type match (see table above)
+1. confirm panel type <-> query type match (see table above)
 2. check datasource binding (variable resolved? uid present?)
-3. run query in Explore view with same time range → reproduces?
-4. check $__rate_interval vs scrape_interval
+3. run query in Explore view with same time range -> reproduces?
+4. check $__rate_interval vs scrape interval
 5. check label cardinality (sum by clause matches existing labels?)
 6. check fieldConfig.defaults + unit + min/max thresholds
-7. timezone | time_column format if TimescaleDB
+7. timezone | time column format if TimescaleDB
