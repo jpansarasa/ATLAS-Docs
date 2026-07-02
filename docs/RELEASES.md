@@ -21,10 +21,11 @@ SentinelCollector, ThresholdEngine, and SecMaster; enforcement hooks
 (dispatch-guard BLOCK / decisions-injector ADVISE / plan-retirement ASK)
 plus the testing-context outbound-boundary line; `intent-review` skill
 wired into REVIEW_FIX_LOOP and the deploy skill; CLAUDE.md MECHANICS.
-PRs #826–#830. Note: the spec doc
-`docs/proposals/intent-fidelity-enforcement.md` retirement is PENDING
-(awaits the human-confirmed plan-retirement-guard ask; recovery pointer =
-the `intent-fidelity-done` tag).
+PRs #826–#830. Spec doc `docs/proposals/intent-fidelity-enforcement.md`
+retired 2026-07-02 (human-confirmed through the plan-retirement-guard's
+first ASK, after verifying all decisions migrated to the 13 D-entries +
+CLAUDE.md MECHANICS + intent-review GUARD_TEST_CONTRACT). Recover the
+spec via `git show intent-fidelity-done:docs/proposals/intent-fidelity-enforcement.md`.
 
 ### `digest-matrix-redesign-done` (@ b8dcd2a2)
 **Matrix-first digest redesign — COMPLETE.** The Sentinel digest is now

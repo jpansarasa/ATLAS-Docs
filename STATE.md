@@ -8,11 +8,7 @@ Supervisor memory. Read first, write last. **Current truth + open items + pointe
 2. Re-read this file + the active spec (if any) THIS turn; walk the pipeline backward before dispatching; plan-vs-prod mismatch → STOP + NTFY.
 
 ## CURRENT WORK
-*(idle — no active epic).* Last epic: intent-fidelity enforcement COMPLETE + merged 2026-07-02 (tag `intent-fidelity-done`). The standing discipline is canonical in CLAUDE.md `## INTENT_FIDELITY` MECHANICS + the 3 hooks + the backfilled DECISIONS blocks — no restatement needed here. Also landed 2026-07-02, all canonical elsewhere: ASCII doc-style sweep (CLAUDE.md `## DOC` AGENT_DOC_STYLE), cron→Monitor wake-listener (supervisor-mode `WAKE_LISTENER`), memory compaction (84→76 files).
-
-## OPEN USER ACTIONS
-- **Retire the intent-fidelity spec** `docs/proposals/intent-fidelity-enforcement.md` per PHASE_TAGS — the `git rm` triggers the plan-retirement-guard's first ASK; left for a human answer, not a same-session self-confirm. All decisions migrated (13 D-entries + CLAUDE.md MECHANICS + intent-review GUARD_TEST_CONTRACT); recovery = tag `intent-fidelity-done`.
-- **Refill Gemini credits** (ai.studio; balance was −$1.59) to resume entity confirmation — safe now (server-side gate + fail-closed daily call-cap + burn alerts prevent re-drain). Until refilled, genuine calls 429 (non-fatal; news still flows).
+*(idle — no active epic, no open user actions).* Last epic: intent-fidelity enforcement COMPLETE + merged + spec retired 2026-07-02 (tag `intent-fidelity-done`; recover spec via `git show intent-fidelity-done:docs/proposals/intent-fidelity-enforcement.md`). Standing discipline is canonical in CLAUDE.md `## INTENT_FIDELITY` MECHANICS + the 3 hooks + the backfilled DECISIONS blocks. Also landed 2026-07-02, all canonical elsewhere: ASCII doc-style sweep (CLAUDE.md `## DOC` AGENT_DOC_STYLE), cron→Monitor wake-listener (supervisor-mode `WAKE_LISTENER`), memory compaction (84→76 files). Gemini credits refilled — entity confirmation live again.
 
 ## STANDING GUARDRAILS
 - OBSERVABILITY (user scar tissue — "too many services non-functional due to lack of observability"): never demote a visible signal to Info+metric without a WIRED alert; keep a VISIBLE Warning on any persistent dependency-unavailability; startup banners STAY at Warning (boot-loop visibility). [[feedback_warn_vs_info_by_trigger]]
