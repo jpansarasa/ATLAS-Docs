@@ -29,7 +29,7 @@ PATHS (distinct code — do not conflate):
 RESOLUTION MODEL ("fuzzy proposes, authoritative confirms"):
   local(.95/.85/.75)→[ticker]secmaster(.95)→edgar(.90)→OpenFIGI[.85-.90]→signal-alias(.90)→discovery-PROPOSES→CONFIRM(OpenFIGI→Finnhub→Gemini)→persist+embed|review-queue.
   UNCONFIRMED→null. NotFound="tried everything" ¬"not in table".
-  GEMINI leg = PAID grounded-search LAST RESORT — company-name→ticker:exchange ONLY. IdentifierConfirmationService gates BEFORE the call: kind==CompanyName ∧ plausible-company-name; ✗bare-ticker(OpenFIGI/Finnhub own it; also drops ticker-shaped junk EPS/IPO/DOCTYPE) ✗slug|money|percent|markup|filing-boilerplate → counted secmaster_entity_resolution_gemini_gate_skipped{reason}. resolver ALSO gates authoritatively server-side (covers BOTH callers — SecMaster + SentinelCollector each hit :9300) + fail-closes on a daily CALL cap (=1500/day free-grounding boundary; token cost ≠ real spend, so the bound is a call count). ✗send-every-fallthrough: ungated it drained a $100 prepay in 6d, hid 12d behind a green /health (2026-06-30). [[COST_BOUNDARY]]
+  GEMINI leg = PAID grounded-search LAST RESORT — company-name→ticker:exchange ONLY. IdentifierConfirmationService gates BEFORE the call: kind==CompanyName ∧ plausible-company-name; ✗bare-ticker(OpenFIGI/Finnhub own it; also drops ticker-shaped junk EPS/IPO/DOCTYPE) ✗slug|money|percent|markup|filing-boilerplate → counted secmaster_entity_resolution_gemini_gate_skipped{reason}. resolver ALSO gates authoritatively server-side (covers BOTH callers — SecMaster + SentinelCollector each hit :9300) + fail-closes on a daily CALL cap (=1500/day free-grounding boundary; token cost ≠ real spend, so the bound is a call count). ✗send-every-fallthrough: ungated it drained a $100 prepay in 6d, hid 12d behind a green /health (2026-06-30). [[INTENT_FIDELITY]] [[GIGO]]
   ContextFactor: articleCtx non-empty∧canonical¬overlaps(suffix-norm)→score=0→conf=0→ALWAYS<MinConf 0.8→DROPPED null¬down-ranked.
 
 DISTINCTIONS:
@@ -50,7 +50,7 @@ GOTCHAS:
   ✗ Embed-1-1 ✗ trust-entity-default-model ✗ AtlasSectorCode/RollupVersionId-as-FK
   ✗ ALIAS_MATCH-emitted(dead-wire) ✗ Economic-from-untrusted-collector
   ✗ freq/lag/prefer-as-sort ✗ LookupSource-live-prod ✗ ContextFactor=0-as-lower
-  ✗ send-non-company-to-Gemini(PAID last-resort; gate=kind==CompanyName∧plausible-name; ungated=$100-drain 2026-06-30) [[COST_BOUNDARY]]
+  ✗ send-non-company-to-Gemini(PAID last-resort; gate=kind==CompanyName∧plausible-name; ungated=$100-drain 2026-06-30) [[INTENT_FIDELITY]] [[GIGO]]
   ✗ Polly-breaker-in-per-request-policy-selector # fresh state each request = never opens (7b retry-storm bug)
 
 SEE: README.md §Reference (API endpoints, config tables) · Events/src/Events/Protos/secmaster.proto (SecMasterRegistry+SecMasterResolver gRPC contracts) · EntityResolutionService.cs:1104-1115(ContextFactor) · ResolutionService.cs(ranking) · RegistrationService.cs:135-151(EvaluateGuard)
