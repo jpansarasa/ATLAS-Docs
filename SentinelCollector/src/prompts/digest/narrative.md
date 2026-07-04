@@ -33,9 +33,6 @@ Write exactly these sections (omit empty ones):
 ## Executive Take
 One paragraph (3-5 sentences) leading with the hot and cold sectors per the sector matrix — name each sector, its net lean, and its regime when present — then the top news-momentum mover and the most significant market move. Ground specifics in cited articles where excerpts support them.
 
-## Sector Watch
-One tight paragraph per active sector, in the roll-up's sector-matrix order. Anchor each paragraph to that sector's matrix line (net lean, signal count, regime) and cite that sector's articles for the specifics. Skip sectors with neither matrix signal nor articles.
-
 ## Cross-Sector Signals
 Signals moving across many sectors: use the momentum block (gaining/fading) plus any signal appearing under several sector-matrix lines. Frame the direction explicitly.
 
