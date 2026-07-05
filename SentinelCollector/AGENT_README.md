@@ -12,6 +12,7 @@ DATA MODEL + INVARIANTS:
   INV sector-dim⊥entry: resolve-entities sectorless/fail -> row still written (sector=null or fallback); prepass feeds sector-pick inside classify, not an entry gate.
   INV incomplete-SectorWeights: group whose pattern's SectorWeights missing any sector -> ArgumentException caught -> group skipped, 0 cells, logged Warning not Error.
   INV decay: news magnitude = K*tanh(S/K) over half-life-weighted decay sum (freshness=1.0, no floor). K+H from Matrix:NewsDecay. Not the hard-data mean formula.
+  review_status AutoClosed = terminal NoResolution disposition (Stage 1): NoResolution rows (InstrumentId=null by construction) never auto-approve/reject -> would pile up Pending forever. AutoClosed exits the human queue (ReviewUiEndpoints ==Pending) while the digest KEEPS it (DigestQueryService !=Rejected; NOT Rejected — that would strip legit macro/qualitative digest content). Set by NoResolutionSweepWorker (age-gated, NoResolutionCloseGraceDays default 7) + POST /admin/review/close-noresolution. No D-entry — terminal-state janitor, not an exception path.
 
 PATHS (distinct code — do not conflate):
   NewsSignalClassifier [in-proc · inside ExtractionProcessor]
