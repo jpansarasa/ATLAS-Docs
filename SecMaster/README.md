@@ -76,8 +76,8 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `SemanticSearch__RagContextMaxTokens` | RAG candidate-context cap (estimator units ≈ chars/4); budget is split per candidate, long descriptions are snippet-truncated so candidate count is preserved | `600` |
 | `SemanticSearch__RagDefaultMinScore` | Default min similarity for RAG retrieval | `0.3` |
 | `SemanticSearch__RagDefaultLimit` | Default RAG retrieval result count | `5` |
-| `SemanticSearch__RagTimeoutSeconds` | Wall-clock budget for the RAG tier (vector search + gate wait + generation); on timeout the cascade degrades gracefully. Sized vs measured llama-cpu-rag latency: p50 4.8s solo / 11.6s @c4 (max 12.5s) | `25` |
-| `SemanticSearch__RagMinGenerationBudgetSeconds` | Abstain (`rag_degraded{reason="insufficient_budget"}`) instead of dispatching generation when less than this remains of the RAG budget after vector search (≈ measured c4 p50) | `12` |
+| `SemanticSearch__RagTimeoutSeconds` | Wall-clock budget for the RAG tier (vector search + gate wait + generation); on timeout the cascade degrades gracefully. Sized ~4x measured llama-cpu-rag burst (p50 4.8s solo / 11.6s @c4, max 12.5s) for headroom under sustained 4-slot queuing | `50` |
+| `SemanticSearch__RagMinGenerationBudgetSeconds` | Abstain (`rag_degraded{reason="insufficient_budget"}`) instead of dispatching generation when less than this remains of the RAG budget after vector search (above measured c4 p50, scaled with the 25→50 widening) | `18` |
 | `SemanticSearch__MinLocalResultsBeforeDiscovery` | Trigger upstream discovery when local hits below this | `3` |
 | `SemanticSearch__MinScoreBeforeDiscovery` | Trigger upstream discovery when best local score below this | `0.8` |
 | `SemanticSearch__EmbeddingCacheSize` | LRU embedding cache size (entries) | `10000` |
