@@ -53,4 +53,4 @@ GOTCHAS:
 
 DECISIONS: none recorded yet — accrete on touch (not audited for exception paths; see CLAUDE.md INTENT_FIDELITY MECHANICS).
 
-SEE: README.md §API Endpoints/Config · Events/src/Events/Protos/observation_events.proto (Event+SeriesCollectedEvent) · AlphaVantageApiClient.cs:42-49,675-700(rate+quota) · CollectionScheduler.cs:37-42(sort: Priority asc ThenBy LastCollectedAt asc),51-67(due) · ObservationEventStreamService.cs:51-62(scalar-cursor) · SeriesManagementService.cs:66-106(f-a-f register) · AlphaVantageRepository.cs:104-126(orphan-guard+latest)
+SEE: README.md §API Endpoints/Config · Events/src/Events/Protos/observation_events.proto (Event+SeriesCollectedEvent) · AlphaVantageApiClient.cs:42-49,675-700(rate+quota) · CollectionScheduler.cs:37-42(sort: Priority asc ThenBy LastCollectedAt asc),51-67(due) · ObservationEventStreamService.cs:51-62(scalar-cursor) · SeriesManagementService.cs:66-116(f-a-f register + truthful result handling) · AlphaVantageRepository.cs:104-126(orphan-guard+latest)

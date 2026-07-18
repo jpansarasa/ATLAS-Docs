@@ -9,7 +9,7 @@ DATA MODEL + INVARIANTS:
   INV eventTypes-ignored: SubscriptionRequest.EventTypes accepted on-wire but EventRepository never filters on it (dead param). SeriesIds filter IS honored.
   INV counts-by-series: GetHealth.EventsByType is GROUPED BY SeriesId, not event-type (single SeriesCollected type exists). map key = series_id.
   INV incremental: CollectSeries start = latestObs.Date+1 ?? now-2yr backfill. empty NDL response -> no UpdateLastCollected. 100ms delay between series.
-  INV secmaster-register⊥collection: register fire-&-forget on series-ADD only (admin POST), not per-obs, not on-toggle; only if SECMASTER_GRPC_ENDPOINT set. failure=WARN+swallow, does not block add. instrumentType="Economic", symbol=DatasetCode, assetClass=Category. ⚠ SecMaster GUARD gates Economic to TrustedMacroCollectors — register may silently reject.
+  INV secmaster-register⊥collection: register fire-&-forget on series-ADD only (admin POST), not per-obs, not on-toggle; only if SECMASTER_GRPC_ENDPOINT set. failure=WARN+swallow (incl Success=false rejects + null retry-exhaustion — never a false "Registered" info), does not block add. instrumentType="Economic", symbol=DatasetCode, assetClass=Category (default "General"). ⚠ SecMaster D-4 register guard = equity-shaped ALLOWLIST {Equity,ETF,Index,Currency,Crypto,Commodity} for untrusted collectors — "General" is not in it, so EVERY Nasdaq registration is rejected today; a Category->allowlisted-assetClass mapping is needed before prod re-enable (unresolved, deliberately not shipped with the truthful-logging fix).
   INV holiday-skip computational: MarketCalendarAdapter (CalendarService.Core, no service call); weekend OR IsMarketClosed -> whole cycle skipped, not per-series.
 
 PATHS (distinct code — do not conflate):
@@ -35,11 +35,11 @@ DISTINCTIONS:
   IsRevised/PreviousValue = revision tracking on obs row, surfaced into DataPoint ≠ separate event type.
   Worker.cs = unused legacy stub ≠ Workers/CollectionWorker.cs (the real hosted worker).
 
-CROSS-SERVICE: SecMaster <- register(gRPC f-a-f, add-only, OPTIONAL; Economic GUARD may silently reject). CalendarService.Core -> holiday-check (in-proc lib, not HTTP). OUT: Nasdaq Data Link HTTP. FEEDS: none wired in prod (no active gRPC consumer).
+CROSS-SERVICE: SecMaster <- register(gRPC f-a-f, add-only, OPTIONAL; D-4 allowlist rejects "General" -> WARN, see INV secmaster-register). CalendarService.Core -> holiday-check (in-proc lib, not HTTP). OUT: Nasdaq Data Link HTTP. FEEDS: none wired in prod (no active gRPC consumer).
 
 GOTCHAS:
-  ✗ treat-EventId-as-stable/dedup-key (regenerated per read) ✗ expect-event-persistence (synthesized) ✗ filter-stream-by-EventTypes (dead param) ✗ read GetHealth.EventsByType as event-type (it's series_id) ✗ Subscribe-expects-history (StartFrom=now default) ✗ assume-prod-running (disabled, WAF) ✗ assume register-always-lands (SecMaster Economic-collector GUARD) ✗ trust compose port-map (5008->5004/5009->5005 != image URLs 8080/5009 — unreconciled).
+  ✗ treat-EventId-as-stable/dedup-key (regenerated per read) ✗ expect-event-persistence (synthesized) ✗ filter-stream-by-EventTypes (dead param) ✗ read GetHealth.EventsByType as event-type (it's series_id) ✗ Subscribe-expects-history (StartFrom=now default) ✗ assume-prod-running (disabled, WAF) ✗ assume register-lands (SecMaster D-4 allowlist rejects ALL "General"-classed registrations — rejection is WARN-logged, not silent; map Category to an allowlisted assetClass before re-enable) ✗ trust compose port-map (5008->5004/5009->5005 != image URLs 8080/5009 — unreconciled).
 
 DECISIONS: none recorded yet — accrete on touch (not audited for exception paths; see CLAUDE.md INTENT_FIDELITY MECHANICS).
 
-SEE: README.md (endpoints, ports, deploy-status) · Events/src/Events/Protos/observation_events.proto (ObservationEventStream contract) · EventRepository.cs (synth + by-series counts + eventTypes-ignore) · SeriesManagementService.cs:90-116 (secmaster register) · NasdaqCollectionService.cs:50-67 (incremental window) · Workers/CollectionWorker.cs (6h cycle + holiday gate).
+SEE: README.md (endpoints, ports, deploy-status) · Events/src/Events/Protos/observation_events.proto (ObservationEventStream contract) · EventRepository.cs (synth + by-series counts + eventTypes-ignore) · SeriesManagementService.cs:90-127 (secmaster register + truthful result handling) · NasdaqCollectionService.cs:50-67 (incremental window) · Workers/CollectionWorker.cs (6h cycle + holiday gate).
