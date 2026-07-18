@@ -2,6 +2,12 @@
 
 **The challenge is real**: LLMs consistently struggle with Grafana dashboard JSON because, as noted by practitioners, it's "poorly documented, without a schema file, with possible redundancies or deprecated features." This guide provides the precise rules, patterns, and anti-patterns needed to generate dashboards that render correctly.
 
+> **ATLAS specifics (this repo).** The rules below are generic and still correct, but note how ATLAS actually runs Grafana:
+> - **Provisioning is file-based, not the API.** Dashboards live in `deployment/artifacts/monitoring/dashboards/**` (→ host `/opt/ai-inference/monitoring/dashboards/`) and are loaded by the file provider (`foldersFromFilesStructure: true`); the `POST /api/dashboards/db` method described later is generic-valid but is **not** how ATLAS deploys — ansible syncs the files and Grafana auto-reloads.
+> - **Datasource UIDs** (reference by `{type, uid}`): prometheus `bf2ya9fqus268c`, Loki `loki`, Tempo `tempo`, TimescaleDB `bf4txnr3gnjswd`, CalendarDB `calendar-db`.
+> - **ATLAS is single-node containerd**, not Kubernetes — the `pod`/`container` PromQL examples here won't match. Metrics are `sentinel_*` / service-prefixed; scrape jobs are `node-exporter`, `nvidia-gpu`, `otel-collector`, `containerd`, `gemini-resolver`.
+> - The 20 live dashboards (5 folders) are inventoried in [OBSERVABILITY.md](./OBSERVABILITY.md).
+
 ## The core problems and their solutions
 
 Four specific issues plague AI-generated Grafana dashboards: "No data" panels, duplicate values (10-20x in stat panels), broken visualizations, and heatmap/log panel failures. Each stems from predictable JSON configuration mistakes that can be eliminated with explicit rules.

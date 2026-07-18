@@ -1,7 +1,7 @@
 # ATLAS Indicators -> FRED Series Mapping
 
 **Status**: ✅ Implemented — live catalog: 80 series configured, 79 active, 55 tagged with a SignalIdentityId (DB-verified)
-**Last Updated**: 2026-06-11
+**Last Updated**: 2026-07-18
 
 This file maps ATLAS framework indicators to specific FRED series IDs for automated collection.
 The detailed entries below document the original 66-series framework mapping; the catalog has
@@ -23,7 +23,7 @@ cadence is a per-series Quartz cron derived from FRED frequency (Daily 18:00, We
 - Commodity: 5 patterns
 - OFR: 3 patterns
 
-**Total: 66 FRED series configured in FredCollector**
+**Total: 66 series in the original framework mapping** (live catalog: 80 configured / 79 active — the authoritative list is `series_configs` in `atlas_data`, not this section)
 
 ---
 
@@ -375,6 +375,8 @@ Supporting data for Buffett Indicator and market analysis:
 
 ### 25. S&P 500 Index (Daily)
 
+> ⚠️ **Not collected via FRED** (absent from `series_configs`). The S&P 500 level reaches ATLAS via Finnhub (`SPY`), not a FRED `SP500` series. Retained here for framework reference only.
+
 - **ATLAS Name**: S&P 500
 - **FRED Series ID**: `SP500`
 - **Full Name**: S&P 500
@@ -384,6 +386,8 @@ Supporting data for Buffett Indicator and market analysis:
 - **Cron**: `0 0 18 * * MON-FRI` (6 PM ET daily)
 
 ### 26. Wilshire 5000 Total Market Index (Daily)
+
+> ⚠️ **Not collected via FRED** (absent from `series_configs`). Framework reference only.
 
 - **ATLAS Name**: Wilshire 5000
 - **FRED Series ID**: `WILL5000INDFC`
@@ -435,6 +439,8 @@ Commodity prices for Cu/Au ratio calculation:
 
 ### 30. Gold Price (Daily)
 
+> ⚠️ **Not collected via FRED** (absent from `series_configs`). The FRED catalog carries Copper (`PCOPPUSDM`) but no gold series. Framework reference only.
+
 - **ATLAS Name**: Gold
 - **FRED Series ID**: `GOLDAMGBD228NLBM`
 - **Full Name**: Gold Fixing Price (London, USD)
@@ -444,6 +450,8 @@ Commodity prices for Cu/Au ratio calculation:
 - **Cron**: `0 0 18 * * MON-FRI`
 
 **Cu/Au Ratio Calculation**: Copper Price / Gold Price
+
+> ⚠️ Gold is **not** in `series_configs`, so the Cu/Au pattern's gold leg is sourced outside FRED (Copper `PCOPPUSDM` is FRED-collected; gold is not).
 
 - Thresholds: <0.15 (bear), 0.15-0.22 (neutral), >0.22 (bull)
 
@@ -492,6 +500,31 @@ Commodity prices for Cu/Au ratio calculation:
 - `SAHMCURRENT` - Sahm Rule Recession Indicator
 - `TCU` - Total Capacity Utilization
 - `Y033RC1Q027SBEA` - Private Nonresidential Fixed Investment
+
+**Additional Series Collected (since 2026-06-11, not detailed above) — reconciles this doc to the live 80:**
+- `BAMLH0A1HYBB` - BB High-Yield OAS (NBFI)
+- `BAMLH0A3HYC` - CCC High-Yield OAS (NBFI)
+- `DCPN3M` - 90-Day AA Commercial Paper Rate (Credit)
+- `DDDM01USA156NWDB` - Market-Cap/GDP ratio (Valuation, annual)
+- `DHHNGSP` - Henry Hub Natural Gas Spot (Commodity)
+- `ECBDFR` - ECB Deposit Facility Rate (Currency)
+- `GDP` - Nominal GDP (Buffett denominator)
+- `IGREA` - Index of Global Real Economic Activity (Growth)
+- `JTSLDR` - JOLTS Layoffs & Discharges (Recession)
+- `JTSQUR` - JOLTS Quits (Recession)
+- `LNS14000012` / `LNS14000024` / `LNS14000060` - Age-cohort unemployment rates (Recession)
+- `MANEMP` - Manufacturing Employment (Recession)
+- `NASDAQNDXSE` - Nasdaq-100 Equal-Weighted (Valuation)
+- `NASDAQNQUSBLM` - NASDAQ US Large-Mid Cap (Valuation)
+- `PCEPI` - PCE Price Index (Inflation)
+- `PCEPILFE` - Core PCE Price Index (Inflation)
+- `RPONTSYD` - Overnight Repo Operations (NBFI)
+- `T5YIE` - 5-Year Breakeven Inflation (Inflation)
+- `T5YIFR` - 5-Year/5-Year Forward Inflation (Inflation)
+- `TSIFRGHT` - Freight Transportation Services Index (Transportation)
+- `USCONS` - Construction Employment (Recession)
+- `WLRRAL` - Fed Reverse Repo, Wednesday Level (Federal Reserve)
+- `TEDRATE` - TED Spread (inactive / discontinued — the single inactive series of 80)
 
 ---
 
@@ -595,7 +628,7 @@ curl "https://api.stlouisfed.org/fred/series/observations?series_id=ICSA&api_key
 
 ---
 
-**Last Updated**: 2026-06-11
+**Last Updated**: 2026-07-18
 **Status**: ✅ Implemented - 80 series configured (79 active) and collecting
 **Owner**: James
 **Implementation**: FredCollector service + FredCollector MCP server

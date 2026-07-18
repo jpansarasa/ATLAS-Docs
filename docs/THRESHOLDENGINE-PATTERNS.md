@@ -35,6 +35,10 @@ cellSignal[sector] = weightedSignal * sectorWeights[sector]
 
 Signal range: -3 to +3. Per-cell projections inherit that range, scaled by the sector weight.
 
+> **Two projection paths — the formula above is the legacy one.** The `weight`-based formula drives the `/api/patterns/evaluate` endpoint and the `weighted_signal` metric. The **wired `matrix_cells` writer** (`ObservationCellProjector`) instead uses `cell = magnitude x sourceTrust x freshness x temporal x confidence x sectorWeight` — per-source **`sourceTrust`** replaces `pattern.weight`, and `magnitude` forks news (`K·tanh(Σ)`) vs hard-data. See [MATRIX.md](./MATRIX.md) §3.
+>
+> **Projection gating:** only patterns carrying `metadata.signalIdentity` (46 of 72) project a Sentinel news signal into the matrix; a classified signal with no matching pattern is skipped as `unknown_signal`. Unregistered mnemonics auto-disable the pattern at load (SecMaster `ResolveBatch`; `PatternValidation:Strict` fails boot instead). `sectorWeights` values are **signed** `[-1,+1]`, not just zeros.
+
 ---
 
 ## Pattern Expression API
@@ -369,10 +373,12 @@ The loader sets `UnmappedMemberHandling = Disallow` — unknown keys (e.g. legac
 | `leadTimeMonths` | int | 0 | Months ahead (+) or behind (-) |
 | `publicationFrequencyDays` | int | 30 | Expected days between publications |
 | `signalDecayDays` | int | 30 | Decay constant after overdue |
-| `confidence` | decimal | 0.75 | Historical accuracy (informational) |
+| `confidence` | decimal | 0.75 | Historical accuracy — multiplies into every wired cell (NOT merely informational, despite the XML-doc) |
 | `metadata` | object | {} | Arbitrary key-value pairs |
 
 ### Example Pattern
+
+> ⚠️ **Illustrative schema only — this exact pattern no longer exists.** `ism-contraction` / the `NAPM` series were decommissioned (FRED revoked the ISM license); the replacement is `growth/global-pmi.json` (series `IGREA`). A current live example is `recession/sahm-rule-official.json` or `commodity/oil-price.json`. (Ironically, this `NAPM` example would itself auto-disable — unregistered mnemonic.)
 
 ```json
 {
@@ -453,8 +459,8 @@ GetTemporalMultiplier(pattern):
 ```json
 {
   "timestamp": "2026-01-19T12:00:00Z",
-  "totalPatterns": 66,
-  "enabledPatterns": 66,
+  "totalPatterns": 72,
+  "enabledPatterns": 72,
   "healthStatus": "Healthy",
   "issues": [],
   "summary": {

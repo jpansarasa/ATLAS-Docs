@@ -48,13 +48,15 @@ graph LR
 | Service | gRPC Port (Internal) | HTTP Port (Internal) | Event Types |
 |---------|---------------------|---------------------|-------------|
 | FredCollector | 5001 | 8080 | SeriesCollectedEvent, CollectionFailedEvent |
-| AlphaVantageCollector | 5001 | 8080 | SeriesCollectedEvent, OhlcvCollectedEvent, CollectionFailedEvent |
+| AlphaVantageCollector | 5001 | 8080 | SeriesCollectedEvent, CollectionFailedEvent (OHLCV is DB-stored only — never streamed) |
 | FinnhubCollector | 5001 | 8080 | SeriesCollectedEvent, CollectionFailedEvent |
 | OfrCollector | 5001 | 8080 | SeriesCollectedEvent, CollectionFailedEvent |
 | SentinelCollector | 5001 | 8080 | SeriesCollectedEvent, CollectionFailedEvent |
 | NasdaqCollector | 5001 | 8080 | (currently disabled - WAF blocking) |
 
 All collectors implement the `ObservationEventStream` gRPC service contract from the shared `Events` library. All use internal port 5001 for gRPC and 8080 for HTTP/REST.
+
+> **Matrix path is not gRPC.** The legacy `MatrixUpdateStream` bridge (`MatrixCellUpdateStreamService` + ThresholdEngine's `MatrixCellSentinelWorker`) was **retired in WS3-A3**; `ObservationCellProjector` now writes `matrix_cells` by DB-polling `macro_observations` (see [MATRIX.md](./MATRIX.md)). The current threshold event the TE producer bridges to Sentinel is `SectorThresholdCrossedEvent` (payload 14 below).
 
 ### ThresholdEngine (Event Consumer + Producer)
 
@@ -180,6 +182,7 @@ message Event {
     OhlcvCollectedEvent ohlcv_collected = 12;
     CollectionFailedEvent collection_failed = 11;
     ThresholdCrossedEvent threshold_crossed = 13;
+    SectorThresholdCrossedEvent sector_threshold_crossed = 14;
   }
 }
 
@@ -187,12 +190,13 @@ message SeriesCollectedEvent {
   string series_id = 1;
   repeated DataPoint data_points = 2;
   google.protobuf.Timestamp collected_at = 3;
+  string api_version = 4;
 }
 
 message ThresholdCrossedEvent {
   string pattern_id = 1;
   string pattern_name = 2;
-  string category = 3;
+  reserved 3;  // was `category` — retired (migration DropCategoryFromThresholdEvents)
   double signal = 4;
   double current_value = 5;
   map<string, string> metadata = 6;
@@ -356,6 +360,8 @@ sudo nerdctl exec threshold-engine grpcurl -plaintext localhost:5001 atlas.event
 # Check SecMaster gRPC services
 sudo nerdctl exec secmaster grpcurl -plaintext localhost:5001 list
 ```
+
+> **gRPC reflection is per-service, not universal.** It is enabled on FredCollector, FinnhubCollector, OfrCollector, SentinelCollector, and ThresholdEngine, but **not** on AlphaVantageCollector, SecMaster, or NasdaqCollector. On those three, `grpcurl … list` and by-method calls (e.g. the `alphavantage-collector` and `secmaster` lines above) require `-proto <file>` instead of reflection.
 
 ### Check Processed Events (Checkpoint)
 

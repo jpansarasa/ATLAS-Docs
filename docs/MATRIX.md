@@ -107,8 +107,7 @@ CHECK (`ck_macro_obs_value_xor`) plus client-side `EnsureValid()`.
   SecMaster REST `/api/signal-identities/by-category/macro` (cached). Macro-classified series
   dual-write `source_collector="fred"`, `source_id={SeriesId}`, after a value transform that
   maps index levels -> YoY for the inflation family (a null transform result means skip, never a
-  fabricated value). 27 distinct signal ids have flowed from FRED (24 within
-  the projector's 120-day lookback; DB-verified 2026-06-11).
+  fabricated value). 27 distinct signal ids have flowed from FRED (DB-verified 2026-06-11).
 - **OFR** (`OfrCollector/src/Services/{FsiCollectionService,MacroObservationDualWriter}.cs`):
   **FSI composite + 4 patterned subindices** (`OFR_FSI`, `OFR_FSI_{CREDIT,FUNDING,VOLATILITY,EM}`)
   dual-write `source_collector="ofr"` unconditionally (wired by #709 so the projector patterns
@@ -122,7 +121,8 @@ No other collector writes the substrate (§7).
 ### 2e. The projector — the only wired matrix writer
 
 `ThresholdEngine/src/Workers/ObservationCellProjector.cs` is a `BackgroundService` on a
-**5-minute cycle** with a **120-day lookback**. It reads `macro_observations` Kind=Numeric
+**5-minute cycle** with a **366-day hard-data lookback and a separate 7-day news (`:sig:`)
+window** (`HardDataLookback`/`NewsWindow`). It reads `macro_observations` Kind=Numeric
 **descending** (newest-first; an ascending read would freeze the matrix on stale rows), capped
 at 1000 rows per cycle (hitting the cap WARNs and meters).
 

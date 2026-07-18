@@ -1,6 +1,6 @@
 # ATLAS — Executive Summary
 
-**Last verified against the live system: 2026-06-11.**
+**Last verified against the live system: 2026-07-18.**
 
 ATLAS is a self-hosted financial-signal platform running on a single production server
 (mercury). It continuously collects hard economic data (FRED, OFR, Finnhub, AlphaVantage),
@@ -23,16 +23,17 @@ Two properties define it:
 
 - **One funnel**: all matrix input flows through the `macro_observations` substrate table.
   Sentinel news writes `tilt * confidence` per classified signal; FRED dual-writes its
-  macro-classified series; OFR is wired but dormant (0 series flagged). ThresholdEngine's
-  `ObservationCellProjector` polls that table — the live gRPC event path never writes cells.
+  macro-classified series; OFR dual-writes its FSI composite + 4 subindices (live since #709 —
+  ~1,825 substrate rows). ThresholdEngine's `ObservationCellProjector` polls that table — the
+  live gRPC event path never writes cells.
 - **Sources coexist, never overwrite**: cells are keyed per source collector, so FRED and news
   contributions to the same signal sit side by side. Official data carries trust 1.0, named
   news 0.7, unnamed scrapes 0.4 — official data outvotes headlines, but sustained multi-source
   news consensus remains visible against it. News magnitudes decay with a 24h half-life and
   self-heal toward zero when coverage stops.
 
-Live scale (2026-06-11): ~24.3k cells over 30 distinct signals, fed by ~4.2k macro
-observations, growing by ~700 observations/day. Consumption: ThresholdEngine HTTP + MCP APIs,
+Live scale (2026-07-18): ~155k cells over ~42 distinct signal identities, fed by ~24.8k macro
+observations, growing by ~500-550 observations/day. Consumption: ThresholdEngine HTTP + MCP APIs,
 four Signal Matrix Grafana dashboards, and the `sector_phase_cells` downstream view.
 Full detail: [MATRIX.md](./MATRIX.md).
 
@@ -51,7 +52,7 @@ SentinelCollector turns headlines into matrix input and human-readable digests:
   cascade (local SQL/vector tiers -> OpenFIGI/Finnhub/Gemini confirmation), with async Finnhub
   and nightly AlphaVantage sweeps behind it.
 - **Signal classification**: one structured GPU call per article scores tilt and confidence
-  against a 77-signal catalog — this is the matrix's news feed.
+  against an 85-signal catalog — this is the matrix's news feed.
 - **Digest**: daily/weekly/monthly (Quartz, ET) — themes, sector breakdown, news momentum
   (early-vs-late tilt), cross-collector rollup, and an aggregate-first LLM narrative; pushed
   via ntfy. Every enrichment degrades gracefully; the Tier-1 digest always ships.
@@ -78,7 +79,7 @@ All inference is local; no ollama remains (retired 2026-06-11):
 | Nasdaq NDL | disabled in production (WAF) |
 | CalendarService | FRED release calendar (curated ~18 releases) + NYSE market calendar |
 
-SecMaster is the identity backbone: 16.6k instruments, 84 signal identities, embeddings-backed
+SecMaster is the identity backbone: ~22.6k instruments, 85 signal identities, embeddings-backed
 resolution, lazy-loaded from what the news actually mentions (bulk preload is forbidden by
 design).
 

@@ -260,7 +260,7 @@ Pipeline: services emit OTLP -> otel-collector:4317 -> Loki (logs, 30d), Tempo (
 Prometheus (metrics, 15s scrape). Grafana :3000 with provisioned datasources (Prometheus, Loki,
 Tempo, TimescaleDB, CalendarDB).
 
-Alert routing: Prometheus rules + Loki ruler -> Alertmanager (severity routes critical /
+Alert routing: Prometheus rules + Loki ruler -> Alertmanager (severity routes critical / error /
 warning / info; critical inhibits warning per service) -> alert-service webhook -> ntfy
 `atlas-alert`, Gmail, AutoFix queue. **AlertService is UP by design** (verified end-to-end
 2026-06-10).

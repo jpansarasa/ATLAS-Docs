@@ -39,14 +39,19 @@ flowchart LR
 
 ## Stack
 
-| Component | Port | Purpose |
+| Component | Port (internal) | Purpose |
 |-----------|------|---------|
 | OTel Collector | 4317 (gRPC), 4318 (HTTP) | OTLP receiver, routing |
-| Prometheus | 9090 | Metrics storage, alerting rules |
-| Loki | 3101 | Log aggregation |
-| Tempo | 3200 | Distributed tracing |
+| Prometheus | 9090 | Metrics storage (120d retention), alerting rules |
+| Loki | 3100 | Log aggregation (30d retention) |
+| Tempo | 3200 | Distributed tracing (7d retention) |
 | Alertmanager | 9093 | Alert routing |
 | Grafana | 3000 | Dashboards, exploration |
+
+Only **Grafana** is mapped to a host port (`mercury:3000`); Prometheus/Loki/Tempo/Alertmanager are
+internal-only and reached through Grafana's datasource proxy. Prometheus scrapes every 15s; jobs:
+`node-exporter`, `nvidia-gpu` (gpu-exporter), `otel-collector`, `containerd`, `gemini-resolver`
+(there is no `ups` job — UPS monitoring is dead since 2026-06-11).
 
 ## Service Configuration
 
@@ -299,26 +304,44 @@ Located in `deployment/artifacts/monitoring/alerts/`:
 | File | Scope | Key Alerts |
 |------|-------|------------|
 | `service-health.yml` | All services | Container restarts, memory, CPU |
+| `collectors-deadman.yml` | All collectors | Dead-man windows sized past each collector's normal idle gap |
 | `fredcollector.yml` | FredCollector | API errors, collection failures |
-| `thresholdengine.yml` | ThresholdEngine | Pattern load failures, event processing |
+| `thresholdengine.yml` | ThresholdEngine | Pattern load failures, matrix projector/persistence guards |
+| `sentinel.yml` | SentinelCollector | Extraction, digest, resolution, classifier guards |
+| `secmaster.yml` | SecMaster | Resolution / RAG health |
+| `gemini-resolver.yml` | gemini-resolver (host) | Frontier-resolver burn / health |
 | `calendarservice.yml` | CalendarService | Calendar sync failures |
-| `sentinel.yml` | SentinelCollector | Extraction failures, edge sync issues |
+| `systemd-units.yml` | host systemd units | Unit failure / inactive |
+
+Plus Loki ruler log-error rules (`monitoring/loki-rules/…`) that route to Alertmanager.
 
 ### Alert Routing
 
 ```yaml
 # alertmanager.yml
 routes:
-  - match:
-      severity: critical
+  - match: { severity: critical }
     receiver: critical
     group_wait: 10s
     repeat_interval: 1h
-  - match:
-      severity: warning
+  - match: { severity: error }
+    receiver: error
+    group_wait: 20s
+    repeat_interval: 1h30m
+  - match: { severity: warning }
     receiver: warning
     group_wait: 30s
     repeat_interval: 2h
+  - match: { severity: info }
+    receiver: default
+    group_wait: 5m
+    repeat_interval: 12h
+
+inhibit_rules:
+  # a firing critical suppresses the matching warning for the same service
+  - source_matchers: [ severity="critical" ]
+    target_matchers: [ severity="warning" ]
+    equal: [ service ]
 ```
 
 ### Notification Flow
@@ -326,30 +349,33 @@ routes:
 ```mermaid
 flowchart LR
     P[Prometheus] --> AM[Alertmanager]
+    L[Loki ruler] --> AM
     AM -->|webhook| AS[AlertService]
     AS --> N[ntfy.sh]
     AS --> E[Email]
+    AS --> AF[AutoFix queue]
 ```
 
-AlertService receives webhooks and routes by severity:
-- **critical**: ntfy + email
+AlertService receives webhooks and routes by severity (`SeverityRoutes` in appsettings):
+- **critical**: ntfy + email + autofix
+- **error**: ntfy + autofix
 - **warning**: ntfy only
-- **info**: email only
+- **info**: ntfy only
+
+Email fires only for `critical` + `error` (its `EnabledSeverities` gate) — not for `info`.
 
 ## Dashboards
 
 ### Available Dashboards
 
-| Dashboard | File | Purpose |
-|-----------|------|---------|
-| ATLAS Home | `atlas-home.json` | High-level system overview, regime status |
-| ATLAS Observability | `atlas-observability.json` | Cross-service health metrics |
-| Infrastructure | `infrastructure.json` | Container resources, system metrics |
-| FredCollector | `fredcollector.json` | FRED API, collection metrics |
-| ThresholdEngine | `thresholdengine.json` | Pattern evaluation, regime transitions |
-| OfrCollector | `ofrcollector.json` | FSI trends, STFM/HFM collection |
-| Calendar | `atlas-calendar.json` | Economic calendar, market events |
-| Sentinel | `sentinel.json` | News extraction, sentiment analysis |
+20 dashboards, folder-provisioned (folders derive from the directory structure under
+`monitoring/dashboards/`):
+
+- **Overview**: `atlas-home`, `atlas-observability`, `dotnet-runtime`, `infrastructure`
+- **Collectors & Services**: `fredcollector`, `ofrcollector`, `secmaster-resolve-latency`, `sentinel`, `te-pattern-data-health`, `thresholdengine`
+- **Sentinel Pipeline**: `atlas-entity-resolution`, `sentinel-matrix-pipeline`, `sentinel-resolution`, `v2-pipeline-health`
+- **Signal Matrix**: `atlas-direct-substrate`, `atlas-disagreement`, `atlas-matrix-primary`, `atlas-matrix-trajectory`
+- **Calendar & Reports**: `atlas-calendar`, `atlas-reports-overview`
 
 ### Dashboard Location
 
@@ -489,11 +515,10 @@ _counter.Add(count);  // Hours of no data
 
 | Service | URL |
 |---------|-----|
-| Grafana | http://mercury:3000 |
-| Prometheus | http://mercury:9090 |
-| Alertmanager | http://mercury:9093 |
-| Tempo | http://mercury:3200 |
-| Loki | http://mercury:3101 |
+| Grafana | http://mercury:3000 (the only host-exposed component) |
+
+Prometheus, Alertmanager, Tempo, and Loki are **internal-only** (no host port) — reach them
+through Grafana (Explore / datasource proxy), not `mercury:PORT`.
 
 ## Services Without Full Observability
 
