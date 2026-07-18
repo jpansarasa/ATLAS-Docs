@@ -8,23 +8,25 @@ Deep-dives: [MATRIX.md](./MATRIX.md) (signal matrix), [SENTINEL-RLM.md](./SENTIN
 
 ## 1. Host and resource topology
 
-- mercury: 48 hardware threads, 125 GiB RAM, NVIDIA RTX 5090 (32,607 MiB; ~29.8 GiB held by
-  vLLM at 0.92 gpu-memory-utilization).
+- mercury: 48 hardware threads, 125 GiB RAM, NVIDIA RTX 5090 (32,607 MiB; 29,776 MiB / ~29.1 GiB
+  held by vLLM at 0.92 gpu-memory-utilization).
 - CPU islands via compose `cpuset` (CFS-throttle avoidance; islands sum to all 48 threads):
   llama-server 0-23, llama-cpu-rag 24-39, llama-cpu-embed 40-47.
 - ZFS: `nvme-fast` (models, timeseries DB, dashboards, containers) + `sata-bulk` (logs,
   raw-data, backups, archives, agent workspace).
-- UPS: APC via `apcupsd` + ups-exporter -> Prometheus job `ups`.
+- UPS: none active — the APC Back-UPS died 2026-06-11; mercury runs on raw wall power pending a
+  SmartUPS replacement. `apcupsd` is installed but disabled/inactive, there is no `ups-exporter`,
+  and no `ups` Prometheus job scrapes (only a stale `ups` label lingers in the TSDB from history).
 - Host systemd (non-container) services: `sandbox-manager` (spawns sandbox-kernel containers
-  for Sentinel), `gemini-resolver-mcp` (port 9300, reached from containers via `host-gateway`),
-  `apcupsd`.
+  for Sentinel), `gemini-resolver-mcp` (port 9300, reached from containers via `host-gateway`).
+  (`apcupsd` is installed but inactive — see UPS above.)
 
 ## 2. Two compose stacks
 
 | Stack | File | systemd unit | Contents |
 |---|---|---|---|
-| Main | `/opt/ai-inference/compose.yaml` (ansible-generated, ~1,400 lines) | `atlas.service` | DB, collectors, processing, alerting, sidecars, MCP servers, GPU (vllm-server) + CPU inference |
-| OTEL | `/opt/otel/compose.otel.yaml` (templated from `deployment/artifacts/compose.otel.yaml.j2`) | `otel.service` | prometheus, grafana, loki, tempo, otel-collector, node/gpu/ups exporters |
+| Main | `/opt/ai-inference/compose.yaml` (ansible-generated, ~1,560 lines) | `atlas.service` | DB, collectors, processing, alerting, sidecars, MCP servers, GPU (vllm-server) + CPU inference |
+| OTEL | `/opt/otel/compose.otel.yaml` (templated from `deployment/artifacts/compose.otel.yaml.j2`) | `otel.service` | prometheus, grafana, loki, tempo, otel-collector, node/gpu exporters |
 
 Both stacks share the external `ai-inference` network. `atlas.service` requires
 `otel.service` so the network exists first. vllm-server is a main-compose service
@@ -94,7 +96,7 @@ internal / 50xx on the host.
 ```
 Sentinel news --GPU classifier--> macro_observations (":sig:" rows, value = tilt x confidence)
 FRED macro-classified series --dual-write--> macro_observations
-OFR (wired, 0 series flagged -> dormant) --> macro_observations
+OFR FSI composite + 4 subindices --dual-write--> macro_observations (STFM/HFM is_macro still 0)
         v (5-min DB poll)
 ThresholdEngine ObservationCellProjector --> matrix_cells (11 sectors x signal x source)
 ```
@@ -134,7 +136,11 @@ Detail in `SentinelCollector/README.md`; the matrix-facing half in [MATRIX.md](.
    resolve -> Gemini fallback (>=0.85, auto-registers new instruments) -> Pending; an async
    `ResolutionWorker` drains Pending via Finnhub (5 attempts -> NoResolution), with a nightly
    AlphaVantage sweep (25/day quota) behind it. A per-article `EntityResolutionPrepass` (spaCy
-   NER -> SecMaster resolve-entities) grounds prompts and sector tags — it never gates entry.
+   NER -> SecMaster resolve-entities) grounds prompts and sector tags — it never gates entry. A
+   `CandidateSurfaceFilter` (GIGO ingress guard, #864 D-1/D-5/D-6/D-11) rejects non-tradeable NER
+   surfaces before the resolver — markup/slugs, money, countries, institutions, government
+   agencies, bylines, and curated non-tradeable media outlets — so garbage never reaches the
+   SecMaster/Gemini resolver; real issuers are kept.
 4. **Signal classification**: one structured vLLM call per article -> `macro_observations`
    `:sig:` rows (the matrix feed).
 5. **Digest** (Quartz, America/New_York: daily 07:00 Mon-Fri, weekly Fri 19:00, monthly
@@ -145,15 +151,19 @@ Detail in `SentinelCollector/README.md`; the matrix-facing half in [MATRIX.md](.
    + per-sector detail blocks) -> ntfy push to `atlas-digest` (leads with top sector).
    Every enrichment degrades rather than failing the run — Tier-1 always ships.
 
-AutoApprove is on: approve at extraction >=0.9 AND resolution >=0.8 AND InstrumentId; reject below
-0.5 extraction; else Pending.
+AutoApprove is on and method-aware (not resolution-confidence-gated, since #856): reject when
+extraction < 0.5; otherwise approve when the row is Resolved with an InstrumentId AND either the
+resolution method is trusted-exact (`ticker_in_quote`, `llm_candidate_exact`) or the row has aged
+past the review grace window (default-accept); else hold Pending. An `AutoApproveDrainWorker`
+replays the policy over the Pending backlog and auto-closes NoResolution rows past grace.
 
 ## 6. SecMaster — identity, classification, resolution
 
-Live `atlas_secmaster`: 16,580 instruments (10,054 Equity, 4,998 Indicator, 797 Economic, 350
-quarantined LoRA-era registrations), 7,994 source_mappings, 16,034 bge-m3 embeddings, 11
-atlas_sectors, 84 signal_identities in 7 categories (macro 33, rate 14, credit 13, liquidity 9,
-instrument 7, commodity 4, fx 4).
+Live `atlas_secmaster`: 22,573 instruments (16,046 Equity, 4,998 Indicator, 1,138 Economic; ~391
+more spread across ~17 smaller/legacy `asset_class` values, including case-variant duplicates like
+`Equity`/`equity` and `ETF`/`etf` — a known data-quality wart), 7,459 source_mappings, 22,573
+bge-m3 embeddings (100% instrument coverage), 11 atlas_sectors, 85 signal_identities in 7
+categories (macro 33, rate 14, credit 13, liquidity 10, instrument 7, commodity 4, fx 4).
 
 Core invariants:
 
@@ -176,9 +186,9 @@ Confirmed -> persist + embed; unconfirmed -> null + review queue. A non-overlapp
 context zeroes a candidate's score (dropped, not down-ranked, below MinConfidence 0.8).
 
 The synchronous hot path is the **hybrid cascade**: ExactSQL -> FuzzySQL -> pgvector cosine
-(bge-m3, hard similarity floor 0.5) -> RAG hypothesis tier on llama-cpu-rag (25s budget,
-abstains under 12s remaining budget, 4 concurrent slots, circuit breaker, no retry on
-generation). Any RAG failure degrades to deterministic-tier candidates — never a 500.
+(bge-m3, hard similarity floor 0.5) -> RAG hypothesis tier on llama-cpu-rag (50s budget,
+abstains under 18s remaining budget, 4 concurrent slots, circuit breaker on server faults only,
+no retry on generation). Any RAG failure degrades to deterministic-tier candidates — never a 500.
 
 ## 7. The data fleet (collectors, live scope)
 
@@ -197,10 +207,11 @@ generation). Any RAG failure degrades to deterministic-tier candidates — never
   (+ `*_integration_test`).
 - **atlas_data public**: `series_configs`, `events`/`processed_events`, per-collector tables
   (`fred_observations`, `alphavantage_*`, `nasdaq_*`, `ofr_*`, `finnhub_*`), matrix layer
-  (`macro_observations`, `matrix_cells`, `sector_regimes`), `threshold_alerts`,
-  `threshold_events`.
+  (`macro_observations`, `matrix_cells`, `sector_regimes`), `news_article_embeddings`
+  (pgvector news-article embeddings), `threshold_alerts`, `threshold_events`.
 - **atlas_data sentinel schema**: `raw_content`, `extracted_observations` (+ `_shadow`),
-  `digest_reports`, `rss_feeds`, `search_queries`, `validation_*`, `retention_policies`
+  `events`, `mirror_attempts`, `digest_reports`, `rss_feeds`, `search_queries`, `validation_*`,
+  `retention_policies`
   (0 rows — unused mechanism; pruning is app-managed via the 30-day raw_content age guard +
   startup pruner, §5).
 - **Hypertables** — exactly five: `nasdaq_observations`, `alphavantage_observations`,
@@ -209,7 +220,8 @@ generation). Any RAG failure degrades to deterministic-tier candidates — never
   are active (by design — retention is app-managed where it exists, see above).
 - **atlas_secmaster**: `instruments`, `aliases`, `instrument_embeddings` (pgvector),
   `signal_identities`, `source_mappings`, `atlas_sectors`, `naics_*`, `edgar_filers`,
-  `openfigi_lookup_cache`, review queue. Extensions: pg_trgm + pgvector.
+  `openfigi_lookup_cache`, `instrument_sector_overrides`, `mapping_versions`, review queue.
+  Extensions: pg_trgm + pgvector.
 - **Migrations**: EF Core, app-managed — each service migrates its own schema on startup;
   `macro_observations` via the one-shot migrator container. Ansible only creates
   DBs/users/extensions idempotently. No raw SQL schema scripts.
@@ -256,8 +268,8 @@ warning / info; critical inhibits warning per service) -> alert-service webhook 
 Alert rule files (`deployment/artifacts/monitoring/alerts/`): `service-health.yml`,
 `collectors-deadman.yml` (dead-man windows sized past the longest normal idle gap),
 `fredcollector.yml`, `thresholdengine.yml` (incl. the matrix projector/persistence guards),
-`sentinel.yml` (extraction, digest, resolution, classifier guards), `calendarservice.yml`,
-plus Loki log-error rules.
+`sentinel.yml` (extraction, digest, resolution, classifier guards), `secmaster.yml`,
+`gemini-resolver.yml`, `calendarservice.yml`, `systemd-units.yml`, plus Loki log-error rules.
 
 Dashboards are folder-provisioned from `/opt/ai-inference/monitoring/dashboards/`: Overview,
 Collectors & Services, Sentinel Pipeline, Signal Matrix, Calendar & Reports.
@@ -266,9 +278,10 @@ Collectors & Services, Sentinel Pipeline, Signal Matrix, Calendar & Reports.
 
 - ThresholdEngine `ObservationEventSubscriber` + `CellProjector` formula: unwired dead code.
 - Finnhub non-Quote schema, AlphaVantage OHLCV/TechnicalIndicator: dead schema/scaffold.
-- OFR `is_macro` flags all off -> no OFR substrate rows yet.
+- OFR STFM/HFM `is_macro` flags all off (that dual-write path is dormant) — but OFR is NOT absent
+  from the substrate: FSI (composite + 4 subindices, #709) and signal-identity-tagged series write
+  ~1,825 `macro_observations` rows and project into the matrix (§4b).
 - SecMaster proto `ALIAS_MATCH` never emitted; `RagStrictMode` true in code but false in prod
   via compose env.
-- `sentinel_ollama_*` metric names: legacy seam now recorded by the vLLM client.
 - `financial_news` database: legacy, pending orphan-cleanup drop.
 - CPU CoD path (`llama-server` + GBNF): compiled-in, inert, rollback-only.

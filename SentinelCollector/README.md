@@ -145,6 +145,7 @@ REST surface lives under `src/Endpoints/`:
 - **AdminEndpoints** — `/admin/*` admin/inspection/CRUD APIs.
 - **ReviewUiEndpoints** — `/ui/review` browser-based human-review UI.
 - **DigestEndpoints** — `/sentinel/digests/*` digest list / view / generate / resend.
+- **MatrixEndpoints** — `/sentinel/matrix` live read-only signal×sector matrix trend explorer.
 
 ### REST API (Port 8080)
 
@@ -183,6 +184,7 @@ REST surface lives under `src/Endpoints/`:
 | `/sentinel/digests/{id}.json` | GET | Digest metadata + markdown body |
 | `/sentinel/digests/generate` | POST | Generate a digest on demand (`?period`, `?pushNotification`, `?force`) |
 | `/sentinel/digests/{id}/resend` | POST | Resend ntfy notification |
+| `/sentinel/matrix` | GET | Live signal×sector matrix trend explorer (`?range=7d\|30d\|90d\|max`) as HTML — reuses the digest trend blocks (KPI tiles + heatmap + per-sector drill-downs, no narrative) |
 | `/ui/review` | GET | Browser review queue (paginated, `?maxConfidence` filter) |
 | `/ui/review/{id}` | GET | Browser review-detail page |
 | `/ui/review/{id}/action` | POST | Form-encoded approve/reject/skip submission |
@@ -224,7 +226,7 @@ SentinelCollector/
 ├── src/
 │   ├── Configuration/    # *Options.cs (EdgeSync, Extraction, CpuCod, Searxng, ReExtract, ...)
 │   ├── Data/             # SentinelDbContext, Repositories/, Configurations/, Migrations/
-│   ├── Endpoints/        # AdminEndpoints, ReviewUiEndpoints, DigestEndpoints
+│   ├── Endpoints/        # AdminEndpoints, ReviewUiEndpoints, DigestEndpoints, MatrixEndpoints
 │   ├── Entities/         # RawContent, ExtractedObservation, RssFeed, ValidationTrigger, ...
 │   ├── Extraction/       # CoVe, CoD, ExtractionSchemaV2, DSL adapter, prompt providers, tool-augmented variants
 │   ├── Grpc/             # EventStreamService (active); MatrixCellUpdateStreamService retired (WS3-A3)

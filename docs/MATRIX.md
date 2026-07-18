@@ -39,21 +39,16 @@ audit can re-derive `cell_value` without re-reading the underlying observations.
 
 ## 2. Data flow end to end
 
-```
-news article --> ExtractionProcessor --> NewsSignalClassifier (GPU vLLM, structured JSON)
-                                              | per-signal {id, tilt, confidence, sector?}
-                                              v
-                 MacroObservationRouter.TryPlanNewsSignalWrite
-                   value_numeric = tilt * confidence
-                   source_id = "{rawContentId}:sig:{signalId}", source_collector = "sentinel"
-                                              v
-FRED collector --(macro-classified series)--> macro_observations (MacroSubstrate upsert, heal-on-rewrite)
-OFR  collector --(is_macro flag; currently 0 flagged)--'
-                                              v  (DB poll, NOT gRPC)
-                 ThresholdEngine ObservationCellProjector (5-min cycle)
-                   group by (signal_identity_id, source_collector) -> 11-sector projection
-                                              v
-                 matrix_cells (upsert ON CONFLICT DO UPDATE, IS DISTINCT FROM guarded)
+```mermaid
+flowchart TD
+    news["news article"] --> ep["ExtractionProcessor"]
+    ep --> nsc["NewsSignalClassifier<br/>(GPU vLLM, structured JSON)"]
+    nsc -->|"per-signal {id, tilt, confidence, sector?}"| router["MacroObservationRouter.TryPlanNewsSignalWrite<br/>value_numeric = tilt * confidence<br/>source_id = {rawContentId}:sig:{signalId}, source_collector = sentinel"]
+    router --> mo[("macro_observations<br/>MacroSubstrate upsert, heal-on-rewrite")]
+    fred["FRED collector"] -->|"macro-classified series"| mo
+    ofr["OFR collector"] -->|"is_macro flag; currently 0 flagged"| mo
+    mo -->|"DB poll, NOT gRPC"| proj["ThresholdEngine ObservationCellProjector<br/>(5-min cycle)<br/>group by (signal_identity_id, source_collector) → 11-sector projection"]
+    proj --> mc[("matrix_cells<br/>upsert ON CONFLICT DO UPDATE, IS DISTINCT FROM guarded")]
 ```
 
 The matrix feed is **DB-polled, not event-driven**: collectors' live gRPC streams to
@@ -75,11 +70,12 @@ Per-article order: normalize -> `EntityResolutionPrepass` (spaCy NER -> SecMaste
 `/api/resolve-entities`, fail-soft) -> classify -> write. The prepass feeds **sector grounding
 only**; it never gates matrix entry — sectorless articles still classify and write.
 
-**The catalog is 77 signals**: `atlas_secmaster.signal_identities` holds 84 rows; the
-classifier loads the six-category allowlist `macro, rate, commodity, fx, credit, liquidity`
-(33+14+4+4+13+9 = 77), deliberately excluding the 7 `instrument` (company-level) identities.
-Credit (hy-credit-spread, ccc-credit-spread, ofr-fsi-\*) and liquidity (mmf-\*, fed-rrp-volume,
-repo-\*) surfaces are part of the allowlist.
+**The catalog is 85 signals**: `atlas_secmaster.signal_identities` holds 85 rows; the
+classifier loads the seven-category allowlist `macro, rate, commodity, fx, credit, liquidity,
+instrument` (33+14+4+4+13+10+7 = 85). The `instrument` category — 7 market-level
+valuation/volatility gauges, *not* company-level names — was folded in by #791 so the classifier
+extracts market gauges. Credit (hy-credit-spread, ccc-credit-spread, ofr-fsi-\*) and liquidity
+(mmf-\*, fed-rrp-volume, repo-\*) surfaces are part of the allowlist.
 
 ### 2b. The router (Sentinel write)
 
@@ -113,10 +109,13 @@ CHECK (`ck_macro_obs_value_xor`) plus client-side `EnsureValid()`.
   maps index levels -> YoY for the inflation family (a null transform result means skip, never a
   fabricated value). 27 distinct signal ids have flowed from FRED (24 within
   the projector's 120-day lookback; DB-verified 2026-06-11).
-- **OFR** (`OfrCollector/src/Services/MacroObservationDualWriter.cs`): shared HFM/STFM
-  dual-write, `source_collector="ofr"`, gated on a per-series `is_macro` flag. **Dormant in
-  production**: 0 of 336 HFM and 0 of 109 STFM series are flagged, so `macro_observations`
-  contains no OFR rows. The path is wired; the flags are off.
+- **OFR** (`OfrCollector/src/Services/{FsiCollectionService,MacroObservationDualWriter}.cs`):
+  **FSI composite + 4 patterned subindices** (`OFR_FSI`, `OFR_FSI_{CREDIT,FUNDING,VOLATILITY,EM}`)
+  dual-write `source_collector="ofr"` unconditionally (wired by #709 so the projector patterns
+  light). Separately, HFM/STFM series that resolve to a signal identity write under their signal
+  mnemonic (e.g. `sofr-repo-dispersion`), independent of the `is_macro` flag. The per-series
+  `is_macro` dual-write path itself stays dormant (0 of 336 HFM, 0 of 109 STFM flagged). Net:
+  `macro_observations` holds ~1,825 OFR rows and OFR projects into the matrix (~1,705 cells).
 
 No other collector writes the substrate (§7).
 
@@ -211,21 +210,21 @@ cell = magnitude * sourceTrust * freshness * temporal * confidence * sectorWeigh
   per (sector, phase), refreshed by `SectorPhaseViewRefreshWorker` on a 7-day cadence (a DB
   outage leaves the view silently stale).
 
-## 5. Operational reality (live DB, 2026-06-11)
+## 5. Operational reality (live DB, 2026-07-18)
 
 | measure | value |
 |---|---|
-| matrix_cells total | 24,324 (24,101 projector `obs:` rows; 223 legacy NULL-collector) |
-| cells by collector | sentinel 23,936; fred 165 |
-| distinct signals in cells | 30 |
-| macro_observations total | 4,191 (sentinel 4,047; fred 144; ofr 0) |
-| `:sig:` news rows | 3,968 |
-| last 24 h | 717 obs ingested (715 `:sig:`, 6 fred) -> 4,785 cell writes |
+| matrix_cells total | 155,477 (155,254 projector `obs:` rows; 223 legacy NULL-collector) |
+| cells by collector | sentinel 151,525; fred 2,024; ofr 1,705 |
+| distinct signals in cells | 42 |
+| macro_observations total | 24,835 (sentinel 22,392; fred 618; ofr 1,825) |
+| `:sig:` news rows | 22,311 |
+| last 24 h | 358 obs ingested (all `:sig:`; FRED/OFR idle this window) |
 | max \|cell_value\| | 3.0000 (clamp + CHECK holding) |
 
-**Patterns**: 72 JSON files under `ThresholdEngine/config/patterns/`, 44 carrying
-`metadata.signalIdentity` — only those 44 signals can project; the rest of the 77-signal
-catalog skips as `unknown_signal` (counted per cycle). Pattern auto-disable happens at load
+**Patterns**: 72 JSON files under `ThresholdEngine/config/patterns/` (organized in category
+subdirs), 46 carrying `metadata.signalIdentity` — only those 46 signals can project; the rest of
+the 85-signal catalog skips as `unknown_signal` (counted per cycle). Pattern auto-disable happens at load
 time via SecMaster `ResolveBatch`: any referenced mnemonic not Found/PrimarySource disables the
 pattern with an ERROR (`PatternValidation:Strict` would fail boot instead).
 
@@ -258,5 +257,6 @@ guard), and the extraction dead-man chain upstream of the feed.
   any of them — their data never enters `macro_observations` or the matrix.
 - **`extracted_observations`**: legacy numeric-fallback sink only; read by neither the
   projector nor the digest.
-- **OFR in practice**: writer wired, but with 0/445 series macro-flagged it currently
-  contributes nothing (§2d).
+- **OFR in practice**: the per-series `is_macro` path is dormant (0/445 STFM+HFM flagged), but
+  FSI (composite + 4 subindices) and signal-identity-tagged series DO write `macro_observations`
+  (~1,825 rows) and project into the matrix — OFR is a live contributor (§2d).
