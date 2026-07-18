@@ -51,6 +51,8 @@ GOTCHAS:
   ✗ ALFRED backfill=advances LastCollectedAt ✗ ordinary backfill=true point-in-time AsOf
   ✗ env-vars from appsettings.json(runtime=env only)
 
-DECISIONS: none recorded yet — accrete on touch (not audited for exception paths; see CLAUDE.md INTENT_FIDELITY MECHANICS).
+DECISIONS:
+  D-1 fred-frequency-normalize-at-source: INTENT FRED metadata returns *qualified* long-form frequency strings ("Weekly, Ending Saturday", "Daily, 7-Day", "Daily, Close") — normalise them to the right CollectionFrequency at the single derivation source, else the wrong value propagates to the revision-buffer window (DataCollectionService), the SecMaster registration frequency, and any future frequency-derived cron (GIGO clean-at-source; an exact-match switch silently defaulted every qualified string to Monthly, mislabelling all daily/weekly series). / PRECOND AddSeries or MCP add_series onboarding a series from FRED / GUARD SeriesManagementService.ParseFrequency @ src/Services/SeriesManagementService.cs:206 / TEST SeriesFrequencyDerivationTests.AddSeries_derives_correct_frequency_from_fred_metadata
+  note: Frequency does NOT drive the steady-state Quartz cron — DataCollectionScheduler schedules off the stored CronExpression column (a flat `0 0 18 * * ?` for ~76/80 rows), so Frequency's live effect is the revision/fallback window + the SecMaster/MCP frequency label, not cadence.
 
 SEE: README.md §Reference (exhaustive series list, endpoint catalog, config/env-var enumeration, Polly backoff numbers, Quartz job-store detail, admin-GET Swagger summary vs impl mismatch, MCP port mapping) · Events/src/Events/Protos/observation_events.proto (ObservationEventStream — EXPOSES gRPC :5001) · Events/src/Events/Protos/secmaster.proto (SecMasterRegistry.RegisterSeries — consumed f-a-f on AddSeries)
