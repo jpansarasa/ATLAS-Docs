@@ -36,6 +36,10 @@ MonthlyReportWorker  (IHostedService + singleton)
 - **Health endpoints** — `/health/live` + `/health/ready` (substrate DbContext check).
 - **OTEL** — MonthlyReport spans + meter alongside library-level `ReportsActivitySource` and `MacroSubstrateTelemetry`.
 
+## DECISIONS
+
+D-1 runtime-log-level: INTENT a WARN-quiet-by-design report host must be raisable to Debug AT RUNTIME (on-demand deep debugging) with NO restart or redeploy, while steady state stays Warning (prod-quiet) and the worker's "next fire at..." Information line keeps showing via the appsettings `MinimumLevel:Override:ATLAS.Reports = Information` per-source override (independent of the global switch). A LoggingLevelSwitch is the SOLE level authority; the operator edits `Serilog:MinimumLevel:Default` in the RUNNING container and reloadOnChange picks it up live. Serilog.Settings.Configuration 8.0.4 does NOT re-apply MinimumLevel on IConfiguration reload, so an explicit ChangeToken re-parse is what makes the edit take effect; the MEL floor sits at Debug (replacing the framework Information default the host previously relied on) so the bridge does not pre-filter below the switch. The raised level lives ONLY in the container's writable layer — revert by editing the key back to Warning (live) OR RECREATE (not restart) the container to reinstate the image's baked-in default; a restart PRESERVES the writable layer and does NOT revert. No compose `Serilog__*` env override for that key exists, so the JSON is authoritative and reloadable. / PRECOND operator runs `nerdctl exec reports-monthly` to edit `/app/appsettings.json` `Serilog:MinimumLevel:Default`. / GUARD RuntimeLogLevel.BuildLogger (ControlledBy = sole authority) + RuntimeLogLevel.CreateSwitch (ChangeToken re-parse on reload) + RuntimeLogLevel.AddRuntimeControlledSerilog (MEL Debug floor) @ Telemetry/RuntimeLogLevel.cs / TEST RuntimeLogLevelTests.Runtime_appsettings_edit_raises_then_lowers_serilog_level
+
 ## Configuration
 
 | Key | Description | Default |
