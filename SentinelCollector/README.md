@@ -66,7 +66,6 @@ flowchart LR
     RES --> GEM
     EX --> PUB
     PUB -->|gRPC ObservationEventStream| TE
-    PUB -->|gRPC MatrixUpdateStream| TE ~~retired (WS3-A3)~~
     DG --> NTFY
 ```
 
