@@ -464,10 +464,11 @@ GetTemporalMultiplier(pattern):
   "healthStatus": "Healthy",
   "issues": [],
   "summary": {
-    "current": 60,
-    "slightlyOverdue": 5,
-    "severelyOverdue": 1,
-    "noData": 0
+    "current": 70,
+    "slightlyOverdue": 0,
+    "severelyOverdue": 0,
+    "noData": 0,
+    "notAssessed": 2
   }
 }
 ```
