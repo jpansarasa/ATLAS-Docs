@@ -14,12 +14,16 @@ Deep-dives: [MATRIX.md](./MATRIX.md) (signal matrix), [SENTINEL-RLM.md](./SENTIN
   llama-server 0-23, llama-cpu-rag 24-39, llama-cpu-embed 40-47.
 - ZFS: `nvme-fast` (models, timeseries DB, dashboards, containers) + `sata-bulk` (logs,
   raw-data, backups, archives, agent workspace).
-- UPS: none active — the APC Back-UPS died 2026-06-11; mercury runs on raw wall power pending a
-  SmartUPS replacement. `apcupsd` is installed but disabled/inactive, there is no `ups-exporter`,
-  and no `ups` Prometheus job scrapes (only a stale `ups` label lingers in the TSDB from history).
+- UPS: CyberPower PR2200LCD (2200VA / **1980W** nominal), USB -> `apcupsd`, installed 2026-07-31
+  replacing the APC Back-UPS (900W) that died 2026-06-11. apcupsd reads this unit's HID layout
+  natively — no NUT/PowerPanel driver. `ups-exporter` (`network_mode: host`) scrapes apcupsd NIS
+  on `127.0.0.1:3551` and exposes `apcupsd_*` on `:9144`; the `ups` Prometheus job and
+  `alerts/ups.yml` cover on-battery, comms-lost, and sustained-overload. apcupsd is armed to
+  gracefully halt mercury at 5 min estimated runtime or 15% charge — sized against
+  `atlas.service` `TimeoutStopSec=120`. Config is ansible-managed (`deploy.yml`, tags: `ups`).
 - Host systemd (non-container) services: `sandbox-manager` (spawns sandbox-kernel containers
-  for Sentinel), `gemini-resolver-mcp` (port 9300, reached from containers via `host-gateway`).
-  (`apcupsd` is installed but inactive — see UPS above.)
+  for Sentinel), `gemini-resolver-mcp` (port 9300, reached from containers via `host-gateway`),
+  `apcupsd` (UPS monitoring + graceful shutdown — see UPS above).
 
 ## 2. Two compose stacks
 
