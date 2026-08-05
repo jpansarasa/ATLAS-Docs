@@ -37,7 +37,24 @@ flowchart TD
 
 - **Google Search grounding**: real-time web retrieval (gemini-2.5-flash + `GoogleSearch` tool), so newly-listed SPAC/IPO names absent from the training cutoff still resolve correctly.
 - **Strict null preference**: prompt + boundary normalization both clear `symbol` when the model is uncertain (`confidence < 0.6`); better empty than wrong for downstream auto-registration.
-- **SQLite result cache**: 30-day TTL keyed by `sha256(subject|description|quote[:100])`. `content_snippet` excluded from the key so per-occurrence variation doesn't defeat caching.
+- **SQLite result cache**: 30-day TTL keyed by the `subject_entity` **plus the description's semantic residue** — the tokens `description` adds beyond the subject, minus **quantities** (a numeral carrying a currency glyph, a percent, or a scale word) and legal-form scaffolding. An abbreviated scale suffix counts as part of the numeral when it is *attached* to a currency amount, so `"$8bn"` keys with `"$8 billion"`; it is never stripped as a standalone token, because `bn`/`m`/`k`/`tn` are identity elsewhere in the catalog (`M & T BANK CORP`, `K Top REITS Co Ltd`, `… in Montgomery County, TN`). A *bare* numeral is kept: it is usually a tenor, and tenors are identity. A leading **sign** is kept too — see *A sign is not punctuation* below. The subject is the identity of the question, but it is not sufficient alone: `SentinelCollector` sends `description` specifically so Gemini can separate an ambiguous surface (`"Coinbase"` the exchange vs the FRED series of the same name), so keying on the subject alone would serve one article's equity answer to another article's macro question for 30 days — at `cached:true`/`cost_usd 0`, i.e. **unbilled and invisible to every burn alert**. Folding in the *raw* description is the opposite failure: it re-billed one entity per mention. The two callers drift differently — SecMaster sends `proposedName ?? surface`, a fuzzy catalog **name** that lands differently run to run (`"Samsung"` as `SAMSUNG C&T CORP` and as `SAMSUNG ELECTRONICS CO LTD`), while the money drift (`"David Ellison"` billed 3x in 70s under `"$8 billion"`/`"$7 million"`/`"$80 billion"`) comes off the **Sentinel** path, where the description is a numeric block's raw span; SecMaster's own gate refuses a `$`-leading surface outright. `text_quote` and `content_snippet` are excluded entirely (per-article on the SecMaster path, per-mention on both Sentinel pipelines). A subjectless request keys on `description|quote[:100]` under a separate namespace, since without a subject those *are* the identity; both variable parts are length-prefixed so caller text containing the separator cannot forge a boundary.
+
+  **The residue is not free**, and the earlier "22 keys, identical to subject-only" reading was an artifact of a 24-request sample holding one duplicate group. Measured over the **30-day journal** (9,598 logged subject/description pairs, 6,803 distinct):
+
+  | key | distinct keys | vs subject-only |
+  |---|---|---|
+  | subject only (collides different instruments) | 4,447 | — |
+  | **subject + residue (current)** | **5,453** | **+22.6%** |
+  | subject + raw description (the re-bill bug) | 6,735 | +51.5% |
+
+  304 subjects keep more than one key, most on junk residue a cache cannot tell from intent (`'a barrel'`, `'days'`, `'monday'`; `"Donald Trump"` arrives under 89 descriptions and holds 36 keys). That +22.6% is the deliberate price of not colliding: under D-1, an extra paid call is the cheaper error than a wrong instrument served free for a month.
+
+  **Tenors are not quantities.** Stripping *every* digit-bearing token collapses **317 catalog name families** (734 names in `atlas_secmaster.instruments`, 19,445 distinct) onto one residue each — `"1-Year Expected Inflation"` and `"10-Year Expected Inflation"` both reduce to `expected inflation year`, 30 `EXPINF` series to a single key — and since SecMaster's description *is* a catalog name, the 10-year answer would serve the 1-year question for the full TTL. The quantity-only rule cuts those 317 families to 7, of which 5 are case-variant spellings of the same instrument.
+
+  **A sign is not punctuation.** `-3X` is the leveraged *inverse* of `3X`, so dropping the sign is a **direction inversion**, not a near-miss — the resulting signal looks healthy and points exactly the wrong way. Both `BETAPRO -3X NSDQ-100 DLB ALT` and `BETAPRO 3X NSDQ-100 DLB ALT` are live catalog names and SecMaster's fuzzy top-hit drifts between them, so the inverse would have been served the long's ticker at `cached:true`/`cost_usd 0` for 30 days. `_tokens` therefore keeps a leading `+`/`-` before a numeral. It is kept **only at a token boundary**, so a hyphen joining two runs stays a separator (`NSDQ-100` → `nsdq`,`100`; `1-Year` → `1`,`year`) and tenors are untouched. Re-measured over `atlas_secmaster.instruments` (19,433 distinct names): distinct residues **18,769 → 18,770**, one key across the whole catalog (+0.005%), exactly one family separated and nothing merged.
+
+  One genuine residual remains, known and accepted: `Lloyds … 9.25% Non Cum. Irrd. Pfd.` vs the `9.75%` issue. A coupon is identity, but percent-marked numerals are treated as quantities because percentage drift in prose is a common re-bill driver; keeping them would cost **+40.3% instead of +22.6%** to close one two-name family. That cost is scoped to the *percent* case alone — it was never the price of the sign, which was near-free.
+- **Output budget sized for reasoning**: `max_output_tokens=2048`. gemini-2.5-flash bills reasoning tokens on the same response as the answer, so a small ceiling cuts the JSON mid-object rather than saving money — see [Output truncation](#output-truncation).
 - **Hourly rate-limit gate**: returns HTTP 429 once `GEMINI_RATE_LIMIT_PER_HOUR` is reached in any rolling 1h window. Defensive cap against a runaway caller.
 - **Cost ledger**: 24h rolling input/output token + USD totals exposed on `/health`.
 - **Fail-soft Gemini errors**: any SDK exception is logged and translated to a "no resolution" payload so Sentinel's v2 path keeps running during Google outages.
@@ -93,7 +110,7 @@ Either `GEMINI_API_KEY` or a readable `GEMINI_KEY_FILE` is **required**; startup
   "source_url": "https://...",
   "rationale": "one sentence explaining the choice",
   "cached": false,
-  "cost_usd": 0.000054
+  "cost_usd": 0.000374
 }
 ```
 
@@ -101,7 +118,25 @@ Either `GEMINI_API_KEY` or a readable `GEMINI_KEY_FILE` is **required**; startup
 - `exchange` ∈ `{NYSE, NASDAQ, AMEX, OTC, FRED}` (or `null`).
 - `symbol` is uppercased; literal strings `"null"`, `"none"`, `"n/a"`, `"unknown"` are normalized to `null`.
 - `confidence` clamped to `[0.0, 1.0]`; `symbol` is forced to `null` when `confidence < 0.6`.
-- `cost_usd` is `0.0` on cache hit; otherwise `input_tokens * $0.075/1M + output_tokens * $0.30/1M`.
+- `cost_usd` is `0.0` on cache hit; otherwise `input_tokens * $0.075/1M + output_tokens * $0.30/1M`, where `input_tokens = prompt_token_count + tool_use_prompt_token_count` and `output_tokens = candidates_token_count + thoughts_token_count`. All four are billed — counting only prompt+candidates under-reported the bill 4.2x ($0.000089 against the true $0.000374 mean per call, measured over the 24-input replay).
+
+> **`cost_usd` is not alerted on.** It aggregates into `gemini_resolver_total_cost_usd_24h`, which currently has **zero consumers** — no alert rule, no recording rule, no dashboard panel. Every shipped burn guard is *call-count* denominated (`GeminiResolverApproachingFreeGroundingCap`, `GeminiResolverBillableCallRateHigh`, and the fail-closed `DAILY_CALL_CAP`), which is the correct primary bound because grounding is billed per prompt with the first 1,500/day free. Correcting the token accounting therefore re-based no threshold. The open gap: **token spend itself has no alert**, so a drain that stays under the call cap while burning tokens (a prompt-size or reasoning-budget regression) would not page. Deliberately not filled in this PR — the accurate figure above is the precondition for filling it.
+
+### Output truncation
+
+`GEMINI_ENABLE_GROUNDING=true` means the response **cannot** be schema-constrained: the API rejects `response_mime_type`/`response_schema` alongside a tool with `400 INVALID_ARGUMENT — "Tool use with a response mime type: 'application/json' is unsupported"`. The only producer constraint available is the token ceiling, so it has to be sized for reasoning **plus** answer.
+
+Measured 2026-08-05 by replaying the 24 real inputs that had failed in production:
+
+| `max_output_tokens` | truncated (`finish_reason=MAX_TOKENS`) | cost per usable result |
+|---|---|---|
+| 512 (old) | 24 / 24 | — (nothing usable) |
+| 1024 | 2 / 24 | $0.000371 |
+| 2048 (current) | 0 / 24 | $0.000374 |
+
+A larger ceiling only bills when tokens are actually generated, whereas a truncated call still bills every reasoning token and discards the answer. Do not lower this to "bound cost".
+
+A truncation that does slip through is cached for **1 hour** (`TRUNCATION_CACHE_TTL_SECONDS`) so it cannot re-bill, while staying far below the 30-day result TTL — it is a config artifact, not a resolution. Transient failures (transport errors, malformed bodies) remain **uncacheable**; caching those is the 2026-06-24 poisoning bug guarded by `tests/test_cache_guard.py`.
 
 ### GET `/health` response
 
@@ -127,7 +162,11 @@ gemini-resolver-mcp/
 │   ├── gemini_client.py     # google-genai wrapper + prompt + JSON extractor
 │   └── cache.py             # SQLite (sqlitedict) result cache, 30d TTL
 ├── tests/
-│   └── test_smoke.py        # live-Gemini smoke tests (skip with SKIP_NETWORK=1)
+│   ├── test_smoke.py        # live-Gemini smoke tests (skip with SKIP_NETWORK=1)
+│   ├── test_cache_guard.py  # transient failures must never be cached (2026-06-24)
+│   ├── test_budget_guard.py # fail-closed daily call cap
+│   ├── test_metrics.py      # /metrics and /health cannot desync
+│   └── test_billing_waste.py # one subject = one paid call; no re-bill after abandon/truncate
 ├── gemini-resolver-mcp.service  # systemd unit
 └── pyproject.toml
 ```
