@@ -301,9 +301,8 @@ SecMaster/
 
 1. Open in VS Code: `code SecMaster/`
 2. Reopen in Container (Cmd/Ctrl+Shift+P -> "Dev Containers: Reopen in Container")
-3. Build and run unit tests: `.devcontainer/compile.sh`
-4. Build without tests: `.devcontainer/compile.sh --no-test`
-5. Build + unit + integration tests (requires DB): `.devcontainer/compile.sh --integration`
+3. Build and run all tests — unit + integration (requires DB): `.devcontainer/compile.sh`
+4. Build without tests: `.devcontainer/compile.sh --no-test` (writes no push marker)
 
 ### Build Container
 
