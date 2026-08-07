@@ -7,15 +7,15 @@ Host-side scripts that run **on Mercury directly** (not inside containers). They
 | Script | Triggered by | Purpose |
 |---|---|---|
 | `autofix.sh` | `autofix-runner.sh` (per alert) | AutoFix orchestrator. Reads alert JSON from stdin, invokes Claude Code to diagnose, opens a PR, posts ntfy notification. Expects `AUTOFIX_SESSION_ID` + `AUTOFIX_LOG_FILE` env from the runner. |
-| `autofix-runner.sh` | systemd timer + queue poll | Polls the AutoFix queue directory for alert JSON files written by `alert-service`, calls `autofix.sh` for each. Needs Claude CLI installed on the host. |
-| `autofix-watcher.sh` | systemd timer (every 5 min) | Polls GitHub for merged AutoFix PRs and triggers deployment. Original single-purpose watcher; `merged-pr-watcher.sh` generalises this. |
-| `merged-pr-watcher.sh` | systemd timer | Generalised watcher: polls GitHub for any merged PR carrying the `auto-deploy` label, rebuilds affected images, and deploys via Ansible. Supersedes `autofix-watcher.sh` for non-AutoFix labels. |
+| `autofix-runner.sh` | systemd timer, every 60s — **ENABLED** | Polls the AutoFix queue directory for alert JSON files written by `alert-service`, calls `autofix.sh` for each. Needs Claude CLI installed on the host. **Never invokes Ansible** and never touches a running service — the pipeline ends at the PR. |
+| `autofix-watcher.sh` | systemd timer, every 5 min — **DISABLED (2026-08-07)** | Polled GitHub for merged AutoFix PRs and auto-deployed them. Disarmed: ran `deploy.yml` with no `--skip-tags` and no `scoped_restart` against the shared working tree (full-stack restart incl a ~4min vLLM reload), retrying every 5 min on failure. Its smoke test + `:autofix-prev` rollback moved to the `deploy` skill. Still runnable as a deliberate one-shot. |
+| `merged-pr-watcher.sh` | systemd timer — **DISABLED** | Generalised watcher: polls GitHub for any merged PR carrying the `auto-deploy` label, rebuilds affected images, and deploys via Ansible. Generalises `autofix-watcher.sh`; disabled for the same reason. |
 | `generate-container-targets.sh` | systemd timer / on demand | Emits two files for Prometheus enrichment: a JSON file_sd target list, and a `.prom` textfile for `node_exporter` carrying `container_info` metrics (image, version, build_date). |
 | `seed_secmaster.py` | one-shot (operator) | Seeds SecMaster with all currently-known series by querying each collector's HTTP surface and POSTing to `/api/register`. Uses `curl` for HTTP/2 (h2c) since the Python ecosystem's plaintext HTTP/2 support is patchy. Re-runnable — registration is idempotent. |
 
 ## When to run these directly
 
-- **AutoFix scripts** — driven by systemd timers + queue-polling. Manual invocation is fine for debugging an individual alert; tail `AUTOFIX_LOG_FILE` to follow.
+- **AutoFix scripts** — `autofix.sh` + `autofix-runner.sh` are driven by the runner timer + queue-polling. Manual invocation is fine for debugging an individual alert; tail `AUTOFIX_LOG_FILE` to follow. The two auto-deploy watchers are disabled — running either by hand triggers a real full-stack deploy, so treat them as operator-only.
 - **`generate-container-targets.sh`** — invoke after a deploy if Prometheus container metadata looks stale (rare; the timer normally handles this).
 - **`seed_secmaster.py`** — initial bring-up of a fresh SecMaster instance, or after a deliberate truncation of the catalog. Not part of normal ops.
 

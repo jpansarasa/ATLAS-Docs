@@ -64,7 +64,7 @@ The OTEL stack (`compose.otel.yaml`) and the ATLAS application stack (`compose.y
 - **ZFS snapshots** — automatic pre-deployment snapshot on `nvme-fast/timeseries` and `nvme-fast/dashboard`; manual playbooks for rollback and retention.
 - **Vault-encrypted secrets** — all credentials live in `ansible/group_vars/vault.yml`; vault password file is `/home/james/.ansible_vault_pass` (set in `ansible.cfg`).
 - **Smoke tests** — `smoke-test.yml` exercises container status, HTTP `/health` (internal services + MCP servers), TimescaleDB connectivity, GPU + vLLM, and recent Loki errors.
-- **AutoFix + merged-PR + quality-check + buildkit-prune** — four independent systemd timer subsystems orchestrating alert-driven Claude Code runs, auto-deploy on PR merge, weekly Sentinel quality sampling, and BuildKit cache trimming.
+- **AutoFix + merged-PR + quality-check + buildkit-prune** — four independent systemd timer subsystems orchestrating alert-driven Claude Code runs, weekly Sentinel quality sampling, and BuildKit cache trimming. The two auto-deploy-on-merge timers (`autofix-watcher`, `merged-pr-watcher`) are installed but **disabled** — deploys are human-triggered.
 - **sandbox-manager (host systemd)** — non-containerised because containerd-runtime-in-container fails snapshot-mount prep; runs as `atlas` user with a single-binary sudoers rule for `nerdctl`.
 
 ## Playbooks
@@ -150,13 +150,37 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 
 | Tag | Scope |
 |-----|-------|
-| `autofix` (alias: `alert-service`) | Deploy `autofix.sh`, `autofix-runner.sh`, `autofix-watcher.sh`; install/enable `autofix-runner.{service,timer}` + `autofix-watcher.{service,timer}`; assert `/etc/autofix/claude.env` exists with the long-lived Claude OAuth token |
+| `autofix` (alias: `alert-service`) | Deploy `autofix.sh`, `autofix-runner.sh`, `autofix-watcher.sh`; install + enable `autofix-runner.{service,timer}`; install `autofix-watcher.{service,timer}` but enforce them **disabled** (auto-deploy is disarmed — see below); assert `/etc/autofix/claude.env` exists with the long-lived Claude OAuth token |
 | `merged-pr-watcher` (alias: `alert-service`) | Deploy `merged-pr-watcher.sh` + units. Timer is intentionally NOT enabled by the playbook — operator enables manually after first dry-run review. |
 | `quality-check` (alias: `maintenance`) | Deploy `atlas-sentinel-quality-check.{service,timer}` (weekly Sentinel sampling Monday 09:23) |
 | `buildkit-prune` (alias: `maintenance`) | Deploy `buildkit-prune.{service,timer}` for periodic BuildKit cache trim |
 | `snapshot` | ZFS pre-deploy snapshot block. Tagged `[always, snapshot]`, so the scoped deploy form still snapshots; `--skip-tags always` (the dashboards/patterns/alerting form) skips it. Opt out with `-e create_snapshot=false` or `--skip-tags snapshot`. |
 | `atlas-systemd` / `orphan-cleanup` | Disable + remove the pre-2026-04-17 orphan `ai-inference.service`; drop the legacy `financial_news` bootstrap DB |
 | `edge` / `sentinel-edge` | Cloudflare Worker deploy via the sentinel-edge devcontainer + `wrangler` inside it. Tagged `never` — only runs when explicitly requested. |
+
+### AutoFix: the two halves, and why only one runs
+
+AutoFix is two independent timers, and the split matters:
+
+- **`autofix-runner.timer` (60s) — ENABLED.** Polls `/opt/ai-inference/autofix-queue` for alert
+  JSON written by alert-service and calls `autofix.sh`, which invokes Claude Code to diagnose and
+  **open a PR**. It never runs Ansible and never touches a running service. This half carries the
+  value.
+- **`autofix-watcher.timer` (5 min) — DISABLED (2026-08-07).** Polled GitHub for merged AutoFix
+  PRs and auto-deployed them. Disarmed: on a merged PR it ran `git checkout main; git pull` in the
+  **shared** `/home/james/ATLAS` working tree with no dirty-tree check, then `ansible-playbook
+  deploy.yml --tags "$services"` with **no `--skip-tags` and no `scoped_restart`** — a full compose
+  down/up including a ~4min vLLM GPU reload, building images from main's tip. On failure the PR
+  stayed pending and it retried every 5 minutes, unbounded. All 903 historical triggers resolved to
+  `Services to deploy: all`; the last real run (2026-06-11, PR #603) ended `failed=1`.
+
+The playbook enforces `enabled: false, state: stopped` rather than merely omitting enablement, so a
+re-armed timer is corrected on the next deploy. The units stay installed — the mechanism is still
+reviewable and `sudo systemctl start autofix-watcher.service` remains available as a deliberate
+one-shot. Its post-deploy smoke test and `:autofix-prev` image rollback were ported to the
+`deploy` skill (`.claude/skills/deploy/SKILL.md`), which the human deploy path now owns.
+
+`merged-pr-watcher.timer` is the generalised successor and is disabled for the same reason.
 
 ## Configuration
 
@@ -260,8 +284,8 @@ deployment/
 │   ├── sandbox-manager.service      # host systemd unit (FastAPI service running as `atlas`)
 │   ├── autofix-runner.service       # AutoFix alert processor (oneshot, james user)
 │   ├── autofix-runner.timer
-│   ├── autofix-watcher.service      # AutoFix PR-merge watcher (oneshot, james user)
-│   ├── autofix-watcher.timer
+│   ├── autofix-watcher.service      # AutoFix PR-merge auto-deploy (oneshot, james user)
+│   ├── autofix-watcher.timer        # DISABLED by the playbook — auto-deploy is disarmed
 │   ├── merged-pr-watcher.service    # Generalised auto-deploy on any merged `auto-deploy`-labelled PR
 │   ├── merged-pr-watcher.timer      # NOT enabled by playbook — operator enables post-review
 │   ├── buildkit-prune.service       # Periodic BuildKit cache trim
@@ -344,8 +368,8 @@ ansible-playbook playbooks/test-templating.yml
 sudo systemctl status atlas.service                                       # ATLAS app stack
 sudo systemctl status otel.service                                        # OTEL stack
 sudo systemctl status sandbox-manager.service                             # host-side FastAPI
-sudo systemctl list-timers 'autofix-*' merged-pr-watcher.timer \
-    atlas-sentinel-quality-check.timer buildkit-prune.timer               # all maintenance timers
+sudo systemctl list-timers --all 'autofix-*' merged-pr-watcher.timer \
+    atlas-sentinel-quality-check.timer buildkit-prune.timer               # all maintenance timers (--all shows the disabled auto-deploy ones too)
 cd /opt/ai-inference && sudo nerdctl compose ps                           # container roster (WorkingDirectory of atlas.service)
 sudo nerdctl compose logs -f fred-collector
 sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data          # database shell (container user is ai_inference)

@@ -89,8 +89,9 @@ design).
   before each deploy; scoped restarts for surgical changes; prompt/dashboard/pattern updates
   hot-reload without rebuilds.
 - **Alerting**: Prometheus + Loki rules -> Alertmanager -> AlertService -> ntfy/email, plus an
-  **AutoFix** pipeline that spawns a Claude session per actionable alert and auto-deploys
-  merged fixes (deferring while an interactive session is live).
+  **AutoFix** pipeline that spawns a Claude session per actionable alert and opens a PR for
+  human review (deferring while an interactive session is live). Merging does not deploy —
+  the auto-deploy timers are disabled and a human runs the scoped deploy.
 - **Observability**: OTEL everywhere; per-domain dashboards (Overview, Collectors, Sentinel
   Pipeline, Signal Matrix, Calendar & Reports); dead-man alerts sized to each collector's
   natural cadence.

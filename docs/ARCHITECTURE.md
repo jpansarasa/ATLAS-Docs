@@ -250,10 +250,14 @@ See `deployment/README.md` for the full reference. The essentials:
   rebuild needed).
 - **AutoFix pipeline** (host-side): alert-service writes alert JSON to
   `/opt/ai-inference/autofix-queue` -> `autofix-runner.timer` (60s) spawns `claude --print`
-  per alert (defers while an interactive claude session exists) -> `autofix-watcher.timer`
-  (5 min) deploys merged AutoFix PRs (skipped while an interactive session is live).
-  `merged-pr-watcher.timer` (same family, human-merged PRs) is installed but **intentionally
-  not enabled** — the operator enables it post-review.
+  per alert (defers while an interactive claude session exists), which diagnoses and **opens a
+  PR**. The runner never invokes Ansible and never touches a running service — the pipeline
+  ends at the PR. `autofix-watcher.timer` (5 min) was the auto-deploy half and is **disabled**
+  (2026-08-07): it ran `deploy.yml` with no `--skip-tags` and no `scoped_restart` against the
+  shared working tree, i.e. a full-stack restart incl a ~4min vLLM reload, retrying every 5 min
+  on failure. `merged-pr-watcher.timer` (same family, human-merged PRs) is likewise installed
+  but **not enabled**. Deploys are human-triggered; the watcher's smoke test and image rollback
+  now live in the `deploy` skill.
 - **Git gates** (`.claude/hooks/`): pushes to main are blocked (docs-extension allowlist only);
   feature-branch pushes require a tests-passed marker keyed on the git **tree** hash; `gh pr
   merge` requires a review marker keyed on the GitHub headRefOid.
