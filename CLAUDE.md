@@ -34,8 +34,10 @@ At phase / epic completion:
   1. tag the merge-completion commit: `git tag -a dsl-poc-phase{N}-done <sha> -m "<outcome summary>"`
   2. `git push origin tag/dsl-poc-phase{N}-done` (or `--tags` selectively)
   3. add a brief entry to `docs/RELEASES.md` — phase outcome + tag reference
-  4. `git rm` phase-specific working/iteration docs (plans are not kept on main; record each retirement in `docs/RELEASES.md` with its recovery pointer)
-rationale: main = current-state reference docs only (see docs/README.md curation policy). Iteration history recoverable via tag (`git checkout <tag>` | `git show <tag>:<path>`). git log is the archive; tags are the named index.
+  4. `git rm` the phase's working/iteration docs (plans and specs merge to main while live, then retire HERE; record each retirement in `docs/RELEASES.md` with its recovery pointer)
+EXCEPTION [never retire]: a spec whose outcome is DO-NOT-BUILD is permanent and ADR-shaped
+  rationale: it never completes a phase, so step 4 never fires for it — and retiring it would delete the only artefact the work produced. An implemented plan is survived by its code and the current-state docs; a rejected one is survived by nothing. Behind a tag, the next person with the same idea cannot find out it was already measured and declined.
+rationale: main = current-state reference docs, PLUS live working docs in `docs/proposals/` and `docs/superpowers/` (see docs/README.md curation policy — that file is the authority; keep these two consistent). Merging a plan is not approving it — the doc's own Status line governs that. Iteration history recoverable via tag (`git checkout <tag>` | `git show <tag>:<path>`). git log is the archive; tags are the named index.
 
 ## GIT_PUSH [HARD_STOP]
 ✗ NEVER git push without first running ALL tests for modified projects
