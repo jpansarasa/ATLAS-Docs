@@ -9,12 +9,12 @@ Context-aware hooks that inject patterns when working on specific file types.
 | `testing-context.sh` | Edit/Write `*Tests.cs`, `*_test.*`, `test_*.*` | Inject AAA, naming, assertions patterns + outbound-boundary guard-test contract |
 | `benchmark-context.sh` | Edit/Write `*Benchmark*.cs`, `*_bench.*` | Inject BenchmarkDotNet, Release mode |
 | `observability-context.sh` | Edit/Write `*Service.cs`, `*Worker.cs`, `*Repository.cs`, `*Telemetry*.cs` | Inject OTEL/Serilog patterns |
-| `git-push-guard.sh` | Bash: `git push` and `gh pr merge` in leading-token position | **BLOCK** - requires a tests-passed marker to push, a recorded review VERDICT to merge. Matches the command STRING, so it raises the cost of an unreviewed merge; it does not prevent one — and only these two spellings are matched (see [KNOWN GAP: entry spellings](#known-gap-entry-spellings)) |
+| `git-push-guard.sh` | Bash: any `git … push`, `gh … pr merge`, or `gh api …/pulls/N/merge` — including `git -C`/`--git-dir`/`-c` and `gh -R`/`--repo` prefixes, command substitution, subshells and `sh -c` | **BLOCK** - requires a tests-passed marker to push, a recorded review VERDICT to merge. Matches the command STRING, so it raises the cost of an unreviewed merge; it does not prevent one (see [What the entry regexes cannot catch](#what-the-entry-regexes-cannot-catch)) |
 | `dotnet-guard.sh` | Bash `dotnet build/test/run/...` | **BLOCK** - use `{Project}/.devcontainer/compile.sh` |
 | `node-guard.sh` | Bash `npm/npx/yarn/pnpm/wrangler` | **BLOCK** - run node tooling in a container |
 | `pr-review-marker.sh` | Skill `review-pr` (PostToolUse) | **RECORD** - writes `pr-review-pending-<N>` only. It fires at INVOCATION and cannot see the review's findings, so it never records a verdict |
 | `ef-migration-guard.sh` | Write `Migrations/*_*.cs` | **BLOCK** - prevents manual migration creation |
-| `ansible-gate-guard.sh` | Edit/Write on a deployment/CI gate file. **Not Bash** — a `sed -i` on the same file is not seen | **BLOCK** - was ASK until 2026-08-06, which is inert here (see [`ask` is inert](#ask-is-inert-on-this-host)). Escape for legitimate gate work: `touch .claude/.ansible-gate-confirmed` |
+| `ansible-gate-guard.sh` | Edit/Write on a deployment/CI gate file, **or** a Bash command that both names one and carries a write construct (`sed -i`, `>`, `rm`, `cp`, …) | **BLOCK** - was ASK until 2026-08-06, which is inert here (see [`ask` is inert](#ask-is-inert-on-this-host)). Reads stay frictionless. Escape for legitimate gate work: `touch .claude/.ansible-gate-confirmed` |
 | `deploy-smoke-reminder.sh` | Bash deploy/restart commands (PostToolUse) | **ADVISE** - inject smoke-test reminder |
 | `memory-density-guard.sh` | Write/Edit `*/projects/*/memory/*.md` (PostToolUse) | **ADVISE** - nudge when MEMORY.md hook line or memory-file description violates the density bar. Scope is the `projects/*/memory/` corpus specifically, not any directory named `memory` |
 | `design-intent-dispatch-guard.sh` | Agent dispatch with impl-shaped prompt | **BLOCK** - requires a DESIGN INTENT stanza in the brief. Presence-only and content-agnostic, with one structural exception: an EMPTY label is denied. The stanza is the rest of the label's line plus following lines up to the first BLANK line, so `DESIGN INTENT:` followed by a blank line and then the brief body is an empty label, not a stanza. The phrase in prose, in a filename, or as a bare substring (`redesign intentionally`) still satisfies the gate — KNOWN GAP, see the hook header. Harness-shape anomaly -> open + loud; jq missing -> degraded raw-grep, verdict-identical to the jq path |
@@ -59,7 +59,7 @@ every hook, as this line previously claimed. See
 4. If denied: tool execution blocked with message
 5. If allowed: tool executes normally
 
-## KNOWN GAP: entry spellings
+## What the entry regexes cannot catch
 
 `git-push-guard.sh` decides from the command STRING the Bash tool was asked to
 run. It never observes the act. **It raises the cost of an unreviewed push or
@@ -68,36 +68,141 @@ read as claiming otherwise. There is also no permission layer behind it:
 `~/.claude/settings.json` sets `"defaultMode": "bypassPermissions"` and allows
 `Bash(git:*)`, so this hook is the only gate.
 
-Matching is by leading token, so only `git push` and `gh pr merge` are caught.
-These all reach the act **ungated** (each verified against this hook):
+Caught (one case per form in `test/run-entry-shape-smoke.sh`): plain
+`git push` / `gh pr merge`; `git` with `-C`, `--git-dir`, `--work-tree`, `-c`,
+`--no-pager`;
+`gh` with `-R`, `--repo`, `--hostname`; command substitution `$(…)`; subshells
+`(…)`; nested shells `sh -c "…"`; and `gh api …/pulls/<N>/merge`.
 
-| Spelling | Why it misses |
-|---|---|
-| `git -C <dir> push` | a global option sits between `git` and `push` |
-| `gh -R o/r pr merge <N>` | a global option sits between `gh` and `pr` |
-| `gh api …/pulls/N/merge` | merge by REST path, not by subcommand |
-| `curl -X PUT …/pulls/N/merge` | same act, different client |
-| `gh api graphql … mergePullRequest` | same act, GraphQL mutation |
+Not caught, and no regex over a command string can be:
 
-`git -C <dir> …` is the shape `.claude/skills/supervisor-mode/SKILL.md` tells
-every supervisor to use, so the gap covers the most-used git form in this repo.
-**This is unchanged from `main`** — closing it means matching the ACT across
-global-flag prefixes and alternate transports inside a command string, which is
-command-string parsing and is deliberately not in this change.
+- a tool that merges or writes with **no Bash command at all** — see the MCP
+  known gap below; there is no string to match
+- the act performed by something the command merely starts: a script file, a
+  Makefile target, `xargs`, `find -exec`, a shell alias, a git alias, or a
+  wrapper earlier on `$PATH`
+- obfuscation of the literal tokens — `eval`, a variable holding the
+  subcommand, base64
+- a push from a non-Bash surface (an editor's VCS integration, a daemon)
+
+**Accepted cost: writing ABOUT a gated act is gated.** Because the anchor is
+gone, the literal tokens trip the gate wherever they appear — including in a
+commit message or a review comment. **Pass such text by path:**
+
+```sh
+gh pr comment <N> --body-file findings.md
+git commit -F message.txt
+```
+
+### The text-authoring exemption: tried, withdrawn, do not reintroduce
+
+An exemption for text-authoring segments (`git commit -m …`, `gh pr comment …`)
+existed for two rounds and caused a fail-OPEN regression in **each** of them:
+
+| round | defect | effect |
+|---|---|---|
+| 4 | it suppressed a segment's text but not its **execution** | `echo "git push origin main" \| sh` allowed |
+| 5 | making it quote-aware across newlines needed `RS="\0"`, and the splitter has no backslash-escape handling, so a leading segment with an **odd number of quotes** opened a quote that never closed and swallowed every following line | derived command came out **empty**; a following push to main, merge, `--delete main`, `curl -X PUT …/merge` and the graphql auto-merge **all allowed** (nine rows reproduced) |
+
+Round 5's failure took out two routes closed in that same round. The exemption
+is a **convenience**, and its cost is a component whose failure mode is silent
+and total: reintroducing it means reintroducing a shell-quoting parser inside
+this hook, and both attempts at that parser fail-OPENed the whole gate. The
+question is not whether the parser can be made correct — it is whether saving
+one flag is worth that. Pinned by inverted assertions in
+`run-entry-shape-smoke.sh` plus the nine reproduced rows.
+
+### Which global options repoint the repository
+
+`-C <dir>` and `--git-dir=<d>` genuinely redirect, so the guard resolves them
+and inspects **that** repository. `--work-tree=<dir>` does **not**: it relocates
+the working tree only, and `git --work-tree=<other> rev-parse
+--absolute-git-dir` still returns the current repo's `.git` (verified, git
+2.43). Resolving it as a redirect made the guard inspect the wrong repository
+and emit "supervisor docs-only push to main" for a code push. It is still
+matched for **entry** purposes — the push is evaluated — but the repo lookup
+ignores it.
+
+Canonicalising a span into `git push …` deliberately strips those global
+options, so **each span's prefix is captured separately and index-matched to
+it**. Recovering the prefix from the raw command with `head -1` bound *one*
+redirect to *every* span: with the CWD holding unpushed code, `git commit -m "…
+git -C <docs> push origin main …" && git push origin main` returned an
+authoritative allow reading "supervisor docs-only push to main" for a real code
+push, and `git -C <docs> push … && git -C <code> push …` allowed on both spans.
+If the two derivations disagree on how many pushes there are they cannot be
+paired, and a mis-paired prefix binds a span to the wrong repository — so that
+disagreement denies.
+
+**Line continuations are joined before any rule reads the command.** Every rule
+here is a line-oriented grep, so `git push origin --delete \` + newline + `main`
+matched neither the delete check nor the span regex and was allowed.
+
+### Fail-closed derivation backstop
+
+Every rewrite between the raw command and the text a rule inspects can silently
+drop content — which is exactly how both regressions above happened. So: **if
+the raw command names N push acts and the derivation yields fewer, DENY.** A
+mis-parsed command is refused rather than evaluated. The former
+`PUSH_SPANS=("git push")` fallback was the same bug in miniature — it invented a
+span rather than admitting it had none — and is gone.
+
+There are **two** such backstops and they are **mutually masking**, which is why
+both were removable with the whole suite still green until 2026-08-07 (the string
+`could not parse` appeared in no suite at all):
+
+- **A** — the span count disagrees with the `git … push` prefix count, so spans
+  cannot be index-matched to the prefixes that qualify them;
+- **B** — the raw command names more push acts than could be isolated.
+
+B can **never fire alone**. `RAW_PUSH_N` can never exceed the prefix count,
+because `GIT_PUSH_RE` consumes a leading *and* a trailing boundary character and
+its matches are therefore longer, so grep finds no more of them than of the
+unbounded prefix regex. Hence `spans < RAW_PUSH_N` implies
+`spans != prefixes`: whenever B fires, A has already fired and answered. No
+single command can isolate B, so the only honest contract for it is a
+**joint-removal** assertion — remove both and a tested push carrying a trailing
+`# git push …` comment flips from deny to allow. That is the last row of the
+"two push-derivation backstops" block in `test/run-entry-shape-smoke.sh`.
+
+**Known false deny, deliberately kept.** Two `git push` mentions with no `|`,
+`;` or `&&` between them merge into one span while the raw count sees both, so
+this also fires when one of them is *text* — a trailing `# git push …` comment,
+or a commit message quoting a push form. Telling those apart needs a
+shell-quoting parser; this hook has had two, and **both fail-opened the entire
+gate**. Relaxing the count comparison instead would forgive the same shape that
+hides `git push origin a $(git push origin --delete main)`, which is what the
+backstop exists to catch. So the deny stays and the *message* names the shape
+and the way out (`git commit -F <file>`, `gh pr create --body-file <file>`).
+A false deny costs a retry and announces itself; the alternatives cost a silent
+ungated push.
+
+**The rule these follow, applied throughout this layer**: *narrow what you
+EXEMPT, never what you INSPECT.* Three regressions came from the opposite move —
+scoping the inspection down for precision and silently dropping enforcement with
+it: `head -1` made a second push in the same command invisible; the ansible
+execute exemption skipped the whole segment and left the redirect target
+unguarded; the text carve-out removed a segment's text but not its execution.
+Each was a narrowing that looked like an improvement and cost a gate.
 
 ## A right answer for the wrong reason
 
-**A right answer for the wrong reason is the dominant failure mode here** — it
-has twice nearly shipped as a passing test:
+**A right answer for the wrong reason is the dominant failure mode here** —
+three times in this layer it nearly shipped as a passing test:
 
+- Chained-push cases asserted `deny` and passed, but the *first* span denied on
+  a missing marker, so the second span — the one under test — was never
+  reached. Mutation-checked and found green; only rebuilding the fixture so the
+  first push is legitimately permitted, and asserting the deny REASON, made it
+  real.
 - `json_ok` was added in response to an invalid-JSON bug and then fed nine
   static-text cases, none of which could express that bug.
 - `scripts/claude-pr-verdict` shipped non-executable while every test invoked it
   as `bash <path>` — the one spelling that does not need the bit.
 
-The habit that catches both: **mutate the fix and confirm the test goes red**,
-and when a test asserts a refusal, assert *which* refusal. A guard test that
-cannot distinguish "blocked for the reason under test" from "blocked for an
+The habit that catches all three: **mutate the fix and confirm the test goes
+red**, and when a test asserts a refusal, assert *which* refusal. A guard test
+that cannot distinguish "blocked for the reason under test" from "blocked for an
 unrelated reason" is pinning nothing.
 
 ## KNOWN GAP: MCP write paths
@@ -120,9 +225,13 @@ this layer guards with **no marker consulted**:
 | `mcp__plugin_github_github__pull_request_review_write` | posts a GitHub APPROVE a human may read as the verdict |
 | `mcp__plugin_github_github__update_pull_request` | can retarget the base branch of an open PR |
 
-The Bash-side merge routes are **not** all gated either — only leading-token
-`gh pr merge` is; see [KNOWN GAP: entry spellings](#known-gap-entry-spellings).
-So MCP is one of several ungated routes to a merge, not the sole one.
+Bash-side merge routes are all gated: `gh pr merge` (any global-flag prefix),
+`gh api …/pulls/N/merge`, `curl -X PUT …/pulls/N/merge`, and the GraphQL
+`mergePullRequest` / `enablePullRequestAutoMerge` mutations (refused outright —
+they carry a node ID, so no verdict can be looked up). Each of the three
+number-bearing routes derives the PR from its OWN span, and only one merge act
+per command is accepted — see [Which PR is being merged](#which-pr-is-being-merged-fixed-2026-08-07).
+
 
 **Fix shape** (not built here): a second `PreToolUse` entry with the regex
 matcher `mcp__.*`, routed to a sibling hook that reads the structured
@@ -337,10 +446,109 @@ the verdict text.
 Pre-2026-08-06 markers are deliberately rejected rather than migrated — they
 attest only invocation, which is exactly the claim being removed.
 
+### Which PR is being merged (fixed 2026-08-07)
+
+A verdict is per-PR, so the gate is only as good as its answer to "which PR is
+this?". Both PR-number derivations used to scan the WHOLE command string and take
+`head -1`, so a command naming two PRs was judged by whichever number appeared
+**first** — never necessarily by the one being merged. With #921 approved at its
+current head and #923 carrying no verdict at all, every one of these returned
+**allow**, merging an unreviewed PR under a different PR's approval:
+
+| Command | Judged as |
+|---------|-----------|
+| `gh pr merge 921 --squash && gh pr merge 923 --squash` | #921 |
+| `git commit -m "see gh pr merge 921 notes" && gh pr merge 923` | #921 |
+| `echo "gh pr merge 921" ; gh pr merge 923 --squash` | #921 |
+| `gh api …/pulls/921/merge && gh api …/pulls/923/merge` | #921 |
+| `curl -X PUT …/pulls/921/merge && curl -X PUT …/pulls/923/merge` | #921 |
+| `gh pr merge --subject "re 921" 923 --squash` | #921 |
+| `gh pr merge 923 --squash --subject "cf …/pulls/921/merge"` | #921 |
+| `git push origin <tested-branch> && gh pr merge 923 --squash` | not judged at all |
+
+This is the same defect the push path fixed as C1 (a `head -1` over the raw
+command applying one binding to every span); only the push side had been given
+span machinery. The merge path now uses it too:
+
+- a merge act is isolated into a **span**, and its PR identity may come only from
+  that span — `gh`'s global options are canonicalised away first, so a repo slug
+  like `-R org2/repo7` cannot contribute digits;
+- **more than one merge act denies.** Each PR carries its own verdict and this
+  hook returns one decision, so two merges need two decisions and there is one
+  slot. Unlike a push-then-cleanup chain, a chained merge is not routine;
+- **more than one candidate number inside one span denies** — there is no correct
+  guess available there, only a lucky one. A whole-word integer is required, so a
+  hex `--match-head-commit` contributes nothing;
+- **a push act and a merge act in one command denies.** The push block decided
+  and exited, so the merge was never evaluated — no approval at all, rather than
+  the wrong one.
+
+The last row of the table is the reason the rule is stated as **ambiguity
+resolves to DENY, never to ALLOW**: the alternative to a refusal is not a
+correct answer, it is a confident wrong one that says nothing when it is wrong.
+
+#### An identity the gate cannot READ is not an absent one
+
+Span-scoping still left one way through, because only literal ASCII digits were
+ever looked for. `gh pr merge` takes the PR as a **positional**, so a positional
+the hook cannot evaluate left the candidate set empty and fell through to the
+no-number fallback — which answers with the **current branch's** PR. The gate
+then approved one PR while the shell merged another. With #921 approved at its
+head and #923 carrying no verdict, all of these returned **allow**:
+
+| Command | Gate judged | Shell would merge |
+|---------|-------------|-------------------|
+| `N=923; gh pr merge $N --squash --delete-branch` | #921 | #923 |
+| `gh pr merge "$PR" --squash` | #921 | whatever `$PR` holds |
+| `gh pr merge ${PR} --squash` | #921 | whatever `$PR` holds |
+| `gh pr merge $(cat n.txt) --squash` | #921 | whatever the file holds |
+| ``gh pr merge `cat n.txt` --squash`` | #921 | whatever the file holds |
+| `gh pr merge ９２３ --squash` (full-width) | #921 | — |
+| `gh pr merge * --squash` | #921 | whatever the glob expands to |
+
+The **push path already refused the identical shape** — `git push origin $BRANCH`
+denies — so this was an asymmetry, not a limit of what a hook can know.
+
+The fallback was **not** made cleverer. Resolving `$N` means predicting an
+expansion that happens after this hook has already answered, which is guessing.
+The **ambiguity path was removed** instead: the fallback may run only when the
+span provably names no PR, and that holds only when every token after the verb
+is a flag or a known flag's value. Anything else is an identity argument that
+was not read, and it denies.
+
+Only `gh pr merge`'s **own** value-taking flags are consulted (`-b/--body`,
+`-F/--body-file`, `-t/--subject`, `--match-head-commit`, `--author-email`,
+`-R/--repo`, `--hostname`) — applying another command's flag semantics here is
+the mistake C3 already cost this file. An **unknown** flag is treated as boolean,
+so a future value-taking flag leaves its value standing as an opaque positional
+and this denies: fail-closed in the direction that costs a retry, not a merge.
+
+Quoting and subshell punctuation is stripped first, exactly as the push path
+does, so `OUT=$(gh pr merge <N>)` and `(gh pr merge <N>)` still resolve `<N>`
+rather than reading `<N>)` as unreadable. `$(` and a backtick deliberately
+survive that strip: they mark a substitution whose value is the unknown.
+
 **Guard test**: `test/run-pr-verdict-smoke.sh` (stubs `gh`, uses PR numbers in
 the 999xx range, cleans up on exit). TEST 3 plants the exact legacy marker shape
 and asserts the merge is DENIED — restore the old "marker exists -> allow" logic
-and it goes RED.
+and it goes RED. TEST 12 covers the identity rule in both directions: rows 5-15
+are the table above, rows 1-2 and 16-17 keep the normal merge path working, and
+rows 3-4 are **decoys** — `gh -R jpansarasa/repo7 pr merge <N>` and a hex
+`--match-head-commit` both carry digits that are not PR numbers and must still
+ALLOW. Without them, "deny whenever a second integer appears anywhere" would
+pass every deny row while breaking the merge command the operator actually uses;
+a suite of deny rows alone cannot tell a gate that discriminates from a gate that
+refuses everything.
+
+Rows 22-23 exist because rows 5-15 all chain **two** acts, so the "more than one
+merge act" refusal answers them and the span-scoping itself went unexercised —
+both derivations could be re-pointed at the whole `$COMMAND` with every one of
+those rows still passing. Rows 22-23 carry exactly **one** merge act, so the only
+thing that can decide them is where the number is read from. Rows 24-31 cover the
+unreadable-identity rule and 32-34 are its decoys (a `--body-file` path, a `-t`
+subject, flags before the number — none of them an identity); 35-37 cover the
+no-number fallback's own guards, which were unreachable while the stubbed
+`gh pr view --json number` answered with a SHA instead of a number.
 
 ## Adding New Hooks
 
@@ -414,7 +622,14 @@ behaviour they exist to encourage).
 **Purpose**: Per `ARCH_PREF` — edits to deployment/CI gate files should prompt
 for explicit intent so gates are fixed at the root, not worked around.
 
-Two independent rules reach the deny, and they carry different remedies.
+Two independent rules reach the deny, and they carry different remedies. Both
+apply through **`Edit`/`Write` and through `Bash`** — the hook is wired to all
+three. A guard on the Edit tool is not a guard on the file: while it was wired
+`Edit|Write` only, `sed -i .../.claude/settings.json` — the most complete way to
+unwire every gate here — reached the file with no prompt. The two tool paths
+share `is_gate_path` and `is_deployed_path` rather than keeping their own lists,
+because the first version of the Bash path consulted only rule 1 and left rule 2
+open through Bash while `Edit` held it shut.
 
 **Rule 1 — the GATE LAYER** (`is_gate_path`): any `.devcontainer/compile.sh`,
 any `.claude/hooks/**.sh` (the whole gating layer and its own guard tests),
@@ -451,14 +666,32 @@ cannot evaluate the gate cannot know the write is safe. (This section said
 direction was the dangerous half. `ask` is inert here — see
 [`ask` is inert](#ask-is-inert-on-this-host).)
 
-**KNOWN GAP: this is wired at `Edit|Write` only, so Bash reaches the same
-files.** `sed -i s/deny/allow/ .claude/settings.json` — the single most complete
-way to unwire every gate in this layer — is not seen by this hook (verified). A
-guard on the Edit tool is not a guard on the file. Closing it requires deciding,
-from a command STRING, which token is a write target and which is merely the
-file a runner runs; that is command-string parsing and is deliberately not in
-this change, so that a parser regression cannot take this Edit|Write
-enforcement down with it.
+**Running a gate file is not writing to it.** `<path>/compile.sh > log 2>&1` and
+`ansible-playbook -i inventory/hosts.yml playbooks/deploy.yml > /tmp/deploy.log`
+are ALLOWED; only writes are blocked. Both were denied before 2026-08-06 —
+first because `(>|>>)` matched `2>&1`, then because a runner's flag VALUE
+(`-i <inventory>`) consumed the slot where the playbook argument was expected,
+so the playbook itself was judged a write target. That is CLAUDE.md's mandated
+deploy invocation, and denying it also blocked the test marker, and so the push.
+Reads (`cat`, `grep`, `ls`) are never blocked.
+
+Flag-value skipping is keyed to the **executable**, not to "is this a runner":
+`-f` is `--forks` to `ansible-playbook` but `--force` to `rm`, and skipping it
+unconditionally left `rm -f <hook>` ungated. Keying it to the runner test was
+the same bug one layer deeper — that test also matches `bash|sh|zsh|source|.`,
+for which `-e -i -u -f -l -t -T -M` take no value, so the skip ate the *script*
+argument and the next token (the redirect target) was consumed as "the file
+being run": `bash -e /tmp/x.sh >.claude/settings.json` was ALLOWED. The list is
+ansible's, so only `ansible` and `ansible-playbook` consult it.
+
+**Matched writes** include the bare-basename form: `cd .claude/hooks && sed -i
+… git-push-guard.sh` was allowed before, because only full paths were tested.
+They also include the target inside a **dash token**: `--output=`, `--backup-dir=`
+and `--target-directory=` name a write target that the blanket "skip flags" rule
+never tested at all, so `patch --output=.claude/settings.json` was allowed. The
+text after the first `=` is tested. The bare hooks **directory** is in the gate
+set for the same reason `--target-directory=` needs it.
+
 
 **Session bypass**: `touch $CLAUDE_PROJECT_DIR/.claude/.ansible-gate-confirmed`.
 Note the path: `CLAUDE_PROJECT_DIR` is the **shared checkout**, not the worktree
@@ -495,6 +728,39 @@ It is gitignored — committing
 it would ship the gating layer switched off. Creating it is deliberately *not*
 gated: this hook's own deny message instructs it, and gating the documented
 remedy is the same self-contradiction as blocking the build it demands.
+
+### A command is a SET of acts; one uncovered act refuses all of them
+
+`refuse()` emits a decision and **exits**, so the first guarded token settled the
+whole command and later acts in it went unevaluated. That is harmless while the
+answer is deny — and a fail-**open** the moment a bypass is live, because the
+first *covered* token returns an authoritative `allow` and the acts behind it are
+never looked at. With the scope naming only `ansible-gate-guard.sh`:
+
+| Command | Was | Now |
+|---------|-----|-----|
+| `sed -i … ansible-gate-guard.sh && sed -i s/deny/allow/ … git-push-guard.sh` | allow | deny |
+| `cp .claude/hooks/ansible-gate-guard.sh .claude/hooks/git-push-guard.sh` | allow | deny |
+| `sed -i … ansible-gate-guard.sh && sed -i … /opt/ai-inference/compose.yaml` | allow | deny |
+
+The second row is one **segment**, so segment-splitting cannot help: two guarded
+tokens, and only the first was consulted. The third crosses the rules — and with
+the documented **empty** `touch`, a gate act followed by a deployed one was
+allowed too, inverting the invariant that an unscoped bypass must not reach
+deployed config. The deployed write *alone* was correctly denied; only the chain
+slipped, which is exactly why 507 green assertions could not see it.
+
+This is the same class as the `head -1` over push spans in `git-push-guard.sh`,
+and the same fix: **narrow what you EXEMPT, never what you INSPECT**. Findings
+now accumulate across the whole walk and the decision is taken once, after it —
+the token is the unit of evaluation, the command is the unit of decision, and any
+deny wins. The bypass may speak only when its scope covers **every** finding, and
+the announcement then names them **all**; it used to name only the first, which
+under-reported a multi-act command to the one human who could stop it.
+
+**Guard test**: `test/run-advisory-guards-smoke.sh`, section "a command is a SET
+of acts". The CONTROL rows carry the weight — the in-scope act alone must still
+ALLOW, or a deny on the chain rows would prove nothing.
 
 ## Deploy Smoke Reminder
 
@@ -565,10 +831,11 @@ merge, delete that block (keep `permissions`) and confirm with `dotnet vstest`
 
 | Suite | Covers |
 |-------|--------|
+| `test/run-entry-shape-smoke.sh` | `git-push-guard.sh` entry shapes — one case per bypass form verified ALLOW before 2026-08-06. Marker-free — safe beside live agents |
 | `test/run-wiring-smoke.sh` | every hook is registered in the TRACKED `settings.json`, the registered set has not drifted, and the marker writers are executable in the index. Static — safe beside live agents |
 | `test/run-push-guard-smoke.sh` | `git-push-guard.sh` marker lookup: global tree-hash scan, orphaned markers, block diagnostics. Runs against an isolated `ATLAS_MARKER_DIR` |
 | `test/run-push-exemption-smoke.sh` | the docs-only / docs-config allowlists on the push path |
-| `test/run-pr-verdict-smoke.sh` | `claude-pr-verdict` preconditions and the merge gate's verdict parsing (stubs `gh`, uses PR numbers 99901-99903) |
+| `test/run-pr-verdict-smoke.sh` | `claude-pr-verdict` preconditions, the merge gate's verdict parsing, and which PR a merge is judged as (stubs `gh`, uses PR numbers 99901-99904) |
 | `test/run-command-guards-smoke.sh` | `ef-migration-guard.sh`, `dotnet-guard.sh`, `node-guard.sh` |
 | `test/run-advisory-guards-smoke.sh` | `ansible-gate-guard.sh`, `plan-retirement-guard.sh`, `deploy-smoke-reminder.sh` |
 | `test/run-intent-fidelity-smoke.sh` | `design-intent-dispatch-guard.sh`, `service-decisions-context.sh`, `plan-retirement-guard.sh`, `testing-context.sh`, incl. degraded (jq-less) parity |
@@ -597,7 +864,7 @@ Evidence, with the invalid probes excluded:
 |-------|--------|--------|
 | Write to a path matching `ansible-gate-guard`'s live gate set (`*/playbooks/*`), no bypass file present; hook fed the harness's exact JSON returns `ask` | **yes** | no prompt, write completed |
 | `git rm docs/proposals/…` — `plan-retirement-guard` live-wired at `PreToolUse:Bash`, script identical, returns `ask` | **yes** | no prompt, command ran |
-| `rm -f .claude/hooks/…` expecting `ansible-gate-guard` | **no** — it is wired at `Edit\|Write`, not `Bash`; a Bash command can never reach it | silent, proves nothing |
+| `rm -f .claude/hooks/…` expecting `ansible-gate-guard` | **no** — *at the time* it was wired at `Edit\|Write`, not `Bash`, so a Bash command could never reach it (it is wired at `Bash` since 2026-08-07, and this probe would now deny) | silent, proves nothing |
 | `nerdctl restart …` expecting `deploy-smoke-reminder` | **no** — the live script matches only `compose up`; `restart` handling is unmerged | silent, proves nothing |
 
 The two invalid probes are recorded because they are the trap: *a matcher that
