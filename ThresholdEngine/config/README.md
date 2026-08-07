@@ -118,15 +118,16 @@ Failing JSON or unparseable expressions are caught at load time, not at first ev
 This directory is shipped to the host via the patterns-deploy ansible tag, separate from the container image:
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags patterns
+ansible-playbook playbooks/deploy.yml --tags patterns --skip-tags always
 ```
 
-This task syncs the local files to `/opt/ai-inference/threshold-engine/config/patterns/` (the bind-mount source) and the container picks up the changes via the watcher. No container restart is required for pattern edits.
+This task syncs the local files to `/opt/ai-inference/threshold-engine/config/patterns/` (the bind-mount source) and the container picks up the changes via the watcher. No container restart is required for pattern edits — but only with `--skip-tags always`. Without it the run also restarts the whole stack (see CLAUDE.md `DEPLOYMENT`), which defeats the point. The pattern tasks are tagged `[threshold-engine, patterns]`, not `[always]`, so skipping `always` leaves them running.
 
-For service config (`appsettings.json`) changes, run the full service tag instead:
+For service config (`appsettings.json`) changes, run the service tag scoped to the one container:
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags threshold-engine
+ansible-playbook playbooks/deploy.yml --tags threshold-engine --skip-tags build \
+  -e "scoped_restart=true scoped_services=threshold-engine"
 ```
 
 Per CLAUDE.md `DEPLOYMENT [HARD_STOP]`: never edit `/opt/ai-inference/compose.yaml` directly.

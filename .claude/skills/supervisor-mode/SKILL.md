@@ -116,6 +116,12 @@ OWNS_REMOTE: push | PR create | PR update | PR merge
 GIT_OPS [cwd_drift_guard]: every supervisor git command -> `git -C /home/james/ATLAS <op>`
   rationale: shell cwd silently drifts into removed/agent worktrees -> ff-only on wrong
   HEAD reads as "diverging branches" (false scare, 2026-06-06). -C pins the main checkout.
+  PRECOND [the gate cannot see -C]: git-push-guard.sh admits on `\s*git\s+push` (leading token),
+  so `git -C <path> push` is UNGATED: no tests-passed marker, no main-branch block (verified
+  2026-08-06). Use -C freely for READS (status | log | rev-parse | worktree list) where the drift
+  above bites; before a push name the ref yourself: `git -C <path> rev-parse --abbrev-ref HEAD`.
+  COUPLED: widening that regex to see `-C` is what makes this rule safe; narrowing it back to a
+  leading-token match reopens the hole silently, nothing fails. `gh pr merge` shares the shape.
 
 ## DISPATCH [subagent_payload]
 DEFAULT: run_in_background=true
@@ -152,7 +158,20 @@ PARALLELISM:
   same branch + concurrent -> SEQUENCE (race risk)
   disjoint files + same branch -> parallel OK
   different branches without worktrees -> COLLIDE (shared working tree; checkout from one agent flips HEAD for the other)
-  different branches WITH worktrees -> fully parallel
+  different branches WITH worktrees -> parallel for GIT state only, NOT for the devcontainer compile flow
+    worktrees isolate the checkout; they do NOT isolate compose state. The compose project name is
+    PATH-INDEPENDENT either way: 6 of 11 devcontainers declare no `name:` and resolve to the
+    `.devcontainer` dir basename — `devcontainer` — while the other 5 (AlphaVantageCollector,
+    CalendarService, FinnhubCollector, NasdaqCollector, Reports) carry a literal `name: <service>` on
+    line 1. A literal name is identical in every worktree, so it collides exactly as hard; adding
+    `name:` is NOT the fix. Same project + same service (e.g. `secmaster-dev`) = ONE container
+    identity, so a second worktree's `compose exec` runs inside the FIRST worktree's /workspace —
+    wrong code compiled and attested. Compounding it, per service: a fixed host port (SecMaster
+    `5010:8080`; every service has its own) and a globally-named volume (SecMaster
+    `secmaster_dev_nuget`) both collide, and compile.sh's `trap 'nerdctl compose down' EXIT` tears
+    down the shared container under a concurrent run. SEQUENCE any dispatches that run
+    {Project}/.devcontainer/compile.sh or build.sh until a mutual-exclusion lock lands in the compile
+    scripts themselves.
   ALWAYS TELL each agent which files belong to other in-flight agents
 DEFAULT [parallel code dispatch]:
   pass isolation: "worktree" on the Agent tool call -> tool creates a temporary git worktree per agent, auto-cleanup on completion

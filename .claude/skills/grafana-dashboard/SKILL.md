@@ -1,5 +1,5 @@
 ---
-name: grafana-dashboards
+name: grafana-dashboard
 description: Authoring, editing, debugging, or reviewing Grafana dashboards and queries. Activate when the user creates, edits, or troubleshoots a dashboard, panel, or visualization; mentions Grafana, Loki, Prometheus, Tempo, or TimescaleDB query patterns; writes or reviews PromQL, LogQL, TraceQL, or Grafana-flavored SQL; works with dashboard .json files or files under a dashboards/ directory; sees "no data" or rendering issues in panels; asks about datasource provisioning, variables, thresholds, units, or panel types. Activate even if the user doesn't say "Grafana" explicitly — phrases like "the panel isn't showing data", "fix this query", "build a chart for X metric", or sharing a dashboard JSON all count.
 ---
 
@@ -65,10 +65,12 @@ options: {showTime, wrapLogMessage, prettifyLogMessage, enableLogDetails, dedupS
 ## PROMQL [prometheus_queries]
 rate interval: $__rate_interval # not [1m], not [5m] # auto-adjusts to scrape
   rationale: hardcoded < scrape interval -> "No data"
-container filter: container!="POD", container!="" # always
+container filter: job="containerd" # NOT container!="POD" — the `container`/`pod` labels do NOT exist here
+  rationale: nerdctl/containerd + cgroup exporter, not kubelet/cAdvisor; `POD` pause containers are a k8s artifact
+  labels actually present on container_*: container_id, instance, job, namespace, runtime
 aggregation: sum by (label1, label2) # control cardinality
-memory: container_memory_working_set_bytes # not usage_bytes (includes cache)
-legendFormat: "{{pod}} - {{container}}" # explicit, not auto-generated
+memory: container_memory_usage_bytes | container_memory_anon_bytes # container_memory_working_set_bytes does NOT exist here
+legendFormat: "{{container_id}}" # explicit, not auto-generated # {{pod}}/{{container}} are empty — labels absent
   rationale: post-aggregation {{__name__}} -> empty
 
 ## LOGQL [loki_queries]

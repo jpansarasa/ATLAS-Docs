@@ -86,6 +86,10 @@ All playbooks live in `ansible/playbooks/` and assume the working dir is `deploy
 
 Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least one task or block. `always` tasks run on every invocation regardless of `--tags`; `never` tasks (currently only the Cloudflare Worker block) require an explicit opt-in. The vLLM block carries only `vllm-server` (NOT `always`) because cycling it on incidental tag runs caused a driver-mismatch outage on 2026-05-14 — see `ansible/TAG_GATING_AUDIT.md`.
 
+**Every non-scoped invocation restarts the whole stack, regardless of tag.** `Remove existing compose.yaml to force regeneration` (`:442`, `tags: [always]`, no `when:`) deletes the file and `:448` re-templates it into `register: compose_file`, so `compose_file.changed` is always true and the `:1278` systemd `state:` expression always resolves to `restarted`. That means a `compose down`/`up` of every service, a ~3.5-4 min vLLM model reload, and resurrection of a deliberately-stopped `alert-service`. The two escapes are `--skip-tags always` (for non-service tags) and `-e scoped_restart=true` (for compose services). Verify any tag selection before running it with `--list-tasks`, which resolves tags without executing anything.
+
+`scoped_services` takes **compose service names, not ansible tags.** The scoped shell filters `label=com.docker.compose.service` (`:1361`) and asserts the container is running afterwards (`:1371`), so a tag with no matching compose service fails the play. Known mismatches: `macro-substrate` -> service `migrate-macro-substrate` (a `restart: "no"` one-shot, so it exits and fails the liveness assert — not scopeable); `nasdaq-collector` (commented out in `compose.yaml.j2`, no service at all); and `dashboards`, `patterns`, `monitoring`, `otel`, `alerting`, `instruments`, `models`, `sentinel-prompts`, which are tags only.
+
 ### Application service builds (each pairs with `build`)
 
 | Tag | Scope |
@@ -293,13 +297,18 @@ All commands assume `cd deployment/ansible/` so the `ansible.cfg` inventory + va
 ```bash
 ansible-playbook playbooks/deploy.yml                              # full deployment (excludes `never`-tagged edge block)
 ansible-playbook playbooks/deploy.yml --check --diff               # dry run
-ansible-playbook playbooks/deploy.yml --tags fred-collector        # single service rebuild
-ansible-playbook playbooks/deploy.yml --tags ofr-collector,ofr-mcp # multiple services
-ansible-playbook playbooks/deploy.yml --tags dashboards            # dashboards only (Grafana auto-reloads)
-ansible-playbook playbooks/deploy.yml --tags patterns              # ThresholdEngine pattern hot-reload (no rebuild)
-ansible-playbook playbooks/deploy.yml --tags sentinel-prompts      # sync Sentinel prompts to host mount
-ansible-playbook playbooks/deploy.yml --tags vllm-server           # cycle vllm-server (recreate the compose service + health/smoke gate)
-ansible-playbook playbooks/deploy.yml --tags edge,sentinel-edge    # Cloudflare Worker deploy (opt-in)
+# Single service -- scoped. A bare `--tags X` is ALWAYS a full-stack restart (see below).
+ansible-playbook playbooks/deploy.yml --tags fred-collector --skip-tags build \
+  -e "scoped_restart=true scoped_services=fred-collector"
+ansible-playbook playbooks/deploy.yml --tags ofr-collector,ofr-mcp --skip-tags build \
+  -e "scoped_restart=true scoped_services='ofr-collector ofr-mcp'"
+
+# Non-service tags -- `--skip-tags always` leaves only that tag's own tasks.
+ansible-playbook playbooks/deploy.yml --tags dashboards --skip-tags always      # dashboards only (Grafana auto-reloads, updateIntervalSeconds: 30)
+ansible-playbook playbooks/deploy.yml --tags patterns --skip-tags always        # ThresholdEngine pattern hot-reload (no rebuild, no restart)
+ansible-playbook playbooks/deploy.yml --tags sentinel-prompts --skip-tags always # sync Sentinel prompts to host mount
+ansible-playbook playbooks/deploy.yml --tags vllm-server --skip-tags always     # cycle vllm-server (its own recreate + health/smoke gate)
+ansible-playbook playbooks/deploy.yml --tags edge,sentinel-edge --skip-tags always # Cloudflare Worker deploy (opt-in)
 ansible-playbook playbooks/deploy.yml -e create_snapshot=false     # skip ZFS pre-deploy snapshot
 ```
 

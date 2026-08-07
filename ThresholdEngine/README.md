@@ -228,14 +228,19 @@ The image is built from `ThresholdEngine/src/Containerfile` with the ATLAS repo 
 
 ```bash
 cd deployment/ansible
-ansible-playbook playbooks/deploy.yml --tags threshold-engine
+ansible-playbook playbooks/deploy.yml --tags threshold-engine --skip-tags build \
+  -e "scoped_restart=true scoped_services=threshold-engine"
 ```
+
+Build the image first (`.devcontainer/build.sh`) — `--skip-tags build` deploys the current `:latest`. A bare `--tags threshold-engine` restarts the entire stack unconditionally; see CLAUDE.md `DEPLOYMENT`.
 
 Pattern + burst/threshold JSON changes that don't require an image rebuild can be pushed with the `patterns` tag (hot-reloaded by the watchers):
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags patterns
+ansible-playbook playbooks/deploy.yml --tags patterns --skip-tags always
 ```
+
+`--skip-tags always` is what makes this an actual hot reload — the pattern tasks are tagged `[threshold-engine, patterns]`, so they still run, while the full-stack restart does not.
 
 Direct edits to `/opt/ai-inference/compose.yaml` are not permitted — the compose file is ansible-managed.
 

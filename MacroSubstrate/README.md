@@ -188,8 +188,12 @@ The migrator host applies them at deploy time.
 
 ```bash
 cd deployment/ansible
-ansible-playbook -i inventory/hosts.yml playbooks/deploy.yml --tags macro-substrate
+ansible-playbook playbooks/deploy.yml --tags macro-substrate --skip-tags always
 ```
+
+`--skip-tags always` matters: without it the run restarts the whole ATLAS stack (see CLAUDE.md `DEPLOYMENT`), unconditionally and regardless of tag. The `macro-substrate` tag carries exactly one task — the migrator image build — so skipping `always` leaves just that build.
+
+**There is no scoped form for this one.** `-e scoped_restart=true scoped_services=migrate-macro-substrate` fails the play: the scoped path asserts the named container is *running* after recreate (`deploy.yml:1371`), and the migrator is a `restart: "no"` one-shot that exits as soon as the schema is current. Note also that the ansible tag (`macro-substrate`) and the compose service (`migrate-macro-substrate`) differ in name. The migrator runs as part of the stack's normal start-up, so a rebuilt image is applied on the next full stack start.
 
 - **Image:** `macro-substrate-migrator:latest`
 - **Compose service:** `migrate-macro-substrate` (`restart: "no"` — one-shot; resource limits 128M / 0.25 CPU)

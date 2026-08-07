@@ -32,7 +32,7 @@ ANTI-PATTERN: "straightforward" -> commit anyway # this is how bugs ship
 ## PHASE_TAGS [going_forward]
 At phase / epic completion:
   1. tag the merge-completion commit: `git tag -a dsl-poc-phase{N}-done <sha> -m "<outcome summary>"`
-  2. `git push origin tag/dsl-poc-phase{N}-done` (or `--tags` selectively)
+  2. `git push origin dsl-poc-phase{N}-done` (or `--tags` selectively) # no `tag/` prefix: tags are named bare (dsl-poc-phase5-done), so `tag/<name>` is not a resolvable refspec
   3. add a brief entry to `docs/RELEASES.md` — phase outcome + tag reference
   4. `git rm` the phase's working/iteration docs (plans and specs merge to main while live, then retire HERE; record each retirement in `docs/RELEASES.md` with its recovery pointer)
 EXCEPTION [never retire]: a spec whose outcome is DO-NOT-BUILD is permanent and ADR-shaped
@@ -61,7 +61,13 @@ hook: .claude/hooks/git-push-guard.sh # enforced by tooling
 ## DEPLOYMENT [HARD_STOP]
 ✗ NEVER edit /opt/ai-inference/compose.yaml directly
 ✓ ALWAYS use ansible for deployments
-  playbook: ansible-playbook playbooks/deploy.yml --tags {service}
+  compose-service tag [SCOPED — the default]: ansible-playbook playbooks/deploy.yml --tags {service} --skip-tags build -e "scoped_restart=true scoped_services={service}"
+    scoped_services must name a COMPOSE service, not merely an ansible tag # deploy.yml:1361 filters label=com.docker.compose.service and :1371 asserts the container is running, so a tag-only name matches nothing and FAILS the play. No compose service exists for dashboards | patterns | monitoring | otel | alerting | instruments | models | nasdaq-collector; macro-substrate's service is named migrate-macro-substrate.
+    --skip-tags build = deploy the CURRENT :latest, it does NOT build # for 21 of the 26 service tags the only task carrying the tag IS the build task, so this form runs zero service-tagged tasks and just recreates from whatever :latest already is. Build first via CONTAINER_BUILD. Only alert-service | secmaster | sentinel-collector | threshold-engine | vllm-server also carry config/sidecar tasks.
+  non-service tag [dashboards | patterns | alerting | ...]: --tags {tag} --skip-tags always # leaves ONLY that tag's own tasks
+  ✗ bare `--tags {anything}` # UNCONDITIONAL full-stack restart, not merely a conditional one: deploy.yml:442 deletes compose.yaml (state:absent, tags:[always], no `when:`) and :448 re-templates it into `register: compose_file`, so `compose_file.changed` is ALWAYS true and the :1278 state expression resolves to 'restarted', never 'started'. = systemctl restart atlas = compose down/up of EVERY service incl a ~3.5-4min vLLM GPU reload, and it RESURRECTS a deliberately-stopped alert-service. The two escapes are `--skip-tags always` and `-e scoped_restart=true`.
+  verified 2026-08-06 via `--list-tasks` (ansible-core 2.16.3), which parses tag selection without executing anything # `--tags patterns` selects the restart task; `--tags patterns --skip-tags always` selects only the 3 pattern tasks
+  grafana alerting: `--tags alerting --skip-tags always` THEN `sudo nerdctl restart grafana` # alerting provisioning is startup-loaded AND grafana lives in the separate OTEL stack, so no ansible form reloads it. Dashboards differ — they auto-reload (updateIntervalSeconds: 30), no restart needed.
   inventory: deployment/ansible/inventory/hosts.yml # ansible.cfg default; run from deployment/ansible/. The old `deployment/inventory/hosts` does not exist and fails to parse.
 rationale: compose.yaml = ansible-managed AND direct edit = config drift
 
@@ -70,7 +76,7 @@ IMAGE: {service-name}:latest # fred-collector ✓ fredcollector ✗
   verify: /opt/ai-inference/compose.yaml
 BUILD: {Project}/.devcontainer/build.sh [--no-cache]
   from: /home/james/ATLAS # monorepo context required
-DEPLOY: ansible --tags {service} # never manual nerdctl
+DEPLOY: the scoped form in DEPLOYMENT # never manual nerdctl, never bare --tags
 
 ## DATABASE [ef_core]
 SCHEMA: EF migrations only # no raw SQL scripts
@@ -98,9 +104,9 @@ ANTI:
 ## BUILD [devcontainer]
 compile: {Project}/.devcontainer/compile.sh [--no-test]
 image: {Project}/.devcontainer/build.sh [--no-cache]
-deploy: ansible-playbook playbooks/deploy.yml --tags {service}
-dashboards: ansible-playbook playbooks/deploy.yml --tags dashboards # grafana auto-reloads
-patterns: ansible-playbook playbooks/deploy.yml --tags patterns # hot reload, no rebuild
+deploy: ansible-playbook playbooks/deploy.yml --tags {service} --skip-tags build -e "scoped_restart=true scoped_services={service}" # bare --tags = full-stack restart, see DEPLOYMENT
+dashboards: ansible-playbook playbooks/deploy.yml --tags dashboards --skip-tags always # grafana auto-reloads (updateIntervalSeconds: 30); --skip-tags always avoids the full-stack restart
+patterns: ansible-playbook playbooks/deploy.yml --tags patterns --skip-tags always # genuine hot reload: the pattern tasks (deploy.yml:627/634/650) are tagged [threshold-engine, patterns], not always, so they still run. Without --skip-tags always this is a full-stack restart, see DEPLOYMENT.
 filter test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'Name~{Test}'
 
 ## DATA_ML_CONTEXT
@@ -151,7 +157,7 @@ INFERENCE_TOPOLOGY: vLLM(GPU) + llama.cpp(CPU) # ollama fully retired 2026-06-11
 GPU_OOM: restart vLLM first; never downgrade the model or reduce context
 
 ## SERVICES [monorepo]
-collectors: FredCollector, AlphaVantageCollector, NasdaqCollector, FinnhubCollector, OfrCollector
+collectors: FredCollector, AlphaVantageCollector, NasdaqCollector, FinnhubCollector, OfrCollector, SentinelCollector
 processing: ThresholdEngine
 alerting: AlertService
 calendar: CalendarService

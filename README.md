@@ -98,7 +98,7 @@ MCP servers are SSE endpoints in the 3100-range; each lives next to (or inside) 
 Authoritative rules live in [CLAUDE.md](./CLAUDE.md). Quick pointers:
 
 - **Compose / container files**: `compose.yaml` and `Containerfile` (not `docker-compose.yml` / `Dockerfile`). [CLAUDE.md → PROJECT_CONVENTIONS](./CLAUDE.md)
-- **Deployments**: always via `ansible-playbook playbooks/deploy.yml --tags {service}`; never edit `/opt/ai-inference/compose.yaml` directly. [CLAUDE.md → DEPLOYMENT](./CLAUDE.md), [deployment/README.md](./deployment/README.md)
+- **Deployments**: always via ansible, and always scoped — `ansible-playbook playbooks/deploy.yml --tags {service} --skip-tags build -e "scoped_restart=true scoped_services={service}"`. A bare `--tags {service}` restarts the whole stack unconditionally (~3.5-4 min vLLM reload, and it resurrects a stopped alert-service). Never edit `/opt/ai-inference/compose.yaml` directly. [CLAUDE.md → DEPLOYMENT](./CLAUDE.md), [deployment/README.md](./deployment/README.md)
 - **Build & test before push**: `{Project}/.devcontainer/compile.sh` must pass (0 errors, 0 warnings, all tests) before `git push`. Enforced by `.claude/hooks/git-push-guard.sh`. [CLAUDE.md → GIT_PUSH](./CLAUDE.md)
 - **Database schema**: EF Core migrations only; no raw SQL scripts; seed via `HasData()` or app startup. [CLAUDE.md → DATABASE](./CLAUDE.md)
 - **Sentinel extraction**: ≥30B-parameter models, 32K context; GPU inference via vLLM, CPU via llama.cpp (no ollama in the topology). [CLAUDE.md → SENTINEL](./CLAUDE.md)
@@ -113,8 +113,10 @@ This repo deploys to a single host (`mercury`). The supported workflow is:
 # Full deploy (templates, builds, systemd, db init)
 ansible-playbook playbooks/deploy.yml
 
-# Single service
-ansible-playbook playbooks/deploy.yml --tags fred-collector
+# Single service (scoped: recreates only fred-collector)
+# Build first -- --skip-tags build deploys the current :latest, it does not build.
+ansible-playbook playbooks/deploy.yml --tags fred-collector --skip-tags build \
+  -e "scoped_restart=true scoped_services=fred-collector"
 
 # Smoke tests
 ansible-playbook playbooks/smoke-test.yml

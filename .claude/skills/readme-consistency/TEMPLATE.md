@@ -91,13 +91,15 @@ bash {ProjectName}/.devcontainer/build.sh
 
 - **Image:** `{project-name}:latest`
 - **Ansible tag:** `--tags {project-name}`
+- **Compose service:** `{compose-service-name}` — usually the same as the tag, but verify against `/opt/ai-inference/compose.yaml`; some tags have no compose service at all.
 - **Deploy command:**
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags {project-name}
+ansible-playbook playbooks/deploy.yml --tags {project-name} --skip-tags build \
+  -e "scoped_restart=true scoped_services={compose-service-name}"
 ```
 
-Per CLAUDE.md `DEPLOYMENT [HARD_STOP]`: never edit `/opt/ai-inference/compose.yaml` directly.
+Per CLAUDE.md `DEPLOYMENT [HARD_STOP]`: never edit `/opt/ai-inference/compose.yaml` directly, and never use a bare `--tags {project-name}` — that restarts the entire stack unconditionally (~3.5-4 min vLLM reload, and it resurrects a deliberately-stopped alert-service). `--skip-tags build` deploys the current `:latest`; build first with `{ProjectName}/.devcontainer/build.sh`.
 
 ## Ports
 

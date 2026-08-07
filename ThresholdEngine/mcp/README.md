@@ -140,8 +140,11 @@ ThresholdEngine/.devcontainer/build.sh
 ## Deployment
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags thresholdengine-mcp
+ansible-playbook playbooks/deploy.yml --tags thresholdengine-mcp --skip-tags build \
+  -e "scoped_restart=true scoped_services=thresholdengine-mcp"
 ```
+
+Build the image first — `--skip-tags build` deploys the current `:latest`. A bare `--tags thresholdengine-mcp` restarts the entire stack unconditionally; see CLAUDE.md `DEPLOYMENT`.
 
 The compose entry sets `THRESHOLDENGINE_API_URL=http://threshold-engine:8080`, depends on `threshold-engine` becoming healthy, and limits the container to 256 MB / 0.5 CPU.
 

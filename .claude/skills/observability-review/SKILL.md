@@ -10,7 +10,7 @@ Observability is NOT one of `pr-review-toolkit:review-pr`'s default aspects (cod
 
 AUTHORITATIVE STANDARD (consult, don't duplicate):
 - `docs/OBSERVABILITY.md` — canonical OTel `Program.cs` config, per-service metric catalogs, `.NET Runtime Metrics` + the cgroup-quota sizing lesson, and Best Practices §1–§4 (metrics-at-boundaries, tag-cardinality, exception-tracing, streaming).
-- CLAUDE.md `OBSERVABILITY` + `LOG_RULES` (this repo) and `~/.claude/CLAUDE.md` LOG_RULES.
+- `~/.claude/CLAUDE.md` `OBSERVABILITY` + `LOG_RULES` # both live in the user-level file only; the project CLAUDE.md carries no observability rules
 
 ## WHEN
 - ANY review / PR / diff that touches `*.cs` in an ATLAS .NET service — run alongside `pr-review-toolkit:review-pr`.

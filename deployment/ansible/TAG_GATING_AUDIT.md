@@ -5,13 +5,36 @@
 `deploy.resources.reservations.devices`, digest-pinned image). The tag-gating fix
 below still stands — the deploy block (now `compose rm -sf` + `up -d` + health +
 smoke) remains `[vllm-server]`-only. New consequence: full-stack restarts
-(`systemctl restart atlas` = compose down/up) cycle vLLM only when `compose_file`
-or one of the `*_build` registers changed AND the run is not scoped (`when: not
-(scoped_restart | bool)`). The standalone-container legacy-cleanup task (one-time
-cutover guard) also gates on `not (scoped_restart | bool)`, so a scoped run never
-stops the serving container. In summary: a full-stack restart bounces vLLM only
-when compose_file or a build changed; the systemd restart is itself gated by those
-conditions, not by `[always]` unconditionally.
+(`systemctl restart atlas` = compose down/up) cycle vLLM, ~3.5-4 min of GPU model
+reload.
+
+**2026-08-06 correction — the restart is UNCONDITIONAL, not change-gated.** The
+paragraph above previously said the systemd restart fires "only when
+`compose_file` or one of the `*_build` registers changed", and that it is gated
+by those conditions "not by `[always]` unconditionally". That reading is wrong,
+and it is the reading that talks an operator out of CLAUDE.md's DEPLOYMENT
+warning. The register it depends on can never be unchanged:
+
+- `deploy.yml:442` **deletes** `compose.yaml` — `state: absent`, `tags: [always]`,
+  no `when:`.
+- `deploy.yml:448` re-templates it and `register: compose_file`. Because the file
+  was just deleted, the template always creates it, so `compose_file.changed` is
+  **always true**.
+- `deploy.yml:1278` — the systemd `state:` expression ORs ~23 terms, and its
+  *first* term is `(compose_file | default({})).changed`. It therefore always
+  resolves to `restarted`, never `started`.
+
+So every non-scoped invocation is a full-stack restart regardless of what (if
+anything) was rebuilt. `when: not (scoped_restart | bool)` on that task remains
+the one real gate, alongside `--skip-tags always`. Verified via
+`ansible-playbook --list-tasks` (ansible-core 2.16.3), which resolves tag
+selection without executing: `--tags patterns` selects "Start or restart ATLAS
+infrastructure"; `--tags patterns --skip-tags always` selects only the three
+pattern tasks.
+
+The standalone-container legacy-cleanup task (one-time cutover guard) does gate
+on `not (scoped_restart | bool)`, so a scoped run never stops the serving
+container. That part stands.
 **Trigger:** vLLM outage caused by `ansible-playbook playbooks/deploy.yml --tags secmaster,sentinel-collector,spacy-ner`.
 **Root cause:** vllm-server deploy block tagged `[always, vllm-server]`.
 
@@ -49,17 +72,21 @@ incident so the next reader doesn't "helpfully" re-add `always`.
 
 - **Service identity / containerd setup** (L69–L116): `[always]` — required infra (uid/gid, sock perms). Idempotent file/group/user modules; do not restart vllm-server.
 - **OTEL stack** (L147–L198): `[otel, monitoring]` consistently — not pulled into selective deploys.
-*(This bullet was superseded 2026-06-11: vllm-server is now a compose service — see the update section. Full-stack restarts triggered by compose/template or image-rebuild changes cycle it; tag-scoped runs do not.)*
+*(This bullet was superseded 2026-06-11: vllm-server is now a compose service — see the update section. Any full-stack restart cycles it, and per the 2026-08-06 correction every non-scoped run is one; only `-e scoped_restart=true` or `--skip-tags always` avoids it.)*
 ### Notes / non-issues
 
-- The `Start or restart ATLAS infrastructure` task (L751) is `[always]` and
-  restarts the whole compose stack when any build registered `.changed`.
-  For a selective deploy like `--tags secmaster`, only `secmaster_build`
-  fires; if it changed, the whole compose stack does restart. This is the
-  documented (and accepted) blast radius for application services — those
-  containers share secmaster/threshold-engine/etc. cross-deps and the
-  unit is the supervision boundary. Out of scope for this audit; not the
-  bug that bit us today.
+- The `Start or restart ATLAS infrastructure` task (now L1275) is `[always]`
+  and restarts the whole compose stack on **every** non-scoped invocation —
+  see the 2026-08-06 correction at the top. This bullet previously read "when
+  any build registered `.changed` … if it changed, the whole compose stack
+  does restart", which wrongly implies a selective deploy that rebuilt nothing
+  leaves the stack alone. It does not: `compose_file` is deleted and
+  re-templated under `tags: [always]`, so the restart condition is always
+  satisfied. The blast radius itself is still the documented and accepted one
+  for application services — those containers share
+  secmaster/threshold-engine/etc. cross-deps and the unit is the supervision
+  boundary — it is simply unconditional rather than change-gated. Out of scope
+  for this audit; not the bug that bit us in 2026-05.
 - The `Setup atlas_secmaster database / pg_trgm` tasks (L897–L917) carry
   no tags, so they only run on no-filter deploys. That's fine — they
   query the DB and short-circuit if the database exists. Not a tag-gating

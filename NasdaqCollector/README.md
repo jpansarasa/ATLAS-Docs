@@ -159,10 +159,17 @@ Image tag: `nasdaq-collector:latest`. Build context is the monorepo root (`/home
 
 ```bash
 cd deployment/ansible
-ansible-playbook -i inventory/hosts.yml playbooks/deploy.yml --tags nasdaq-collector
+ansible-playbook playbooks/deploy.yml --tags nasdaq-collector --skip-tags always
 ```
 
 The service block in `/opt/ai-inference/compose.yaml` is commented out. Uncomment in `deployment/artifacts/compose.yaml.j2` and re-run the playbook when the upstream WAF whitelist is granted.
+
+Two deploy caveats follow from that, both different from every other collector:
+
+- **No scoped form exists yet.** `scoped_services` matches on `label=com.docker.compose.service`, and while the compose block stays commented out there is no `nasdaq-collector` service to match, so `-e scoped_restart=true` fails the play at its liveness assert. Use `--skip-tags always` instead — the tag carries only the build task, and skipping `always` keeps that build from also restarting the whole stack.
+- Once the block is uncommented, switch to the standard scoped form: `--tags nasdaq-collector --skip-tags build -e "scoped_restart=true scoped_services=nasdaq-collector"`.
+
+The `-i inventory/hosts.yml` flag is redundant — `ansible.cfg` already sets that inventory when run from `deployment/ansible/`.
 
 ## Ports
 

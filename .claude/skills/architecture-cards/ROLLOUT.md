@@ -91,8 +91,8 @@ downstream artifacts go first.
 | 2 | **SentinelCollector + MacroSubstrate** (news->matrix) | spans two dirs; classifier-gates-entry vs sector-is-a-dim is the recurring confusion (#615/#616); matrix FEED | DONE |
 | 3 | **FredCollector** | upstream FRED catalog is a SEPARATE table reconciled INTO instruments (the TRUST signal); is_primary source-mapping | DONE |
 | 4 | **FinnhubCollector** | live quote/news-sentiment vs stored series; confirm-source in SecMaster cascade | DONE |
-| 5 | AlphaVantageCollector, NasdaqCollector, OfrCollector | remaining collectors; mostly ingest->persist (thin RESOLUTION MODEL, but card still names the boundary) | TODO |
-| 6 | AlertService, CalendarService | edge consumers; smaller blast radius | TODO |
+| 5 | AlphaVantageCollector, NasdaqCollector, OfrCollector | remaining collectors; mostly ingest->persist (thin RESOLUTION MODEL, but card still names the boundary) | DONE |
+| 6 | AlertService, CalendarService | edge consumers; smaller blast radius | DONE |
 
 Each row = one PR: create `AGENT_README.md`, add pointer to `README.md`, add the
 service's line to CLAUDE.md `## SERVICE_ARCHITECTURE`. Run the audit before/after per

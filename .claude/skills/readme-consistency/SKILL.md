@@ -98,7 +98,7 @@ PROCESS:
    - gold example: literal pointer "SecMaster/README.md (resolve relative to repo root)"
    - per-project commit discipline: "one commit per project README"
    - commit message format: "docs({project}): refresh README per readme-consistency audit"
-   - HARD rules from CLAUDE.md SUPERVISOR_MODE: never push, never PR, selective `git add -- <paths>`, supervisor-owned files (STATE.md, .claude/skills/supervisor-mode/**) untouched
+   - HARD rules from `.claude/skills/supervisor-mode/SKILL.md` (the project CLAUDE.md has no SUPERVISOR_MODE section): never push, never PR, selective `git add -- <paths>`, supervisor-owned files (STATE.md, .claude/skills/supervisor-mode/**) untouched
 2. dispatch via Agent tool, subagent_type=general-purpose, run_in_background=false
    (foreground because we need the result for Phase 4; non-interactive callers can wrap in their own background dispatch)
 3. on agent completion -> record commit hashes for Phase 4 summary

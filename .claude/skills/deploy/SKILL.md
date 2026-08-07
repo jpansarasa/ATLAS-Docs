@@ -5,7 +5,7 @@ description: ATLAS deployment workflow - smoke tests, PR, health verification vi
 
 # Deploy Workflow
 
-Applies `VERIFY_TEST.COMPLETION_GATE` and `EVIDENCE_GATE` from CLAUDE.md.
+Applies `VERIFY_TEST.COMPLETION_GATE` and `PROBLEM_SOLVING.EVIDENCE_GATE` from `~/.claude/CLAUDE.md` (neither is in the project CLAUDE.md).
 
 1. Run smoke tests BEFORE declaring done — report pass/fail counts
 2. Open PR with test results in description

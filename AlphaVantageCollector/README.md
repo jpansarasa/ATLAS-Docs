@@ -167,8 +167,11 @@ AlphaVantageCollector/.devcontainer/build.sh
 ## Deployment
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags alphavantage-collector
+ansible-playbook playbooks/deploy.yml --tags alphavantage-collector --skip-tags build \
+  -e "scoped_restart=true scoped_services=alphavantage-collector"
 ```
+
+Build the image first — `--skip-tags build` deploys the current `:latest`. A bare `--tags alphavantage-collector` restarts the entire stack unconditionally; see CLAUDE.md `DEPLOYMENT`.
 
 Image name: `alphavantage-collector:latest`. Container name: `alphavantage-collector`. Memory limit: 256M. CPU limit: 0.5. Restart policy: `unless-stopped`. Log mount: `/opt/ai-inference/logs/alphavantage-collector:/app/logs`.
 

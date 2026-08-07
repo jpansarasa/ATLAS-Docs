@@ -152,8 +152,11 @@ SecMaster/.devcontainer/build.sh
 ## Deployment
 
 ```bash
-ansible-playbook playbooks/deploy.yml --tags secmaster-mcp
+ansible-playbook playbooks/deploy.yml --tags secmaster-mcp --skip-tags build \
+  -e "scoped_restart=true scoped_services=secmaster-mcp"
 ```
+
+Build the image first — `--skip-tags build` deploys the current `:latest`. A bare `--tags secmaster-mcp` restarts the entire stack unconditionally; see CLAUDE.md `DEPLOYMENT`.
 
 ## Ports
 

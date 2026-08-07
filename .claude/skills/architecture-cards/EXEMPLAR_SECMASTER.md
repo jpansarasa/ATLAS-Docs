@@ -5,8 +5,9 @@ This is the gold-standard worked instance. Notice how value concentrates in
 none of which an endpoint catalog conveys. When generating a new card, match
 this density and negative-space depth, not a thinner endpoint summary.
 
-The block below is the card as of the exemplar snapshot (the live card leading
-`SecMaster/README.md` has since accreted DECISIONS + newer blocks).
+The block below is the card as of the exemplar snapshot (the live card is its own
+file, `SecMaster/AGENT_README.md`, and has since accreted DECISIONS + newer blocks;
+`SecMaster/README.md` carries only the read-first pointer to it).
 
 ---
 
@@ -50,14 +51,14 @@ DISTINCTIONS:
   ContextFactor=0->DROPPED ≠ "scored lower"; identity/classification ⊥ collection/source-mapping.
 
 CROSS-SERVICE: collectors->register(f-a-f); ThresholdEngine->ResolveBatch(sync); Sentinel->resolve-entities(sync).
-  OUT: collectors REST, OpenFIGI, Gemini, Ollama(embed/RAG). FEEDS: ThresholdEngine matrix via sector grounding.
+  OUT: collectors REST, OpenFIGI, Gemini, llama-cpu-embed(embeddings)/llama-cpu-rag(RAG generation). FEEDS: ThresholdEngine matrix via sector grounding.
 
 GOTCHAS: ✗bulk-preload ✗backfill-rows-to-green ✗NotFound="not-in-table" ✗gate-non-Equity-sector
   ✗Embed-1-1 ✗trust-entity-default-model ✗AtlasSectorCode/RollupVersionId-as-FK
   ✗ALIAS_MATCH-emitted(dead-wire) ✗Economic-from-untrusted-collector
   ✗freq/lag/prefer-as-sort ✗LookupSource-live-prod ✗ContextFactor=0-as-lower
 
-SEE: README §Reference (API endpoints, config tables) · secmaster.proto · EntityResolutionService.cs:1104-1115(ContextFactor) · ResolutionService.cs(ranking) · RegistrationService.cs:135-151(EvaluateGuard)
+SEE: README §Reference (API endpoints, config tables) · secmaster.proto · EntityResolutionService.cs:1180(ContextFactor) · ResolutionService.cs(ranking) · RegistrationService.cs:181(EvaluateGuard)
 
 ---
 
