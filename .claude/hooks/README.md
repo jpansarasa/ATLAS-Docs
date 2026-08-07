@@ -168,6 +168,21 @@ subsequent push of the same tree content. Note: `/tmp` is cleared on
 reboot — markers need to be regenerated after host reboot (this is
 intended; re-running tests after a reboot is cheap insurance).
 
+**Marker directory override (`ATLAS_MARKER_DIR`)**: one variable, honoured by
+BOTH `mark-tests-passed.sh` (write) and `git-push-guard.sh` (read), so a test
+that redirects it moves the whole flow and cannot half-isolate. Each side needs
+it for its own reason — the writer so an identity-only guard test does not mint
+a marker for a tree nothing compiled, the reader so `run-push-guard-smoke.sh`
+no longer has to delete the live markers and restore them from an EXIT trap (a
+kill mid-run used to leave every agent on the host unable to push). It cannot
+widen the gate: hooks run with the harness's environment, so a marker written
+under an override lands where the real guard never scans. Asserted
+behaviourally — override-written marker allowed by a guard reading that dir,
+refused by one with the default environment — in
+`scripts/test-devcontainer-simultaneity.sh` section E. That assertion replaced a
+grep for a hardcoded path in `git-push-guard.sh`, which went RED when that
+literal legitimately became the override and would have been softened away.
+
 **Marker format (v2)**: the marker is a single line
 `v2 tree <tree_hash> <iso8601_timestamp>`. The push guard rejects any other
 format (empty file, partial write, pre-v2 commit-hash-keyed marker) with a
@@ -188,6 +203,48 @@ Also enforces:
   `test/run-push-exemption-smoke.sh`.
 - `gh pr merge` requires a `pr-reviewed-{N}` marker carrying an explicit
   **verdict** — see "PR Review Verdict Gate" below.
+
+**Concurrency (marker integrity)**: `mark-tests-passed.sh` derives both the tree
+hash and the worktree id from `$PWD` via `git rev-parse`, so it can only ever write
+a marker for its own caller's tree — one run cannot write another run's marker.
+That one is structural, not a lucky timing observation: attribution follows the
+caller's directory by construction.
+
+The exposure was upstream of it. Every `.devcontainer/compile.sh` used to run
+concurrently against shared `nerdctl compose` state, and no compose file sets
+`container_name:` while every `/workspace` mount is relative — so container names
+are identical across worktrees while the tree behind them differs. A second run of
+the same service therefore either **re-creates** the first run's container bound to
+its own `/workspace`, or is handed the existing one; either way a run ends up
+building and testing the *other* worktree's source, exiting 0, and writing a
+perfectly well-formed marker for a tree that was never tested.
+
+Each run therefore **owns** its compose project, keyed by the worktree it was
+launched from — `atlas-<sha1(worktree)[0:12]>-<slug>`, the same key the marker
+filename uses (`scripts/devcontainer-owner.sh`). Distinct project names make the
+container names disjoint, so there is no shared object left to race over and N
+agents verify simultaneously. This supersedes the host-wide flock that briefly
+served the same purpose by serializing every run.
+
+Ownership alone would still be trusted rather than checked, so `compile.sh` now
+**proves** the container has its own tree: it compares the host worktree's inode
+with the one the container reports for `/workspace`, and refuses to build on a
+mismatch. `mark-tests-passed.sh` will not write a marker without that attestation
+(fresh, and for a path inside the caller's own worktree).
+
+Deliberately **not** a tree hash, which is what the hooks audit first proposed:
+two worktrees branched from the same commit have identical tree hashes, so a hash
+comparison agrees precisely when the mix-up is most likely. Identity has to match,
+not content.
+
+Note the original failure was **silent** — it exits 0 and looks like a clean pass.
+Markers written before these guards existed cannot be assumed to have tested their
+own tree; there is no log that would show it either way.
+
+`scripts/test-devcontainer-owner.sh` is the guard test (fast, no containers);
+`--with-containers` adds `scripts/test-devcontainer-simultaneity.sh`, which runs
+two worktrees of the same service at once and injects a foreign-tree container to
+confirm the refusal fires.
 
 **Configuration**: tracked `.claude/settings.json` (also still registered in
 the gitignored `settings.local.json` — see

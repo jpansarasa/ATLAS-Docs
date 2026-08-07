@@ -28,6 +28,20 @@ METHODS:
   container: {Project}/.devcontainer/build.sh [--no-cache]
   fallback: ASK_USER("Can't verify - use devcontainer or skip?")
 ANTI-PATTERN: "straightforward" -> commit anyway # this is how bugs ship
+OWNED: every compile.sh (and sentinel-edge typecheck.sh/dev.sh) owns a compose project keyed to its worktree (scripts/devcontainer-owner.sh) # supersedes the host-wide flock
+  project = atlas-<sha1(worktree)[0:12]>-<slug> # same key mark-tests-passed.sh uses -> containers and marker attributable to one worktree
+  N agents in N worktrees compile SIMULTANEOUSLY # no queue, no waiting message
+  compile.sh proves /workspace is its OWN tree (inode match) before building; mark-tests-passed.sh refuses without that attestation
+  ✗ no .devcontainer/compose.yaml publishes a host port # exec-only; the sole exception is sentinel-edge compose.ports.yaml for interactive dev.sh
+  cleanup: teardown on EXIT (bash runs it for TERM/INT/HUP too) + a reaper (runs on every start) that removes atlas-* state whose worktree is gone # SIGKILL cannot trap; the reaper is what covers it
+  rationale: concurrent runs used to silently test another worktree's tree and still write a push marker
+KNOWN [pre-existing, not concurrency]: two DIFFERENT services in ONE worktree can collide on Events/src/*/obj by UID
+  5 root-user devcontainers vs vscode/uid-1000 (Containerfile `development` targets)
+    raw sdk:10.0 image, no user: CalendarService, FinnhubCollector, NasdaqCollector, Reports
+    Containerfile `build` stage, never sets USER: AlphaVantageCollector
+  symptom: "Access to the path '/workspace/Events/.../obj/<guid>.tmp' is denied. Permission denied"
+  recovery: sudo rm -rf <worktree>/Events/src/*/obj <worktree>/Events/src/*/bin
+  ✗ not fixed by serializing # persistent file ownership, not a race
 
 ## PHASE_TAGS [going_forward]
 At phase / epic completion:
