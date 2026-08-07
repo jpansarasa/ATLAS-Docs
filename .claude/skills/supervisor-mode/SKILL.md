@@ -170,20 +170,19 @@ PARALLELISM:
   same branch + concurrent -> SEQUENCE (race risk)
   disjoint files + same branch -> parallel OK
   different branches without worktrees -> COLLIDE (shared working tree; checkout from one agent flips HEAD for the other)
-  different branches WITH worktrees -> parallel for GIT state only, NOT for the devcontainer compile flow
-    worktrees isolate the checkout; they do NOT isolate compose state. The compose project name is
-    PATH-INDEPENDENT either way: 6 of 11 devcontainers declare no `name:` and resolve to the
-    `.devcontainer` dir basename — `devcontainer` — while the other 5 (AlphaVantageCollector,
-    CalendarService, FinnhubCollector, NasdaqCollector, Reports) carry a literal `name: <service>` on
-    line 1. A literal name is identical in every worktree, so it collides exactly as hard; adding
-    `name:` is NOT the fix. Same project + same service (e.g. `secmaster-dev`) = ONE container
-    identity, so a second worktree's `compose exec` runs inside the FIRST worktree's /workspace —
-    wrong code compiled and attested. Compounding it, per service: a fixed host port (SecMaster
-    `5010:8080`; every service has its own) and a globally-named volume (SecMaster
-    `secmaster_dev_nuget`) both collide, and compile.sh's `trap 'nerdctl compose down' EXIT` tears
-    down the shared container under a concurrent run. SEQUENCE any dispatches that run
-    {Project}/.devcontainer/compile.sh or build.sh until a mutual-exclusion lock lands in the compile
-    scripts themselves.
+  different branches WITH worktrees -> isolates GIT state. Whether it isolates the DEVCONTAINER
+    compile flow depends on what identity the compile scripts derive — CHECK, never assume.
+    A worktree isolates the checkout and nothing else on its own. If two runs resolve to the same
+    compose project AND service they are ONE container identity, so the second run's `compose exec`
+    lands in the FIRST run's /workspace, compiles code it did not check out, and attests it — silently,
+    exit 0. The project name is path-independent (a `name:` key, or the `.devcontainer` basename when
+    absent), so adding `name:` is NOT the fix. Shared host ports and globally-named volumes collide the
+    same way, and a teardown trap in compile.sh can remove a container another run is still using.
+    BEFORE dispatching parallel compiles, ask the tree rather than this file:
+      grep -l devcontainer_own */.devcontainer/compile.sh | wc -l   # vs `ls */.devcontainer/compile.sh | wc -l`
+    all covered -> each run owns its own identity, parallel is safe. Any gap -> SEQUENCE those.
+    # this stanza states the MECHANISM only. Per-service ports, volume names and counts live in the
+    # compose files; an inventory copied here is wrong the next time someone edits one.
   ALWAYS TELL each agent which files belong to other in-flight agents
 DEFAULT [parallel code dispatch]:
   pass isolation: "worktree" on the Agent tool call -> tool creates a temporary git worktree per agent, auto-cleanup on completion
