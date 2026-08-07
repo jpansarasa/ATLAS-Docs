@@ -154,7 +154,7 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 | `merged-pr-watcher` (alias: `alert-service`) | Deploy `merged-pr-watcher.sh` + units. Timer is intentionally NOT enabled by the playbook — operator enables manually after first dry-run review. |
 | `quality-check` (alias: `maintenance`) | Deploy `atlas-sentinel-quality-check.{service,timer}` (weekly Sentinel sampling Monday 09:23) |
 | `buildkit-prune` (alias: `maintenance`) | Deploy `buildkit-prune.{service,timer}` for periodic BuildKit cache trim |
-| `snapshot` | ZFS pre-deploy snapshot block only (skipped via `-e create_snapshot=false`) |
+| `snapshot` | ZFS pre-deploy snapshot block. Tagged `[always, snapshot]`, so the scoped deploy form still snapshots; `--skip-tags always` (the dashboards/patterns/alerting form) skips it. Opt out with `-e create_snapshot=false` or `--skip-tags snapshot`. |
 | `atlas-systemd` / `orphan-cleanup` | Disable + remove the pre-2026-04-17 orphan `ai-inference.service`; drop the legacy `financial_news` bootstrap DB |
 | `edge` / `sentinel-edge` | Cloudflare Worker deploy via the sentinel-edge devcontainer + `wrangler` inside it. Tagged `never` — only runs when explicitly requested. |
 
@@ -283,10 +283,17 @@ deployment/
 │   ├── spacy-ner/                   # spaCy NER sidecar build context
 │   ├── trafilatura/                 # trafilatura sidecar build context
 │   └── scripts/                     # host-side scripts (see artifacts/scripts/README.md)
-└── config/
-    ├── README.md
-    └── ports.yml                     # cross-cutting port allocation registry
+├── config/
+│   ├── README.md
+│   └── ports.yml                    # cross-cutting port allocation registry
+└── tests/                           # host-runnable harnesses; neither is wired to a hook
+    ├── alerts/run.sh                # promtool: `check rules` + `test rules` over artifacts/monitoring/alerts
+    └── ansible/run.sh               # syntax-check + check-mode + tag selection over the zfs rollback floor
 ```
+
+Both harnesses create nothing and are safe on the live host. They are invoked by hand (and by
+the fix-round trajectory in `.claude/skills/supervisor-mode/templates/implementation-fix.md`),
+not by a hook or by CI — nothing runs them for you.
 
 ## Development
 
@@ -346,14 +353,18 @@ sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data          # data
 
 ### ZFS Snapshots
 
-Pre-deploy snapshots are taken automatically on `nvme-fast/timeseries` and `nvme-fast/dashboard`. Snapshot tag format: `pre-deploy-YYYYMMDDTHHMMSS` (basic ISO 8601). The most recent tag is written to `/opt/ai-inference/last-snapshot.txt`.
+Pre-deploy snapshots are taken automatically on `nvme-fast/timeseries` and `nvme-fast/dashboard`. Snapshot tag format: `pre-deploy-YYYYMMDDTHHMMSSZ` (basic ISO 8601, **UTC** — the host runs `America/New_York`, so a tag reads as the same instant as the log timestamps you will correlate it against). The tag is minted from live `now(utc=true)`, not from `ansible_date_time`: `ansible.cfg` caches facts for 3600s, so two deploys inside one cached hour would mint the same tag and collide on "dataset already exists".
+
+Both datasets are checked to exist **before** any snapshot is created, and a missing one is fatal — a floor covering half the state is the same false belief as no floor. Each snapshot is then read back by exact name before the deploy proceeds, and a failure aborts rather than being reported as success. The most recent verified tag is written to `/opt/ai-inference/last-snapshot.txt`.
 
 ```bash
 ansible-playbook playbooks/zfs-snapshot.yml -e snapshot_tag=before-migration
-ansible-playbook playbooks/zfs-rollback.yml -e snapshot_tag=pre-deploy-20260527T120000
+ansible-playbook playbooks/zfs-rollback.yml -e snapshot_tag=pre-deploy-20260527T120000Z
 ansible-playbook playbooks/zfs-cleanup.yml -e cleanup_mode=auto -e keep_snapshots=3
-ansible-playbook playbooks/zfs-cleanup.yml -e snapshot_tag=pre-deploy-20260527T120000  # manual single-tag cleanup
+ansible-playbook playbooks/zfs-cleanup.yml -e snapshot_tag=pre-deploy-20260527T120000Z  # manual single-tag cleanup
 ```
+
+Regression guard for all of the above: `bash deployment/tests/ansible/run.sh` (creates nothing, safe on the live host).
 
 ## Monitoring URLs
 

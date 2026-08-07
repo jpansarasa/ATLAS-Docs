@@ -45,7 +45,11 @@ TRAJECTORY
    and swallows the exit code. 0 errors AND 0 warnings AND all tests pass.
 7. Alert rules -> `bash deployment/tests/alerts/run.sh`: promtool over the REPO's rules plus the
    committed unit tests, inside the prometheus image (promtool is not on the host PATH, and the
-   running container holds the DEPLOYED rules). One `*_test.yml` case per new rule. Schema change
+   running container holds the DEPLOYED rules). One `*_test.yml` case per new rule. Ansible
+   playbooks under `deployment/ansible/playbooks/` -> `bash deployment/tests/ansible/run.sh`:
+   syntax-check + check-mode + tag selection over the zfs rollback floor, creating and destroying
+   nothing, so it is safe on the live host. It cannot see `command`/`shell` behaviour — read its
+   DOES NOT CATCH header before trusting a green run. Schema change
    -> `nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project {path}`.
 8. Report: commit hash per layer/finding, each finding {addressed | rejected with evidence |
    deferred}, the before/after number, mutation results, compile counts.
