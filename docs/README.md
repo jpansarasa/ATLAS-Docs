@@ -49,6 +49,7 @@ Current contents:
 | [proposals/extraction-type-classifier.md](./proposals/extraction-type-classifier.md) | **Decision record — DO-NOT-BUILD.** Permanent (see below) |
 | [proposals/regime-news-staleness-redesign.md](./proposals/regime-news-staleness-redesign.md) | Design spec — regime news-as-staleness-perturbation |
 | [proposals/okf-rag-feasibility-spike.md](./proposals/okf-rag-feasibility-spike.md) | Feasibility spike — OKF / LLM-wiki RAG |
+| [proposals/push-gate-intent-redesign.md](./proposals/push-gate-intent-redesign.md) | Design spec — push/merge gate rebuilt around the act boundary, not parser accuracy |
 | [superpowers/plans/2026-07-04-sentinel-trend-visualization.md](./superpowers/plans/2026-07-04-sentinel-trend-visualization.md) | Plan — shipped (`sentinel-trend-viz-done`) |
 | [superpowers/specs/2026-07-04-sentinel-trend-visualization-design.md](./superpowers/specs/2026-07-04-sentinel-trend-visualization-design.md) | Design spec — shipped |
 | [superpowers/plans/2026-07-05-sentinel-review-queue-drain.md](./superpowers/plans/2026-07-05-sentinel-review-queue-drain.md) | Plan — shipped (`sentinel-review-queue-drain-done`) |
