@@ -49,8 +49,14 @@ TRAJECTORY
 7. Smoke: `ansible-playbook playbooks/smoke-test.yml`, plus each service's `/health` and its MCP
    `health` tool. `nerdctl` 1.7.7 discards depends_on and healthchecks, so services race
    TimescaleDB — check the boot banner, not just "container Up".
-8. Loki errors in the 10 min after EACH restart, anchored to actual `date -u`; ground truth is
-   `severity_text` (query form in recon-measurement.md).
+8. HEALTH IS TEMPO, NOT LOKI. Prod log level defaults to Warning, so a healthy container emits
+   NOTHING — "zero log lines" is the designed steady state and proves nothing either way. Query
+   Tempo (via Grafana's datasource proxy) for ERROR-STATUS SPANS in the 10 min after EACH restart,
+   anchored to actual `date -u`; every service sets `SetStatus(Error)` + `AddException` in its
+   catch blocks, so a failure paints a span red there whether or not it logs. Pair it with the
+   Prometheus counters the fix targets. Loki is the follow-up once a red span names the fault —
+   its ground truth is `severity_text`, never a message substring. Do NOT report log silence as
+   evidence of health, and do NOT report a service that ships no logs as a defect.
 9. PROVE THE FIX IN PRODUCTION, bounded: exercise the real work path. A 200 from a health
    endpoint is not evidence the fix works.
 
