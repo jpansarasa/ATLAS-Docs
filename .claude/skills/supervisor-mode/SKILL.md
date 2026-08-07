@@ -21,9 +21,9 @@ TEMPLATES: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ # one per
   review dispatches have no template — the shape is MERGE_GATE below.
   SIZE [the fenced block is what gets pasted, not the file]: <=700w, and justify anything past
   ~550. Impl briefs add the mandatory Design-intent + Git-ops stanzas on top (~600w realized).
-  # re-measure: awk '/^```$/{f=!f;next} f' <template> | wc -w  (310-671w on 2026-08-06)
-  # a flat "<=400w" was met by one template and never by story-implementation, so nothing was
-  # held to it; if a number here stops matching the command above, fix the number.
+  # measure a template's fenced block: awk '/^```$/{f=!f;next} f' <template> | wc -w
+  # the budget is the rule; a snapshot of what the templates measured on some past day is not,
+  # and copying one here only creates a number to keep in sync.
 
 NTFY:
   server: https://ntfy.elasticdevelopment.com # auth in ansible-vault
