@@ -80,7 +80,6 @@ MCP servers are SSE endpoints in the 3100-range; each lives next to (or inside) 
 | Document | What it covers |
 |---|---|
 | [CLAUDE.md](./CLAUDE.md) | Project conventions (compose vs. docker-compose, deploy rules, EF migration rules, Sentinel sizing, git-push gate) — read this before generating code |
-| [STATE.md](./STATE.md) | Current epic / phase status |
 | [docs/README.md](./docs/README.md) | **Curated index of `docs/`** — what each doc is for, what was retired to git history |
 | [docs/EXECUTIVE-SUMMARY.md](./docs/EXECUTIVE-SUMMARY.md) | What ATLAS is today: the signal matrix, Sentinel pipeline, inference topology, data fleet |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | The system as built: stacks, services, data flows, DB layout, deployment, observability |
@@ -135,7 +134,7 @@ For per-service local development (Dev Containers), see each service's README.
 | "What event contract should I publish/consume?" | [Events/README.md](./Events/README.md) |
 | "How do I deploy / roll back?" | [deployment/README.md](./deployment/README.md) |
 | "What rules must my code change follow?" | [CLAUDE.md](./CLAUDE.md) |
-| "What's the current epic state?" | [STATE.md](./STATE.md) |
+| "What's the current epic state?" | [docs/RELEASES.md](./docs/RELEASES.md) — phase / epic outcomes. In-flight state lives in `STATE.md`, which is gitignored supervisor memory and exists only in the working checkout |
 | "Which patterns are configured?" | [docs/THRESHOLDENGINE-PATTERNS.md](./docs/THRESHOLDENGINE-PATTERNS.md) |
 | "What's the macro framework / scoring methodology?" | [docs/EXECUTIVE-SUMMARY.md](./docs/EXECUTIVE-SUMMARY.md) |
 | "How is observability wired?" | [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) |

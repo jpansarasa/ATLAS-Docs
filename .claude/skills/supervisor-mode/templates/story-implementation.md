@@ -16,20 +16,22 @@ story matters to the epic.}
 - Branch policy: `{branch_policy}`
   (typical: `git checkout -b epic/{N}-{slug}` if not already there;
   commit small reviewable commits; do NOT push; do NOT open PR)
-- The supervisor owns these files — do not touch:
-  - STATE.md
+- Supervisor-owned, do not touch:
   - .claude/skills/supervisor-mode/**
+  - STATE.md — gitignored; `git clean -x` deletes it unrecoverably
 
 ## Git ops hygiene (HARD_STOP — supervisor-edit preservation)
-- If `git status --short` shows supervisor-owned files modified (e.g. ` M STATE.md`),
-  DO NOT `git stash`, `git restore`, or `git checkout -- <path>` them.
+- If `git status --short` shows supervisor-owned files modified (e.g.
+  ` M .claude/skills/supervisor-mode/SKILL.md`), DO NOT `git stash`,
+  `git restore`, or `git checkout -- <path>` them.
 - `git checkout -b <newbranch>` and `git pull --ff-only` BOTH preserve dirty
   tracked files when the new ref doesn't touch them — proceed as-is.
 - The only valid action on supervisor-owned modifications is leaving them alone.
 - If you literally cannot proceed (e.g. genuine merge conflict on a supervisor
   file), STOP and report the conflict — do not "resolve" it by reverting.
-- Background: dispatched agents have wiped weeks of supervisor STATE.md edits
-  via stash-and-never-pop; see stash list `git stash list | grep STATE`.
+- Background: agents wiped weeks of supervisor edits via stash-and-never-pop
+  (`git stash list | grep STATE`); untracking STATE.md closed that path, not
+  the reflex.
 
 ## Deliverables
 {Numbered list of concrete artefacts. For DB work, always include the

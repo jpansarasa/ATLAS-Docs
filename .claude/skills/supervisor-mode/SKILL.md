@@ -12,6 +12,30 @@ You run an unattended loop. User-level + project-level CLAUDE.md provide enginee
 
 ## CONFIG
 STATE: /home/james/ATLAS/STATE.md # supervisor memory, read first | write last
+  UNTRACKED [gitignored]: never commit | push | PR it. It no longer propagates into agent
+    worktrees, and that propagation was the whole mechanism by which dispatched agents reverted
+    supervisor edits. Nothing recovers a lost edit now — no commit, no stash. Write it, keep it.
+    UNSEARCHABLE: `grep -r` and the Grep tool both honour .gitignore, so a repo-wide search does
+      NOT see STATE.md (verified: `grep` is a ugrep wrapper carrying --ignore-files). Read it by
+      explicit path; a recon agent told to "search the repo" will silently miss it.
+    DESTROYABLE [two families, not one]: `git clean -x` deletes ignored files. The other family is
+      a HEAD move, and BOTH ends decide it: OVERWRITTEN if the ref you move TO tracks STATE.md,
+      DELETED if only the ref you are ON does, PRESERVED only when NEITHER does (all verified
+      live, git 2.43):
+      -> a ref that still TRACKS it: checkout SILENTLY OVERWRITES the live file with that ref's
+        committed copy, rc=0, no prompt. Git REFUSES this when the file is merely untracked; being
+        IGNORED is what removes the protection. This is the case that will actually bite — every
+        branch cut before the untracking PR still tracks STATE.md.
+      -> a ref where it is also untracked: PRESERVED. Two post-PR branches switch freely, so
+        "any move to a ref where STATE.md is untracked" overstated it.
+      -> away from a ref that tracks it (the `git pull --ff-only` after merging the untracking
+        PR): DELETED silently, but only from a clean working copy; uncommitted edits abort it.
+      Forbid `clean -x` in dispatches; the checkout family cannot be forbidden, so guard it
+      instead. `git show <sha>:STATE.md` recovers only the last TRACKED content and loses every
+      edit made since, so it is not a restore.
+    RULE: before any operation that changes what HEAD points at, copy STATE.md to a path OUTSIDE
+      the repo and copy it back afterwards. The supervisor meets this first when merging the
+      untracking PR itself — skip it there and the next turn's "read STATE.md first" finds nothing.
 TEMPLATES: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ # one per dispatch class
   PICK ONE per dispatch and fill it; never hand-roll a brief. Name the tool AND show the shape.
   story-implementation (epic story; canonical Git-ops + Design-intent stanzas) | implementation-fix
@@ -153,11 +177,13 @@ PROMPT_SHAPE (<=400w ad-hoc; template-based briefs per CONFIG TEMPLATES SIZE):
   hard rules: never push, never PR, never touch(supervisor-owned)
   output capture: long results -> /tmp/sentinel-remediation/<task_id>/<file>, not inline
   git ops hygiene [MANDATORY]: every code dispatch MUST include the stanza:
-    "If `git status` shows supervisor-owned files modified (STATE.md, etc.),
+    "If `git status` shows supervisor-owned files modified (.claude/skills/supervisor-mode/**),
      DO NOT stash/restore/checkout-them. `git checkout -b` and `git pull --ff-only` preserve
      dirty tracked files when the new ref doesn't touch them — proceed as-is."
-    anti-pattern: 'MUST be clean' as a precondition -> agents silently `git restore STATE.md`
-    rationale: 9 historical stashes of lost STATE.md edits prove the bug is real
+    anti-pattern: 'MUST be clean' as a precondition -> agents silently revert the supervisor's edit
+    rationale: 9 historical stashes of lost STATE.md edits prove the bug is real. Untracking
+      STATE.md removed it as a victim; every other supervisor-owned file is still tracked and
+      still reachable by the same reflex, so the stanza stays mandatory.
     canonical: templates/story-implementation.md "Git ops hygiene" stanza
   DESIGN INTENT [MANDATORY — every impl brief; spell it with the space — .claude/hooks/design-intent-dispatch-guard.sh greps the literal phrase 'DESIGN INTENT', so an underscore label alone gets denied]:
     decisions: in-scope D-entries copied VERBATIM from <Service>/AGENT_README.md DECISIONS block, never paraphrased — # paraphrase = the compression step where WHY dies (leak point 1); "none — no D-entries in scope" is valid

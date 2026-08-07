@@ -142,11 +142,22 @@ edits do not change the tree hash), so it survives:
 
 - `compile.sh` -> `git commit` (commit hash changes, tree unchanged)
 - `git cherry-pick` / `git rebase` of a tested commit (tree preserved)
-- Unrelated commits (e.g. STATE.md edits) that don't change source content
 
 Different tree content -> different tree hash -> marker mismatch -> re-test
-required. This is the safety property: untested source changes are blocked,
-but workflow churn that doesn't change source content is not.
+required. The survival condition is exactly "the root tree is byte-identical",
+which is NARROWER than "no source file changed": the root tree covers EVERY
+tracked path, so a commit touching any tracked file — docs included — changes
+`HEAD^{tree}` and mismatches the marker (verified by comparing `HEAD^{tree}`
+across a docs-only commit; an amend that rewrites only the message does not
+change it). That is why the list above stops at operations which rewrite
+history without rewriting content, and why it used to wrongly include
+"unrelated commits (e.g. STATE.md edits)".
+
+Docs pushes therefore get through on the separate docs/config-only exemption
+below, never on tree-hash survival. STATE.md is now gitignored, so it no longer
+enters a commit incidentally — but `git add -f` still forces it in (git even
+advertises that escape hatch in the error it prints), so this is narrower than
+"cannot be committed".
 
 **Caveat (HEAD^{tree} is committed-only)**: the tree hash is computed from
 `HEAD^{tree}`, which reflects the tree of the most recent commit. Uncommitted

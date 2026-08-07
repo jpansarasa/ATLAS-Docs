@@ -67,7 +67,7 @@ rationale: broken tests = broken code = broken trust
 hook: .claude/hooks/git-push-guard.sh # enforced by tooling
   marker: tree-hash-keyed (HEAD^{tree}) # committed content only, not commit hash
   caveat: HEAD^{tree} reflects committed state — uncommitted edits do NOT change tree hash
-  survives: commit-after-test | cherry-pick | rebase | unrelated commits
+  survives: commit-after-test | cherry-pick | rebase # NOT "unrelated commits": the root tree covers EVERY tracked path, so a commit touching any tracked file — docs included — remaps HEAD^{tree} and mismatches the marker. Docs pushes get through on the docs/config-only exemption, never on tree-hash survival.
   scope: write=per-worktree (filename suffix = sha1(toplevel)); read=global scan by tree-hash # any worktree's marker satisfies the gate
   format: "v2 tree <hash> <iso8601>" # version prefix rejects old commit-hash markers
   blocks: tree content changed AND not retested # source changes require retest
