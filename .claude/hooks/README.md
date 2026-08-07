@@ -414,17 +414,36 @@ behaviour they exist to encourage).
 **Purpose**: Per `ARCH_PREF` — edits to deployment/CI gate files should prompt
 for explicit intent so gates are fixed at the root, not worked around.
 
-**Matched paths**: `deployment/inventory/*`, `playbooks/*`, any
-`.devcontainer/compile.sh`, any `.claude/hooks/**.sh` (the whole gating layer
-and its own guard tests), `.claude/settings.json` / `settings.local.json`
-(where the hooks are wired — un-wiring one there is the most complete bypass
-available), and the two marker-writing tools `scripts/claude-mark-verified` and
-`scripts/claude-pr-verdict`.
+Two independent rules reach the deny, and they carry different remedies.
+
+**Rule 1 — the GATE LAYER** (`is_gate_path`): any `.devcontainer/compile.sh`,
+any `.claude/hooks/**.sh` (the whole gating layer and its own guard tests),
+`.claude/settings*.json` (where the hooks are wired — un-wiring one there is the
+most complete bypass available), and the two marker-writing tools
+`scripts/claude-mark-verified` and `scripts/claude-pr-verdict`.
 
 Until 2026-08-06 the list named only `git-push-guard.sh`, so every other file
 that can weaken the gates — the other hooks, the settings that wire them, the
 scripts that write the markers they read — was editable with no prompt at all
 (verified).
+
+**Rule 2 — the DEPLOYED artifact** (`is_deployed_path`, added 2026-08-07): any
+path under `/opt/**` or `/etc/**`. This is the rule `CLAUDE.md` DEPLOYMENT
+actually names — "NEVER edit `/opt/ai-inference/compose.yaml` directly … direct
+edit = config drift". Roots are matched whole rather than enumerated
+(`/opt/ai-inference`, `/opt/otel`, `/etc/systemd`, `/etc/sudoers.d`,
+`/etc/containerd`, `/etc/apcupsd` are the live `dest:` values) so a NEW ansible
+destination is covered the day it is added instead of escaping until someone
+extends a pattern. Ambiguity resolves to deny.
+
+**NOT matched: repo-tracked IaC source.** `deployment/ansible/**` — playbooks,
+inventory, roles, `group_vars` — is deliberately ungated; PR review is the
+control there, and changing that source *is* how a deployment is meant to
+change. `*/playbooks/*` and `*deployment/inventory/*` were in rule 1 until
+2026-08-07 and are gone: gating the reviewed source bought nothing while the
+deployed copy it generates was writable with no prompt, so the guard enforced
+the drift rule exactly backwards. (`*deployment/inventory/*` never matched
+anything either — the real path is `deployment/ansible/inventory/`.)
 
 **Decision**: `deny`. Fail-CLOSED — missing jq denies, because a guard that
 cannot evaluate the gate cannot know the write is safe. (This section said
@@ -441,10 +460,32 @@ file a runner runs; that is command-string parsing and is deliberately not in
 this change, so that a parser regression cannot take this Edit|Write
 enforcement down with it.
 
-**Session bypass**: `touch $CLAUDE_PROJECT_DIR/.claude/.ansible-gate-confirmed`
-disables the guard for **every** gate file. It now EXPIRES after 4h
-(`ATLAS_GATE_BYPASS_TTL`) and warns when a command actually touches a gate
-path — not on every tool call, which briefly made this hook emit an
+**Session bypass**: `touch $CLAUDE_PROJECT_DIR/.claude/.ansible-gate-confirmed`.
+Note the path: `CLAUDE_PROJECT_DIR` is the **shared checkout**, not the worktree
+an agent happens to be running in, so one agent's bypass is every concurrent
+agent's bypass.
+
+Since 2026-08-07 the file's **content scopes it**. Path fragments, one per line
+(`#` comments and blank lines ignored), and the bypass applies only to paths
+containing one of them — substring, not glob, because the fragment a human
+writes is a path piece and not a pattern:
+
+```
+printf '%s\n' .claude/hooks/ansible-gate-guard.sh > .claude/.ansible-gate-confirmed
+```
+
+An **empty** file keeps the documented `touch` meaning — bypass everything —
+because that spelling is what the deny message has always instructed. A
+**non-empty** file matching nothing ENFORCES: a scope that does not cover the
+path did not authorise it. So does a scope file that cannot be read, or one
+whose only fragment lacks a trailing newline (`printf '%s'`); both read as zero
+fragments, and until 2026-08-07 both were therefore treated as *unscoped*, i.e.
+a global bypass covering `/opt/ai-inference/compose.yaml`. Ambiguity resolves to
+DENY, never to ALLOW — that is the rule the whole file is written to.
+
+It EXPIRES after 4h
+(`ATLAS_GATE_BYPASS_TTL`) — expiry beats any scope — and warns when a command
+actually touches a gate path — not on every tool call, which briefly made this hook emit an
 unconditional `allow` for unrelated commands like `ls -la /etc`, speaking
 authoritatively about calls it has no opinion on. The warning arrives via
 `systemMessage` **and** `additionalContext`, so the warning reaches the user and

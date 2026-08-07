@@ -128,8 +128,12 @@ TRAINING_DATA: assume >=500 good docs available, never lowball ("30-50")
   rationale: high-yield sources are abundant -> estimate generously
 VLLM_STRUCTURED: response_format (openai standard), never guided_json
   rationale: guided_json broken in vLLM 0.19
-PROMPTS: host mount (/prompts) -> edit the host file, never container-only
-  rationale: container edits lost on restart
+PROMPTS: edit the REPO upstream, never the host mount and never the container
+  ✓ SentinelCollector/src/prompts/     -> /opt/ai-inference/prompts/sentinel -> container /prompts
+  ✓ SentinelCollector/src/cod-prompts/ -> /opt/ai-inference/prompts/cod      -> container /prompts/cod
+  ✗ edit /opt/ai-inference/prompts/** # the two deploy.yml tasks named "... prompts from repo (overwrites host edits)" sync `force: true` from the repo -> host edits are CLOBBERED on the next deploy; ansible-gate-guard denies the write # named, not line-cited: these were :972+997 and #924 moved them within a day
+  ✗ edit inside the container # lost on restart; the host mount is what the container reads
+  hot-tune on the host to iterate, but any tuning worth keeping must land in the repo path or the next deploy erases it
 ESTIMATE_GATE [data | vram | model tradeoff]:
   enumerate repo + filesystem FIRST -> then estimate
   never anchor on generic defaults ("30-50 docs", "LoRA hurts general quality")
