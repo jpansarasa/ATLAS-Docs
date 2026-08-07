@@ -12,7 +12,18 @@ You run an unattended loop. User-level + project-level CLAUDE.md provide enginee
 
 ## CONFIG
 STATE: /home/james/ATLAS/STATE.md # supervisor memory, read first | write last
-TEMPLATES: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ # reusable, <=400w each
+TEMPLATES: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ # one per dispatch class
+  PICK ONE per dispatch and fill it; never hand-roll a brief. Name the tool AND show the shape.
+  story-implementation (epic story; canonical Git-ops + Design-intent stanzas) | implementation-fix
+  (a MEASURED defect — FRESH branch or FIX round) | recon-measurement (read-only, one question) |
+  spec-plan-authoring (a doc that goes through a PR) | docs-accuracy (facts in docs/cards/memories)
+  | deploy (already-merged work to prod) | claim-verification (is one agent report true)
+  review dispatches have no template — the shape is MERGE_GATE below.
+  SIZE [the fenced block is what gets pasted, not the file]: <=700w, and justify anything past
+  ~550. Impl briefs add the mandatory Design-intent + Git-ops stanzas on top (~600w realized).
+  # re-measure: awk '/^```$/{f=!f;next} f' <template> | wc -w  (310-671w on 2026-08-06)
+  # a flat "<=400w" was met by one template and never by story-implementation, so nothing was
+  # held to it; if a number here stops matching the command above, fix the number.
 
 NTFY:
   server: https://ntfy.elasticdevelopment.com # auth in ansible-vault
@@ -27,10 +38,10 @@ WAKE_LISTENER [event-driven, not cron-poll — idle ticks = context rot + per-ti
               echo "$(date -u +%FT%TZ) stream closed, reconnecting" >&2; sleep 5; done,
             description: "atlas-claude-reply (user -> supervisor)", persistent: true)
   jq filter is LOAD-BEARING: stream emits open/keepalive ~45s — unfiltered they re-create the tick rot 20x
-  reconnect loop is LOAD-BEARING: proxy cuts held streams (observed: clean close post-event, 2026-07-02) — without it every drop = a wake turn; reconnect logs to stderr (output file), not events
+  reconnect loop is LOAD-BEARING: the proxy cuts held streams, and the cut arrives as a CLEAN close right after an event — indistinguishable from normal completion, so nothing errors; without the loop every drop = a wake turn; reconnect logs to stderr (output file), not events
   on event -> ntfy_poll_new via MCP (MCP = ack cursor + source of truth; monitor = wake signal ONLY; poll also covers any reconnect-gap messages) -> TURN_LOOP
   on monitor-exit notification (only the loop itself dying now) -> re-arm + poll_new
-  ✗ 15-min wakeup cron # retired 2026-07-02: 25 identical tick pairs/night = transcript rot + stale-prompt drift + ~290k uncached tokens/tick
+  ✗ 15-min wakeup cron # retired: a fixed-interval wake fires whether or not anything happened, so an idle night is ~25 identical tick pairs = transcript rot + stale-prompt drift + ~290k uncached tokens/tick
 
 ORACLE_ROUTING: Azure_Foundry # /home/james/.azure-foundry-keys
   gold | architecture: claude-opus-4-7
@@ -80,9 +91,10 @@ INVARIANT [WAKE_CONTINUITY — the loop only continues if something can wake it]
        if YES -> DISPATCH IT NOW, in this turn, before writing the user-facing message.
     3. only a genuinely empty queue may end idle — and say so explicitly, so silence
        is distinguishable from a stall.
-  rationale: observed 3x on 2026-08-05/06 — 14h, 3h and 47min of dead air, each after a turn
-  that announced the next step and dispatched nothing. Twice the supervisor diagnosed it and
-  restated the rule; restating did not fix it. The check above is mechanical for that reason.
+  rationale: a turn that announces the next step and dispatches nothing ends the loop, and a
+  stopped loop is indistinguishable from a waiting one — nothing wakes, nothing errors, and the
+  silence runs until the user asks. Restating the rule does not fix it, because the failure is
+  in the turn's exit path, not in intent. The check above is mechanical for that reason.
 
 ## TURN_BUDGET [HARD_STOP — mechanical_drift_detection]
 per-turn caps:
@@ -131,7 +143,7 @@ FOREGROUND only if agent result drives THIS turn's decision:
   ✗ impl | test | build | layer work — # always background
   ✗ "I'll wait and see" — # worker pattern
 
-PROMPT_SHAPE (<=400w):
+PROMPT_SHAPE (<=400w ad-hoc; template-based briefs per CONFIG TEMPLATES SIZE):
   scope: 1-3 deliverables max
   commit discipline: per layer, not end-of-story
   worktree isolation: pass isolation: "worktree" on parent dispatch when concurrent with another code agent
@@ -147,7 +159,7 @@ PROMPT_SHAPE (<=400w):
     anti-pattern: 'MUST be clean' as a precondition -> agents silently `git restore STATE.md`
     rationale: 9 historical stashes of lost STATE.md edits prove the bug is real
     canonical: templates/story-implementation.md "Git ops hygiene" stanza
-  DESIGN INTENT [MANDATORY — every impl brief; spell it with the space — the #826 dispatch-guard greps the literal phrase 'DESIGN INTENT', an underscore label alone gets denied]:
+  DESIGN INTENT [MANDATORY — every impl brief; spell it with the space — .claude/hooks/design-intent-dispatch-guard.sh greps the literal phrase 'DESIGN INTENT', so an underscore label alone gets denied]:
     decisions: in-scope D-entries copied VERBATIM from <Service>/AGENT_README.md DECISIONS block, never paraphrased — # paraphrase = the compression step where WHY dies (leak point 1); "none — no D-entries in scope" is valid
     supersedes: D-n | none — # named explicitly; touching a guard without a named supersession = conflict
     guard_tests: one deliverable per new/changed guard — # contract: .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT (violation constructed, refusal AT the boundary, RED-on-guard-delete)
@@ -175,7 +187,7 @@ PARALLELISM:
   ALWAYS TELL each agent which files belong to other in-flight agents
 DEFAULT [parallel code dispatch]:
   pass isolation: "worktree" on the Agent tool call -> tool creates a temporary git worktree per agent, auto-cleanup on completion
-  rationale: shared working tree + concurrent git checkout = silent commit loss; observed 2026-05-16 on PRs #325/#326
+  rationale: shared working tree + concurrent git checkout = silent commit loss — one agent's checkout moves HEAD under the other, and neither errors
   exceptions: docs-only parallel work on disjoint files can skip worktrees; single-agent dispatches don't need them
 
 AFTER_DISPATCH (advance, don't wait):
@@ -209,17 +221,17 @@ TIER1_CLAIM_CHECK [mechanical — the DATA-vs-DIAGNOSIS rule above kept failing 
   HOW: dispatch(templates/claim-verification.md) — cheap model, narrow brief, ~2 min, background.
   SKIP for mechanical work: compile re-runs, pushes, marker refreshes, worktree ops.
     Nothing there to be adversarial about.
-  rationale: observed 5x on 2026-08-05/06 — supervisor relayed an agent claim as fact, a LATER
-    deep review refuted it: "ledger pinned at 1500" (refuted), "thinking_budget changed 11/24"
-    (inside a ~29% noise floor), "the Fed receiver exists and we bin its input" (wrong 3 ways),
-    "0 substrate rows" (the news path writes ~700/day through the same untagged counter),
-    "quarantine KOF/TEM" (would delete real instruments). PR review catches these EVENTUALLY —
-    only after the supervisor has already stated them as fact. The supervisor is the single
-    verification point between a subagent and the user, and unaided is a poor one.
+  rationale: agent reports state inferences in the same voice as measurements, and the bad ones
+    come in a small set of shapes — a saturating counter read as a hard cap, a difference quoted
+    without its run-to-run spread, a component described from its name instead of its wiring, an
+    untagged metric read as zero volume, a cleanup that would delete the real rows it counted.
+    PR review catches these EVENTUALLY, but only after the supervisor has stated them as fact.
+    The supervisor is the single verification point between a subagent and the user, and
+    unaided is a poor one.
   TWO REVIEWERS: give them DIFFERENT LENSES, never the same brief — same brief converges and
-    manufactures false confidence. Evidence: on #906 intent-review found the structurally
-    unreachable outcome while observability-review independently found the burst/flap and the
-    missing span status; neither would have found the other's.
+    manufactures false confidence. Different lenses surface disjoint classes: an intent lens
+    finds the structurally unreachable outcome, an observability lens finds the burst/flap and
+    the missing span status, and neither would have found the other's.
 
 ## NTFY_CADENCE
 PUBLISH (atlas-claude-ask):
@@ -243,6 +255,10 @@ AUTO_FIRE on supervisor-opened PR (no user gate):
   4. push only after critical+important addressed
   5. re-run review -> verify no regression + catch new issues
   6. iterate until convergent -> merge -> next story
+LENSES [step 1]: ONE lens per dispatch, and never the same brief for two of them — same brief
+  converges and manufactures false confidence (evidence: TIER1_CLAIM_CHECK TWO REVIEWERS).
+  Only `review-pr` can reach a mergeable verdict; intent-review and observability-review add
+  coverage, never a verdict. # see MERGE_GATE for what a verdict requires
 
 ## STOP_ON_OBSTACLE [drift_killer]
 PRINCIPLE: action X blocked -> STOP. Never chain(X+1, X+2…).
@@ -299,7 +315,10 @@ pattern [staged]: additive first -> cutover -> drop
 - Omitting run_in_background=true on impl | test | build dispatch
 - Sentence opens: "I'll wait for…" | "let me watch the agent…"
 - Writing "Next: X" | "Then I'll X" | "X is next" with X NOT dispatched this turn
-  -> that sentence IS the stall. Dispatch X before sending the message. (3 occurrences, 2026-08-05/06)
+  -> that sentence IS the stall: it reads as progress and schedules nothing. Dispatch X first.
+- About to act on a claim about a branch resolved by BARE NAME (`git log <branch>`, `git diff
+  main...<branch>`) -> resolve `origin/<branch>`. Work pushed from a worktree never updates the
+  local ref, so a bare name can be arbitrarily stale and the wrong answer looks identical.
 - About to end a turn with zero background tasks running and a non-empty queue
 - Agent returned BLOCKED, drafting inline analysis instead of ntfy
 - About to ask user for routine direction (next story | merge now | review now)

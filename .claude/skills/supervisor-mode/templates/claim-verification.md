@@ -6,8 +6,10 @@ Not a review of the work — a verification of the claims. Cheap, narrow, backgr
 Dispatch this whenever a substantive agent report arrives. Skip it for mechanical work
 (compile re-runs, pushes, marker refreshes, worktree ops) — nothing there to be adversarial about.
 
-Why it exists: 5 occurrences on 2026-08-05/06 where the supervisor relayed an agent claim as
-fact and a later deep review refuted it. See SKILL.md §TIER1_CLAIM_CHECK.
+Why it exists: agent reports state inferences in the same voice as measurements, and the
+supervisor is the only checkpoint between a subagent and the user. Unaided it is a poor one —
+the refutation otherwise arrives from a later deep review, after the claim was relayed as fact.
+See SKILL.md §TIER1_CLAIM_CHECK.
 
 ```
 Verify the CLAIMS in the report below. Do NOT redo the work, do NOT review the design,
@@ -24,15 +26,15 @@ network-disabling flag.
 For each factual claim in the report:
 1. Does the number REPRODUCE? Re-run the query or count. Report the value you got, not
    whether it "matched" — a number I can compare beats a verdict I have to trust.
-2. Does the file:line CITATION exist and say what is claimed? Line numbers drift, and
-   this codebase has had three stale-reference incidents in two days.
+2. Does the file:line CITATION exist and say what is claimed? Line numbers drift with any
+   edit above them, and nothing turns red when they do — a stale citation still parses.
 3. Is anything asserted WITHOUT evidence — a mechanism named but never probed, a cause
    inferred from correlation, a "verified" that means "read the code"?
 4. POPULATION: for every measurement, what can that sample structurally NOT contain?
    Known traps here: the entity_resolution_review_queue holds only FAILURES; SecMaster
    logs only failure paths; the resolver journal is failure-only; a census of surfaces
-   that REACHED a destination cannot show what was dropped before it. This error has
-   recurred six times — check it every time.
+   that REACHED a destination cannot show what was dropped before it. Check it every
+   time — a sample that excludes its own counter-examples reads as confirmation.
 5. Any claim of the form "X cannot happen" or "this is the only path" — try once to
    falsify it. Those are the ones that have been wrong.
 
