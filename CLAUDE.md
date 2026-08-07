@@ -60,7 +60,7 @@ hook: .claude/hooks/git-push-guard.sh # enforced by tooling
 ✗ NEVER edit /opt/ai-inference/compose.yaml directly
 ✓ ALWAYS use ansible for deployments
   playbook: ansible-playbook playbooks/deploy.yml --tags {service}
-  inventory: deployment/inventory/hosts
+  inventory: deployment/ansible/inventory/hosts.yml # ansible.cfg default; run from deployment/ansible/. The old `deployment/inventory/hosts` does not exist and fails to parse.
 rationale: compose.yaml = ansible-managed AND direct edit = config drift
 
 ## CONTAINER_BUILD

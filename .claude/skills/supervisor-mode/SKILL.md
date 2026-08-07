@@ -44,10 +44,17 @@ WAKEUP_STEP_0: on ANY wake (monitor event | task-notification | user turn) -> nt
 FAILURE: bad subagent result -> fix prompt + dispatch fresh, never SendMessage(failed agent)
 OVERFLOW: long output -> /tmp/sentinel-remediation/<file>, not the supervisor turn
 MERGE_GATE [never re-guess]: `gh pr merge` needs /tmp/atlas-test-markers/pr-reviewed-<N>,
-  written ONLY by the `pr-review-toolkit:review-pr <N>` Skill's PostToolUse hook
-  (pr-review-marker.sh), keyed to the PR's CURRENT headRefOid. Push after review ->
-  marker stale -> re-run review-pr <N> THEN merge. Hook needs a cwd where `gh` resolves
-  (cd the main checkout first). Full mechanism: .claude/hooks/README.md §Git Push Guard.
+  written ONLY by `scripts/claude-pr-verdict <N> approve|block "<reason>"`, keyed to
+  the PR's CURRENT headRefOid.
+  RUNNING review-pr DOES NOT WRITE IT. Its PostToolUse hook writes only
+  pr-review-pending-<N> — proof the review was invoked, never a verdict. Until
+  2026-08-06 it wrote the merge marker at INVOCATION, before any analysis existed, so
+  DO-NOT-MERGE reviews left a fresh passing marker and #908/#911/#913 merged anyway.
+  SEQUENCE: review-pr <N> -> read the findings -> claude-pr-verdict <N> approve|block.
+  A review that states no verdict leaves the merge blocked, by design.
+  Uploading after the review -> marker stale -> re-run review-pr <N>, record a new
+  verdict, THEN merge. Needs a cwd where `gh` resolves (cd the main checkout first).
+  Full mechanism: .claude/hooks/README.md §PR Review Verdict Gate.
 
 ## TURN_LOOP [the_only_loop]
 every turn execute ONE pass, then end turn:
@@ -60,7 +67,22 @@ every turn execute ONE pass, then end turn:
    c. ntfy.publish(atlas-claude-ask, …) — # blocker | milestone | clarification needed
 4. end turn — # background work auto-notifies; never poll, never sleep, never watch
 
-INVARIANT: every turn produces exactly one of {dispatch, STATE.md edit, ntfy publish}. NEVER end idle.
+INVARIANT [WAKE_CONTINUITY — the loop only continues if something can wake it]:
+  end a turn with WORK IN FLIGHT whenever the queue is non-empty.
+  Wakes come from exactly two sources: a background task completing, or the user speaking.
+  Nothing in flight + queue non-empty = the loop is STOPPED, not waiting — and stopped looks
+  identical to waiting from the user's side, so it goes unnoticed until they ask.
+  A STATUS ntfy IS NOT PROGRESS. Publishing "next I will do X" satisfies the old
+  one-of-three invariant while advancing nothing; that is the stall, not the cure.
+  END-OF-TURN CHECK, every turn, no exceptions:
+    1. is a background task running? if YES -> end turn, it will wake you.
+    2. if NO -> is anything queued (open PR, unreviewed branch, known next step)?
+       if YES -> DISPATCH IT NOW, in this turn, before writing the user-facing message.
+    3. only a genuinely empty queue may end idle — and say so explicitly, so silence
+       is distinguishable from a stall.
+  rationale: observed 3x on 2026-08-05/06 — 14h, 3h and 47min of dead air, each after a turn
+  that announced the next step and dispatched nothing. Twice the supervisor diagnosed it and
+  restated the rule; restating did not fix it. The check above is mechanical for that reason.
 
 ## TURN_BUDGET [HARD_STOP — mechanical_drift_detection]
 per-turn caps:
@@ -160,6 +182,26 @@ DATA vs DIAGNOSIS [agent output]:
   KNOWN_FALSE_POSITIVE: empty instant-query on freshly-restarted cumulative counter
     -> range-query | working-service compare BEFORE calling it a gap
 
+TIER1_CLAIM_CHECK [mechanical — the DATA-vs-DIAGNOSIS rule above kept failing as a principle]:
+  WHEN: every substantive agent report, BEFORE acting on its claims or relaying them to the user.
+  WHAT: verify the CLAIMS, not redo the work — do the numbers reproduce, do the file:line
+    citations exist, is anything asserted without evidence, does any figure carry a population
+    that cannot contain its own counter-examples.
+  HOW: dispatch(templates/claim-verification.md) — cheap model, narrow brief, ~2 min, background.
+  SKIP for mechanical work: compile re-runs, pushes, marker refreshes, worktree ops.
+    Nothing there to be adversarial about.
+  rationale: observed 5x on 2026-08-05/06 — supervisor relayed an agent claim as fact, a LATER
+    deep review refuted it: "ledger pinned at 1500" (refuted), "thinking_budget changed 11/24"
+    (inside a ~29% noise floor), "the Fed receiver exists and we bin its input" (wrong 3 ways),
+    "0 substrate rows" (the news path writes ~700/day through the same untagged counter),
+    "quarantine KOF/TEM" (would delete real instruments). PR review catches these EVENTUALLY —
+    only after the supervisor has already stated them as fact. The supervisor is the single
+    verification point between a subagent and the user, and unaided is a poor one.
+  TWO REVIEWERS: give them DIFFERENT LENSES, never the same brief — same brief converges and
+    manufactures false confidence. Evidence: on #906 intent-review found the structurally
+    unreachable outcome while observability-review independently found the burst/flap and the
+    missing span status; neither would have found the other's.
+
 ## NTFY_CADENCE
 PUBLISH (atlas-claude-ask):
   ✓ milestones (epic done | phase done | review complete w/ critical)
@@ -237,6 +279,9 @@ pattern [staged]: additive first -> cutover -> drop
 - Sentence opens: "let me just…" | "while I'm at it…" | "quick check first…"
 - Omitting run_in_background=true on impl | test | build dispatch
 - Sentence opens: "I'll wait for…" | "let me watch the agent…"
+- Writing "Next: X" | "Then I'll X" | "X is next" with X NOT dispatched this turn
+  -> that sentence IS the stall. Dispatch X before sending the message. (3 occurrences, 2026-08-05/06)
+- About to end a turn with zero background tasks running and a non-empty queue
 - Agent returned BLOCKED, drafting inline analysis instead of ntfy
 - About to ask user for routine direction (next story | merge now | review now)
 - About to inline-fix a hook | branch | script to "unblock" something

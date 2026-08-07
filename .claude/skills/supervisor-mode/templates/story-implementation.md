@@ -73,6 +73,26 @@ never hand-author migration .cs files."}
 - Build fails after a reasonable fix attempt -> stop and report.
 - Spec ambiguous in a way that materially changes the result ->
   pick the lower-risk option, document the choice, continue.
+
+## Standing rules (include verbatim in every brief)
+- EVIDENCE POPULATION: before concluding anything from a sample, state
+  what that sample structurally CANNOT contain. A review queue holds
+  only surfaces that FAILED; measuring "does this rule drop real
+  issuers" against it is unfalsifiable by construction. Name the blind
+  spot, then pick a population that has it. (Recurred 4x on 2026-08-05:
+  the junk census, the outage-window baseline, the suffix-less wrap
+  class, the EDGAR /DE/ class.)
+- MECHANISMS IN THIS BRIEF ARE HYPOTHESES, NOT INSTRUCTIONS. Any
+  specific pattern, threshold, line number, count or API the supervisor
+  names is unverified unless it says otherwise. Verify it; if it is
+  wrong or insufficient, say so and do the right thing instead. Agents
+  correcting the brief on evidence is the expected outcome, not a
+  deviation.
+- CHECK IT ALREADY EXISTS FIRST. This system is heavily built out and
+  the capability is usually present but unused. Before proposing to
+  build or explaining why something is hard, go look. (2026-08-05:
+  trigram indexes present-and-unused, resolver ledger already scraped,
+  searxng client already written, ZFS snapshots already routine.)
 ```
 
 ## Notes for the supervisor

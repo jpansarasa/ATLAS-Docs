@@ -18,8 +18,9 @@ flowchart TD
     end
 
     subgraph Host["host systemd"]
-        SVR[FastAPI /resolve /health on :9300]
+        SVR[FastAPI /resolve /health /metrics on :9300]
         CACHE[(SQLite cache 30d TTL)]
+        LEDGER[(SQLite call ledger rolling 24h)]
     end
 
     subgraph Google["Google Cloud"]
@@ -28,7 +29,8 @@ flowchart TD
 
     DR --> GRC -->|http://host-gateway:9300/resolve| SVR
     SVR <--> CACHE
-    SVR -->|cache miss| GEM
+    SVR <-->|cap: reserve then commit| LEDGER
+    SVR -->|cache miss AND under cap| GEM
 ```
 
 `sentinel-collector` calls `POST /resolve` with `subject_entity`, `description`, `text_quote`, and `content_snippet`. On cache hit the server returns immediately at `cost_usd=0.0`; on miss it issues a grounded Gemini call, persists the result, and returns the structured payload. Strict null preference is enforced both in the prompt and at the boundary (confidence < 0.6 clears `symbol`).
@@ -60,8 +62,8 @@ flowchart TD
 
   One genuine residual remains, known and accepted: `Lloyds … 9.25% Non Cum. Irrd. Pfd.` vs the `9.75%` issue. A coupon is identity, but percent-marked numerals are treated as quantities because percentage drift in prose is a common re-bill driver; keeping them would cost **+40.3% instead of +22.6%** to close one two-name family. That cost is scoped to the *percent* case alone — it was never the price of the sign, which was near-free.
 - **Output budget sized for reasoning**: `max_output_tokens=2048`. gemini-2.5-flash bills reasoning tokens on the same response as the answer, so a small ceiling cuts the JSON mid-object rather than saving money — see [Output truncation](#output-truncation).
-- **Hourly rate-limit gate**: returns HTTP 429 once `GEMINI_RATE_LIMIT_PER_HOUR` is reached in any rolling 1h window. Defensive cap against a runaway caller.
-- **Cost ledger**: 24h rolling input/output token + USD totals exposed on `/health`.
+- **Hourly rate-limit gate**: returns HTTP 429 once `GEMINI_RATE_LIMIT_PER_HOUR` is reached in any rolling 1h window. Defensive cap against a runaway caller. Its **behaviour changed** on 2026-08-06 even though the constant did not: it counts the window `CallStats` reconstructs from the durable ledger, so a restart no longer clears the hour and the backstop now sees calls a restart used to hide. Strictly tighter, which is the intended direction for a flood guard, and benign in practice — 0 firings in the 30 days to 2026-08-06, against a 1,000/hour limit under a 1,500/day cap.
+- **Cost ledger**: 24h rolling input/output token + USD totals exposed on `/health`. The ledger is **durable** and the daily cap survives a restart — see [Durable call ledger](#durable-call-ledger).
 - **Fail-soft Gemini errors**: any SDK exception is logged and translated to a "no resolution" payload so Sentinel's v2 path keeps running during Google outages.
 - **Grounding-URL salvage**: if the JSON `source_url` is absent, the first `grounding_chunks[].web.uri` from the response is returned.
 
@@ -75,8 +77,11 @@ All configuration via environment variables (see `gemini-resolver-mcp.service` f
 | `GEMINI_KEY_FILE` | Path to a file containing the API key. Used when `GEMINI_API_KEY` is empty. | `/home/james/.gemini-key` |
 | `GEMINI_MODEL` | Gemini model id. | `gemini-2.5-flash` |
 | `GEMINI_CACHE_DB` | SQLite cache path. Parent dir is auto-created. | `/opt/ai-inference/gemini-resolver-cache.db` |
+| `GEMINI_LEDGER_DB` | SQLite path for the durable rolling-24h call ledger behind the daily cap. **Deleting or repointing this resets the cap** — see [Durable call ledger](#durable-call-ledger). | `/opt/ai-inference/gemini-resolver-ledger.db` |
 | `GEMINI_ENABLE_GROUNDING` | Enable `GoogleSearch` tool. When `false`, the client requests `response_mime_type=application/json` instead (google-genai forbids both together). | `true` |
-| `GEMINI_RATE_LIMIT_PER_HOUR` | Per-hour call cap before `/resolve` returns 429. | `1000` |
+| `GEMINI_RATE_LIMIT_PER_HOUR` | Per-hour call cap before `/resolve` returns 429. Counted over the durable ledger, so it no longer resets with the process. | `1000` |
+| `GEMINI_LEDGER_REFUSAL_LOG_INTERVAL` | Seconds between the fail-closed refusal's per-request `ERROR` lines. The failure-site `ERROR` that names the cause is never throttled. | `3600` |
+| `GEMINI_LEDGER_REARM_BACKOFF` | Seconds before a **transient** ledger fault (`SQLITE_BUSY`/`SQLITE_LOCKED`) is retried. Structural damage never re-arms. | `30` |
 | `GEMINI_RESOLVER_PORT` | Uvicorn bind port. | `9300` |
 | `GEMINI_RESOLVER_HOST` | Uvicorn bind host. | `0.0.0.0` |
 
@@ -151,11 +156,61 @@ A truncation that does slip through is cached for **1 hour** (`TRUNCATION_CACHE_
   "gemini_reachable": true,
   "cache_hit_rate_24h": 0.7321,
   "total_calls_24h": 412,
-  "total_cost_usd_24h": 0.022144
+  "total_cost_usd_24h": 0.022144,
+  "ledger_available": true
 }
 ```
 
-`status` is `"degraded"` when the on-demand `models.list()` reachability probe fails; the endpoint still returns 200 so the systemd liveness check stays accurate during partial Google outages.
+`status` is `"degraded"` when the on-demand `models.list()` reachability probe fails, when the resolver is up but not resolving, or when `ledger_available` is `false`; the endpoint still returns 200 so the systemd liveness check stays accurate during partial Google outages.
+
+## Durable call ledger
+
+The fail-closed `DAILY_CALL_CAP` (1,500/day = the free-grounding boundary) counts live calls over a **rolling 24h window**. That count lives in `GEMINI_LEDGER_DB`, so it survives the process.
+
+It did not always. Until 2026-08-06 the ledger was a plain in-memory deque, which made **every restart a cap reset**. Measured over 30 days of `journalctl -u gemini-resolver-mcp` (live-call proxy: the `httpx` `generateContent` line, the only per-call success trace the journal carries — so these figures *under*-count, because a transport failure is committed to the ledger and logs no POST):
+
+| | |
+|---|---|
+| restarts that erased a ledger at 1500/1500 | 3 of 12 (Jul 28 06:43, Jul 30 20:25, Jul 31 14:44) |
+| gap to the next paid call after those | 4s, 2m51s, 2m03s |
+| peak rolling-24h live-call count | **2,999** against a 1,500 cap |
+| calls dispatched while already over cap | **6,801** |
+
+It is still happening on the deployed build, and you can watch it from two numbers that disagree. At `2026-08-06T15:47:44Z` the running (pre-ledger) resolver reported `gemini_resolver_live_calls_24h = 1500.0` — exactly the cap — while the journal counted **1,925** live dispatches over the true rolling 24h. The gauge is not wrong so much as blind: the process started at `2026-08-05T20:00:06Z`, so its in-memory window **structurally cannot contain** the 425 live calls made in the 4.2h of the window that precede its own start. Those 425 are the restart handing the cap back, in real time, and the durable ledger is what makes the two numbers agree.
+
+**Its own file, not a table in the result cache.** Purging that cache is a real recovery step — #772 purged 138,194 of 141,420 poisoned entries — and the natural form of it is deleting the file; a cache purge must not hand the spend cap back. Fail-closed also means an unreadable ledger refuses *every* live call, so sharing a file would escalate cache corruption from "cache misses" to "no paid resolution at all". And the two want different durability settings: the cache is a 73MB `journal_mode=delete` store, the ledger a small append-and-prune path on `WAL` + `synchronous=FULL` (a lost commit *under*-counts spend, which is the direction that leaks).
+
+> **Purge the cache by its exact name, never by glob.** The two stores are separate files in one directory and they share a prefix:
+>
+> | store | path |
+> |---|---|
+> | result cache | `/opt/ai-inference/gemini-resolver-cache.db` |
+> | call ledger | `/opt/ai-inference/gemini-resolver-ledger.db` (+ `-wal`, `-shm`) |
+>
+> So `rm /opt/ai-inference/gemini-resolver-*` — or any `gemini-resolver-*.db` glob — takes the ledger with the cache and re-couples exactly what the separate-file design keeps apart, handing back the full 1,500-call cap as a side effect of a cache purge. Delete `gemini-resolver-cache.db` by name. Losing the ledger this way trips `GeminiResolverLedgerReset`, which is the backstop, not the plan.
+
+**Wall-clock steps up to a whole window do not shrink it.** The prune horizon is referenced to `min(ts, last_event_ts)` and trails the window by `PRUNE_RETENTION_WINDOWS`, because `time.time()` is not monotonic: a forward NTP correction or a suspend/resume would otherwise delete rows still inside the 24h window, irrecoverably and silently — `lifetime_live_calls` is untouched so `GeminiResolverLedgerReset` stays quiet, the surviving rows still look coherent to the consistency check, and `ledger_available` stays 1. Pruning is only storage reclamation; `load(cutoff)` is what enforces the window the cap reads, so over-retaining is free where over-deleting leaks cap.
+
+> **The bound is 24h, not infinity.** The clamp stops the step itself, and the retention margin covers the writes after it, once the stepped clock has become the new normal and the clamp has nothing older to clamp to. A row is both counted by `load()` and reachable by the prune only once the forward step exceeds `24h` — a whole window — so that is where the protection ends and cap starts being deleted. Backward steps over-count, which is the safe direction. Stated here and at `ledger.py` `append()`, which is the other place a reader meets the horizon arithmetic.
+
+**Fail CLOSED when the ledger cannot account for spend.** Unreadable, unwritable, or internally inconsistent (meta records an event inside the window but the event rows are gone — a hand-run `DELETE`, a truncating restore, an eviction bug) all mean 24h spend is **unknown**, and unknown is not zero: the resolver sits at the cap routinely — 48,771 cap-reached journal lines in the 30 days to `2026-08-06T15:47:44Z` (48,585 for the 30 days to `2026-08-06T00:00Z`; the figure moves with the window origin, so read it as "tens of thousands"). Live calls are refused with 429; the result cache keeps serving, because a cache hit consumes no quota.
+
+> This is the **opposite** of the fail-*open* chosen for the instrument-validator cascade, and the asymmetry is deliberate. There, failing open risks dropping a real resolution — recoverable, retryable, no external cost. Here, failing open risks unbounded spend at $0.035 per grounded prompt past the free boundary, against a boundary that has already drained a $100 prepay once (2026-06-30). Different loss functions; do not carry either default across to the other.
+
+The refusal is never silent: an **unthrottled** `ERROR` at the failure site naming the cause, a **throttled** `ERROR` (at most one an hour, carrying the count it stands for) saying refusals are still happening, `gemini_resolver_ledger_available` → 0, and `/health` reporting `ledger_available: false` with `status: degraded`. The asymmetry is deliberate: the failure-site line fires once and diagnoses, while the per-request line covers a state that persists and sits *after* the cache and gate, so it inherits the resolver's whole post-cache volume — **3,328 requests over the rolling 24h to `2026-08-06T15:47:44Z`** (1,925 live dispatches + 1,403 cap-refusals in the unit journal), i.e. ~2 identical `ERROR`/min indefinitely if left unthrottled. Quote the window with the number: the same instant measured over the *UTC day* gives 1,034 + 1,403 = 2,437 for a partial day still climbing, and mixing the two is what produced the earlier "2,779/day". That is the flood SecMaster's own resolver client was fixed for (4,073 WARNs/24h → ~96 per four-day outage); burying the diagnosing line under it is the actual harm. It answers **429, not 503**, because it is our own fail-closed refusal like the cap itself — SecMaster buckets it as `cap_exhausted`, keeping it out of the transport-error denominator it would otherwise dilute and rate-limiting it to one caller-side warning per hour.
+
+**A transient lock clears itself; damage does not.** `LedgerUnavailable` carries a `transient` flag classified on `sqlite_errorcode` (`SQLITE_BUSY`/`SQLITE_LOCKED`), and only contention re-arms — after `GEMINI_LEDGER_REARM_BACKOFF` (30s), re-opening and flushing every live call the outage stranded. Without it a five-second lock (an operator holding a write lock while working through the `GeminiResolverLedgerReset` runbook is enough) refused *all* paid resolution until the unit was restarted — and the trap there is that the restart **is** the cap reset, so a momentary lock forced a choice between an indefinite outage and a deliberate bypass of the guard. Structural faults (corruption, permissions, a full disk) never re-arm: retrying against them spins without clearing, and a store that re-armed onto damage would be fail-*open* wearing a retry loop. The flag defaults to structural, so a new failure path cannot become retryable by omission.
+
+> **What the re-arm may trust depends on whether the window was ever built.** Mid-life it is the cap's authority: `_load` filled it at startup and it has counted every call since, *including* the ones whose writes failed, so re-reading disk there would drop those and under-count. When the **startup** load is what faulted it is not an authority at all — `_load` returned before populating anything, and re-arming onto that empty deque would grant a full 1,500 fresh slots against a disk that may already hold 1,500 live calls, which is the restart bypass this module exists to remove arriving through its own recovery path. So a never-loaded window is rebuilt from disk before the re-arm completes, and a mid-life one is not; `_loaded` is the only thing that separates them.
+>
+> **The re-arm is not a background timer.** It runs only inside `/resolve`, past the cache and the gate; `/metrics` and `/health` read a reporting-only property and never re-arm. During a real traffic gap — 3.97 days with no request reaching the ledger gate, in the 30 days to `2026-08-06T15:47:44Z` — a transient lock therefore stays refused for the length of the quiet, which is why `GeminiResolverLedgerUnavailable`'s "the fault is structural" reading is qualified on traffic.
+
+**Two alert rules** guard it (`deployment/artifacts/monitoring/alerts/gemini-resolver.yml`):
+
+- `GeminiResolverLedgerReset` — `resets(gemini_resolver_ledger_live_calls_total[1h]) > 0`. That counter is *cumulative over the lifetime of the ledger file*, deliberately not another 24h gauge: a rolling window decays to zero legitimately, so no drop in `gemini_resolver_live_calls_24h` can separate "the oldest calls aged out" from "the ledger was wiped". A total that only ever climbs can.
+- `GeminiResolverLedgerUnavailable` — `gemini_resolver_ledger_available == 0` for 5m. Nothing else can see the fail-closed state: with no live calls landing, `gemini_resolver_resolving` stays 1 and reads as idle.
+
+Both directions of both rules are pinned by promtool in `deployment/tests/alerts/gemini-resolver_test.yml`.
 
 ## Project structure
 
@@ -165,11 +220,15 @@ gemini-resolver-mcp/
 │   ├── __main__.py          # python -m gemini_resolver entrypoint
 │   ├── server.py            # FastAPI app, config, rolling stats
 │   ├── gemini_client.py     # google-genai wrapper + prompt + JSON extractor
-│   └── cache.py             # SQLite (sqlitedict) result cache, 30d TTL
+│   ├── cache.py             # SQLite (sqlitedict) result cache, 30d TTL
+│   └── ledger.py            # SQLite durable rolling-24h call ledger behind the daily cap
 ├── tests/
+│   ├── conftest.py          # keeps every test off the production cache/ledger files
 │   ├── test_smoke.py        # live-Gemini smoke tests (skip with SKIP_NETWORK=1)
 │   ├── test_cache_guard.py  # transient failures must never be cached (2026-06-24)
 │   ├── test_budget_guard.py # fail-closed daily call cap
+│   ├── test_cap_persistence.py # the cap survives a restart and a clock step; fail-closed on an
+│   │                           # unaccountable ledger, re-arming only on transient contention
 │   ├── test_metrics.py      # /metrics and /health cannot desync
 │   └── test_billing_waste.py # one subject = one paid call; no re-bill after abandon/truncate
 ├── gemini-resolver-mcp.service  # systemd unit
