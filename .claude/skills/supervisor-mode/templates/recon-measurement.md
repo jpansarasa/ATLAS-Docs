@@ -10,10 +10,6 @@ question is "is this report true", this when the question is "what is actually h
 ```
 RECON — read-only. Answer one question with evidence: **{the question, stated as a question}**
 
-DESIGN INTENT: none — read-only investigation. Change nothing.
-supersedes: none
-guard_tests: none
-
 Make NO code, config, DB or container changes. SELECT-only. No commits, no branches, no push, no
 restarts, no live paid-API calls, no GPU benchmark runs without saying so first (vLLM is production
 extraction). No interactive commands; sudo is passwordless.

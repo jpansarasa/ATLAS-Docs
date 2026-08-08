@@ -12,16 +12,12 @@ the refutation otherwise arrives from a later deep review, after the claim was r
 See SKILL.md §TIER1_CLAIM_CHECK.
 
 ```
-Verify the CLAIMS in the report below. Do NOT redo the work, do NOT review the design,
-do NOT read the whole diff. You are checking whether what it SAYS is true.
-
-DESIGN INTENT: none — mechanical claim verification. Change no files.
-supersedes: none
-guard_tests: none
-
 READ-ONLY. Change nothing. No pushes, no deploys, no restarts. DB SELECT-only.
 No live paid-API calls. If a test suite is involved, run it only with the project's
 network-disabling flag.
+
+Verify the CLAIMS in the report below. Do NOT redo the work, do NOT review the design,
+do NOT read the whole diff. You are checking whether what it SAYS is true.
 
 For each factual claim in the report:
 1. Does the number REPRODUCE? Re-run the query or count. Report the value you got, not
@@ -62,3 +58,10 @@ State explicitly which claims you could NOT check and why.
   right and a figure was wrong. Fix the record, keep the fix.
 - Do not chain this into a full review. If it surfaces something structural, that is a
   signal to dispatch a real adversarial review, not to widen this one.
+- The READ-ONLY line LEADS the brief, and the `DESIGN INTENT: none` stanza is gone.
+  Both are readability changes, and the gate is why they are safe rather than why they
+  were needed: the declaration was ALREADY inside the guard's 400-character window at
+  byte 269 of the fenced brief, so this template was never blocked. (The "~1,000
+  characters" figure that first motivated the hoist measured THIS MARKDOWN FILE, prose
+  and heading included — not the prompt the guard actually sees. Corrected 2026-08-08.)
+  Keep the declaration first for the reader; the exemption it earns is a side effect.

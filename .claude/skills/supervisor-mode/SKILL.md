@@ -185,7 +185,7 @@ PROMPT_SHAPE (<=400w ad-hoc; template-based briefs per CONFIG TEMPLATES SIZE):
       STATE.md removed it as a victim; every other supervisor-owned file is still tracked and
       still reachable by the same reflex, so the stanza stays mandatory.
     canonical: templates/story-implementation.md "Git ops hygiene" stanza
-  DESIGN INTENT [MANDATORY — every impl brief; spell it with the space — .claude/hooks/design-intent-dispatch-guard.sh greps the literal phrase 'DESIGN INTENT', so an underscore label alone gets denied]:
+  DESIGN INTENT [MANDATORY when the brief WRITES to a service whose AGENT_README.md DECISIONS block has D-entries — that is the only case where the stanza transports anything, and the only case .claude/hooks/design-intent-dispatch-guard.sh gates; read-only recon, review and claim-verification briefs do NOT carry it, and 288 of 435 measured stanzas were pure `none` boilerplate. Spell it with the space — the hook greps the literal phrase 'DESIGN INTENT', so an underscore label alone gets denied]:
     decisions: in-scope D-entries copied VERBATIM from <Service>/AGENT_README.md DECISIONS block, never paraphrased — # paraphrase = the compression step where WHY dies (leak point 1); "none — no D-entries in scope" is valid
     supersedes: D-n | none — # named explicitly; touching a guard without a named supersession = conflict
     guard_tests: one deliverable per new/changed guard — # contract: .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT (violation constructed, refusal AT the boundary, RED-on-guard-delete)

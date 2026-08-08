@@ -17,7 +17,7 @@ Context-aware hooks that inject patterns when working on specific file types.
 | `ansible-gate-guard.sh` | Edit/Write on a deployment/CI gate file, **or** a Bash command that both names one and carries a write construct (`sed -i`, `>`, `rm`, `cp`, …) | **BLOCK** - was ASK until 2026-08-06, which is inert here (see [`ask` is inert](#ask-is-inert-on-this-host)). Reads stay frictionless. Escape for legitimate gate work: `touch .claude/.ansible-gate-confirmed` |
 | `deploy-smoke-reminder.sh` | Bash deploy/restart commands (PostToolUse) | **ADVISE** - inject smoke-test reminder |
 | `memory-density-guard.sh` | Write/Edit `*/projects/*/memory/*.md` (PostToolUse) | **ADVISE** - nudge when MEMORY.md hook line or memory-file description violates the density bar. Scope is the `projects/*/memory/` corpus specifically, not any directory named `memory` |
-| `design-intent-dispatch-guard.sh` | Agent dispatch with impl-shaped prompt | **BLOCK** - requires a DESIGN INTENT stanza in the brief. Presence-only and content-agnostic, with one structural exception: an EMPTY label is denied. The stanza is the rest of the label's line plus following lines up to the first BLANK line, so `DESIGN INTENT:` followed by a blank line and then the brief body is an empty label, not a stanza. The phrase in prose, in a filename, or as a bare substring (`redesign intentionally`) still satisfies the gate — KNOWN GAP, see the hook header. Harness-shape anomaly -> open + loud; jq missing -> degraded raw-grep, verdict-identical to the jq path |
+| `design-intent-dispatch-guard.sh` | Agent dispatch that WRITES to a service carrying D-entries | **BLOCK** - requires a DESIGN INTENT stanza in the brief. Fires only when all four hold: write-shaped judged AFTER prohibition clauses are stripped, a clause ending at `.`, `;`, or a comma that an instruction-verb list says begins a new instruction (a bare comma terminator was measured and rejected — it leaves `open a PR, or deploy` write-shaped); an agent type whose remit is writing code — the exempt types are ENUMERATED (`Explore`, `Plan`, `claude-code-guide`, `statusline-setup`, and the five `pr-review-toolkit` reviewers), never matched by namespace, because `pr-review-toolkit:code-simplifier` holds All tools and exists to MODIFY code, and compared ANCHORED so `Explorer` cannot inherit `Explore`'s exemption; no read-only self-declaration in the brief's opening 400 chars; and the brief names a service whose `AGENT_README.md` DECISIONS block has >=1 D-entry. Everything else passes silently — a stanza with no D-entries in scope is `none`, which carries nothing. Presence-only and content-agnostic, with one structural exception: an EMPTY label is denied. The stanza is the rest of the label's line plus following lines up to the first BLANK line, so `DESIGN INTENT:` followed by a blank line and then the brief body is an empty label, not a stanza. The phrase in prose, in a filename, or as a bare substring (`redesign intentionally`) still satisfies the gate — KNOWN GAP, see the hook header. Harness- or repo-shape anomaly -> open + loud; jq missing -> degraded raw-grep, verdict-identical to the jq path |
 | `service-decisions-context.sh` | Edit/Write `<Service>/src/**` | **ADVISE** - inject the service card's DECISIONS block (skipped on `DECISIONS: none`). Neutral (empty output) on no-op; anomalies neutral + loud |
 | `plan-retirement-guard.sh` | Bash `git rm` of `docs/proposals/**`, `*PLAN*.md`, `*-design.md` | **ADVISE** - injects the migration checklist via `additionalContext`. Deliberately not a block: a script cannot verify migration semantics, and PHASE_TAGS step 4 makes `git rm` of a plan doc a normal step. Was ASK until 2026-08-06, so the checklist was never actually shown (see [`ask` is inert](#ask-is-inert-on-this-host)). Scope is `git rm` only: plain `rm` is silent (KNOWN GAP, asserted by `run-intent-fidelity-smoke.sh`) even though `rm` + `git commit -a` orphans the decisions identically. Anomaly -> open + loud; jq missing -> degraded raw-grep, still advises on match |
 
@@ -29,9 +29,19 @@ the hook and the reason (`[hook-name] ANOMALY: <reason> — failing open` /
 `[hook-name] DEGRADED: ...`).
 
 - **BLOCK** (`design-intent-dispatch-guard.sh`): harness-shape drift (empty
-  stdin, non-JSON, missing `.tool_input.prompt`) fails **open + loud** —
-  harness drift must not brick dispatching. Losing jq fails **closed where
-  scoped**: a degraded raw-stdin grep still denies stanza-less impl briefs.
+  stdin, non-JSON, missing `.tool_input.prompt`) and repo-shape drift (no
+  service card carrying a D-entry) fail **open + loud** — drift must not brick
+  dispatching, and failing closed on an unreadable repo would gate every
+  dispatch, which is the pathology the scope predicate exists to remove.
+  Losing jq fails **closed where scoped**: a degraded raw-stdin grep still
+  denies stanza-less in-scope impl briefs. The degraded path is restricted to
+  bash/cat/grep/head/awk/sed, and the hook is written to stay inside that set
+  (parameter expansion rather than `dirname`, regex rather than `tr`) because
+  forking a binary it lacks would abort the gate with `command not found`
+  instead of degrading it. This is a PRESERVED invariant, not a repaired bug:
+  run under a PATH of exactly those six, the pre-rewrite hook already emitted
+  zero `command not found` and denied correctly (verified 2026-08-08). Pinned
+  by `run-intent-fidelity-smoke.sh` so a future edit cannot introduce one.
 - **ADVISE** (`plan-retirement-guard.sh`): all infra failures fail **open +
   loud** (this hook runs on every Bash call). jq-less degraded mode raw-greps
   stdin and still emits the checklist on a plan-doc match — it never falls back
