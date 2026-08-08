@@ -9,7 +9,7 @@ Context-aware hooks that inject patterns when working on specific file types.
 | `testing-context.sh` | Edit/Write `*Tests.cs`, `*_test.*`, `test_*.*` | Inject AAA, naming, assertions patterns + outbound-boundary guard-test contract |
 | `benchmark-context.sh` | Edit/Write `*Benchmark*.cs`, `*_bench.*` | Inject BenchmarkDotNet, Release mode |
 | `observability-context.sh` | Edit/Write `*Service.cs`, `*Worker.cs`, `*Repository.cs`, `*Telemetry*.cs` | Inject OTEL/Serilog patterns |
-| `git-push-guard.sh` | Bash: any `git … push`, `gh … pr merge`, or `gh api …/pulls/N/merge` — including `git -C`/`--git-dir`/`-c` and `gh -R`/`--repo` prefixes, command substitution, subshells and `sh -c` | **BLOCK** - requires a tests-passed marker to push, a recorded review VERDICT to merge. Matches the command STRING, so it raises the cost of an unreviewed merge; it does not prevent one (see [What the entry regexes cannot catch](#what-the-entry-regexes-cannot-catch)) |
+| `git-push-guard.sh` | Bash: any `git … push`, `gh … pr merge`, or `gh api …/pulls/N/merge` — including **any** dash-prefixed `git` global option before the subcommand (with or without its value), `gh -R`/`--repo` prefixes, command substitution, subshells and `sh -c` | **BLOCK** - requires a tests-passed marker to push, a recorded review VERDICT to merge. Matches the command STRING, so it raises the cost of an unreviewed merge; it does not prevent one (see [What the entry regexes cannot catch](#what-the-entry-regexes-cannot-catch)) |
 | `dotnet-guard.sh` | Bash `dotnet build/test/run/...` | **BLOCK** - use `{Project}/.devcontainer/compile.sh` |
 | `node-guard.sh` | Bash `npm/npx/yarn/pnpm/wrangler` | **BLOCK** - run node tooling in a container |
 | `pr-review-marker.sh` | Skill `review-pr` (PostToolUse) | **RECORD** - writes `pr-review-pending-<N>` only. It fires at INVOCATION and cannot see the review's findings, so it never records a verdict |
@@ -69,10 +69,14 @@ read as claiming otherwise. There is also no permission layer behind it:
 `Bash(git:*)`, so this hook is the only gate.
 
 Caught (one case per form in `test/run-entry-shape-smoke.sh`): plain
-`git push` / `gh pr merge`; `git` with `-C`, `--git-dir`, `--work-tree`, `-c`,
-`--no-pager`;
+`git push` / `gh pr merge`; `git` carrying **any** dash-prefixed global option
+before the subcommand, in either the `--opt=value` or the `--opt value`
+spelling, with the value quoted, backslash-escaped or bare;
 `gh` with `-R`, `--repo`, `--hostname`; command substitution `$(…)`; subshells
 `(…)`; nested shells `sh -c "…"`; and `gh api …/pulls/<N>/merge`.
+
+The `git` option set is **not enumerated**, and that is the point — see
+[Every dash token is a global option](#every-dash-token-is-a-global-option).
 
 Not caught, and no regex over a command string can be:
 
@@ -111,6 +115,70 @@ this hook, and both attempts at that parser fail-OPENed the whole gate. The
 question is not whether the parser can be made correct — it is whether saving
 one flag is worth that. Pinned by inverted assertions in
 `run-entry-shape-smoke.sh` plus the nine reproduced rows.
+
+### Every dash token is a global option
+
+The entry pattern used to **enumerate** git's global options. An enumeration of
+someone else's vocabulary is a defect generator: every round closed the options
+that had been noticed and left the rest, and an entry miss is the worst shape in
+this file — the hook does not run, so **every** rule is skipped, not merely the
+one an option would have confused.
+
+Nine shapes were still open at `5b127704` — a tenth, an env-assignment
+truncation, is described with the config table below. Each was reproduced
+against a **local bare remote** with an honestly-earned marker for the feature
+tree: the guard returned **allow** and git really wrote the remote's `main`.
+
+| shape | why it escaped |
+|---|---|
+| `git -c user.name=A\ B push origin main` | a **backslash-escaped** space is the quoted-space case with no quote characters in it, so the value pattern ended at the backslash |
+| `git -c "user.name=A⏎B" push origin main` | a newline **inside quotes** is one character to git and a line break to every line-oriented grep here |
+| `git -p push …` | the short spelling of `--paginate`, whose long form *was* listed |
+| `git --no-optional-locks push …` | never listed |
+| `git --namespace=ns push …` | never listed |
+| `git --icase-pathspecs` / `--glob-pathspecs` / `--noglob-pathspecs` | never listed (`--literal-pathspecs` was) |
+| `git --attr-source=HEAD push …` | never listed |
+| `git --namespace=ns -c remote.origin.push=HEAD:refs/heads/main push origin` | composed: the entry miss also hid the `-c` from the config-destination rule |
+| `GIT_CONFIG_PARAMETERS="'remote.origin.push=…'" git push origin` | in neither the replicated set nor the refusal set — see the config table below |
+
+`--namespace` deserves a note: in a **local** fixture the write lands under
+`refs/namespaces/ns/refs/heads/main`, because a local transport spawns
+`receive-pack` as a child that inherits `GIT_NAMESPACE`. A real server does not
+inherit it. Modelled with
+`--receive-pack='env -u GIT_NAMESPACE git-receive-pack'`, the same command writes
+`refs/heads/main` outright (measured).
+
+The alternation is gone. The pattern is **any dash-prefixed token, optionally
+followed by one separate word**:
+
+- the generic arm needs no maintenance when git grows an option, and cannot
+  under-match a spelling nobody thought of;
+- the **optional second word is load-bearing, not tidiness**: `-c`, `-C`,
+  `--namespace`, `--git-dir` and `--attr-source` take their value as a separate
+  argument, so dropping it would regress `git -c user.name=x push`, caught since
+  2026-08-06.
+
+**Measured cost.** A *valueless* global option can swallow a subcommand as if it
+were a value, so `git --no-pager stash push` and `git --paginate subtree push`
+now enter the gate. They are **evaluated, not refused** — they name no refspec,
+land in the feature lane and pass on an ordinary marker. `git stash push` and
+`git -C <dir> stash push`, the spellings used here, do not match at all
+(`-C` consumes `<dir>`). Swept across 7,808 command strings (env prefix ×
+global-option form × subcommand/destination, crossed with quoting, whitespace,
+`=value` vs separate word, short vs long, and option ordering): **0 loosenings**,
+2,117 tightenings, of which 76 are this `stash push` shape and 75 of those
+already carried an env prefix that fails the gate closed for any push. Per-call
+latency on the common path is unchanged at **11 ms median**.
+
+**A newline is tested, not substituted.** Substituting the joined command would
+run the span regex across former line boundaries and merge spans that are
+genuinely separate — and a merged span is an ungated push. So the joined form
+drives the entry test and the derivation backstop's count only: a command whose
+push is visible only once the lines are joined **enters** the gate, isolates no
+span, and is refused with the parse message. The backstop takes the **max** of
+the raw and joined counts, because joining can also merge two adjacent pushes
+into one match; both can only raise the count, so the comparison stays at least
+as strict as before.
 
 ### Which global options repoint the repository
 
@@ -400,26 +468,58 @@ git documents the two as equivalent. Three details are load-bearing:
 |---|---|---|
 | `-c foo=bar` (no section) | **dropped**, not replicated | git refuses to run at all on one, so it reaches no destination — but passing it on makes every lookup exit 128 and return `""`, which reads as *nothing configured*. Fail-open. |
 | `-c remote.origin.mirror` (no `=`) | **kept** | git's own boolean true, and it mirrors — measured, it wrote main. It also exposed a second bug: `config --get` reports a valueless key as the empty string with rc 0, so the mirror and push-refspec rules were testing **text** where they meant **presence**. They read the exit status now. |
-| `--config-env`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_NOSYSTEM` | **deny** | none can be expressed as `-c` — they name an environment variable a hook cannot read, or replace whole config files. What cannot be replicated is not guessed at. A fail-closed probe backs this generally: one unreadable option used to turn every risky config into *nothing configured*. |
+| `--config-env`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_PARAMETERS` | **deny** | none can be expressed as `-c` — they name an environment variable a hook cannot read, replace whole config files, or carry a git-internal serialisation this gate does not parse. What cannot be replicated is not guessed at. A fail-closed probe backs this generally: one unreadable option used to turn every risky config into *nothing configured*. |
+
+**This list is only ever as complete as the last audit.** `GIT_CONFIG_PARAMETERS`
+sat in **neither** set — not replicated, not refused — until 2026-08-08, while
+this table presented the set as closed. It is `-c` by a third spelling (git
+documents it as how `-c` reaches subprocesses) and it wrote main on a bare push
+with nothing looking at it. It is refused rather than parsed because its payload
+is a git-internal serialisation with its own quoting rules, and a mis-parse here
+does not fail loudly — it returns *nothing configured*, which is an allow. Treat
+a new `GIT_CONFIG_*` or config-bearing option as a **hole until proven
+otherwise**, not as covered because the table looks tidy.
 
 `GIT_DIR` is mapped to `--git-dir`, for the same reason `--git-dir` is resolved
 at all. The environment prefix is captured **with its span** and matched
 separately from the option half, so `MSG=--git-dir=/evil git push` cannot bind
 the guard to `/evil`.
 
-**Two entry defects, found in the same audit and strictly worse**, because the
+**An assignment's value may be quoted too**, and until 2026-08-08 the assignment
+pattern had no quoted arm while the option pattern beside it had just gained one.
+That asymmetry was a bug in its own right: *one unrelated* assignment carrying a
+space truncated the whole prefix chain, because `b'` is not an assignment, so the
+captured prefix began after it —
+
+```
+GIT_CONFIG_COUNT=1 MSG='a b' GIT_CONFIG_KEY_0=remote.origin.push \
+  GIT_CONFIG_VALUE_0=HEAD:refs/heads/main git push origin      # ALLOW, main written
+```
+
+The command **did** enter the gate; the rule simply could no longer see
+`GIT_CONFIG_COUNT` and answered from the repository's config for a push whose
+destination came from the command's. Without the `MSG` assignment the identical
+command already denied, which is what made the shape invisible: the protection
+looked present.
+
+**Three entry defects, found in the same audits and strictly worse**, because the
 hook did not run *at all* and every rule in the file was bypassed rather than
 just this one:
 
 ```
-git --config-env=x=Y push origin main    # option absent from the entry regex
-git -c 'user.name=A B' push origin main  # quoted value with a space ended the match
+git --config-env=x=Y push origin main     # option absent from the entry regex
+git -c 'user.name=A B' push origin main   # quoted value with a space ended the match
+git -c user.name=A\ B push origin main    # backslash-escaped space did the same
 ```
 
-Both are ordinary code pushes to main, and both returned **allow**. The entry
-regex now accepts quoted option values and lists `--config-env`. Widening what
+All three are ordinary code pushes to main, and all three returned **allow**. The
+entry regex now accepts quoted, backslash-escaped and newline-bearing option
+values, and matches any dash-prefixed token rather than a list. Widening what
 the entry *inspects* can only make more commands evaluated, never fewer — the
-same "narrow what you exempt, never what you inspect" rule the span loop follows.
+same "narrow what you exempt, never what you inspect" rule the span loop follows,
+and it is **measured** rather than asserted: a 7,808-cell sweep against the
+pre-fix guard reports 0 deny→allow transitions in this direction and 2,117 in the
+reverse.
 
 **Cost.** Nothing in this repo, `~/.gitconfig`, `~/.config/git/config` or
 `/etc/gitconfig` sets any of these keys (audited), so the measured false-deny
