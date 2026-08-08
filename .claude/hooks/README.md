@@ -323,6 +323,113 @@ Also enforces:
   `test/run-push-exemption-smoke.sh`.
 - `gh pr merge` requires a `pr-reviewed-{N}` marker carrying an explicit
   **verdict** — see "PR Review Verdict Gate" below.
+- A push that names **no refspec** is judged from git **config**, not from the
+  command — see "A bare push takes its destination from config" below.
+
+### A bare push takes its destination from config
+
+**The defect (fixed 2026-08-08).** Every other rule reads the destination off
+the command string, and #928 closed the last spelling that could be *typed*.
+This route types nothing:
+
+```
+git config remote.origin.push HEAD:refs/heads/main
+git push origin
+```
+
+`git config` is an ordinary unblocked command; the setting lands in the repo's
+**common** config, shared by every worktree, and from then on every routine bare
+push from that repo retargets main. Reproduced against a local bare remote: the
+guard returned **allow** — in the feature lane, unlocked by an honestly-earned
+`compile.sh` marker for the feature tree — and git wrote the feature branch's
+`.cs` file onto the remote's `main`. No evasion and no privilege the agent
+lacked. Accident and convenience, which is what this layer exists for.
+
+**Why not just ask git.** Both ways of asking were measured (git 2.43):
+
+| Mechanism | Latency | Verdict |
+|---|---|---|
+| `git push --dry-run --porcelain` | **465-579 ms** against `origin`; 2008 ms to fail against an unreachable host with an explicit 2 s cap (git sets no default cap) | Authoritative but **rejected** — the guard's own budget is 12 ms median / 35 ms p95 / 278 ms max over 791 runs, and offline it must either deny every push or fall back to allow. A network outage that unlocks main is worse than no gate, because it is silent. |
+| `git rev-parse --symbolic-full-name @{push}` | 1 ms | Local but **rejected on correctness**. It answers "where would the current *branch* go", not "what refs would this push write". With `remote.origin.push=refs/heads/*:refs/heads/*`, with a second `+HEAD:refs/heads/master` refspec, and with `push.default=matching`, git writes main/master while `@{push}` reports `refs/remotes/origin/feat/x` — an authoritative-looking **safe** answer for a command that lands on main. |
+| Read the config keys (**chosen**) | +3 ms, and only on a bare push | Local, offline-proof, fail-closed. |
+
+**The rule.** When a push span carries no refspec, the effective remote is
+resolved by git's own chain (positional, `--repo`, `branch.<n>.pushRemote`,
+`remote.pushDefault`, `branch.<n>.remote`, `origin`) and the push is DENIED —
+with the cause named — if any of these hold. All four were measured really
+writing main on a bare push, with local main one commit ahead of remote main:
+
+| Config | Why it reaches main |
+|---|---|
+| `remote.<r>.mirror` = anything but a provably-false value | mirrors every local ref, main included, and **deletes** remote refs absent locally |
+| `remote.<r>.push` set at all | globs and a second `+`-forced refspec both reach main, so the **presence** of the key is the trigger — parsing globs, `+`, `^` negatives and destination DWIM here would be a fifth hand-rolled parser in a file whose previous two both fail-OPENed it |
+| `push.default` = `matching` (and a local main/master exists) | updates every branch present on both ends |
+| `push.default` = `upstream` or `tracking`, with `branch.<n>.merge` naming main | pushes the current branch's commits onto main. `tracking` is a live deprecated synonym and was measured, not read off the man page. Skipped when the current branch already **is** main — there Rule 1 judges the same push and judges it better, so the supervisor docs-only path is untouched. |
+
+Three values that look like routes are **not**, so they change nothing:
+`simple` (the default when unset) — git refuses when the upstream name differs
+from the branch name, so it can only reach main *from* main; `current` — the
+destination is always the branch's own name; `nothing` — git refuses outright.
+
+**And the config need not be on disk — that is the fifth route.** The four rows
+above are the four config *keys*. The rule reads them out of the repository, but
+the command being judged can set any of them **for that command alone**, writing
+nothing anywhere:
+
+```
+git -c remote.origin.push=HEAD:refs/heads/main push origin
+git -c push.default=matching push origin
+git -c remote.origin.mirror=true push origin
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.push \
+  GIT_CONFIG_VALUE_0=HEAD:refs/heads/main git push origin
+```
+
+All four returned **allow** while git really wrote the feature branch onto the
+remote's main (local bare remote, honestly-earned marker for the feature tree).
+Nothing was missing except the replication: `-c` has always been in the entry
+regex, so the push genuinely *was* evaluated — against the wrong config —
+and `GIT_C_ARGS` already replicated `-C` and `--git-dir` precisely so that the
+guard's lookups match the command. It replicated every option except the one
+that changes the config this rule reads.
+
+Every `-c <k>=<v>` on the span now goes into `GIT_C_ARGS`, and
+`GIT_CONFIG_COUNT`/`KEY_<n>`/`VALUE_<n>` is translated into the same thing —
+git documents the two as equivalent. Three details are load-bearing:
+
+| Spelling | Handling | Why |
+|---|---|---|
+| `-c foo=bar` (no section) | **dropped**, not replicated | git refuses to run at all on one, so it reaches no destination — but passing it on makes every lookup exit 128 and return `""`, which reads as *nothing configured*. Fail-open. |
+| `-c remote.origin.mirror` (no `=`) | **kept** | git's own boolean true, and it mirrors — measured, it wrote main. It also exposed a second bug: `config --get` reports a valueless key as the empty string with rc 0, so the mirror and push-refspec rules were testing **text** where they meant **presence**. They read the exit status now. |
+| `--config-env`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_NOSYSTEM` | **deny** | none can be expressed as `-c` — they name an environment variable a hook cannot read, or replace whole config files. What cannot be replicated is not guessed at. A fail-closed probe backs this generally: one unreadable option used to turn every risky config into *nothing configured*. |
+
+`GIT_DIR` is mapped to `--git-dir`, for the same reason `--git-dir` is resolved
+at all. The environment prefix is captured **with its span** and matched
+separately from the option half, so `MSG=--git-dir=/evil git push` cannot bind
+the guard to `/evil`.
+
+**Two entry defects, found in the same audit and strictly worse**, because the
+hook did not run *at all* and every rule in the file was bypassed rather than
+just this one:
+
+```
+git --config-env=x=Y push origin main    # option absent from the entry regex
+git -c 'user.name=A B' push origin main  # quoted value with a space ended the match
+```
+
+Both are ordinary code pushes to main, and both returned **allow**. The entry
+regex now accepts quoted option values and lists `--config-env`. Widening what
+the entry *inspects* can only make more commands evaluated, never fewer — the
+same "narrow what you exempt, never what you inspect" rule the span loop follows.
+
+**Cost.** Nothing in this repo, `~/.gitconfig`, `~/.config/git/config` or
+`/etc/gitconfig` sets any of these keys (audited), so the measured false-deny
+cost today is zero. An ordinary `git push`, `git push origin feat/x`,
+`git push -u origin feat/x` and the supervisor docs-only main path all behave
+exactly as before. The rule runs **before** the `autofix/*` allowance: that
+allowance rests on autofix only ever opening a PR, and a configured refspec
+writes main directly and opens none.
+
+Pinned by `test/run-push-config-destination-smoke.sh`.
 
 **Concurrency (marker integrity)**: `mark-tests-passed.sh` derives both the tree
 hash and the worktree id from `$PWD` via `git rev-parse`, so it can only ever write
@@ -835,6 +942,7 @@ merge, delete that block (keep `permissions`) and confirm with `dotnet vstest`
 | `test/run-wiring-smoke.sh` | every hook is registered in the TRACKED `settings.json`, the registered set has not drifted, and the marker writers are executable in the index. Static — safe beside live agents |
 | `test/run-push-guard-smoke.sh` | `git-push-guard.sh` marker lookup: global tree-hash scan, orphaned markers, block diagnostics. Runs against an isolated `ATLAS_MARKER_DIR` |
 | `test/run-push-exemption-smoke.sh` | the docs-only / docs-config allowlists on the push path |
+| `test/run-push-config-destination-smoke.sh` | the bare-push route: 1020 cells over config state x HEAD x content x marker x command shape, plus 14 targeted and 21 config-injection rows, each cross-checked against what `git push --dry-run --porcelain` says the fixture would really write. Liveness is asserted in both directions — a cell whose fixture *cannot* push proves nothing, and six (state, HEAD) pairs were in that condition until 2026-08-08. `PUSH_GUARD_HOOK` points it at another guard — against the pre-fix one it must go RED, which is how its teeth are demonstrated |
 | `test/run-pr-verdict-smoke.sh` | `claude-pr-verdict` preconditions, the merge gate's verdict parsing, and which PR a merge is judged as (stubs `gh`, uses PR numbers 99901-99904) |
 | `test/run-command-guards-smoke.sh` | `ef-migration-guard.sh`, `dotnet-guard.sh`, `node-guard.sh` |
 | `test/run-advisory-guards-smoke.sh` | `ansible-gate-guard.sh`, `plan-retirement-guard.sh`, `deploy-smoke-reminder.sh` |
