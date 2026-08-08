@@ -158,17 +158,104 @@ followed by one separate word**:
   argument, so dropping it would regress `git -c user.name=x push`, caught since
   2026-08-06.
 
-**Measured cost.** A *valueless* global option can swallow a subcommand as if it
-were a value, so `git --no-pager stash push` and `git --paginate subtree push`
-now enter the gate. They are **evaluated, not refused** — they name no refspec,
-land in the feature lane and pass on an ordinary marker. `git stash push` and
-`git -C <dir> stash push`, the spellings used here, do not match at all
-(`-C` consumes `<dir>`). Swept across 7,808 command strings (env prefix ×
-global-option form × subcommand/destination, crossed with quoting, whitespace,
-`=value` vs separate word, short vs long, and option ordering): **0 loosenings**,
-2,117 tightenings, of which 76 are this `stash push` shape and 75 of those
-already carried an env prefix that fails the gate closed for any push. Per-call
-latency on the common path is unchanged at **11 ms median**.
+**Measured cost — corrected 2026-08-08. The first account of this was wrong.**
+A *valueless* global option can swallow a subcommand as if it were a value, so
+`git --no-pager stash push` and `git --paginate subtree push` enter the gate.
+That much held. The claim that they are "evaluated, not refused" and "pass on an
+ordinary marker" did not: it is true only on a feature branch that **has** a
+valid marker. Measured on a `main` checkout and on a marker-less feature branch,
+every such pair **denies** — and on `main` the reason read *"Direct push to
+main/master is not allowed"*, a false statement about a command that pushes
+nothing. The claim that the one genuine new denial was `--config-env=` was wrong
+for the same reason.
+
+Neither side of that cross is a short list, either. **Any** dash-prefixed token
+does it — `git --zzz stash push` denies, as do `-p`, `-P`, `--bare`,
+`--paginate`, `--namespace=`, `--no-optional-locks`, `--git-dir=`, `--no-advice`,
+`--html-path` and a bare `--` — and the subcommand side reaches past
+`stash push` / `subtree push` to `remote push` and `notes push`. Enumerating
+either is the mistake the generic arm removed.
+
+The **verdict is kept**: this gate cannot know which global options take a
+separate value, so it cannot rule the push out, and ambiguity resolves to DENY.
+What changed is the **reason** — `deny()` now appends an `ON THE VERB:` note
+naming the swallowed word and saying the `push` may belong to it. The
+discriminator is the word's *shape* (a bare lowercase word), not a list of
+subcommands, so the real separate-word values keep their message unqualified:
+`-C /tmp push` (holds a slash) and `-c user.name=x push` (holds a dot and an
+equals) are byte-for-byte unchanged. `git stash push` and `git -C <dir> stash
+push`, the spellings used here, still do not match at all (`-C` consumes
+`<dir>`).
+
+Swept across 3,899 command strings under **two** branch conditions — feature
+branch without a marker, and a `main` fixture — crossing env prefix ×
+global-option form × separator (space/tab/CR) × destination × chaining, plus the
+gh option/route cross, the composed `-c` config shapes, and the newline and
+continuation shapes: **0 loosenings**, 288 tightenings per condition (7,798
+evaluations). The harness is proved able to see a loosening by running it
+**swapped** (new as baseline), where those 288 reappear as loosenings in both
+conditions — a sweep that cannot report one is not evidence of anything, and an
+earlier run of this harness reported a clean `0/0` only because a relative guard
+path failed to open after the `cd`, so every cell read back "allow" on both
+sides.
+
+The composed `-c` axis is in that corpus because its **absence** let a real
+loosening through: an earlier draft renamed the option-value constant without
+repointing the `-c` replication grep, which silently dropped every `-c` and made
+the config-destination rule answer from the repository's config. The sweep said
+`0/0`; `run-entry-shape-smoke.sh`'s two "composed" rows caught it. A corpus that
+contains no cell where the thing you changed decides the verdict cannot clear
+you.
+
+Per-call latency on the common path is **12 ms median** (n=400 interleaved A/B
+over a `git status` / `ls` / `dotnet build` mix, p95 13 ms, mean 11.6 ms) —
+unchanged by this round. The earlier "**11 ms**, unchanged" claim was measured
+against a single `git status` payload, which is faster than the mix and rounds
+down; the honest figure for the common path is 12 ms, and it has been 12 ms
+since before that claim was written.
+
+### `gh` had the same enumeration, one round later
+
+The git side was made generic on 2026-08-08; `GH_GLOBAL_OPT_RE` beside it stayed
+a three-spelling list (`-R`, `--repo`, `--hostname`) with an **unquoted** value
+class, so any `-R`/`--repo` value containing a space took the whole command out
+of the gate — and an entry miss on the merge route means the **recorded-verdict
+rule never runs at all**. Reproduced as ALLOW at `967e0d57`, on the `pr merge`
+route *and* on `api …/pulls/<N>/merge`:
+
+| shape | why it escaped |
+|---|---|
+| `gh -R "$(echo owner/repo)" pr merge 930 --squash` | a command-substituted value contains spaces — **a real, working merge** |
+| `gh -R 'o/r x'` / `gh -R "o/r x"` / `gh -R o/r\ x` | quoted or backslash-escaped space, same as the git side's closed case |
+| `gh --repo='o/r x'`, `gh --hostname 'a b'` | ditto, on the other two listed spellings |
+| `gh --version pr merge N`, `gh --help pr merge N` | never in the list at all |
+
+`gh` now shares the git grammar rather than carrying a second dialect that
+drifts out of step with it: `CLI_GLOBAL_OPT_RE` is defined once and both
+`GIT_GLOBAL_OPT_RE` and `GH_GLOBAL_OPT_RE` are set from it. Identity still comes
+from the merge itself — the canonicalising `sed` strips the option run first, so
+a substituted or space-carrying `-R org2/repo7` contributes no digits to the PR
+number (asserted). Five ordinary `gh` controls (`pr view`, `pr list`,
+`repo view`, `auth status`, `pr create`) plus ten more are **byte-identical**
+before and after, not merely same-verdict.
+
+### The word-split class is bash's IFS, not POSIX space
+
+Bash splits on space, tab and newline and on nothing else. `[[:space:]]` also
+matches **CR, VT and FF**, so a value carrying one of those was one argument to
+git and two tokens to the entry regex — `git -c user.name=A⏎B push origin main`
+(with a CR) returned **allow**, and a shim in place of git confirms bash hands
+over five arguments (`-c`, the joined value, `push`, `origin`, `main`). The class
+now excludes exactly what bash splits on. Separators stay `[[:space:]]+`:
+treating a CR as a separator can only make *more* commands match.
+
+A **line continuation inside a value** was the same defect one layer up. The
+continuation join replaced backslash-newline with a **space**, splitting a token
+bash would have joined — `git -c user.name=A\⏎B push origin main` is
+`-c user.name=AB push origin main` to git, five arguments, and it wrote
+`refs/heads/main`. The replacement is now empty, which is simply what bash does.
+The `git push origin --delete \⏎main` case that motivated the join is
+unaffected: what separates those tokens is the space *before* the backslash.
 
 **A newline is tested, not substituted.** Substituting the joined command would
 run the span regex across former line boundaries and merge spans that are
@@ -1038,7 +1125,7 @@ merge, delete that block (keep `permissions`) and confirm with `dotnet vstest`
 
 | Suite | Covers |
 |-------|--------|
-| `test/run-entry-shape-smoke.sh` | `git-push-guard.sh` entry shapes — one case per bypass form verified ALLOW before 2026-08-06. Marker-free — safe beside live agents |
+| `test/run-entry-shape-smoke.sh` | `git-push-guard.sh` entry shapes — one case per bypass form verified ALLOW before 2026-08-06. Marker-free — safe beside live agents. `PUSH_GUARD_HOOK` points it at another guard, as in the config-destination suite; until 2026-08-08 it ignored that variable and always read its own sibling, so the documented way to demonstrate its teeth did not work |
 | `test/run-wiring-smoke.sh` | every hook is registered in the TRACKED `settings.json`, the registered set has not drifted, and the marker writers are executable in the index. Static — safe beside live agents |
 | `test/run-push-guard-smoke.sh` | `git-push-guard.sh` marker lookup: global tree-hash scan, orphaned markers, block diagnostics. Runs against an isolated `ATLAS_MARKER_DIR` |
 | `test/run-push-exemption-smoke.sh` | the docs-only / docs-config allowlists on the push path |
