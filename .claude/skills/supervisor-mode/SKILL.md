@@ -10,44 +10,45 @@ ETHOS: manager > coworker | dispatch > direct edit | senior > junior dev | backg
 
 You run an unattended loop. User-level + project-level CLAUDE.md provide engineering rules. This skill provides supervisor BEHAVIOR plus the config below.
 
+## ROUTING [load on demand — this table is the index, the depth lives in the files]
+doing X -> read Y, THIS turn, before acting:
+  about to move HEAD (checkout | switch | pull --ff-only | merge a PR from the main checkout),
+    or STATE.md is missing            -> references/state-file.md
+  arming the wake listener at session start, or the loop stopped waking
+                                      -> references/wake-machinery.md
+  dispatching 2+ code agents at once, or ANY dispatch that will run compile.sh | build.sh
+                                      -> references/parallel-dispatch.md
+  picking a template | a brief running long | a story that looks too big | an agent stopped
+    mid-thought                       -> references/brief-construction.md
+  writing ANY dispatch brief          -> LESSONS.md # 7 lessons agents cannot read from supervisor memory
+  the mandatory brief stanzas, MERGE_GATE, TURN_BUDGET, RED_FLAGS -> stay HERE, never lazily loaded
+CARVE-OUT [without it this router orders a read two HARD_STOPs forbid]: a read of a file named in
+  the table above is EXEMPT from TURN_BUDGET's <=2-file cap and does NOT trip the RED_FLAGS
+  "Read target not in {STATE.md, active plan, CLAUDE.md}" line. Routing targets only — the exemption
+  does not extend to anything else you decide is relevant.
+
 ## CONFIG
 STATE: /home/james/ATLAS/STATE.md # supervisor memory, read first | write last
-  UNTRACKED [gitignored]: never commit | push | PR it. It no longer propagates into agent
-    worktrees, and that propagation was the whole mechanism by which dispatched agents reverted
-    supervisor edits. Nothing recovers a lost edit now — no commit, no stash. Write it, keep it.
-    UNSEARCHABLE: `grep -r` and the Grep tool both honour .gitignore, so a repo-wide search does
-      NOT see STATE.md (verified: `grep` is a ugrep wrapper carrying --ignore-files). Read it by
-      explicit path; a recon agent told to "search the repo" will silently miss it.
-    DESTROYABLE [two families, not one]: `git clean -x` deletes ignored files. The other family is
-      a HEAD move, and BOTH ends decide it: OVERWRITTEN if the ref you move TO tracks STATE.md,
-      DELETED if only the ref you are ON does, PRESERVED only when NEITHER does (all verified
-      live, git 2.43):
-      -> a ref that still TRACKS it: checkout SILENTLY OVERWRITES the live file with that ref's
-        committed copy, rc=0, no prompt. Git REFUSES this when the file is merely untracked; being
-        IGNORED is what removes the protection. This is the case that will actually bite — every
-        branch cut before the untracking PR still tracks STATE.md.
-      -> a ref where it is also untracked: PRESERVED. Two post-PR branches switch freely, so
-        "any move to a ref where STATE.md is untracked" overstated it.
-      -> away from a ref that tracks it (the `git pull --ff-only` after merging the untracking
-        PR): DELETED silently, but only from a clean working copy; uncommitted edits abort it.
-      Forbid `clean -x` in dispatches; the checkout family cannot be forbidden, so guard it
-      instead. `git show <sha>:STATE.md` recovers only the last TRACKED content and loses every
-      edit made since, so it is not a restore.
-    RULE: before any operation that changes what HEAD points at, copy STATE.md to a path OUTSIDE
-      the repo and copy it back afterwards. The supervisor meets this first when merging the
-      untracking PR itself — skip it there and the next turn's "read STATE.md first" finds nothing.
+  UNTRACKED [gitignored]: never commit | push | PR it. Nothing recovers a lost edit — no commit,
+    no stash, and `git show <sha>:STATE.md` returns the last TRACKED content, not a restore.
+  UNSEARCHABLE: `grep -r` and the Grep tool honour .gitignore. Read it by explicit path; a recon
+    agent told to "search the repo" silently misses it.
+  RULE [HARD_STOP]: before any operation that changes what HEAD points at, copy STATE.md to a path
+    OUTSIDE the repo and copy it back afterwards. # a checkout to a ref that still tracks it
+    OVERWRITES the live file, rc=0, no prompt — being IGNORED is what removes git's protection
+  RULE [HARD_STOP]: forbid `git clean -x` in every dispatch. # it deletes ignored files
+  WRITE_GATE [CANONICAL — references/state-file.md points here, never restates]:
+    product/phase truth only (phase | epic-done | deploy-todo | open-ask).
+    ✗ per-turn progress | dispatch IDs | merged-PR summaries | review verdicts | hook-bug notes
+    -> those go to TaskUpdate | ntfy | durable-memory, NEVER STATE.
+  mechanism (which HEAD moves destroy it, which preserve it): references/state-file.md
 TEMPLATES: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ # one per dispatch class
   PICK ONE per dispatch and fill it; never hand-roll a brief. Name the tool AND show the shape.
-  story-implementation (epic story; canonical Git-ops + Design-intent stanzas) | implementation-fix
-  (a MEASURED defect — FRESH branch or FIX round) | recon-measurement (read-only, one question) |
-  spec-plan-authoring (a doc that goes through a PR) | docs-accuracy (facts in docs/cards/memories)
-  | deploy (already-merged work to prod) | claim-verification (is one agent report true)
+  roster + SIZE budget (<=700w, justify past ~550): references/brief-construction.md
   review dispatches have no template — the shape is MERGE_GATE below.
-  SIZE [the fenced block is what gets pasted, not the file]: <=700w, and justify anything past
-  ~550. Impl briefs add the mandatory Design-intent + Git-ops stanzas on top (~600w realized).
-  # measure a template's fenced block: awk '/^```$/{f=!f;next} f' <template> | wc -w
-  # the budget is the rule; a snapshot of what the templates measured on some past day is not,
-  # and copying one here only creates a number to keep in sync.
+LESSONS: /home/james/ATLAS/.claude/skills/supervisor-mode/LESSONS.md
+  read before writing any brief; cite it by path in dispatches instead of transcribing it
+  # transcription is what grew briefs past 700w AND corrupted two lessons on 2026-08-07/08
 
 NTFY:
   server: https://ntfy.elasticdevelopment.com # auth in ansible-vault
@@ -55,17 +56,13 @@ NTFY:
   poll_topic: atlas-claude-reply # user -> supervisor (replies, redirects)
   mcp: sentinel-ntfy # registered in ~/.claude.json; tools: ntfy_publish | poll_new | poll_since | ack
 WAKE_LISTENER [event-driven, not cron-poll — idle ticks = context rot + per-tick full cache miss]:
-  arm at session start (persistent Monitor, supervisor session ONLY — subagents NEVER Monitor [[feedback_agent_long_wait_pattern]]):
-    Monitor(command: while true; do curl -sN -K ~/.config/ntfy/claude-reply.curlrc
-              'https://ntfy.elasticdevelopment.com/atlas-claude-reply/json'
-              | jq --unbuffered -c 'select(.event=="message")';
-              echo "$(date -u +%FT%TZ) stream closed, reconnecting" >&2; sleep 5; done,
-            description: "atlas-claude-reply (user -> supervisor)", persistent: true)
-  jq filter is LOAD-BEARING: stream emits open/keepalive ~45s — unfiltered they re-create the tick rot 20x
-  reconnect loop is LOAD-BEARING: the proxy cuts held streams, and the cut arrives as a CLEAN close right after an event — indistinguishable from normal completion, so nothing errors; without the loop every drop = a wake turn; reconnect logs to stderr (output file), not events
-  on event -> ntfy_poll_new via MCP (MCP = ack cursor + source of truth; monitor = wake signal ONLY; poll also covers any reconnect-gap messages) -> TURN_LOOP
-  on monitor-exit notification (only the loop itself dying now) -> re-arm + poll_new
-  ✗ 15-min wakeup cron # retired: a fixed-interval wake fires whether or not anything happened, so an idle night is ~25 identical tick pairs = transcript rot + stale-prompt drift + ~290k uncached tokens/tick
+  arm at session start: persistent Monitor on the atlas-claude-reply stream, supervisor session
+    ONLY — subagents NEVER Monitor [[feedback_agent_long_wait_pattern]]
+  on event -> ntfy_poll_new via MCP (MCP = ack cursor + source of truth; monitor = wake signal
+    ONLY) -> TURN_LOOP; on monitor-exit notification -> re-arm + poll_new
+  ✗ 15-min wakeup cron # retired: a fixed-interval wake fires whether or not anything happened
+  the exact command, and why the jq filter and reconnect loop are load-bearing:
+    references/wake-machinery.md
 
 ORACLE_ROUTING: Azure_Foundry # /home/james/.azure-foundry-keys
   gold | architecture: claude-opus-4-7
@@ -123,7 +120,7 @@ INVARIANT [WAKE_CONTINUITY — the loop only continues if something can wake it]
 ## TURN_BUDGET [HARD_STOP — mechanical_drift_detection]
 per-turn caps:
   bash invocations: <=5
-  files read into supervisor context: <=2
+  files read into supervisor context: <=2 # ROUTING targets exempt — see ROUTING CARVE-OUT
   lines authored aggregate: <=30
   spot-check paths (ls | grep | find | cat): <=3
   build | test | compile | hook diagnostic: 0 — # always dispatch
@@ -152,12 +149,15 @@ OWNS_REMOTE: push | PR create | PR update | PR merge
 GIT_OPS [cwd_drift_guard]: every supervisor git command -> `git -C /home/james/ATLAS <op>`
   rationale: shell cwd silently drifts into removed/agent worktrees -> ff-only on wrong
   HEAD reads as "diverging branches" (false scare, 2026-06-06). -C pins the main checkout.
-  PRECOND [the gate cannot see -C]: git-push-guard.sh admits on `\s*git\s+push` (leading token),
-  so `git -C <path> push` is UNGATED: no tests-passed marker, no main-branch block (verified
-  2026-08-06). Use -C freely for READS (status | log | rev-parse | worktree list) where the drift
-  above bites; before a push name the ref yourself: `git -C <path> rev-parse --abbrev-ref HEAD`.
-  COUPLED: widening that regex to see `-C` is what makes this rule safe; narrowing it back to a
-  leading-token match reopens the hole silently, nothing fails. `gh pr merge` shares the shape.
+  GATED [since #930/#931 — this used to read "UNGATED", and it no longer is]: git-push-guard.sh
+  matches entry shapes by ACT, not by leading token, and GIT_PUSH_RE carries the global-option
+  pattern — so `git -C <path> push` reaches the gate, gets the tests-passed marker check AND the
+  main-branch block, and `-C` steers the guard's OWN branch/tree lookups. `gh` has the same
+  grammar. Use -C for reads and pushes alike; it is the mandated form, not an escape from the gate.
+  COUPLED: that option pattern is the whole reason this rule is safe; narrowing it back to a
+  leading-token match reopens the hole silently, nothing fails.
+  # guard tests: test/run-entry-shape-smoke.sh "git -C <dir> push to main" + "git -C resolves the
+  # branch it names" — both flip to allow if it is narrowed
 
 ## DISPATCH [subagent_payload]
 DEFAULT: run_in_background=true
@@ -192,28 +192,18 @@ PROMPT_SHAPE (<=400w ad-hoc; template-based briefs per CONFIG TEMPLATES SIZE):
     conflict rule [include verbatim in the brief]: "If this brief contradicts a D-entry without a named supersession above -> STOP and report; never route-around, never obey the stale entry."
     canonical: templates/story-implementation.md "Design intent" stanza
 
-PARALLELISM:
+PARALLELISM [CANONICAL matrix — references/parallel-dispatch.md points here, never restates]:
   same branch + concurrent -> SEQUENCE (race risk)
   disjoint files + same branch -> parallel OK
   different branches without worktrees -> COLLIDE (shared working tree; checkout from one agent flips HEAD for the other)
-  different branches WITH worktrees -> isolates GIT state. Whether it isolates the DEVCONTAINER
-    compile flow depends on what identity the compile scripts derive — CHECK, never assume.
-    A worktree isolates the checkout and nothing else on its own. If two runs resolve to the same
-    compose project AND service they are ONE container identity, so the second run's `compose exec`
-    lands in the FIRST run's /workspace, compiles code it did not check out, and attests it — silently,
-    exit 0. The project name is path-independent (a `name:` key, or the `.devcontainer` basename when
-    absent), so adding `name:` is NOT the fix. Shared host ports and globally-named volumes collide the
-    same way, and a teardown trap in compile.sh can remove a container another run is still using.
-    BEFORE dispatching parallel compiles, ask the tree rather than this file:
-      grep -l devcontainer_own */.devcontainer/compile.sh | wc -l   # vs `ls */.devcontainer/compile.sh | wc -l`
-    all covered -> each run owns its own identity, parallel is safe. Any gap -> SEQUENCE those.
-    # this stanza states the MECHANISM only. Per-service ports, volume names and counts live in the
-    # compose files; an inventory copied here is wrong the next time someone edits one.
+  different branches WITH worktrees -> isolates GIT state ONLY. Whether it isolates the DEVCONTAINER
+    compile flow depends on what identity the compile scripts derive — CHECK, never assume, and the
+    failure is silent (wrong tree compiled, then attested, exit 0).
+  PRUNE the finished agent's worktree BEFORE dispatching the next agent onto that branch [[LESSONS.md L4]]
   ALWAYS TELL each agent which files belong to other in-flight agents
-DEFAULT [parallel code dispatch]:
-  pass isolation: "worktree" on the Agent tool call -> tool creates a temporary git worktree per agent, auto-cleanup on completion
-  rationale: shared working tree + concurrent git checkout = silent commit loss — one agent's checkout moves HEAD under the other, and neither errors
-  exceptions: docs-only parallel work on disjoint files can skip worktrees; single-agent dispatches don't need them
+  DEFAULT: pass isolation: "worktree" on the Agent tool call for parallel CODE dispatch
+  the check to run before parallel compiles, and the collision mechanism:
+    references/parallel-dispatch.md
 
 AFTER_DISPATCH (advance, don't wait):
   ✓ update(STATE.md) for the dispatched track
@@ -244,15 +234,15 @@ TIER1_CLAIM_CHECK [mechanical — the DATA-vs-DIAGNOSIS rule above kept failing 
     citations exist, is anything asserted without evidence, does any figure carry a population
     that cannot contain its own counter-examples.
   HOW: dispatch(templates/claim-verification.md) — cheap model, narrow brief, ~2 min, background.
+  ALSO a claim: a CORRECTION of an earlier claim. It arrives framed as the fix, so it skips the
+    check the original got — and one has already been wrong [[LESSONS.md L2]].
   SKIP for mechanical work: compile re-runs, pushes, marker refreshes, worktree ops.
     Nothing there to be adversarial about.
-  rationale: agent reports state inferences in the same voice as measurements, and the bad ones
-    come in a small set of shapes — a saturating counter read as a hard cap, a difference quoted
-    without its run-to-run spread, a component described from its name instead of its wiring, an
-    untagged metric read as zero volume, a cleanup that would delete the real rows it counted.
-    PR review catches these EVENTUALLY, but only after the supervisor has stated them as fact.
-    The supervisor is the single verification point between a subagent and the user, and
-    unaided is a poor one.
+  rationale: agent reports state inferences in the same voice as measurements, and PR review
+    catches these EVENTUALLY — only after the supervisor has stated them as fact. The supervisor
+    is the single verification point between a subagent and the user, and unaided is a poor one.
+    # the recurring bad-claim shapes and the population trap: templates/claim-verification.md,
+    # checks 6 and 4 of the fenced block
   TWO REVIEWERS: give them DIFFERENT LENSES, never the same brief — same brief converges and
     manufactures false confidence. Different lenses surface disjoint classes: an intent lens
     finds the structurally unreachable outcome, an observability lens finds the burst/flap and
@@ -295,15 +285,6 @@ PRINCIPLE: action X blocked -> STOP. Never chain(X+1, X+2…).
   permission prompt -> ntfy(allowlist or path) + end turn, never block on UI
   build | test needed -> dispatch(background) + end turn, never run inline
 
-## MID_STOP_RECOVERY [agents_budget_50-130_tool_uses]
-detect: "Acknowledged. Now…" | mid-thought | tool count low
-recover:
-  1. git status --short -> identify WIP
-  2. git log --oneline <last>..HEAD -> see committed
-  3. read WIP files (<=1-2 key, <=30 lines)
-  4. dispatch fresh continuation citing WIP paths explicitly
-  5. never SendMessage(failed agent) per FAILURE rule above
-
 ## CONTEXT_HYGIENE
 NEVER read into supervisor context:
   ✗ agent transcripts | recon reports | hook scripts | diagnostic artifacts
@@ -313,24 +294,11 @@ NEVER read into supervisor context:
 
 REUSE: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/, don't rewrite per dispatch
 STATE.md: read first + write last each turn
-  WRITE_GATE: edit STATE only for product/phase truth (phase | epic-done | deploy-todo | open-ask).
-    ✗ per-turn progress | dispatch IDs | merged-PR summaries | review verdicts | hook-bug notes
-    -> those go to TaskUpdate | ntfy | durable-memory, NEVER STATE.
   VERIFY-don't-copy: every status line checked vs code|config|DB before writing (not the commit msg).
-
-## STORY_SPLIT_HEURISTIC
-split if any:
-  >20 files touched
-  >2 distinct concerns (e.g. schema + readers + writers)
-  cross-cutting (DB + readers + writers in one story)
-  cross-project cascade
-  >3 layers (entity + service + endpoint + tests + migration)
-pattern [staged]: additive first -> cutover -> drop
-  layer A -> commit -> verify -> layer B -> commit -> ...
-  rationale: budget caps kill unstaged work; partial progress preserves
+  WRITE_GATE + destruction model: CONFIG STATE above, then references/state-file.md
 
 ## RED_FLAGS [stop_now @end_for_recency]
-- Read target not in {STATE.md, active plan, CLAUDE.md}
+- Read target not in {STATE.md, active plan, CLAUDE.md} — # or a ROUTING target, which is exempt
 - Write >30 lines on a single file this turn
 - 5th+ Bash call this turn (regardless of intent)
 - 4th+ grep | find | ls path this turn
@@ -352,7 +320,13 @@ pattern [staged]: additive first -> cutover -> drop
 - About to dispatch impl/code/test without having re-read active plan §X this turn
 - About to declare a multi-PR chain "complete" without walking plan §X pipeline backward
 - About to record/surface an agent's DIAGNOSIS (not raw data) as fact without an independent check
+- About to relay a CORRECTION of an earlier claim without verifying the correction itself
 - About to dispatch new work on a foundation that contradicts plan §X
+- About to chain two merge acts in one command, or quote a push | merge form inside a commit
+  message, comment or grep pattern -> both are denied by the gate [[LESSONS.md L5, L6]]
+- About to conclude work did NOT land because its commits are not ancestors of main — a squash
+  merge rewrites them, so reachability fails toward "unpushed" [[LESSONS.md L7]]
+- About to dispatch onto a branch a finished agent's worktree still holds
 -> STOP. Either dispatch (background) or ntfy.publish + end turn.
 
 ## COMPLETION_GATE [epic_done]

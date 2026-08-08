@@ -37,6 +37,10 @@ For each factual claim in the report:
    time — a sample that excludes its own counter-examples reads as confirmation.
 5. Any claim of the form "X cannot happen" or "this is the only path" — try once to
    falsify it. Those are the ones that have been wrong.
+6. SHAPES the bad claims keep arriving in — check the report against each: a saturating
+   counter read as a hard cap; a difference quoted without its run-to-run spread; a
+   component described from its NAME instead of its wiring; an untagged metric read as
+   zero volume; a cleanup that would delete the real rows it counted.
 
 Report (<=12 lines): a table of {claim, verdict CONFIRMED/REFUTED/UNVERIFIABLE, the value
 you measured}. Lead with anything REFUTED. If everything checks out, say so plainly in one
