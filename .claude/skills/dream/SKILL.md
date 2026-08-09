@@ -38,12 +38,33 @@ Before writing a single finding, read all of:
   project-level `CLAUDE.md` at the repo root
 - every `LESSONS.md` under `.claude/skills/`
 - `DREAM_ROOT/rejected.md`
+- `DREAM_ROOT/applied.md`
 
 `rejected.md` is not optional context -- it is the record of what a human
 already declined. A claim that was rejected must not be re-proposed unless
 the evidence set backing it has changed (new quote, new session, new
 locator). Proposing the same rejected claim on the same evidence is noise
 that trains the operator to stop reading the report.
+
+`applied.md` is the same discipline for the other outcome: a claim already
+WRITTEN must not be re-proposed. The correction it asked for is in the file
+now, so re-proposing it is proposing a change to text that already says the
+thing. The apply path refuses those (D-7), so a report full of them is a
+report of items that cannot be applied -- and the operator spends the review
+discovering that one refusal at a time.
+
+The two ledgers key on DIFFERENT identities, deliberately, and the difference
+matters when you decide whether something is a re-proposal. `rejected.md`
+keys on the CLAIM (`fingerprint`), because a decline is a durable judgment
+that must survive rewording. `applied.md` keys on the EDIT (`apply_identity`
+= type + target + anchor + replacement), because an application is a one-time
+act on a file state: when the world moves again, the same claim becomes
+legitimately true again and earns a new, different edit. So a recurring
+finding -- STATE.md naming a stale head, most of all -- is NOT a re-proposal
+just because its wording matches an applied entry. Judge it on whether the
+text it would write is already there. They are also not enforced alike: the
+applied side is checked in code at the write boundary, while nothing reads
+`rejected.md` programmatically, so that side is a duty rather than a guard.
 
 ### Finding taxonomy
 
@@ -195,10 +216,29 @@ lives in `dream.dream_apply`; do not reimplement any of its logic inline.
    generations by name and `-` sorts before `0`, so one extended stamp
    makes pruning delete the newest snapshots and keep the oldest. Use this
    same run id as the snapshot stamp and pass it to every
-   `stamp_provenance` and `record_applied` call this session makes, so
-   every write from one session traces back to one snapshot.
-3. Parse `dream.paths.REPORT` with `dream.report_schema.parse_report`. An
-   empty or missing report means nothing to review -- say so and stop.
+   `stamp_provenance` call this session makes, so every write from one
+   session traces back to one snapshot. You do NOT pass it to
+   `record_applied`: `snapshot_or_refuse` retains the stamp and
+   `apply_finding` writes the ledger entry itself (D-7), because a ledger
+   the guard depends on cannot be written by a step a model can forget.
+3. Build the review queue with `dream.pending.pending_findings(text)` on the
+   text of `dream.paths.REPORT` -- not with `parse_report`, whose result is
+   every finding the report carries, applied or not. A missing report means
+   nothing to review: say so and stop, before reading it. So does an empty
+   pending list, whether the report is empty or entirely applied already.
+   The pending list is exactly what the SessionStart notice counts, and it
+   is the list BOTH passes below walk. Walking the raw parse instead
+   re-offers applied findings one at a time for the apply path to refuse
+   individually, which is the queue this step exists to avoid -- and a
+   PARTIALLY applied report, where that queue is interleaved with real work
+   rather than the whole of it, is the common case, not an edge one. Do NOT
+   reach past it to `already_applied` alone -- that is only the ledger half;
+   the content half (`applied_on_content`) is what covers a lost ledger and
+   a pre-D-7 entry (though not a SHORTENING edit, whose replacement is a
+   substring of its own anchor: content cannot prove one landed, so those
+   are settled by the ledger alone), and re-deriving either from prose here
+   is the same second implementation D-7 exists to forbid. `pending_findings` parses the
+   report itself, and raises the same `ValueError` on an unparseable one.
 4. Take exactly one snapshot for the whole session with
    `dream.dream_apply.snapshot_or_refuse(run_id)`, before the first write.
    If it raises `WriteRefused`, stop -- do not apply anything unbacked.
@@ -218,7 +258,8 @@ repo -- every `memory/...` write refused as a result.
 
 ### Auto-apply pass
 
-For each finding, check `dream.dream_apply.auto_apply_eligible(finding)`.
+For each finding in the pending list from step 3 -- never the raw
+`parse_report` result -- check `dream.dream_apply.auto_apply_eligible(finding)`.
 When true (INDEX type -- the type alone, regardless of what `Recheck:`
 carries), apply it without prompting:
 
@@ -237,13 +278,21 @@ carries), apply it without prompting:
   literally dead.) And, true of all of them, it rewarded emitting
   `Recheck: none` to obtain auto-apply -- trading the safety check for the
   convenience. Never reintroduce that condition.
-- call `dream.dream_apply.apply_finding(finding, target)`. On success,
-  call `record_applied(finding, run_id)` and edit the finding's block in
-  `DREAM_REPORT.md` to mark it applied (e.g. append `[auto-applied
-  <run_id>]` to the header line). An auto-applied item must still be
-  visible in the report -- an invisible mutation is exactly the failure
-  mode this system exists to prevent, even when the mutation itself was
-  low-risk.
+- call `dream.dream_apply.apply_finding(finding, target)`. It writes the
+  applied-ledger entry itself, so do NOT call `record_applied` -- a second
+  call just duplicates the line. Then edit the finding's block in
+  `DREAM_REPORT.md` to mark it applied by appending `[applied <run_id>]` to
+  the header line. An auto-applied item must still be visible in the report
+  -- an invisible mutation is exactly the failure mode this system exists to
+  prevent, even when the mutation itself was low-risk. The mark is for the
+  human reading the report and nothing keys off it: a finding is retired by
+  the ledger (`already_applied`) or by the target's own content
+  (`applied_on_content`), and neither of those reads the mark -- nor does
+  the SessionStart notice, which is those two and nothing else. So
+  forgetting the mark cannot resurrect a finding, and writing it cannot make
+  the report unparseable (the header pattern accepts the trailing marker --
+  it did not until 2026-08-09, when one marked header bricked the whole
+  report).
 - on `AnchorMissing` or `WriteRefused`, do not silently drop the finding:
   report the refusal explicitly (see Anchor refusals below) and leave it
   for the human queue below, do not re-attempt it as if it were still
@@ -251,7 +300,8 @@ carries), apply it without prompting:
 
 ### Human approval pass
 
-For every finding NOT auto-applied, prompt the operator with the finding's
+For every finding in that same pending list NOT auto-applied -- again never
+the raw parse -- prompt the operator with the finding's
 claim, evidence, and (for CONFLICT/GRADUATE, which never carry a
 `Replacement:`) the fact that this one is proposal-only and cannot be
 auto-written even on approval -- surface that distinction before asking,
@@ -274,11 +324,33 @@ On approval:
    merge), stamp the replacement text with `stamp_provenance` before it
    reaches `apply_finding`, so the citation lands in the file, not just in
    the ledger.
-3. On success, call `record_applied(finding, run_id)`.
+3. On success, mark the finding applied in `DREAM_REPORT.md` the same way
+   the auto-apply pass does. Do NOT call `record_applied` -- `apply_finding`
+   has already written the ledger. The mark is what makes the report
+   readable as a record of what was done; it is NOT what produced the false
+   "ten unreviewed" count on 2026-08-09 -- that was the header-counting
+   grep, now replaced. Marking all ten would have printed the same ten.
 4. On `AnchorMissing` or `WriteRefused`, do not treat this as a quiet skip:
    report it explicitly to the operator (finding number, exception message)
    so a drifted anchor is visible and re-queueable on the next report,
-   rather than disappearing with no trace.
+   rather than disappearing with no trace. TWO `WriteRefused` messages need
+   naming for what they are -- done, not drift -- and both key on the EDIT,
+   never on the claim (D-7: identity is type + target + anchor +
+   replacement, so the same claim recurring with different replacement text
+   is a DIFFERENT edit and applies normally):
+   - `already applied by run <id>` means this exact edit is recorded in
+     `applied.md`.
+   - `the replacement text is already present in <target>` means the target
+     itself already holds this edit's result, whether or not the ledger
+     records it. This is the half that survives a lost ledger, a pre-D-7
+     entry, and a crash between the write and the record -- so there is
+     usually no ledger line behind it at all, and looking for one to
+     reconcile against will find nothing.
+   Both are the guard working -- re-applying an append-shaped finding
+   duplicates its content silently, because such a replacement embeds its
+   own anchor and so never consumes it. Report either one, never work
+   around it, and never edit the ledger to get past it without the operator
+   deciding that explicitly.
 
 On rejection, call `record_rejected(finding, reason)` with the operator's
 stated reason. This is what lets consolidate mode's `rejected.md` read
