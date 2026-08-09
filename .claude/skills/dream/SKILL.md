@@ -1,0 +1,291 @@
+---
+name: dream
+description: Out-of-band memory consolidation for Claude Code, two modes. Mode consolidate (nightly, non-interactive) reads today's extracted transcript corpus plus every memory surface and proposes evidence-gated corrections into DREAM_REPORT.md, writing nothing else. Mode review (interactive only) applies approved proposals behind an allowlist, a snapshot, and content-anchored edits, auto-applying only mechanical index repairs and recording every applied and rejected finding. Invoke consolidate from the timer; invoke review by hand.
+---
+
+# dream
+
+Nightly memory consolidation, two modes. Mode consolidate is nightly,
+non-interactive, and read-only except for `DREAM_REPORT.md`. Mode review is
+the only mode ever allowed to write to `memory/` or `STATE.md`, and it only
+runs when a human invoked it by hand. If you are running consolidate, do not
+perform any review-mode action, and do not write to memory/ or STATE.md
+under any circumstance.
+
+## Mode: consolidate
+
+### Corpus
+
+Read exactly one file: `DREAM_ROOT/input/<today>.jsonl` (today = the run
+date, `YYYY-MM-DD`). This is the deterministically extracted corpus --
+human turns, assistant prose, failed-tool index, interrupt markers -- already
+reduced from the raw session transcripts.
+
+NEVER read the raw transcripts directly
+(`~/.claude/projects/-home-james-ATLAS/*.jsonl` or any path under
+`DREAM_TRANSCRIPT_ROOT`). They are roughly 250x larger than the extracted
+corpus and will not fit in context. If the extracted corpus is missing or
+empty, that is a finding for the operator, not a reason to fall back to the
+raw transcripts.
+
+### Read before proposing anything
+
+Before writing a single finding, read all of:
+
+- every file under `MEMORY_ROOT` (the topic files) plus `MEMORY.md`, the index
+- `STATE.md`
+- both CLAUDE.md files: the user-level `~/.claude/CLAUDE.md` and the
+  project-level `CLAUDE.md` at the repo root
+- every `LESSONS.md` under `.claude/skills/`
+- `DREAM_ROOT/rejected.md`
+
+`rejected.md` is not optional context -- it is the record of what a human
+already declined. A claim that was rejected must not be re-proposed unless
+the evidence set backing it has changed (new quote, new session, new
+locator). Proposing the same rejected claim on the same evidence is noise
+that trains the operator to stop reading the report.
+
+### Finding taxonomy
+
+Eight finding types, each `ftype` in `dream.report_schema.VALID_TYPES`. The
+general evidence standard is "no quote, no proposal": every finding carries
+at least one verbatim quote plus a locator (session id, turn index, ISO 8601
+timestamp) UNLESS its type's rule below says otherwise. A finding the parser
+cannot support with evidence is rejected at parse time, not surfaced for
+approval -- do not attempt to write a finding with no `Evidence:` line for
+any type, `STALE` and `INDEX` included; for those two, the `Evidence:` line
+names the deterministic check performed, not a quote.
+
+| Type | Meaning | May write | Evidence rule |
+| --- | --- | --- | --- |
+| CORRECTION | a memory entry is contradicted by later evidence | memory, STATE.md | cite BOTH sides: `Anchor:` holds the verbatim memory line being contradicted, `Evidence:` holds the verbatim transcript quote (with locator) that contradicts it. A one-sided correction -- a quote with no memory line named, or a memory line named with no contradicting quote -- is an opinion, not a correction. Reject it yourself before it reaches the report. |
+| STALE | the referent is gone or superseded and nothing contradicts it | memory, STATE.md | `Evidence:` names the deterministic check (file absent, symbol absent from tree, PR closed); `Recheck:` carries the machine-runnable directive the apply path re-executes before writing, because the report is generated at 03:00 and reviewed hours later -- the check can flip in between. Never a quote here. |
+| CONFLICT | two entries disagree with each other | proposal only | `Evidence:` quotes or locates both disagreeing entries; a human arbitrates, so do not propose a `Replacement:`. |
+| DUPLICATE | the same fact lives in two places | memory | `Evidence:` locates both copies; propose the merge as `Anchor:`/`Replacement:` against the copy to retire. |
+| NEW | a durable fact was established and is recorded nowhere | memory | `Evidence:` is the verbatim transcript quote establishing the fact, with locator. |
+| PATTERN | the same lesson recurred and is uncaptured | memory | at least 2 occurrences from at least 2 DISTINCT session ids -- one session repeating itself inside its own turns is not a cross-session pattern. Carry one `Evidence:` line per occurrence (2+ lines), each with its own session id and locator, so the distinct-session requirement is checkable by inspection. |
+| INDEX | unindexed file, dangling index link, or index over its byte budget | memory | `Evidence:` names the deterministic check (e.g. "file present, absent from index"); `Recheck:` carries the directive the apply path re-runs, same discipline as STALE. |
+| GRADUATE | a lesson is now enforced by a hook, a test, or CLAUDE.md, so the memory entry has done its job | proposal only | `Evidence:` locates the hook/test/CLAUDE.md line that now enforces it; do not propose a `Replacement:`, a human confirms retirement. |
+
+### Admission gates
+
+A candidate finding must pass all four before it is written to the report.
+These restate existing memory policy; they do not add new rules:
+
+- **durable** -- true beyond this task or this session, not a status that
+  expires ("#935 is blocked" is not durable; "#935 was blocked by X, fixed
+  in commit Y" is)
+- **non-derivable** -- not something a future agent can get by reading the
+  repo, `git log`, or CLAUDE.md; if it is already derivable, it does not
+  belong in memory at all
+- **actionable** -- changes what a future agent actually does; a fact that
+  changes no decision is trivia, not a finding
+- **not already covered** -- no existing memory entry already states this,
+  even loosely; if one does, the real finding is probably CORRECTION,
+  DUPLICATE, or GRADUATE against that entry, not NEW
+
+A candidate failing any gate is dropped silently -- gate failures are not
+held-back findings and are not counted in the held-back line below.
+
+### Volume cap
+
+Emit at most **10 detailed items**, ranked by severity (high before medium
+before low; within a severity, most-actionable first). Number them
+sequentially starting at 1 in that ranked order.
+
+Every finding that passed the admission gates but did not make the cap MUST
+be counted and named in one line at the end of the report, after the last
+finding block, in exactly this shape:
+
+```
+5 more findings held back: STALE(memory/project_x.md), NEW(STATE.md), ...
+```
+
+That shape is a count, then the literal text `more finding held back:` (use
+`finding`, singular, only when the count is exactly 1; `findings` otherwise),
+then a comma-separated list of `TYPE(target)` pairs for what was held back.
+`dream.report_schema.parse_report` recognizes a line matching this shape as
+report-level content -- it never raises on it and never attaches it to the
+finding above it as a field -- but ONLY when the shape matches exactly. Free
+text in its place (a different phrase, no leading count) is not recognized
+and is treated as an unrecognized line inside the preceding finding's block,
+which raises. When there is nothing held back, omit this line entirely.
+
+Never truncate silently. A silently dropped finding is indistinguishable
+from one that was never found, and that gap is exactly the failure mode
+this system exists to close.
+
+### Report format
+
+Emit each finding as a block. The header line is parsed by
+`dream.report_schema.parse_report` with an exact pattern -- match it
+literally, including the spaces around each `-`:
+
+```
+## N - TYPE - target - severity
+```
+
+- `N` -- the sequential number from Volume cap above, an integer
+- `TYPE` -- one of the eight types above, exactly as spelled (all caps)
+- `target` -- a single token with no spaces: `STATE.md`, or a path under
+  `memory/` such as `memory/MEMORY.md`
+- `severity` -- `high`, `medium`, or `low`
+
+Follow the header with field lines, one per line, in any order, each parsed
+by key:
+
+- `Claim:` -- one line, plain-language statement of the finding
+- `Evidence:` -- one or more lines (repeat the key for each occurrence);
+  required on every finding, no exceptions, see the taxonomy table for what
+  each type's evidence line must contain
+- `Anchor:` -- the verbatim text currently in the target file that the edit
+  matches against; the apply path (mode review) refuses the edit if this
+  text is not present verbatim at apply time, so quote it exactly, including
+  punctuation
+- `Replacement:` -- the literal text to substitute for `Anchor:`. To propose
+  a multi-line replacement, write a literal two-character `\n` where a
+  newline belongs; the parser converts every `\n` in this field into a real
+  newline. This is how a single-line report format carries a multi-line
+  edit.
+- `Recheck:` -- for STALE and INDEX only, the machine-runnable directive the
+  apply path re-executes before writing (for example
+  `file_exists:some_file.md`); `none` for every other type
+
+A finding with no `Evidence:` line, or a `TYPE` outside the eight listed
+above, is not a report the parser will accept -- it raises rather than
+passing the finding through for human approval. Do not generate either
+shape.
+
+### Write boundary
+
+This mode writes **nothing except `DREAM_REPORT.md`**, and nothing else in
+`DREAM_ROOT`, and nothing under `MEMORY_ROOT`, and never `STATE.md` or any
+CLAUDE.md. If a proposal looks worth writing directly, that impulse is the
+thing to resist: the review mode exists precisely so a write has a human
+approval, a snapshot, and a content anchor between the model and memory.
+
+## Mode: review
+
+Interactive only. Invoked by hand, never from the timer -- the timer never
+writes, without exception, and review mode is the one place in this system
+where a write is allowed to happen at all. Every function this mode calls
+lives in `dream.dream_apply`; do not reimplement any of its logic inline.
+
+### Setup
+
+1. Acquire `dream.paths.LOCKFILE` before touching anything: create it with
+   an atomic, exclusive operation (e.g. `open(LOCKFILE, "x")`, which fails if
+   the file already exists) and write the run id into it. If acquisition
+   fails, another review session is in progress -- stop and report that,
+   do not wait or retry. Release the lock (delete the file) when review
+   ends, including on error; a stale lock left behind blocks every future
+   review session, so the release must run from a `finally`, not just the
+   success path.
+2. Generate one run id for the whole session: an ISO 8601 **basic** UTC
+   timestamp matching `^\d{8}T\d{6}Z$` exactly, e.g. `20260808T030000Z`.
+   The extended form (`2026-08-08T03:00:00Z`) is refused:
+   `snapshot_or_refuse` validates the shape, because pruning sorts
+   generations by name and `-` sorts before `0`, so one extended stamp
+   makes pruning delete the newest snapshots and keep the oldest. Use this
+   same run id as the snapshot stamp and pass it to every
+   `stamp_provenance` and `record_applied` call this session makes, so
+   every write from one session traces back to one snapshot.
+3. Parse `dream.paths.REPORT` with `dream.report_schema.parse_report`. An
+   empty or missing report means nothing to review -- say so and stop.
+4. Take exactly one snapshot for the whole session with
+   `dream.dream_apply.snapshot_or_refuse(run_id)`, before the first write.
+   If it raises `WriteRefused`, stop -- do not apply anything unbacked.
+   This step is not advisory: `apply_finding` refuses every write until
+   this call has succeeded, so skipping it fails the session closed rather
+   than writing without a recovery point.
+
+### Targets
+
+Pass `finding.target` to `apply_finding` **verbatim**, exactly as the report
+carries it (`STATE.md`, or `memory/<path>`). Do not resolve it, do not join
+it to a directory, do not turn it into an absolute path.
+`dream.dream_apply.resolve_target` maps the token onto the real file and
+`assert_allowed_target` gates the result. Resolving it yourself is what put
+the process CWD in the write path, and the timer runs with CWD set to the
+repo -- every `memory/...` write refused as a result.
+
+### Auto-apply pass
+
+For each finding, check `dream.dream_apply.auto_apply_eligible(finding)`.
+When true (INDEX type, no time-sensitive recheck), apply it without
+prompting:
+
+- if `finding.recheck` is not `none`, re-run its directive first (see
+  Recheck below) and skip straight to the ordinary refuse-and-report path
+  if it flipped -- `auto_apply_eligible` already excludes this case, but a
+  caller must never assume a field it can re-derive locally.
+- call `dream.dream_apply.apply_finding(finding, target)`. On success,
+  call `record_applied(finding, run_id)` and edit the finding's block in
+  `DREAM_REPORT.md` to mark it applied (e.g. append `[auto-applied
+  <run_id>]` to the header line). An auto-applied item must still be
+  visible in the report -- an invisible mutation is exactly the failure
+  mode this system exists to prevent, even when the mutation itself was
+  low-risk.
+- on `AnchorMissing` or `WriteRefused`, do not silently drop the finding:
+  report the refusal explicitly (see Anchor refusals below) and leave it
+  for the human queue below, do not re-attempt it as if it were still
+  pending approval.
+
+### Human approval pass
+
+For every finding NOT auto-applied, prompt the operator with the finding's
+claim, evidence, and (for CONFLICT/GRADUATE, which never carry a
+`Replacement:`) the fact that this one is proposal-only and cannot be
+auto-written even on approval -- surface that distinction before asking,
+do not let the operator approve a write that cannot happen.
+
+On approval:
+
+1. If `finding.recheck` is not `none`, re-run the directive now, at review
+   time, not at report time -- the report was generated hours earlier and
+   the underlying condition may have changed. Interpret the directive by
+   its prefix; the only form in current use is `file_exists:<path>`,
+   checked relative to the repo root. If the recheck result no longer
+   matches what justified the finding (the file that was supposed to be
+   absent now exists, or vice versa), refuse: do not call `apply_finding`,
+   report the refusal by name (finding number, directive, old vs. new
+   result), and do not silently re-queue it as still-pending -- the
+   operator approved a claim that is no longer true, so surface that
+   plainly rather than either applying it anyway or dropping it without
+   comment.
+2. Call `dream.dream_apply.apply_finding(finding, target)`. For findings
+   that author new memory content (`NEW`, `PATTERN`, or a `DUPLICATE`
+   merge), stamp the replacement text with `stamp_provenance` before it
+   reaches `apply_finding`, so the citation lands in the file, not just in
+   the ledger.
+3. On success, call `record_applied(finding, run_id)`.
+4. On `AnchorMissing` or `WriteRefused`, do not treat this as a quiet skip:
+   report it explicitly to the operator (finding number, exception message)
+   so a drifted anchor is visible and re-queueable on the next report,
+   rather than disappearing with no trace.
+
+On rejection, call `record_rejected(finding, reason)` with the operator's
+stated reason. This is what lets consolidate mode's `rejected.md` read
+recognize the same claim tomorrow even if it comes back reworded --
+`fingerprint` keys on normalized claim content, not exact text, precisely
+so a rejection survives a rewording.
+
+### Anchor refusals
+
+Never catch `AnchorMissing` or `WriteRefused` and continue without a
+visible report line for that finding. A refusal that reaches the operator
+as "5 of 7 findings applied" with no account of the other 2 is
+indistinguishable from a bug that silently dropped them -- always name
+which findings were refused and why, in the same summary that reports what
+was applied.
+
+### End of session
+
+Report a summary: which findings were auto-applied, which were
+human-approved and applied, which were rejected (with reason), and which
+were refused (anchor drift or a write refusal) and therefore remain
+pending for the next report. Write this summary from inside the same
+`finally` that releases `LOCKFILE` (Setup step 1), so the two happen
+together on every exit path, ordinary or not -- if the summary cannot be
+produced, that failure must not suppress the lock release, or a stale lock
+blocks every future session over a problem review mode already survived.

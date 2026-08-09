@@ -2,7 +2,7 @@
 
 Status: APPROVED, not yet implemented
 Date: 2026-08-08
-Scope: agent tooling (`.claude/skills/dream/`, `scripts/dream-extract.py`), not an ATLAS service
+Scope: agent tooling (`.claude/skills/dream/`, `dream/`), not an ATLAS service
 Supersedes: nothing. Related: `.claude/skills/compact-memories` (manual precursor), #922 (STATE.md untracked), #933 (LESSONS.md graduation rule)
 
 ---
@@ -107,13 +107,14 @@ memory/ and STATE.md                                  CLAUDE.md, LESSONS.md: pro
 
 - **Extraction is deterministic and model-free** so it is testable against fixtures with exact assertions, and so transcript schema drift surfaces as a test failure rather than a quiet quality drop. The `.jsonl` shape is undocumented internal structure and will change.
 - **Consolidation never writes.** Analysis and mutation are separate processes with separate failure modes. A bad analysis yields a bad report you reject; it cannot corrupt memory.
-- **Application is deterministic given approvals.** Once items are approved, applying them requires no judgment -- so the risky step, writing an unbacked STATE.md, has no model in the loop.
+- **Application is deterministic given approvals.** Once items are approved, applying them requires no judgment. The judgment is gone from *inside* the write; it is not gone from the loop -- a model is what walks the review flow and calls `apply_finding`. So every precondition that flow depends on (snapshot taken, target resolvable, anchor present) is enforced in `dream_apply`, not stated in `SKILL.md`. A precondition a model can skip by skipping a paragraph is not a guard.
 
 ### 5.2 Layout
 
 | Artifact | Location | rationale |
 | --- | --- | --- |
-| Skill, extractor | `.claude/skills/dream/`, `scripts/dream-extract.py` | git-tracked, ansible-deployable, reviewable as a PR |
+| Skill, python package | `.claude/skills/dream/`, `dream/` (`dream_extract.py`, `dream_apply.py`, `paths.py`, `report_schema.py`) | git-tracked, ansible-deployable, reviewable as a PR |
+| Timer entrypoint, units | `deployment/artifacts/scripts/atlas-dream-run.sh`, `deployment/artifacts/atlas-dream.{service,timer}` | ansible-managed, same as every other ATLAS unit |
 | input, report, rejected, applied, snapshots, digests | `~/.claude/projects/-home-james-ATLAS/dream/` | machine-local derived state, mirrors where auto memory already lives, never pollutes the repo |
 
 ## 6. Component 1: `dream-extract`
@@ -137,13 +138,19 @@ Stripped from kept text:
 - `<system-reminder>` blocks -- injected harness context, not the user's words. Without this the pass learns "preferences" from its own scaffolding.
 - `<command-message>` / `<command-name>` wrappers -- normalized to `[slash: /name]` so invocation stays visible without reading as prose.
 
+**Accepted limitation (measured, Task 3).** The `<system-reminder>` strip is a regex, so text in which the *user* legitimately quotes a `<system-reminder>` tag -- discussing the harness, pasting one into a question -- is deleted along with the harness's own injections. A regex cannot separate the user's words from the harness's; only the transcript's own structure could, and it does not mark the difference. An unclosed opener is additionally dropped to end of string, which is the fail-closed direction: losing a turn beats mining scaffolding for "preferences".
+
+Accepted rather than fixed because the mitigation is already structural: every proposal carries verbatim evidence and is human-reviewed at the gate, so a turn mangled by this strip shows up as mangled evidence in front of a human before it can become a memory write. The failure is visible at the point of decision, not silent.
+
 ### 6.3 Output
 
 `dream/input/YYYY-MM-DD.jsonl`, one record per kept turn:
 
 ```json
-{"session":"89a0eb74","ts":"2026-08-07T14:02:11Z","turn":42,"role":"user","kind":"human","text":"..."}
+{"session":"89a0eb74","ts":"2026-08-07T14:02:11Z","turn":42,"kind":"human","text":"..."}
 ```
+
+Five keys, always: `kind`, `session`, `text`, `ts`, `turn`. There is no `role` key -- an earlier draft of this section promised one and the code never emitted it. `kind` is the only classification carried, one of `human`, `assistant`, `tool_error`. A `tool_error` record carries one extra key, `tool`, naming the tool that failed.
 
 ### 6.4 Fail-loud guard (D-1)
 
@@ -366,17 +373,19 @@ Graceful by construction: every artifact is markdown, snapshots, and an append-o
 
 ## DECISIONS
 
-D-1 fail-loud-extraction: INTENT a dead extractor must never report health / PRECOND any session with an assistant record yields at least one human turn, parse failures under 1 percent, sessions found when files changed / GUARD `dream_extract.assert_corpus_plausible` @ scripts/dream-extract.py / TEST `TestExtractGuards.test_renamed_field_exits_nonzero_and_writes_no_report`
+Citations name the real file, function and test as they exist on this branch. A dangling citation is worse than none: it reads as coverage while pointing at nothing.
 
-D-2 snapshot-before-write: INTENT STATE.md has no git backup since #922, so the apply path is its only recovery mechanism / PRECOND a snapshot exists and is verified before the first write of any run / GUARD `dream_apply.snapshot_or_refuse` / TEST `TestApplySafety.test_write_refused_when_snapshot_fails`
+D-1 fail-loud-extraction: INTENT a dead extractor must never report health / PRECOND any session with an assistant record yields at least one human turn, parse failures under 1 percent, sessions found when files changed / GUARD `dream_extract.assert_corpus_plausible` @ dream/dream_extract.py / TEST `dream/tests/test_extract_guard.py::test_main_writes_no_input_and_exits_two_on_guard_trip`
 
-D-3 write-path-allowlist: INTENT enumerate what is permitted, never what is forbidden, because #935 proved denylists leak at every unenumerated shape / PRECOND target resolves inside memory/ or is exactly STATE.md / GUARD `dream_apply.assert_allowed_target` / TEST `TestApplySafety.test_claude_md_target_refused_through_real_flow`
+D-2 snapshot-before-write: INTENT STATE.md has no git backup since #922, so the apply path is its only recovery mechanism / PRECOND a snapshot exists and is verified before the first write of any run, and its stamp is ISO 8601 basic UTC so pruning's sort-by-name is chronological / GUARD `dream_apply.snapshot_or_refuse` plus the `_snapshot_taken` check at the head of `dream_apply.apply_finding` @ dream/dream_apply.py / TEST `dream/tests/test_apply_safety.py::test_apply_before_any_snapshot_refuses`, `::test_failed_snapshot_leaves_apply_closed`, `::test_snapshot_refuses_extended_format_stamp`
 
-D-4 content-anchored-edits: INTENT the file moves between report time and review time, so position is not identity / PRECOND anchor text present verbatim, else refuse and re-queue / GUARD `dream_apply.match_anchor_exact` / TEST `TestApplySafety.test_mutated_target_refuses_and_leaves_file_identical`
+D-3 write-path-allowlist: INTENT enumerate what is permitted, never what is forbidden, because #935 proved denylists leak at every unenumerated shape / PRECOND the report target token is `STATE.md` or `memory/<path>`, and the path it resolves to lands inside MEMORY_ROOT or is exactly STATE_MD / GUARD `dream_apply.resolve_target` then `dream_apply.assert_allowed_target` @ dream/dream_apply.py / TEST `dream/tests/test_apply_safety.py::test_claude_md_target_refused_through_real_flow`, `::test_memory_prefixed_traversal_still_refused_by_the_allowlist`
 
-D-5 auto-apply-scope: INTENT mechanical index repair is not judgment, but invisible mutation is how memory drifts / PRECOND finding type is INDEX, repair is self-verifying, and the item still appears in the report marked applied / GUARD `dream_apply.auto_apply_eligible` / TEST `TestAutoApply.test_non_index_finding_never_auto_applies`
+D-4 content-anchored-edits: INTENT the file moves between report time and review time, so position is not identity / PRECOND anchor text present verbatim exactly once, else refuse and re-queue / GUARD the occurrence check inside `dream_apply.apply_finding` @ dream/dream_apply.py / TEST `dream/tests/test_apply_safety.py::test_anchor_absent_refuses_and_leaves_file_identical`, `::test_ambiguous_anchor_refuses`
 
-D-6 provenance-inline: INTENT a wrong dream-authored memory must be traceable to its evidence, not indistinguishable from a hand-written fact / PRECOND every authored entry carries run id and evidence locator / GUARD `dream_apply.stamp_provenance` / TEST `TestProvenance.test_authored_entry_carries_evidence_locator`
+D-5 auto-apply-scope: INTENT mechanical index repair is not judgment, but invisible mutation is how memory drifts / PRECOND finding type is INDEX, repair is self-verifying, and the item still appears in the report marked applied / GUARD `dream_apply.auto_apply_eligible` @ dream/dream_apply.py / TEST `dream/tests/test_apply_semantics.py::test_only_index_findings_auto_apply`
+
+D-6 provenance-inline: INTENT a wrong dream-authored memory must be traceable to its evidence, not indistinguishable from a hand-written fact / PRECOND every authored entry carries run id and evidence locator / GUARD `dream_apply.stamp_provenance` @ dream/dream_apply.py / TEST `dream/tests/test_apply_semantics.py::test_provenance_stamp_carries_run_and_evidence`
 
 ---
 

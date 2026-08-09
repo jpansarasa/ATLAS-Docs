@@ -1827,6 +1827,12 @@ Insert after the autofix-runner timer block (around `deploy.yml:2167`), tagged `
       tags: [dream]
 ```
 
+> **Deferred to post-merge, run by the controller. Read before running either form.**
+>
+> There is **no compose service named `dream`** -- it is a systemd timer, not a container. CLAUDE.md's scoped-restart form (`--tags {service} --skip-tags build -e "scoped_restart=true scoped_services={service}"`) therefore **does not apply here**: `scoped_services` must name a real compose service, and `deploy.yml` filters on `label=com.docker.compose.service` and then asserts the container is running, so a tag-only name matches nothing and fails the play.
+>
+> The correct invocation is the non-service form: `--tags dream --skip-tags always`. A bare `--tags dream` is a **full-stack restart** -- `deploy.yml` re-templates `compose.yaml` under `tags: [always]` with no `when:`, so the state expression always resolves to `restarted`, taking down every service including a ~4 minute vLLM GPU reload, and resurrecting anything deliberately stopped. `--skip-tags always` is what leaves only this tag's own four tasks.
+
 - [ ] **Step 5: Verify tag selection before running anything**
 
 Run: `cd deployment/ansible && ansible-playbook playbooks/deploy.yml --tags dream --skip-tags always --list-tasks`
