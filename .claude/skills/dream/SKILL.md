@@ -64,7 +64,7 @@ names the deterministic check performed, not a quote.
 | DUPLICATE | the same fact lives in two places | memory | `Evidence:` locates both copies; propose the merge as `Anchor:`/`Replacement:` against the copy to retire. |
 | NEW | a durable fact was established and is recorded nowhere | memory | `Evidence:` is the verbatim transcript quote establishing the fact, with locator. |
 | PATTERN | the same lesson recurred and is uncaptured | memory | at least 2 occurrences from at least 2 DISTINCT session ids -- one session repeating itself inside its own turns is not a cross-session pattern. Carry one `Evidence:` line per occurrence (2+ lines), each with its own session id and locator, so the distinct-session requirement is checkable by inspection. |
-| INDEX | unindexed file, dangling index link, or index over its byte budget | memory | `Evidence:` names the deterministic check (e.g. "file present, absent from index"); `Recheck:` carries the directive the apply path re-runs, same discipline as STALE. |
+| INDEX | unindexed file, dangling index link, or index over its byte budget | memory | `Evidence:` names the deterministic check (e.g. "file present, absent from index"); `Recheck:` MUST carry a real directive whenever the finding depends on a file's existence -- `file_exists:<path>` for an unindexed file, `file_absent:<path>` for a dangling link to retire. `none` only when the finding depends on nothing that can change (e.g. a pure byte-budget claim). INDEX auto-applies on TYPE, so emitting `none` buys nothing and only discards the check that stops a repair writing a dangling link. |
 | GRADUATE | a lesson is now enforced by a hook, a test, or CLAUDE.md, so the memory entry has done its job | proposal only | `Evidence:` locates the hook/test/CLAUDE.md line that now enforces it; do not propose a `Replacement:`, a human confirms retirement. |
 
 ### Admission gates
@@ -147,9 +147,16 @@ by key:
   newline belongs; the parser converts every `\n` in this field into a real
   newline. This is how a single-line report format carries a multi-line
   edit.
-- `Recheck:` -- for STALE and INDEX only, the machine-runnable directive the
-  apply path re-executes before writing (for example
-  `file_exists:some_file.md`); `none` for every other type
+- `Recheck:` -- for STALE and INDEX only, one of exactly two directives:
+  `file_exists:<path>` (the referent must still be there) or
+  `file_absent:<path>` (it must still be gone), each resolved against the
+  repo root. A directive asserts the condition that must HOLD for the write
+  to be valid. Anything else -- an unknown verb, a missing operand -- is
+  treated as UNSATISFIED and refuses the write, as is an operand that escapes
+  the repo root: "I cannot evaluate this precondition" must never read as
+  "this precondition holds". `apply_finding` re-executes the directive at
+  write time, so a condition that changed since 03:00 refuses rather than
+  writing. Use `none` for every type other than STALE and INDEX.
 
 A finding with no `Evidence:` line, or a `TYPE` outside the eight listed
 above, is not a report the parser will accept -- it raises rather than
@@ -212,13 +219,24 @@ repo -- every `memory/...` write refused as a result.
 ### Auto-apply pass
 
 For each finding, check `dream.dream_apply.auto_apply_eligible(finding)`.
-When true (INDEX type, no time-sensitive recheck), apply it without
-prompting:
+When true (INDEX type -- the type alone, regardless of what `Recheck:`
+carries), apply it without prompting:
 
-- if `finding.recheck` is not `none`, re-run its directive first (see
-  Recheck below) and skip straight to the ordinary refuse-and-report path
-  if it flipped -- `auto_apply_eligible` already excludes this case, but a
-  caller must never assume a field it can re-derive locally.
+- do NOT re-run the directive yourself and do NOT skip the finding because
+  it carries one. `apply_finding` evaluates `Recheck:` itself and raises
+  `WriteRefused` if the condition has flipped, so an INDEX finding whose
+  file was deleted since 03:00 refuses rather than writing a dangling link.
+  Enforcement lives in code precisely so this paragraph cannot be the thing
+  standing between a stale claim and the operator's memory.
+
+  An earlier revision gated auto-apply on `recheck == none`. That was wrong
+  in two ways. It made the carve-out unreachable for every INDEX finding
+  whose claim depends on a file existing -- the common case, and the one the
+  taxonomy above requires a directive for. (A pure byte-budget claim carries
+  `none` legitimately and did still qualify, so the carve-out was not
+  literally dead.) And, true of all of them, it rewarded emitting
+  `Recheck: none` to obtain auto-apply -- trading the safety check for the
+  convenience. Never reintroduce that condition.
 - call `dream.dream_apply.apply_finding(finding, target)`. On success,
   call `record_applied(finding, run_id)` and edit the finding's block in
   `DREAM_REPORT.md` to mark it applied (e.g. append `[auto-applied
@@ -241,16 +259,14 @@ do not let the operator approve a write that cannot happen.
 
 On approval:
 
-1. If `finding.recheck` is not `none`, re-run the directive now, at review
-   time, not at report time -- the report was generated hours earlier and
-   the underlying condition may have changed. Interpret the directive by
-   its prefix; the only form in current use is `file_exists:<path>`,
-   checked relative to the repo root. If the recheck result no longer
-   matches what justified the finding (the file that was supposed to be
-   absent now exists, or vice versa), refuse: do not call `apply_finding`,
-   report the refusal by name (finding number, directive, old vs. new
-   result), and do not silently re-queue it as still-pending -- the
-   operator approved a claim that is no longer true, so surface that
+1. Do NOT evaluate `finding.recheck` yourself. `apply_finding` re-runs the
+   directive at write time and raises `WriteRefused` naming the directive
+   and what it observed, so an approved claim that stopped being true in the
+   hours since 03:00 refuses instead of writing. Re-implementing the check
+   here would put a second, drifting copy of the rule in prose beside the
+   one in code. Report the refusal by name (finding number, directive, what
+   the exception said), and do not silently re-queue it as still-pending --
+   the operator approved a claim that is no longer true, so surface that
    plainly rather than either applying it anyway or dropping it without
    comment.
 2. Call `dream.dream_apply.apply_finding(finding, target)`. For findings

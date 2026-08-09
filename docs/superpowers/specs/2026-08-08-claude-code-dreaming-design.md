@@ -262,6 +262,32 @@ Hard constraint: **auto-applied items still appear in the report, marked as alre
 
 rationale: auto-apply that is invisible is how memory drifts. Auto-apply that is disclosed is work you did not have to click through. Disabling it is one config line; everything then falls back to the gate.
 
+**Eligibility keys on TYPE alone, never on the `Recheck:` field.** The first
+revision required `recheck == none`, which was wrong in two ways and was
+corrected after the first live report.
+
+It made this carve-out unreachable for every INDEX finding whose claim depends
+on a file existing -- the common case, and the one the skill's taxonomy
+requires a directive for. A pure byte-budget claim carries `none` legitimately
+and did still qualify, so the carve-out was not literally dead; an earlier
+draft of this section said it was, which overstated the defect.
+
+The second way is true of all of them, and is the one that matters: it created
+a perverse incentive, because the way to obtain auto-apply was to emit
+`Recheck: none` and thereby discard the safety check -- observed live in run
+`20260809T105134Z`, where an index repair auto-applied having never confirmed
+its file still existed.
+
+Time-sensitivity is handled where it belongs. `apply_finding` evaluates the
+directive itself at write time and refuses if the condition flipped, so an
+index repair whose file was deleted since 03:00 cannot write a dangling link.
+Two directives exist -- `file_exists:<path>` and `file_absent:<path>`, resolved
+against the repo root -- and anything unrecognised is treated as UNSATISFIED,
+because "I cannot evaluate this precondition" must never read as "it holds".
+
+rationale for enforcing in code rather than in the skill: a precondition a
+model can skip by skipping a paragraph is not a guard. Same lesson as D-2.
+
 ### 8.5 Ledger and provenance (D-6)
 
 Every applied change appends to `dream/applied.md`: timestamp, finding type, target, diff, evidence locator. Snapshot plus ledger gives a manual undo path requiring no tooling.
@@ -383,7 +409,7 @@ D-3 write-path-allowlist: INTENT enumerate what is permitted, never what is forb
 
 D-4 content-anchored-edits: INTENT the file moves between report time and review time, so position is not identity / PRECOND anchor text present verbatim exactly once, else refuse and re-queue / GUARD the occurrence check inside `dream_apply.apply_finding` @ dream/dream_apply.py / TEST `dream/tests/test_apply_safety.py::test_anchor_absent_refuses_and_leaves_file_identical`, `::test_ambiguous_anchor_refuses`
 
-D-5 auto-apply-scope: INTENT mechanical index repair is not judgment, but invisible mutation is how memory drifts / PRECOND finding type is INDEX, repair is self-verifying, and the item still appears in the report marked applied / GUARD `dream_apply.auto_apply_eligible` @ dream/dream_apply.py / TEST `dream/tests/test_apply_semantics.py::test_only_index_findings_auto_apply`
+D-5 auto-apply-scope: INTENT mechanical index repair is not judgment, but invisible mutation is how memory drifts, and a repair whose referent vanished is itself a defect / PRECOND finding type is INDEX (type alone, never the Recheck field), the item still appears in the report marked applied, and any Recheck directive is re-evaluated at write time and refuses on a flip / GUARD `dream_apply.auto_apply_eligible` + `dream_apply.recheck_satisfied` enforced in `dream_apply.apply_finding` @ dream/dream_apply.py / TEST `dream/tests/test_apply_semantics.py::test_apply_refuses_when_recheck_flipped` and `::test_unknown_recheck_directive_fails_closed`
 
 D-6 provenance-inline: INTENT a wrong dream-authored memory must be traceable to its evidence, not indistinguishable from a hand-written fact / PRECOND every authored entry carries run id and evidence locator / GUARD `dream_apply.stamp_provenance` @ dream/dream_apply.py / TEST `dream/tests/test_apply_semantics.py::test_provenance_stamp_carries_run_and_evidence`
 
