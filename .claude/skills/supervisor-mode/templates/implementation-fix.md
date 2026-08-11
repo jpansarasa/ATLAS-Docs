@@ -59,8 +59,10 @@ CONSTRAINTS
   raise. Scope added mid-round is scope the review never saw, so it restarts the loop it was
   meant to close.
 - The supervisor owns the remote; a push invalidates the review marker, keyed to headRefOid.
-- `gemini-resolver-mcp`: `SKIP_NETWORK=1` only — `tests/test_smoke.py` makes real Gemini calls
-  against a 1500/day shared quota.
+- `gemini-resolver-mcp`: `pytest` is hermetic by default and its conftest FAILS the run on any
+  outbound attempt. Never set `GEMINI_LIVE_TESTS=1` — that opts `tests/test_smoke.py` back into
+  real Gemini calls against a 1500/day shared quota. (`SKIP_NETWORK` is dead; it gated nothing
+  and a plain `pytest` used to spend.)
 - `git add -- <paths>`, never `-A`/`-u`/`.`.
 - Scarce resource ($/GPU/quota) -> gate + fail-closed cap + burn alert BEFORE depletion. A
   "calls>0 AND cost=$0" check is a corpse-detector, not an alert.

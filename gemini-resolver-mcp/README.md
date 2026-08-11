@@ -49,10 +49,10 @@ flowchart TD
   | **subject + residue (current)** | **5,453** | **+22.6%** |
   | subject + raw description (the re-bill bug) | 6,735 | +51.5% |
 
-  304 subjects keep more than one key, most on junk residue a cache cannot tell from intent (`'a barrel'`, `'days'`, `'monday'`; `"Donald Trump"` arrives under 89 descriptions and holds 36 keys). That +22.6% is the deliberate price of not colliding: under D-1, an extra paid call is the cheaper error than a wrong instrument served free for a month.
+  304 subjects keep more than one key, most on junk residue a cache cannot tell from intent (`'a barrel'`, `'days'`, `'monday'`; `"Donald Trump"` arrives under 89 descriptions and holds 36 keys). That +22.6% is the deliberate price of not colliding: under `AGENT_README.md` D-4, an extra paid call is the cheaper error than a wrong instrument served free for a month.
 
-  **Read +22.6% as an estimate over a failure-only sample, not a bound.** Three log statements carry a subject and **none of them is a success**: two `WARNING`s in `gemini_client.py` ("call failed", "response not parseable") and one `INFO` in `server.py:336`, the pre-call gate rejection added in #823. Re-measured 2026-08-06 over the 30-day journal (136,247 lines): 9,533 lines carry a subject — 9,440 `WARNING` (9,011 unparseable + 429 failed) and 93 `INFO` gate rejections (57 of them on a real, non-`None` subject). The gate lines are non-successes as well, and **0 of the 93 carry a `desc=`**, so they cannot enter the subject/description pair sample from either direction; that sample is exactly the 9,440 `WARNING`s.
-  **No line records the *subject* of a success.** 39,015 lines do record a successful `generateContent` POST — but that is httpx logging a URL and a status code, and the subject never appears in one. A cache hit logs nothing at all: `record_cache_hit` (`server.py:319`) only appends to an in-memory ledger, so **0** of the 136,247 lines mention one. That gap is the argument: of the 39,015 calls that returned HTTP 200, 9,011 came back unparseable, leaving **~30,004 that answered cleanly and left no subject anywhere** — corroborated independently by the cache, which holds **29,946 entries written inside the same window**. So the pair sample is ~9.4k of the ~39.4k requests that reached Gemini, and the ~30k it structurally cannot contain are precisely the ones that get cached and re-billed, which is what the ratio is being used to predict.
+  **Read +22.6% as an estimate over a failure-only sample, not a bound.** Three log statements carry a subject and **none of them is a success**: two `WARNING`s in `gemini_client.py` ("call failed", "response not parseable") and one `INFO` in `server.py:936`, the pre-call gate rejection added in #823. Re-measured 2026-08-06 over the 30-day journal (136,247 lines): 9,533 lines carry a subject — 9,440 `WARNING` (9,011 unparseable + 429 failed) and 93 `INFO` gate rejections (57 of them on a real, non-`None` subject). The gate lines are non-successes as well, and **0 of the 93 carry a `desc=`**, so they cannot enter the subject/description pair sample from either direction; that sample is exactly the 9,440 `WARNING`s.
+  **No line records the *subject* of a success.** 39,015 lines do record a successful `generateContent` POST — but that is httpx logging a URL and a status code, and the subject never appears in one. A cache hit logs nothing at all: `record_cache_hit` (`server.py:706`) only appends to an in-memory ledger, so **0** of the 136,247 lines mention one. That gap is the argument: of the 39,015 calls that returned HTTP 200, 9,011 came back unparseable, leaving **~30,004 that answered cleanly and left no subject anywhere** — corroborated independently by the cache, which holds **29,946 entries written inside the same window**. So the pair sample is ~9.4k of the ~39.4k requests that reached Gemini, and the ~30k it structurally cannot contain are precisely the ones that get cached and re-billed, which is what the ratio is being used to predict.
   **What is quantified, and what is not.** Exactly one bias is measured, and it pushes the figure **up**: the journal truncates `description` to 60 chars, capping 424 of the 9,438 keyed pairs (4.5%; 9,438 of the 9,440 carry a non-empty subject and so key through the residue at all — the other two route to the `subjectless:` namespace). Over all 9,438 the ratio is **+22.6%** — the table's ratio, reproduced on this window, with only the absolute counts drifting — and over the 9,014 untruncated pairs it is **+23.6%**, a gap of **0.96pp**. Pulling the other way, and **not** quantified: unparseable responses concentrate on long, ambiguous non-company surfaces that fan out across far more descriptions than a clean company name does (the subjects holding the most keys are `'donald trump'`, `'india stocks'`, `'munis'` — not issuers), and the successes' subjects cannot be recovered from the cache to size that effect, because the keys are SHA-256. One thing that *looks* like a bias is not one: repeat mentions cannot inflate the ratio, because it is computed over **distinct** keys — deduplicating the 9,438 pairs to their 6,729 distinct forms leaves +22.6% unchanged.
   So the earlier "at most +22.6%" is **withdrawn**: the only correction anyone has measured raises the figure, the countervailing effects are structurally real but unsized, and the net direction is therefore not established. The decision does not rest on the exact number — the residue is bought to prevent a wrong instrument served free for 30 days, and even the untruncated +23.6% is less than half the raw-description key's cost.
 
@@ -154,14 +154,26 @@ A truncation that does slip through is cached for **1 hour** (`TRUNCATION_CACHE_
 {
   "status": "ok",
   "gemini_reachable": true,
+  "resolving": true,
+  "live_calls_1h": 18,
+  "live_calls_24h": 305,
+  "gated_24h": 96,
   "cache_hit_rate_24h": 0.7321,
   "total_calls_24h": 412,
   "total_cost_usd_24h": 0.022144,
-  "ledger_available": true
+  "ledger_available": true,
+  "breaker_open": false
 }
 ```
 
-`status` is `"degraded"` when the on-demand `models.list()` reachability probe fails, when the resolver is up but not resolving, or when `ledger_available` is `false`; the endpoint still returns 200 so the systemd liveness check stays accurate during partial Google outages.
+`status` is `"degraded"` when the on-demand `models.list()` reachability probe fails, when the resolver is up but not resolving, when `ledger_available` is `false`, or when `breaker_open` is `true`; the endpoint still returns 200 so the systemd liveness check stays accurate during partial Google outages.
+
+**`resolving` is the health field, not `gemini_reachable`.** `models.list()` answers 200 straight through a credit outage in which every `generateContent` is refused, so reachability is not resolution. `resolving` has **two legs** and neither sees the other's outage:
+
+- **billing** — at least `GEMINI_HEALTH_MIN_LIVE_1H` (5) live calls in the trailing hour, *all* billing $0. That catches calls Google **accepts** and answers nothing for: a broken model, an empty grounded response, a usage/pricing regression. It is volume-gated, so idle traffic never trips it.
+- **breaker** — sustained dispatch **rejection**. A refused call releases its cap slot (see below), so it never enters the window at all; during a pure-429 credit outage `live_calls_1h` is 0 and the billing leg alone reads "idle, not broken". `breaker_open` says which leg tripped.
+
+**The dispatch breaker.** After `GEMINI_BREAKER_REJECTIONS` (5) **consecutive** rejections — 429 quota/credit, 401/403 auth — the resolver stops dispatching and answers 429 locally, admitting exactly one probe call per `GEMINI_BREAKER_COOLING_SECONDS` (300s) until one is accepted. Consecutive rather than a ratio, so a topped-up account resumes at full rate immediately instead of waiting out a window. Only a call Google **accepted** closes it: a 504, a 503 or a read timeout says nothing about the account either way and leaves both the streak and the open state untouched. It exists because releasing a rejected call's cap slot removed the accidental throttle a depleted account used to get from its own failures filling the cap — without it, every eligible request would dispatch and fail for as long as credits stayed dead.
 
 ## Durable call ledger
 
@@ -197,7 +209,7 @@ It is still happening on the deployed build, and you can watch it from two numbe
 
 > This is the **opposite** of the fail-*open* chosen for the instrument-validator cascade, and the asymmetry is deliberate. There, failing open risks dropping a real resolution — recoverable, retryable, no external cost. Here, failing open risks unbounded spend at $0.035 per grounded prompt past the free boundary, against a boundary that has already drained a $100 prepay once (2026-06-30). Different loss functions; do not carry either default across to the other.
 
-The refusal is never silent: an **unthrottled** `ERROR` at the failure site naming the cause, a **throttled** `ERROR` (at most one an hour, carrying the count it stands for) saying refusals are still happening, `gemini_resolver_ledger_available` → 0, and `/health` reporting `ledger_available: false` with `status: degraded`. The asymmetry is deliberate: the failure-site line fires once and diagnoses, while the per-request line covers a state that persists and sits *after* the cache and gate, so it inherits the resolver's whole post-cache volume — **3,328 requests over the rolling 24h to `2026-08-06T15:47:44Z`** (1,925 live dispatches + 1,403 cap-refusals in the unit journal), i.e. ~2 identical `ERROR`/min indefinitely if left unthrottled. Quote the window with the number: the same instant measured over the *UTC day* gives 1,034 + 1,403 = 2,437 for a partial day still climbing, and mixing the two is what produced the earlier "2,779/day". That is the flood SecMaster's own resolver client was fixed for (4,073 WARNs/24h → ~96 per four-day outage); burying the diagnosing line under it is the actual harm. It answers **429, not 503**, because it is our own fail-closed refusal like the cap itself — SecMaster buckets it as `cap_exhausted`, keeping it out of the transport-error denominator it would otherwise dilute and rate-limiting it to one caller-side warning per hour.
+The refusal is never silent: an **unthrottled** `ERROR` at the failure site naming the cause, a **throttled** `ERROR` (at most one an hour, carrying the count it stands for) saying refusals are still happening, `gemini_resolver_ledger_available` → 0, and `/health` reporting `ledger_available: false` with `status: degraded`. The asymmetry is deliberate: the failure-site line fires once and diagnoses, while the per-request line covers a state that persists and sits *after* the cache and gate, so it inherits the resolver's whole post-cache volume — **3,328 requests over the rolling 24h to `2026-08-06T15:47:44Z`** (1,925 live dispatches + 1,403 cap-refusals in the unit journal), i.e. ~2 identical `ERROR`/min indefinitely if left unthrottled. Quote the window with the number: the same instant measured over the *UTC day* gives 1,034 + 1,403 = 2,437 for a partial day still climbing, and mixing the two is what produced the earlier "2,779/day". Re-measured the same way over the rolling 24h to `2026-08-11T02:50Z`: 1,448 + 1,496 = **2,944** (~2/min) — a snapshot, like the first, and the same shape. Note the live half is pinned near the 1,500 cap whenever the resolver is saturated, so it is not the request rate on its own. That is the flood SecMaster's own resolver client was fixed for (4,073 WARNs/24h → ~96 per four-day outage); burying the diagnosing line under it is the actual harm. It answers **429, not 503**, because it is our own fail-closed refusal like the cap itself — SecMaster buckets it as `cap_exhausted`, keeping it out of the transport-error denominator it would otherwise dilute and rate-limiting it to one caller-side warning per hour.
 
 **A transient lock clears itself; damage does not.** `LedgerUnavailable` carries a `transient` flag classified on `sqlite_errorcode` (`SQLITE_BUSY`/`SQLITE_LOCKED`), and only contention re-arms — after `GEMINI_LEDGER_REARM_BACKOFF` (30s), re-opening and flushing every live call the outage stranded. Without it a five-second lock (an operator holding a write lock while working through the `GeminiResolverLedgerReset` runbook is enough) refused *all* paid resolution until the unit was restarted — and the trap there is that the restart **is** the cap reset, so a momentary lock forced a choice between an indefinite outage and a deliberate bypass of the guard. Structural faults (corruption, permissions, a full disk) never re-arm: retrying against them spins without clearing, and a store that re-armed onto damage would be fail-*open* wearing a retry loop. The flag defaults to structural, so a new failure path cannot become retryable by omission.
 
@@ -212,6 +224,8 @@ The refusal is never silent: an **unthrottled** `ERROR` at the failure site nami
 
 Both directions of both rules are pinned by promtool in `deployment/tests/alerts/gemini-resolver_test.yml`.
 
+**Rejection is a third condition**, guarded separately. `GeminiResolverDispatchRejectionSustained` fires on `sum(increase(gemini_resolver_dispatch_rejected_total[30m])) >= 10`, and it exists for the rate the breaker structurally cannot see: the breaker needs five *consecutive* rejections, so a rate diluted by successes (80% refused, 20% served) never opens it, the interleaved successes bill so the billing leg stays satisfied, and `resolving` sits at 1 through a resolver failing four calls in five. Both callers are blind too — a rejection comes back as HTTP 200 with `symbol: null`, which SecMaster records as a success. Note that the **burn alerts get quieter** in this state, not louder: a refused call releases its cap slot, so `live_calls_1h`/`24h` fall as it worsens.
+
 ## Project structure
 
 ```
@@ -223,8 +237,9 @@ gemini-resolver-mcp/
 │   ├── cache.py             # SQLite (sqlitedict) result cache, 30d TTL
 │   └── ledger.py            # SQLite durable rolling-24h call ledger behind the daily cap
 ├── tests/
-│   ├── conftest.py          # keeps every test off the production cache/ledger files
-│   ├── test_smoke.py        # live-Gemini smoke tests (skip with SKIP_NETWORK=1)
+│   ├── conftest.py          # off the production cache/ledger files, and off the paid API
+│   ├── test_smoke.py        # live-Gemini smoke tests (opt-in: GEMINI_LIVE_TESTS=1)
+│   ├── test_network_isolation.py # proves a plain `pytest` makes zero outbound calls
 │   ├── test_cache_guard.py  # transient failures must never be cached (2026-06-24)
 │   ├── test_budget_guard.py # fail-closed daily call cap
 │   ├── test_cap_persistence.py # the cap survives a restart and a clock step; fail-closed on an
@@ -281,10 +296,15 @@ curl -s -X POST http://localhost:9300/resolve \
 
 ```bash
 source .venv/bin/activate
-pytest tests/ -v
-# skip live Gemini calls:
-SKIP_NETWORK=1 pytest tests/ -v
+pytest tests/ -v                          # hermetic: zero outbound calls, smoke tests skipped
+GEMINI_LIVE_TESTS=1 pytest tests/ -v      # opt in to the live smoke suite — THIS SPENDS
 ```
+
+HERMETIC BY DEFAULT, and enforced rather than promised. `conftest.py` blocks DNS and connect for
+anything off loopback, records every refusal, and fails the run if the ledger is non-empty at the
+end — necessary because `gemini_client.resolve` catches `Exception` and returns a fail-soft $0
+result, so a blocked call raises nothing a test would notice. The gate used to be `SKIP_NETWORK=1`,
+an opt-OUT, so a plain `pytest` billed five live grounded calls against the 1,500/day shared quota.
 
 The smoke suite hits live Gemini and asserts known-good resolutions (`DT`, `BSX`, a FRED discount-rate id) plus a per-call cost ceiling of `$0.01`.
 
