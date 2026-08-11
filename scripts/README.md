@@ -19,6 +19,7 @@ Repo-root operator scripts. Mix of Claude Code helpers, ad-hoc auditing harnesse
 |---|---|
 | `claude-watchdog/` | Background watchdog (`scan.py` + `notify.sh`) that flags long-running Claude Code sessions sitting idle on user input. Publishes to NTFY `atlas-claude-ask`. |
 | `sentinel-quality-check/` | Production weekly Sentinel qualitative-extraction quality-check harness (runs via `atlas-sentinel-quality-check.timer`). Also serves as the on-demand A/B audit harness for the F4.6.4 entity-resolution prompt-grounding feature. Renders a Markdown scorecard from a 50-row stratified sample. |
+| `gemini-spend-calibration/` | Offline calibration harness for the surface gate in front of the paid Gemini resolver — captures a window of what reached the boundary, replays it through SearXNG and scores the issuer-probe signals. Sets no thresholds. The 11-surface reference draw is committed (`testdata/reference-cache/`), so `--offline` re-checks it byte for byte instead of re-drawing a different population. Stdlib only; `unittest discover` runs the suite (**no pytest on this host**) and `mutation-check.py` says what the suite is worth. |
 
 ## When to use which
 
