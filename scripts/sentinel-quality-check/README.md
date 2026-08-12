@@ -7,9 +7,11 @@ variants — control (`{resolved_entities}` = `(none)`) and treatment
 the post-F4.6.3 failure-mode rubric. Output is a dated Markdown scorecard
 that drives the rollout decision in plan §A/B test design + §Rollout / risk.
 
-This harness is **invoke-on-demand**. Nothing here runs in CI. Nothing
-here writes to production tables. It calls the live extraction stack
-(vLLM, SecMaster, spaCy NER sidecar, trafilatura) read-only.
+The harness itself is **invoke-on-demand** — no CI job runs it, and
+nothing here writes to production tables. It calls the live extraction
+stack (vLLM, SecMaster, spaCy NER sidecar, trafilatura) read-only. Its
+offline unit tests do run in CI (`.github/workflows/python-tests.yml`);
+the harness they cover does not.
 
 Source-of-truth spec: the f4.6.4 OpenFIGI/NAICS/RAG phase-1 plan §A/B test
 design (retired to git history — recovery via `docs/RELEASES.md`).
@@ -20,7 +22,9 @@ design (retired to git history — recovery via `docs/RELEASES.md`).
 |---|---|
 | `compare_base_vs_resolved.py` | Per-row driver. Hits trafilatura → spaCy + SecMaster (treatment only) → vLLM twice per row. Emits `control.jsonl` + `treatment.jsonl` + `index.json`. |
 | `ab_scorecard.py` | Loads the JSONL pair, runs the deterministic grading rubric, partitions by Subset A / B, evaluates acceptance gates, renders `f4.6.4-ab-YYYY-MM-DD.md` (+ optional JSON sidecar). |
-| `test_ab_scorecard.py` | Unit tests over the grader, pairing logic, and the acceptance-gate decision matrix. Fully offline. |
+| `test_ab_scorecard.py` | Unit tests over the grader, pairing logic, stub accounting, and the acceptance-gate decision matrix. Fully offline. |
+| `test_compare_base_vs_resolved.py` | Unit tests over the driver's C#-parity surface (candidate minting, renderer cell shape). Fully offline — mocks every client. |
+| `weekly_quality_check.sh` | systemd-timer wrapper: runs both scripts on a fresh sample, refuses an unscoreable run, publishes the weekly pulse and the regression alert. See below. |
 
 ## Prerequisites
 
@@ -116,6 +120,13 @@ If your run produces Subset A < 30 or Subset B < 10, the population is too
 narrow for the comparison to mean anything — bump `--limit` until both
 subsets exceed those thresholds.
 
+A 50-row request does not currently deliver 50 rows. `sample_stratified`
+drops a stratum silently when its source has no eligible rows, and
+`searxng` (target 5) and `validation-content` (target 1) have both dried
+up, so ten of the fifteen runs on record delivered 44. Six of those 44 are
+title-gated stubs the harness deliberately does not send to the model.
+Read any per-run denominator off the scorecard, not off `--limit`.
+
 ## Acceptance gates
 
 `ab_scorecard.py` evaluates the five gates from plan §A/B test design and
@@ -137,9 +148,11 @@ cd scripts/sentinel-quality-check
 python3 -m unittest test_ab_scorecard.py
 ```
 
-The grader, the pair/partition logic, and the acceptance gate boundaries
-are all deterministic and exercise inline fixtures — no external services
-required.
+The grader, the pair/partition logic, the stub accounting, and the
+acceptance gate boundaries are all deterministic and exercise inline
+fixtures — no external services required. `.github/workflows/python-tests.yml`
+runs these (plus `test_compare_base_vs_resolved.py`) under pytest on every
+push and PR that touches this directory.
 
 ## Weekly automated quality check
 
@@ -156,21 +169,33 @@ versus the historical 4% target — there was no automated tripwire.
 | systemd timer | `atlas-sentinel-quality-check.timer` (`OnCalendar=Mon *-*-* 09:23:00`) |
 | Run dir | `/opt/ai-inference/training-data/sentinel-quality-check-YYYYMMDD-HHMM/` |
 | Log file | `/opt/ai-inference/logs/sentinel-quality-check/weekly-YYYY-MM-DD.log` |
-| Regression threshold | overall MAJOR (treatment) > 25% → alert |
+| Regression threshold | MAJOR (treatment) over **graded** rows — usable and non-stub — > 25% → alert. `of usable` and `of n` are published beside it, not gated on |
+| Unscoreable guards | > 40% BROKEN (worse arm) **or** < 20 graded (non-stub usable) rows → exit 1 + high-priority alert, no weekly pulse |
 | NTFY topic | `atlas-claude-ask` on `https://ntfy.elasticdevelopment.com` |
-| Seed | ISO-week (`date -u +%G%V`) — same value all week, fresh weekly |
-| Model pinned | `sentinel-cove-v6.2` (current production) |
+| Seed | ISO-week (`date -u +%G%V`) — same value all week, fresh weekly. Does **not** make the draw reproducible: the sampler shuffles a table that changes between runs, and four runs sharing seed=202620 overlapped by 0-1 rows of 50 |
+| Model pinned | `Qwen/Qwen2.5-32B-Instruct-AWQ` — the only model vLLM serves. The `sentinel-cove-v6.2` alias was dropped 2026-05-25; leaving it pinned here is what produced eleven consecutive dead runs |
 
 The wrapper always publishes a low-priority weekly summary so operators
 have a constant pulse on quality (not just regression-only). On regression
 it adds a default-priority `WARN` alert with the acceptance-verdict block
 inlined.
 
-Deploy via ansible:
+Deploy via ansible, from `deployment/ansible/` (its `ansible.cfg` supplies
+the inventory):
 
 ```bash
-ansible-playbook deployment/ansible/playbooks/deploy.yml --tags quality-check
+ansible-playbook playbooks/deploy.yml --tags quality-check --skip-tags always
 ```
+
+`--skip-tags always` is not optional. `quality-check` names no compose
+service — the four tasks it carries are a log directory plus the systemd
+unit and timer — so the scoped-restart form does not apply, and the bare
+`--tags quality-check` this file used to document selects 41 tasks, not 4:
+everything tagged `always`, including `Remove existing compose.yaml to
+force regeneration` and `Start or restart ATLAS infrastructure`. That is a
+full-stack restart with a ~4 min vLLM GPU reload to install a timer.
+Measured with `--list-tasks` (ansible-core 2.16.3), which parses tag
+selection without executing anything: 41 tasks bare, 4 with the skip.
 
 Manual fire (smoke / fault-finding):
 
@@ -180,9 +205,31 @@ journalctl -u atlas-sentinel-quality-check.service --since '15 min ago'
 ```
 
 Threshold rationale: post-revert v6.2 baseline runs land at 16-18% MAJOR;
-25% leaves headroom for n=50 sampling variance while still flagging real
-regression. Tighten the threshold once the LoRA work brings the baseline
-down toward the 4% target.
+25% leaves headroom for sampling variance at the ~44 rows a full draw
+actually delivers (not the 50 requested — two strata are dry, see
+Stratification) while still flagging real regression. Tighten the
+threshold once the LoRA work brings the baseline down toward the 4%
+target.
+
+Two guards sit in front of that threshold, because a MAJOR rate computed
+over nothing is not a pass:
+
+| Guard | Default | Refuses when |
+|---|---|---|
+| `SENTINEL_QC_MAX_BROKEN_PCT` | 40 | the worse arm graded more than 40% of paired rows BROKEN — the proportional collapse that produced eleven green dead runs |
+| `SENTINEL_QC_MIN_SCORED_ROWS` | 20 | fewer than 20 rows were graded against model output — usable rows that are **not** title-gated stubs |
+
+The stub exclusion is the load-bearing half of the second one. A stub is
+graded CORRECT without any model output being read and can never be
+BROKEN, so stubs inflate both the usable count and the BROKEN percentage's
+complement: 15 BROKEN plus 25 stubs at n=40 reports 37.5% BROKEN, 25
+usable rows and 0.0% MAJOR, and neither guard sees a problem unless the
+floor counts graded rows. The same exclusion is why the threshold above
+divides by graded rows: a stub in that denominator deflates the rate
+exactly as a BROKEN row does. Either refusal exits 1 (systemd marks the
+unit failed) and publishes a high-priority ntfy instead of the weekly pulse.
+`ab_scorecard.py` emits `usable`, `usable_nonstub` and `stubs` side by
+side so the divergence is visible in the scorecard as well.
 
 ## Deferred / out of scope
 
