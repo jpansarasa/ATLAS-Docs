@@ -47,8 +47,10 @@ counter-example. Every figure here carries a tag.
 | **[HEALTH]** | One `curl :9300/health` + `/metrics` read at 2026-08-10T23:01Z. | A single instant. `live_calls_1h` is a rolling burst gauge — **no single reading of it is a citable figure** (established in the type-classifier spec §8). |
 | **[LEDGER]** | `/opt/ai-inference/gemini-resolver-ledger.db`, `call_events`, read-only. | **~48h only** — `PRUNE_RETENTION_WINDOWS=2`. Nothing before 2026-08-08. Carries no subject text. |
 | **[JOURNAL]** | `journalctl -u gemini-resolver-mcp`, today. | **FAILURE-ONLY for subjects.** The resolver logs `subject=` on a *failed* call and nowhere else, so every subject named in this document comes from the post-14:21Z 429 window. It **cannot** characterise the successful stream, and it is the single reason Epic 2 exists. |
-| **[CACHE]** | `/opt/ai-inference/gemini-resolver-cache.db`, 59,118 rows, read-only. | Only **cacheable** answers. 429/transport failures are `cacheable=False` (`gemini_client.py:368`) and absent. Measures yield among calls that *answered*, never among dispatches. Keys are hashes — **subjects are not recoverable from it**. |
+| **[CACHE]** | `/opt/ai-inference/gemini-resolver-cache.db`, 59,118 rows, read-only. | Only **cacheable** answers. 429/transport failures are `cacheable=False` (`gemini_client.py:510`) and absent. Measures yield among calls that *answered*, never among dispatches. Keys are hashes — **subjects are not recoverable from it**. |
 | **[PROBE]** | 11 author-chosen surfaces through live SearXNG. | n=11, hand-picked by the author, one query template, one 3-minute window. **Indicative, not distributional.** No threshold may ship on it — that is Epic 3. |
+| **[CONSOLE]** | AI Studio billing console, Tier 2 account-level totals, read 2026-08-12: 90d `$201.50`, 28d `$67.07`. | Any **split**. One number per window covering token cost AND grounded-request charges AND anything else billed to the account — it can bound a component from above and can never measure one. It is also a window **mean**: it bounds no single day. |
+| **[REPRICED]** | A dollar figure the resolver COMPUTED at the wrong price table — gemini-1.5-flash's `$0.075`/`$0.30` while it called gemini-2.5-flash, corrected 2026-08-12 (#954) — rescaled by the blended multiplier at the recorded token mix, **x7.33**. | Exactness. The multiplier is **mix-dependent**: 4.00x if a window were all input, 8.333x if all output; 7.33x is the 2026-08-05 replay mean (1,155 billed in / 959 billed out, n=24). It **cannot** recover a window whose mix differed, and nothing stored can supply one — the ledger persists `cost_usd` only, no token counts. A [REPRICED] figure is an estimate with a ±, never a reading. |
 
 ---
 
@@ -65,25 +67,59 @@ worked. The P4 that prompted this plan was the third alert, not the first.
 
 **B. Prepay credits depleted.** [JOURNAL] first `429 RESOURCE_EXHAUSTED / Your prepayment credits
 are depleted` at 14:21:22 EDT; 95 today. [HEALTH] `resolving:false` follows mechanically from
-`server.py:754` — `not (live_1h >= 5 AND cost_1h == 0.0)` — with `live_1h=14, cost_1h=0`.
+`server.py:186` — `not (live_1h >= 5 AND cost_1h == 0.0)` — with `live_1h=14, cost_1h=0`.
 
-**The $100 leak mechanism is very likely closed; the waste is not.** The money left through
-cap-overage before the durable ledger shipped 2026-08-06 (#911): `ledger.py` header records three
-restarts erasing a cap at 1500/1500, a rolling-24h peak of **2,999**, and **6,801 calls dispatched
-while already over cap**. Post-#911 [PROM] shows `gemini_resolver_live_calls_24h` pinning at
-exactly 1500 and never above, and [LEDGER] token cost is $0.24–0.39/day.
+**The cap has held since #911. Whether that closed the $100 is REOPENED — the 2026-08-12 reprice
+took away the arithmetic the old verdict rested on.**
 
-**Stated honestly, because it is inferred and not observed:** "closed" rests on the cap holding,
-NOT on a billing figure. Nothing on this host can see grounded-search request charges (that is
-precisely Story 5.3's gap), and no one has read the AI Studio console against these dates. The
-free-grounding boundary of 1,500/day is a documented tier, not something measured here. Treat the
-overage diagnosis as the best available explanation and **do not re-derive it or re-litigate it**
-— but if Story 5.3 or the billing console later contradicts it, this paragraph is the thing that
-was wrong, not the rest of §0. What is still fully open, and is independently measured, is *what
-we spend the 1,500 on*:
+**The counts are untouched** — the reprice moved dollars per call, not calls. Before the durable
+ledger shipped 2026-08-06 (#911), `ledger.py`'s header records three restarts erasing a cap at
+1500/1500, a rolling-24h peak of **2,999**, and **6,801 calls dispatched while already over cap**;
+post-#911 [PROM] shows `gemini_resolver_live_calls_24h` pinning at exactly 1500 and never above.
+
+**Two dollar facts now contradict the old verdict.** [LEDGER] token cost is **$1.76–2.86/day**
+[REPRICED], having read `$0.24–0.39/day` until 2026-08-12 (`× 7.33`).
+
+1. At the old figure, `$7.20–11.70/month` of token spend was a rounding error against a $100
+   complaint, so overage *had* to carry the missing ~$90 — that is what "very likely closed"
+   rested on. At **$52.80–85.80/month** it does not: token spend alone is the same order as the
+   whole complaint, and the cap bounds **calls**, not dollars.
+2. The named mechanism does not fit [CONSOLE]. 6,801 over-cap dispatches at the published
+   `$35`/1,000 grounded prompts is **$238.04**; the 90d console total is **$201.50**, whose token
+   leg alone is `$158.40–257.40` (`$1.76–2.86 × 90`), leaving **−$55.90 to +$43.10** for every
+   grounded charge in the window. `$238.04` does not fit. So at least one of {`$0.035` applying to
+   all 6,801, the [REPRICED] band, the windows lining up} is wrong.
+
+**No replacement verdict is offered and none should be read in.** Supported: the cap has held, the
+counts are sound, token spend is now a material share of the complaint by itself, and the overage
+arithmetic does not reconcile with [CONSOLE]. Open: how the `$100` splits between the two. Nothing
+on this host can see grounded-search charges — Story 5.3's gap exactly, still unbuilt — and the
+1,500/day free-grounding boundary is a documented tier, not something measured here.
+
+**What is settled and what is not — scoped, because the earlier blanket wording ("do not re-derive
+it or re-litigate it") ended up shielding a number the evidence has since refuted:**
+
+- **Settled. Do not re-litigate:** the **call counts** — the over-cap dispatches before #911, and
+  the cap holding since. The 2026-08-12 reprice moved dollars per call, not calls. This does NOT
+  extend to the *mechanism as the explanation of the `$100`*: that is a claim about **dollars**,
+  and it is reopened directly above.
+- **Not settled. Re-derive freely, and expect to:** every **dollar** figure written in this
+  document. All of them came from a resolver pricing its calls off the wrong model's table. The
+  ones in §0 and Story 5.3 are rescaled and tagged [REPRICED]; any new one is computed from
+  `gemini_client.MODEL_PRICES_USD_PER_1M`, never copied from an earlier revision of this file.
+
+The AI Studio console **has** since been read, which the clause that stood here said nobody had:
+[CONSOLE] Tier 2, 90d `$201.50` (**$2.239/day**), 28d `$67.07` (**$2.395/day**) — nowhere near the
+`$0.24–0.39` the gauge was reporting. Console spend is token cost **plus** grounded-request
+overage, so a console total is an **upper bound on the token leg**, never a measurement of it.
+Both readings land **inside** the re-derived `$1.76–2.86/day` band, and *that* is the inference:
+they **narrow the band's own top**, from `$2.86` to `~$2.40`. Say it about the leg and never about
+the band: a value inside an interval bounds that interval from neither side. And it bounds the
+window **mean** only — no single day is bounded by an average. What is still fully open, and is
+independently measured, is *what we spend the 1,500 on*:
 
 - [CACHE] last 48h: **552 of 2,048 answered lookups resolved to a symbol — 27.0%.** Lifetime 40.2%.
-- [HEALTH] the resolver's own `_company_gate` (`server.py:126-147`) rejected **2 of 2,491** requests
+- [HEALTH] the resolver's own `_company_gate` (`server.py:412`) rejected **2 of 2,491** requests
   in 24h. `gemini_resolver_gated_24h = 0` was independently confirmed in the type-classifier spec.
 - [JOURNAL] surfaces observed reaching the paid call: `Donald Trump`, `Sri Lanka`,
   `the Palio di Siena`, `the Head of Quantitative Strategy`,
@@ -109,8 +145,8 @@ the wrong *shape* for a money boundary, not a defective implementation.
 **Two legs converge on the paid call, and only one runs the filter.** [PROM] 24h:
 `secmaster_gemini_resolver_calls_total` ≈ **2,984** (`success` 1,672, `cap_exhausted` 1,005,
 `no_response` 304, `cancelled` 2) vs `sentinel_gemini_resolver_calls_total` ≈ **1,347**. SecMaster
-never calls `CandidateSurfaceFilter` — it has its own regex slug rules
-(`IdentifierConfirmationService.cs:207,223-225`). Any control placed on only the Sentinel leg
+never calls `CandidateSurfaceFilter` — it has its own gate, `ShouldResolveViaGemini`
+(`IdentifierConfirmationService.cs:276`). Any control placed on only the Sentinel leg
 misses the majority of dispatches.
 
 ---
@@ -253,9 +289,10 @@ at the time it is made. Epic 4 waits for the curve to exist, not for anyone to a
 ### Epic 1 — Failed calls must not consume the daily cap
 
 **Why:** `client.resolve` is fail-soft and returns a result rather than raising
-(`gemini_client.py:355-369`), so a 429 reaches `commit_live(cost=0.0)` (`server.py:721`) and
-occupies a slot in the 1,500/day window. `release_live()` (`server.py:474-479`) — documented
-*"Gemini was never actually called"* — is reachable only from the `except BaseException` around
+(`gemini_client.py:479`, fail-soft `except` at `:494`), so a 429 reaches `commit_live(cost=0.0)` (`server.py:749`) and
+occupies a slot in the 1,500/day window. `release_live()` (`server.py:762`) — then documented
+*"Gemini was never actually called"*, a sentence the D-3 fix has since replaced at that site
+precisely because this diagnosis showed it was false — is reachable only from the `except BaseException` around
 dispatch, which a swallowed 429 never triggers. [LEDGER] 95 of today's slots are $0 failures.
 **Operational consequence:** once credits are topped up, the window is still full of failures and
 resolution does not return for up to 24h.
@@ -271,7 +308,7 @@ resolution does not return for up to 24h.
   numeric `.code`, treating `.status` as corroborating, never the reverse.
 - `_dispatch` calls `release_live()` for that class and `commit_live()` otherwise.
 - **Timeouts still commit.** A dispatched call that timed out may well have billed; the 25s
-  `HttpOptions` timeout comment at `server.py:695-703` already records that the thread bills once
+  `HttpOptions` timeout comment at `server.py:1057` already records that the thread bills once
   dispatched. Releasing on timeout would reopen the overshoot #911 closed.
 
 **Story 1.2 — circuit-break on sustained credit depletion. NOT optional, and it is what makes 1.1
@@ -493,7 +530,7 @@ plus, on strong-positive, the harvested exchange:symbol from the quote URL.
 (`IdentifierConfirmationService`). A change that covers only Sentinel misses ~69% of dispatches and
 does not satisfy this epic.
 - **Not inline in the confirmation timeout.** SecMaster's `GeminiConfirmTimeout` is 4s and 37 of
-  106 dispatches already hit it (`server.py:705-710`); a ~1s probe consumes a quarter of that
+  106 dispatches already hit it (`server.py:1067`); a ~1s probe consumes a quarter of that
   budget. Place the probe where the surface is known ahead of confirmation, or raise the timeout
   with measured justification — do not silently spend the existing budget.
 - **No feature flag.** Per house rule, no default-OFF flags. Validation happened offline in Epic 3;
@@ -503,11 +540,14 @@ does not satisfy this epic.
 
 **Story 4.3 — D-entries and guard tests.** **All three touched services carry a card**:
 SentinelCollector, SecMaster, and — since `ddbe014f` (#942), the same commit §8 records as Epic 1's
-landing — `gemini-resolver-mcp/AGENT_README.md`. That card's DECISIONS block already holds **D-1
-`fail-closed-durable-cap`, D-2 `accepted-not-merely-unrejected`, D-3
-`rejected-call-releases-its-slot`, D-4 `wrong-ticker-worse-than-the-bill`**; D-2 **is** the "later
-fix round" the Story 1.2 addendum describes, written up where its guard lives. Read all three
-DECISIONS blocks before designing this story — CLAUDE.md's INTENT_FIDELITY CONFLICT rule and §5's
+landing — `gemini-resolver-mcp/AGENT_README.md`. D-2 there **is** the "later fix round" the Story
+1.2 addendum describes, written up where its guard lives.
+
+**Read all three DECISIONS blocks before designing this story, and take the entry NUMBERS from the
+cards, never from this document.** A roster of the gemini-resolver entries stood here; it went stale
+the moment the card gained one, and an agent trusting it would have minted a D-6 that already
+exists. The cards are the register — they carry every entry, its number, and any number that is
+RESERVED and must not be reused. CLAUDE.md's INTENT_FIDELITY CONFLICT rule and §5's
 STOP_ON_OBSTACLE both key on knowing which entries exist, and Story 5.3 modifies this same service
 again. Add D-entries in the touched services' DECISIONS blocks per CLAUDE.md INTENT_FIDELITY
 MECHANICS, with `INTENT(D-n):` comments at each guard site.
@@ -552,7 +592,7 @@ type-classifier spec §10 item 2: nothing watches
 `sentinel_candidate_surface_filtered_total` today (re-verified: zero hits across `deployment/`).
 Predicate is a **RATIO against dispatch volume, never a raw rate** — a bare `rate(...) == 0` fires
 on every quiet ingress period. Mirror `NewsSignalClassifierFailingHard`
-(`deployment/artifacts/monitoring/alerts/sentinel.yml:305-313`): same shape, same `clamp_min`
+(`deployment/artifacts/monitoring/alerts/sentinel.yml:385-392`): same shape, same `clamp_min`
 denominator, same volume floor.
 
 **Story 5.2 — SearXNG engine-attrition alert.** Fire when the mean answering-engine count per probe
@@ -570,7 +610,24 @@ the band actually observed and would not fire on a real collapse. State the wind
 from in the rule's annotation, and re-derive it when the probe's own attrition series exists.
 
 **Story 5.3 — a real spend signal.** `gemini_resolver_total_cost_usd_24h` is **token cost only**
-($0.464884 for 1,500 calls [HEALTH]). Grounded-search request charges appear in no gauge.
+(**~$3.41 for 1,500 calls** — the [HEALTH] read on 2026-08-10 was `$0.464884`, rescaled
+[REPRICED]: `0.464884 × 7.33 = 3.41`, i.e. `~$0.00227/call`. The gauge itself was corrected in
+#954, so a fresh read now reports the real figure and needs no rescaling). Grounded-search request
+charges appear in no gauge.
+
+**This story's sizing premise moved by 7.3x, and the ordering survives it — but not for the reason
+first given.** The old comparison set `$0.46` per 1,500 calls against `~$52.50` (1,500 × `$0.035`)
+and concluded token spend was the rounding error. **That `$52.50` is unreachable while the cap
+holds:** the first 1,500 grounded prompts/day are free and the fail-closed cap refuses at 1,500, so
+at the cap the grounded-request charge is `$0` and the token leg is the *only* spend. The
+grounded-request projection is still the first thing to build, but because it is what prices the
+cap being RAISED or BREACHED — the failure #911 closed, and the one with no dollar signal at all —
+not because it is the larger line item today. What also changed is that the **token leg now deserves its
+own alert too** — precisely the OPEN GAP recorded in
+`deployment/artifacts/monitoring/alerts/gemini-resolver.yml` (cost per live call drifting above
+`~$0.004`, which catches a prompt-size or reasoning-budget regression that call-count alerts
+cannot see). Do not treat the corrected figure as a reason to re-order the story; treat it as the
+reason its second half is no longer optional.
 
 **Scope this honestly — we cannot read Google's meter.** What is buildable here is a count of *our
 own* grounded requests against the known free-tier boundary and published overage price, i.e. a
@@ -578,7 +635,7 @@ modelled projection. The authoritative balance lives only in the AI Studio billi
 nothing in this plan changes that. Ship the projection, label it a projection, and alert on
 projected depletion **before** it happens. Per CLAUDE.md INTENT_FIDELITY: never ship a
 `calls>0 AND cost=$0` check as the burn alert — that is a corpse-detector, and `resolving` at
-`server.py:754` is already exactly that shape (it is a correct *death* detector; it is not a burn
+`server.py:186` is already exactly that shape (it is a correct *death* detector; it is not a burn
 alert and must not be treated as one).
 
 **AC 5**

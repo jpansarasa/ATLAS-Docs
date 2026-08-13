@@ -51,8 +51,8 @@ flowchart TD
 
   304 subjects keep more than one key, most on junk residue a cache cannot tell from intent (`'a barrel'`, `'days'`, `'monday'`; `"Donald Trump"` arrives under 89 descriptions and holds 36 keys). That +22.6% is the deliberate price of not colliding: under `AGENT_README.md` D-4, an extra paid call is the cheaper error than a wrong instrument served free for a month.
 
-  **Read +22.6% as an estimate over a failure-only sample, not a bound.** Three log statements carry a subject and **none of them is a success**: two `WARNING`s in `gemini_client.py` ("call failed", "response not parseable") and one `INFO` in `server.py:936`, the pre-call gate rejection added in #823. Re-measured 2026-08-06 over the 30-day journal (136,247 lines): 9,533 lines carry a subject — 9,440 `WARNING` (9,011 unparseable + 429 failed) and 93 `INFO` gate rejections (57 of them on a real, non-`None` subject). The gate lines are non-successes as well, and **0 of the 93 carry a `desc=`**, so they cannot enter the subject/description pair sample from either direction; that sample is exactly the 9,440 `WARNING`s.
-  **No line records the *subject* of a success.** 39,015 lines do record a successful `generateContent` POST — but that is httpx logging a URL and a status code, and the subject never appears in one. A cache hit logs nothing at all: `record_cache_hit` (`server.py:706`) only appends to an in-memory ledger, so **0** of the 136,247 lines mention one. That gap is the argument: of the 39,015 calls that returned HTTP 200, 9,011 came back unparseable, leaving **~30,004 that answered cleanly and left no subject anywhere** — corroborated independently by the cache, which holds **29,946 entries written inside the same window**. So the pair sample is ~9.4k of the ~39.4k requests that reached Gemini, and the ~30k it structurally cannot contain are precisely the ones that get cached and re-billed, which is what the ratio is being used to predict.
+  **Read +22.6% as an estimate over a failure-only sample, not a bound.** Three log statements carry a subject and **none of them is a success**: two `WARNING`s in `gemini_client.py` ("call failed", "response not parseable") and one `INFO` in `server.py:951`, the pre-call gate rejection added in #823. Re-measured 2026-08-06 over the 30-day journal (136,247 lines): 9,533 lines carry a subject — 9,440 `WARNING` (9,011 unparseable + 429 failed) and 93 `INFO` gate rejections (57 of them on a real, non-`None` subject). The gate lines are non-successes as well, and **0 of the 93 carry a `desc=`**, so they cannot enter the subject/description pair sample from either direction; that sample is exactly the 9,440 `WARNING`s.
+  **No line records the *subject* of a success.** 39,015 lines do record a successful `generateContent` POST — but that is httpx logging a URL and a status code, and the subject never appears in one. A cache hit logs nothing at all: `record_cache_hit` (`server.py:718`) only appends to an in-memory ledger, so **0** of the 136,247 lines mention one. That gap is the argument: of the 39,015 calls that returned HTTP 200, 9,011 came back unparseable, leaving **~30,004 that answered cleanly and left no subject anywhere** — corroborated independently by the cache, which holds **29,946 entries written inside the same window**. So the pair sample is ~9.4k of the ~39.4k requests that reached Gemini, and the ~30k it structurally cannot contain are precisely the ones that get cached and re-billed, which is what the ratio is being used to predict.
   **What is quantified, and what is not.** Exactly one bias is measured, and it pushes the figure **up**: the journal truncates `description` to 60 chars, capping 424 of the 9,438 keyed pairs (4.5%; 9,438 of the 9,440 carry a non-empty subject and so key through the residue at all — the other two route to the `subjectless:` namespace). Over all 9,438 the ratio is **+22.6%** — the table's ratio, reproduced on this window, with only the absolute counts drifting — and over the 9,014 untruncated pairs it is **+23.6%**, a gap of **0.96pp**. Pulling the other way, and **not** quantified: unparseable responses concentrate on long, ambiguous non-company surfaces that fan out across far more descriptions than a clean company name does (the subjects holding the most keys are `'donald trump'`, `'india stocks'`, `'munis'` — not issuers), and the successes' subjects cannot be recovered from the cache to size that effect, because the keys are SHA-256. One thing that *looks* like a bias is not one: repeat mentions cannot inflate the ratio, because it is computed over **distinct** keys — deduplicating the 9,438 pairs to their 6,729 distinct forms leaves +22.6% unchanged.
   So the earlier "at most +22.6%" is **withdrawn**: the only correction anyone has measured raises the figure, the countervailing effects are structurally real but unsized, and the net direction is therefore not established. The decision does not rest on the exact number — the residue is bought to prevent a wrong instrument served free for 30 days, and even the untruncated +23.6% is less than half the raw-description key's cost.
 
@@ -75,7 +75,7 @@ All configuration via environment variables (see `gemini-resolver-mcp.service` f
 |----------|-------------|---------|
 | `GEMINI_API_KEY` | Gemini API key (string). If empty, falls back to `GEMINI_KEY_FILE`. | `""` |
 | `GEMINI_KEY_FILE` | Path to a file containing the API key. Used when `GEMINI_API_KEY` is empty. | `/home/james/.gemini-key` |
-| `GEMINI_MODEL` | Gemini model id. | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | Gemini model id. **Must have an entry in `gemini_client.MODEL_PRICES_USD_PER_1M`** — an unpriced id fails startup rather than reporting invented costs (see [POST `/resolve` response](#post-resolve-response)). | `gemini-2.5-flash` |
 | `GEMINI_CACHE_DB` | SQLite cache path. Parent dir is auto-created. | `/opt/ai-inference/gemini-resolver-cache.db` |
 | `GEMINI_LEDGER_DB` | SQLite path for the durable rolling-24h call ledger behind the daily cap. **Deleting or repointing this resets the cap** — see [Durable call ledger](#durable-call-ledger). | `/opt/ai-inference/gemini-resolver-ledger.db` |
 | `GEMINI_ENABLE_GROUNDING` | Enable `GoogleSearch` tool. When `false`, the client requests `response_mime_type=application/json` instead (google-genai forbids both together). | `true` |
@@ -120,7 +120,7 @@ Either `GEMINI_API_KEY` or a readable `GEMINI_KEY_FILE` is **required**; startup
   "source_url": "https://...",
   "rationale": "one sentence explaining the choice",
   "cached": false,
-  "cost_usd": 0.000374
+  "cost_usd": 0.002744
 }
 ```
 
@@ -128,7 +128,9 @@ Either `GEMINI_API_KEY` or a readable `GEMINI_KEY_FILE` is **required**; startup
 - `exchange` ∈ `{NYSE, NASDAQ, AMEX, OTC, FRED}` (or `null`).
 - `symbol` is uppercased; literal strings `"null"`, `"none"`, `"n/a"`, `"unknown"` are normalized to `null`.
 - `confidence` clamped to `[0.0, 1.0]`; `symbol` is forced to `null` when `confidence < 0.6`.
-- `cost_usd` is `0.0` on cache hit; otherwise `input_tokens * $0.075/1M + output_tokens * $0.30/1M`, where `input_tokens = prompt_token_count + tool_use_prompt_token_count` and `output_tokens = candidates_token_count + thoughts_token_count`. All four are billed — counting only prompt+candidates under-reported the bill 4.2x ($0.000089 against the true $0.000374 mean per call, measured over the 24-input replay).
+- `cost_usd` is `0.0` on cache hit; otherwise `input_tokens * $0.30/1M + output_tokens * $2.50/1M` (gemini-2.5-flash paid tier, verified 2026-08-12 against [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing); thinking tokens bill at the output rate), where `input_tokens = prompt_token_count + tool_use_prompt_token_count` and `output_tokens = candidates_token_count + thoughts_token_count`. All four are billed. This service quotes three different per-call dollar figures — a heavy-tail replay mix, that replay's own per-call mean (the source of the `$0.002743` in the truncation table below), and a population mean. They are right about different quantities and none is a rounding of another; which is which is set out once, at `gemini_client._usage_tokens`.
+
+  > **The price table is keyed by model id, and an unpriced id refuses to start.** Rates live in `gemini_client.MODEL_PRICES_USD_PER_1M` as `{model: (input, output)}`; `GeminiResolverClient.__init__` looks the configured model up and raises `UnpricedModelError` if it is absent, so `create_app()` — and therefore the systemd unit — fails rather than reporting a made-up figure. Until 2026-08-12 the rates were flat constants holding `$0.075`/`$0.30`, **gemini-1.5-flash's**, while the service had called `gemini-2.5-flash` since the day the client was written — a wrong transcription at authoring, never a table left behind by an upgrade. Input was understated 4x and output 8.33x. **What that repriced, how the multiplier decomposes, and why the AI Studio console is an upper bound rather than a counterpart are recorded once, in that constant's header comment — follow it instead of re-deriving them here.** It survived that long because `gemini_resolver_total_cost_usd_24h` has zero consumers (see the note below), so no runtime signal could contradict a wrong-but-self-consistent number — which is why the coupling is structural here and not merely asserted in a test. **Adding a model means adding its rates in the same edit**; look them up at [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing). Guarded by `tests/test_billing_waste.py::test_an_unpriced_model_refuses_to_start` and the tests beside it, which D-6 in `AGENT_README.md` enumerates — the keyed table guards the *id → price binding*; `test_cost_matches_the_published_price_of_the_model_we_call` is what guards the *values*, which a keyed table cannot check.
 
 > **`cost_usd` is not alerted on.** It aggregates into `gemini_resolver_total_cost_usd_24h`, which currently has **zero consumers** — no alert rule, no recording rule, no dashboard panel. Every shipped burn guard is *call-count* denominated (`GeminiResolverApproachingFreeGroundingCap`, `GeminiResolverBillableCallRateHigh`, and the fail-closed `DAILY_CALL_CAP`), which is the correct primary bound because grounding is billed per prompt with the first 1,500/day free. Correcting the token accounting therefore re-based no threshold. The open gap: **token spend itself has no alert**, so a drain that stays under the call cap while burning tokens (a prompt-size or reasoning-budget regression) would not page. Deliberately not filled in this PR — the accurate figure above is the precondition for filling it.
 
@@ -141,8 +143,8 @@ Measured 2026-08-05 by replaying the 24 real inputs that had failed in productio
 | `max_output_tokens` | truncated (`finish_reason=MAX_TOKENS`) | cost per usable result |
 |---|---|---|
 | 512 (old) | 24 / 24 | — (nothing usable) |
-| 1024 | 2 / 24 | $0.000371 |
-| 2048 (current) | 0 / 24 | $0.000374 |
+| 1024 | 2 / 24 | $0.002669 |
+| 2048 (current) | 0 / 24 | $0.002743 |
 
 A larger ceiling only bills when tokens are actually generated, whereas a truncated call still bills every reasoning token and discards the answer. Do not lower this to "bound cost".
 
@@ -158,13 +160,24 @@ A truncation that does slip through is cached for **1 hour** (`TRUNCATION_CACHE_
   "live_calls_1h": 18,
   "live_calls_24h": 305,
   "gated_24h": 96,
-  "cache_hit_rate_24h": 0.7321,
+  "cache_hit_rate_24h": 0.0267,
   "total_calls_24h": 412,
-  "total_cost_usd_24h": 0.022144,
+  "total_cost_usd_24h": 0.692350,
   "ledger_available": true,
   "breaker_open": false
 }
 ```
+
+Two fields above are **derived from the others, not independent readings**, and both were retyped
+rather than computed until 2026-08-13 — which is what a figure written beside the values it is
+computed from always ends up doing:
+
+- `cache_hit_rate_24h` — hits are `total_calls_24h − live_calls_24h − gated_24h`, and the rate is
+  that over `total_calls_24h`: `11 / 412 = 0.0267`. The sample carried `0.7321`.
+- `total_cost_usd_24h` — only live calls bill, so it is `live_calls_24h ×` the population per-call
+  token cost: `305 × $0.00227 = $0.69235`. The sample carried `0.836920`, which is the same 305
+  calls priced at the `$0.002744` heavy-tail figure that `gemini_client._usage_tokens` says not to
+  build a total from.
 
 `status` is `"degraded"` when the on-demand `models.list()` reachability probe fails, when the resolver is up but not resolving, when `ledger_available` is `false`, or when `breaker_open` is `true`; the endpoint still returns 200 so the systemd liveness check stays accurate during partial Google outages.
 
@@ -306,7 +319,7 @@ end — necessary because `gemini_client.resolve` catches `Exception` and return
 result, so a blocked call raises nothing a test would notice. The gate used to be `SKIP_NETWORK=1`,
 an opt-OUT, so a plain `pytest` billed five live grounded calls against the 1,500/day shared quota.
 
-The smoke suite hits live Gemini and asserts known-good resolutions (`DT`, `BSX`, a FRED discount-rate id) plus a per-call cost ceiling of `$0.01`.
+The smoke suite hits live Gemini and asserts known-good resolutions (`DT`, `BSX`, a FRED discount-rate id) plus a per-call cost ceiling of `$0.02` — ~3x the heaviest call in the 24-input replay ($0.006958) and ~7x the mean, sized off the measured distribution rather than off a multiple of the mean, since the mean is exactly what a pricing regression moves.
 
 ## Ports
 
