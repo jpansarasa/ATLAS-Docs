@@ -57,4 +57,4 @@ GOTCHAS:
 
 DECISIONS: none recorded yet — accrete on touch (not audited for exception paths; see CLAUDE.md INTENT_FIDELITY MECHANICS).
 
-SEE: README.md §Schema/Config/Contract (cols, CHECK, conn keys) · src/MacroSubstrate.Client/MacroObservation.cs (D4 EnsureValid) · src/MacroSubstrate/Data/Repositories/MacroObservationRepository.cs:132-212 (heal-on-rewrite upsert) · src/MacroSubstrate/Versioning/NpgsqlMappingVersionLookup.cs (as-of label) · src/MacroSubstrate/DependencyInjection.cs (AddMacroSubstrate; optional SecMaster) · ThresholdEngine/src/Workers/ObservationCellProjector.cs:208 (PROJECTOR OWNER — reads IMacroObservationRepository).
+SEE: README.md §Schema/Config/Contract (cols, CHECK, conn keys) · src/MacroSubstrate.Client/MacroObservation.cs (D4 EnsureValid) · src/MacroSubstrate/Data/Repositories/MacroObservationRepository.cs:132-212 (heal-on-rewrite upsert) · src/MacroSubstrate/Versioning/NpgsqlMappingVersionLookup.cs (as-of label) · src/MacroSubstrate/DependencyInjection.cs (AddMacroSubstrate; optional SecMaster) · ThresholdEngine/src/Workers/ObservationCellProjector.cs:308 (PROJECTOR OWNER — reads IMacroObservationRepository).
