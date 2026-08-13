@@ -40,8 +40,10 @@ assertions. A table whose control is broken has nothing to say.
 The prometheus image is pinned by digest in `run-mutant.sh` — the same pin `run.sh` carries, and it
 must be bumped in the same change when the OTEL stack's prometheus is upgraded.
 
-Logs land in `.mutation-logs/`, the mirror in `.mutation-scratch/`; both are gitignored, and the
-mirror is rebuilt from scratch on every single run.
+Logs land in `.mutation-logs/` as `<mutation>.<suite>.log`, the mirror in `.mutation-scratch/`; both
+are gitignored, and the mirror is rebuilt from scratch on every single run. The suite is part of the
+key because `isolate.sh` runs the same mutation names against three variants into one log directory,
+and a mutation-only name left each variant overwriting the previous one's log.
 
 ## Exit codes
 
