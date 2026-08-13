@@ -155,7 +155,7 @@ REST endpoints are split across the following endpoint groups under `src/Endpoin
 - **SignalIdentitiesEndpoints** (`/api/signal-identities`) — signal-identity dedup grouping for cross-source equivalents (5 reads).
 - **EdgarEndpoints** (`/api/edgar`) — EDGAR filer registry (CIK / ticker lookup, manual refresh kick).
 - **IdentifiersEndpoints** (`/api/identifiers`) — generic identifier-resolution surface (CUSIP / ISIN / FIGI / ticker).
-- **AdminEndpoints** (`/api/admin`) — catalog coverage report + FRED-hijack dedup ops (also hosts the admin `sector-overrides` listing).
+- **AdminEndpoints** (`/api/admin`) — catalog coverage report, FRED-hijack dedup, and the D-10 backlog name-repair pass (also hosts the admin `sector-overrides` listing).
 - **EntityResolutionEndpoints** (`/api/resolve-entities`) — on-demand entity-resolution composer for F4.6.4 qualitative-extraction grounding. POST a batch of NER candidates + article context; returns a confidence-filtered list of canonical instruments with NAICS + ATLAS sector grounding.
 
 ### REST API (Port 8080)
@@ -220,6 +220,7 @@ REST endpoints are split across the following endpoint groups under `src/Endpoin
 | `/api/identifiers/resolve` | GET | Resolve generic identifier (`?cusip=` / `?isin=` / `?figi=` / `?ticker=` + optional `?exchange=`) |
 | `/api/admin/catalog/coverage` | GET | Catalog field-population coverage report |
 | `/api/admin/catalog/dedupe-fred-hijacks` | POST | Soft-delete FRED-hijack rows (admin, manual; idempotent) |
+| `/api/admin/catalog/repair-seeded-names` | POST | Backlog authoritative-name repair for unauthoritatively-named rows (admin, manual; **dry-run unless `?apply=true`**; `?limit=N` previews a slice and **cannot complete the backlog** — floored rows are never stamped, so they refill the head of the window and the pass stops advancing once they reach N; the completing run must be unlimited). See AGENT_README.md D-10 |
 | `/api/admin/sector-overrides` | GET | List all currently-active instrument sector overrides (paginated, default limit 100) |
 | `/health` | GET | Health check (returns JSON with per-check status) |
 
