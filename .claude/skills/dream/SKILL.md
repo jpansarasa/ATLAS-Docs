@@ -79,7 +79,7 @@ names the deterministic check performed, not a quote.
 
 | Type | Meaning | May write | Evidence rule |
 | --- | --- | --- | --- |
-| CORRECTION | a memory entry is contradicted by later evidence | memory, STATE.md | cite BOTH sides: `Anchor:` holds the verbatim memory line being contradicted, `Evidence:` holds the verbatim transcript quote (with locator) that contradicts it. A one-sided correction -- a quote with no memory line named, or a memory line named with no contradicting quote -- is an opinion, not a correction. Reject it yourself before it reaches the report. |
+| CORRECTION | a memory entry is contradicted by later evidence | memory, STATE.md | cite BOTH sides: `Anchor:` holds the verbatim memory line being contradicted, `Evidence:` holds the verbatim transcript quote (with locator) that contradicts it. A one-sided correction -- a quote with no memory line named, or a memory line named with no contradicting quote -- is an opinion, not a correction. Reject it yourself before it reaches the report. If the claim is about MUTABLE WORLD STATE rather than about code or history, it MUST also carry a `text_absent:` recheck naming the contradiction that would falsify it -- see `Recheck:` below. |
 | STALE | the referent is gone or superseded and nothing contradicts it | memory, STATE.md | `Evidence:` names the deterministic check (file absent, symbol absent from tree, PR closed); `Recheck:` carries the machine-runnable directive the apply path re-executes before writing, because the report is generated at 03:00 and reviewed hours later -- the check can flip in between. Never a quote here. |
 | CONFLICT | two entries disagree with each other | proposal only | `Evidence:` quotes or locates both disagreeing entries; a human arbitrates, so do not propose a `Replacement:`. |
 | DUPLICATE | the same fact lives in two places | memory | `Evidence:` locates both copies; propose the merge as `Anchor:`/`Replacement:` against the copy to retire. |
@@ -168,16 +168,42 @@ by key:
   newline belongs; the parser converts every `\n` in this field into a real
   newline. This is how a single-line report format carries a multi-line
   edit.
-- `Recheck:` -- for STALE and INDEX only, one of exactly two directives:
-  `file_exists:<path>` (the referent must still be there) or
-  `file_absent:<path>` (it must still be gone), each resolved against the
-  repo root. A directive asserts the condition that must HOLD for the write
-  to be valid. Anything else -- an unknown verb, a missing operand -- is
-  treated as UNSATISFIED and refuses the write, as is an operand that escapes
-  the repo root: "I cannot evaluate this precondition" must never read as
-  "this precondition holds". `apply_finding` re-executes the directive at
-  write time, so a condition that changed since 03:00 refuses rather than
-  writing. Use `none` for every type other than STALE and INDEX.
+- `Recheck:` -- one of four directives, or `none`. A directive asserts the
+  condition that must HOLD for the write to be valid, and `apply_finding`
+  re-executes it at write time, so a condition that changed since 03:00
+  refuses rather than writing.
+  - `file_exists:<path>` -- the referent must still be there (INDEX repairs)
+  - `file_absent:<path>` -- it must still be gone (STALE retirements)
+  - `text_absent:<needle>` -- the target must NOT contain this text
+  - `text_present:<needle>` -- the target must STILL contain this text
+
+  The `file_*` operands are paths resolved against the repo root. The `text_*`
+  operands are NOT paths: they are literal needles matched against the
+  finding's own target, which is why they can guard a `memory/` file at all
+  (MEMORY_ROOT is outside the repo root, so no `file_*` operand can name one).
+  Matching is exact and case-sensitive; the needle may contain colons, since
+  only the first one separates verb from operand.
+
+  Anything else -- an unknown verb, a missing operand -- is treated as
+  UNSATISFIED and refuses the write, as is a `file_*` operand that escapes the
+  repo root or a `text_*` target that cannot be read: "I cannot evaluate this
+  precondition" must never read as "this precondition holds".
+
+  **Which findings need one.** STALE and INDEX must carry a `file_*` directive
+  as their taxonomy row requires. Beyond that, the test is what the claim is
+  ABOUT, not what type it is:
+  - a claim about MUTABLE WORLD STATE -- a service's status, credits, a PR's
+    state, anything you would phrase as "currently" -- MUST carry a directive,
+    because the six hours between 03:00 and review are enough for a human to
+    act and for you to be wrong. Write `text_absent:` naming the contradiction
+    that would falsify you, in the wording a correction would most likely use.
+  - a claim about CODE OR HISTORY -- a line number, a shipped rule, what
+    happened in a PR -- may use `none`. Those do not move overnight.
+  Measured 2026-08-11: of ten applied findings, the one that had become false
+  by review time was the only one making a live-state claim; the other nine
+  re-verified clean, exact line citations included. A CORRECTION is the type
+  most likely to be making such a claim, and carried `none` by construction
+  until this directive existed.
 
 A finding with no `Evidence:` line, or a `TYPE` outside the eight listed
 above, is not a report the parser will accept -- it raises rather than
