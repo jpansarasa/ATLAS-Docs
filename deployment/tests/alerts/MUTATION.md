@@ -75,7 +75,16 @@ KILLED or as a pass. Every defect this harness has had failed toward a **reassur
   and `KILLED` here means the equivalence claim is wrong.
 - **DECLINED** — genuinely killable, measured, and judged not worth a guard. The reason lives in
   `sentinel_test.yml` next to the fixtures. `KILLED` here means something now guards it: update the
-  note.
+  note, and move the mutant to KILLABLE so the coverage it just gained is pinned.
+
+`KILLED` in either of the last two arms is a FINDING and exits 1. Both refute a claim written next to
+the fixtures, which is what `matrix.sh` means by a finding — the arm is not the difference. Left at 0,
+a killed DECLINED also stranded the coverage it reports: the mutant stays in an arm whose happy
+outcome is `SURVIVED`, so a later change removing the new guard reads as clean, and the coverage is
+silently gained and then silently lost with both runs exiting 0.
+
+Neither is *bad news* — a killed DECLINED is usually an improvement. Exit 1 means "a line above needs
+a decision", not "something broke".
 
 ## Why isolation never uses `--run`
 
