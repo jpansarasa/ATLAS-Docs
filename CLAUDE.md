@@ -75,6 +75,14 @@ grafana alerting: `--tags alerting --skip-tags always` THEN `sudo nerdctl restar
   Dashboards differ — they auto-reload (updateIntervalSeconds: 30), no restart.
 inventory: deployment/ansible/inventory/hosts.yml # ansible.cfg default; run from deployment/ansible/
 filter test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'Name~{Test}'
+VERIFY_TRAP: `nerdctl inspect <svc>` RETURNS THE IMAGE, NOT THE CONTAINER # every service shares a name between the
+  two and bare inspect resolves the image first, yielding a plausible .Created that is the BUILD time -> a deploy
+  "verified" that way compared the fresh image to itself. Use `nerdctl container inspect`.
+AUTOFIX [dormant but armed]: autofix-runner NEVER runs ansible (alert -> queue -> Claude opens a PR and STOPS).
+  Only autofix-watcher deploys, and ONLY when a HUMAN merges an autofix PR: `git checkout main; git pull` in the
+  SHARED working tree (no dirty-tree check) then `deploy.yml --tags "$services"` with NO --skip-tags and no
+  scoped_restart = FULL stack + ~4min vLLM reload, retrying every 5min UNBOUNDED on failure.
+  Dormant since 2026-06-18, but alert-service is Up with AutoFix enabled, so one critical alert re-arms it.
 
 ## CONTAINER_BUILD
 IMAGE: {service-name}:latest # fred-collector ✓ fredcollector ✗ — verify against /opt/ai-inference/compose.yaml
@@ -87,6 +95,10 @@ SEED: EF HasData() | app-level seeding on startup; the app runs its own migratio
 PSQL [DEBUG_ONLY]: sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data
   ✓ SELECT to verify state
   ✗ INSERT/UPDATE/DELETE/ALTER to fix state # fix the root cause in the app
+  restate "psql is SELECT-only" VERBATIM in every dispatch brief # this HARD_STOP alone has proven necessary
+    but NOT sufficient: an agent that HAD the rule still ALTERed prod
+TABLES: news obs sentinel.extracted_observations | raw_content · matrix feed public.macro_observations ·
+  cells public.matrix_cells · regime public.sector_regimes · SecMaster DB atlas_secmaster (source_mappings, instruments)
 MIGRATIONS [HARD_STOP]:
   ✗ NEVER hand-write a migration .cs # missing Designer.cs -> EF records it in __EFMigrationsHistory, schema unchanged
   ✓ nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project src/Data
@@ -140,6 +152,19 @@ MECHANICS [format spec: .claude/skills/architecture-cards/CARD_TEMPLATE.md §DEC
     never obey the stale entry; a human arbitrates, not the implementing agent
   GUARD_TEST: construct the violation, assert refusal AT the boundary through the real flow, RED if the guard is
     deleted # contract: .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT
+
+## OBSERVABILITY [user scar tissue: "too many services non-functional due to lack of observability"]
+✗ never demote a visible signal to Info+metric without a WIRED alert
+✓ keep a VISIBLE Warning on persistent dependency-unavailability; startup banners STAY Warning # boot-loop visibility
+A SIGNAL CAN BE DEMOTED WITH NOBODY DECIDING TO DEMOTE IT: GeminiResolverNotResolving worked only because rejected
+  calls consumed cap slots, so sustained rejection tripped the approaching-cap alert — an accident, documented
+  nowhere. Fixing the cap accounting silently switched that alert off, and the partial-rejection case was then
+  missed a second time by the very round that fixed the total one.
+  -> before removing or changing a mechanism, enumerate what was OBSERVING it and pin each with a test that fires
+     on the REAL path # a signal riding on a bug dies with the fix, and the fix looks correct
+HEALTH IS TEMPO, NOT LOKI: prod log level defaults to Warning, so a HEALTHY container emits NOTHING — silence is the
+  designed steady state, never a defect. Health = Tempo span status + Prometheus metrics; Loki carries the CONTENT
+  once something is known wrong. MCP sidecars deliberately rely on parent-service telemetry.
 
 ## TOOL_UPKEEP [sharpen while you cut] [HARD_STOP]
 Tools are maintained DURING the work that uses them, never in a separate phase — a dull tool makes worse work every cut.

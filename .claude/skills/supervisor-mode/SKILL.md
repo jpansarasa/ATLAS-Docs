@@ -28,19 +28,28 @@ CARVE-OUT [without it this router orders a read two HARD_STOPs forbid]: a read o
   does not extend to anything else you decide is relevant.
 
 ## CONFIG
-STATE: /home/james/ATLAS/STATE.md # supervisor memory, read first | write last
-  UNTRACKED [gitignored]: never commit | push | PR it. Nothing recovers a lost edit — no commit,
-    no stash, and `git show <sha>:STATE.md` returns the last TRACKED content, not a restore.
+STATE: /home/james/ATLAS/STATE.md # WORKING MEMORY for the epic at hand. read first | write last
+  DISPOSABLE BY DESIGN [this inverts the old "nothing recovers a lost edit" framing, deliberately]:
+    it must be rebuildable in ONE turn from the plan of record + `gh pr list` + `git log`. That is
+    the test of its contents — if losing it would be a disaster, something DURABLE has moved in and
+    the fix is to evict that, never to guard the file harder. Treating it as precious is what grew
+    it to 9,772 words (~17k tokens EVERY turn) before 2026-08-14.
+  EVICT, do not accumulate [CANONICAL]:
+    defects | deferred work | parked epics -> docs/BACKLOG.md
+    engineering | deploy | observability rules -> CLAUDE.md
+    recurring failure modes agents must read -> LESSONS.md
+    service shape | invariants | D-entries -> <Service>/AGENT_README.md
+    what happened -> git log | PR bodies | tags | docs/RELEASES.md
+  WRITE_GATE: current position + what aims the NEXT dispatch, nothing that outlives this epic.
+    ✗ per-turn progress | dispatch IDs | merged-PR summaries | review verdicts | hook-bug notes
+    -> those go to TaskUpdate | ntfy | durable-memory | BACKLOG, NEVER STATE.
   UNSEARCHABLE: `grep -r` and the Grep tool honour .gitignore. Read it by explicit path; a recon
     agent told to "search the repo" silently misses it.
-  RULE [HARD_STOP]: before any operation that changes what HEAD points at, copy STATE.md to a path
-    OUTSIDE the repo and copy it back afterwards. # a checkout to a ref that still tracks it
-    OVERWRITES the live file, rc=0, no prompt — being IGNORED is what removes git's protection
-  RULE [HARD_STOP]: forbid `git clean -x` in every dispatch. # it deletes ignored files
-  WRITE_GATE [CANONICAL — references/state-file.md points here, never restates]:
-    product/phase truth only (phase | epic-done | deploy-todo | open-ask).
-    ✗ per-turn progress | dispatch IDs | merged-PR summaries | review verdicts | hook-bug notes
-    -> those go to TaskUpdate | ntfy | durable-memory, NEVER STATE.
+  UNTRACKED [gitignored]: never commit | push | PR it; `git show <sha>:STATE.md` returns the last
+    TRACKED content, not a restore. Cheap hygiene, no longer a HARD_STOP: copy it outside the repo
+    before an op that moves HEAD (a checkout to a ref that still tracks it OVERWRITES the live file,
+    rc=0, no prompt), and forbid `git clean -x` in every dispatch. Losing it now costs a rebuild
+    turn, not the session.
   mechanism (which HEAD moves destroy it, which preserve it): references/state-file.md
 TEMPLATES: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ # one per dispatch class
   PICK ONE per dispatch and fill it; never hand-roll a brief. Name the tool AND show the shape.
