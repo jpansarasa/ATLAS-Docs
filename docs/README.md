@@ -19,6 +19,7 @@ here and what gets retired.
 | [OBSERVABILITY.md](./OBSERVABILITY.md) | OTEL pipeline, dashboards, tracing conventions |
 | [THRESHOLDENGINE-PATTERNS.md](./THRESHOLDENGINE-PATTERNS.md) | Pattern catalog and category weights |
 | [RELEASES.md](./RELEASES.md) | Phase/epic outcomes, tags, and doc-retirement recovery pointers (append-only) |
+| [BACKLOG.md](./BACKLOG.md) | Known defects, measurement debt, deferred work, parked epics — what outlives the epic that found it. Exists so `STATE.md` can stay disposable working memory; close entries in the PR that fixes them |
 
 ## Operational reference
 
