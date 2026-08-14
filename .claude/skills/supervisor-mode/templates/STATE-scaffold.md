@@ -1,14 +1,24 @@
 <!--
 NOT A DISPATCH BRIEF. Every other file in templates/ is one; this is a file scaffold for STATE.md.
 
-INSTANTIATE (strips this header, so nothing here reaches the live file):
+INSTANTIATE -- use the script. It AUDITS the outgoing file first and refuses while anything matches a
+banned pattern; NOTHING is archived or written on a refusal. Only past the audit does it archive,
+verify with cmp, and replace. It also strips this header, so nothing here reaches the live file:
+  scripts/new-epic.sh <epic-slug>              # audit -> archive -> reset; findings BLOCK the reset
+  scripts/new-epic.sh <epic-slug> --evicted    # you assert eviction is done; audit reports only
+  scripts/new-epic.sh --check                  # audit the live file any time; writes NOTHING
+The audit greps four of the WRITE_GATE's five bans plus migrated headings. It CANNOT judge
+durability, and the fifth ban -- "anything that outlives this epic" -- cannot be grepped at all, so a
+clean audit is not a certificate that you evicted correctly. Step 1 below stays yours.
+Manual fallback if the script is unavailable (no archive, no audit, no verification):
   sed '1,/^SCAFFOLD-HEADER-END$/d' .claude/skills/supervisor-mode/templates/STATE-scaffold.md > STATE.md
 
 FIRST, CLOSE OUT THE OUTGOING EPIC. STATE.md is gitignored: the copy has no undo and no git history.
-Nothing below rescues content you failed to evict, so evict before you copy.
+Nothing here rescues content you failed to evict, so evict BEFORE you run the script. The script
+refuses while its patterns still match, which catches the obvious leftovers and nothing subtler --
+the ORDERING is what makes eviction happen, not the guard. That is why eviction is step 1.
 
-  1. archive it:  cp STATE.md ~/atlas-ops/state-archive/STATE.md.<epic-slug>-<YYYYMMDD>
-  2. EVICT, entry by entry, routing each by CLAUDE.md §WHERE_WORK_LANDS (canonical — do not restate it
+  1. EVICT, entry by entry, routing each by CLAUDE.md §WHERE_WORK_LANDS (canonical — do not restate it
      here; three copies of that table drifted to three different rosters within an hour of being written).
      The ONE destination that table does not carry, because only the supervisor has it:
        durable user direction that exists in no artifact -> supervisor memory
@@ -16,8 +26,10 @@ Nothing below rescues content you failed to evict, so evict before you copy.
        # survived a reset. A reset is not a repeal.
      THE TEST, per line: "does this change what someone does NEXT, in the NEW epic?"
        no -> it is history or it is durable; either way it does not belong in the new file
+  2. run the script -- it archives to ~/atlas-ops/state-archive/, proves the copy identical, and only
+     then replaces the file. On the manual fallback path, archive by hand first.
   3. phase/epic tag + RELEASES.md entry: CLAUDE.md PHASE_TAGS
-  4. only then instantiate, and fill every <angle-bracket> placeholder
+  4. fill every <angle-bracket> placeholder
   5. delete any section you left empty — an empty heading reads as "nothing here yet" when the truth
      is "nobody filled it in", and the next agent cannot tell those apart
 

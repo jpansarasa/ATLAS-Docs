@@ -26,8 +26,14 @@ you found or learned X -> write it HERE, in the SAME PR as the work:
   service shape | invariant | earned-exception precondition -> <Service>/AGENT_README.md D-entry
   phase | epic outcome                                      -> git tag + docs/RELEASES.md # PHASE_TAGS
   what happened                                             -> git log + the PR body # never a doc
-STATE.md [supervisor-owned, repo root]: DISPOSABLE working memory for the epic in flight, reset from
-  .claude/skills/supervisor-mode/templates/STATE-scaffold.md at each epic boundary.
+STATE.md [supervisor-owned, repo root]: DISPOSABLE working memory for the epic in flight.
+  reset at each epic boundary: `scripts/new-epic.sh <epic-slug>` # AUDITS the outgoing file first and
+    REFUSES the reset while it matches a banned pattern (nothing is archived or written on a refusal;
+    --evicted overrides). Only past the audit does it archive, verify with cmp, and replace.
+    `scripts/new-epic.sh --check` audits any time and writes nothing.
+    It greps four of the WRITE_GATE's five bans plus migrated headings; the fifth ("anything that
+    outlives this epic") is judgement and CANNOT be grepped, so a clean audit is not a certificate
+    that eviction is done. Guards: scripts/tests/new-epic-selftest.sh
   UNSEARCHABLE: untracked + gitignored, and `grep -r` honours .gitignore — a repo-wide search silently
     misses it. Read it by explicit path; never report "not found in the repo" without that check.
   ✗ never commit | push | PR it

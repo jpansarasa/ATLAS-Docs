@@ -40,8 +40,10 @@ STATE: /home/james/ATLAS/STATE.md # WORKING MEMORY for the epic at hand. read fi
     never restated here — three copies of that table drifted to three rosters within an hour of being
     written. The one row it cannot carry: durable user direction existing in no artifact -> memory.
   WRITE_GATE: current position + what aims the NEXT dispatch, nothing that outlives this epic.
-    ✗ per-turn progress | dispatch IDs | merged-PR summaries | review verdicts | hook-bug notes
-    -> those go to TaskUpdate | ntfy | durable-memory | BACKLOG, NEVER STATE.
+    the ban ROSTER is CANONICAL in templates/STATE-scaffold.md — it ships inside every STATE.md, and
+    scripts/new-epic.sh greps four of its five bans. Not restated here: a second copy had already
+    drifted ("hook-bug notes" here vs "anything that outlives this epic" there).
+    -> banned content goes to TaskUpdate | ntfy | durable-memory | BACKLOG, NEVER STATE.
   UNSEARCHABLE: `grep -r` and the Grep tool honour .gitignore. Read it by explicit path; a recon
     agent told to "search the repo" silently misses it.
   UNTRACKED [gitignored]: never commit | push | PR it; `git show <sha>:STATE.md` returns the last
