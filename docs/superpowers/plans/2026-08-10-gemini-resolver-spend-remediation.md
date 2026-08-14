@@ -406,7 +406,7 @@ that would rebuild the exact failure-only bias it exists to remove, in the oppos
   surface, `EntityCandidateKind` where known, calling leg (`secmaster` | `sentinel-v2-direct`),
   decision, and `rawContentId` where available.
 - **Surfaces go in log context, never as metric tags** — unbounded cardinality. Mirrors the
-  existing `CandidateSurfaceFilter` would-drop log (`EntityResolutionPrepass.cs:346-353`).
+  existing `CandidateSurfaceFilter` would-drop log (`EntityResolutionPrepass.cs:423-430`).
 - Level `Information`. **Prod default is Warning, so an `Information` line is emitted by the code
   and then dropped by the sink** — a capture that "runs" and yields nothing is the predictable
   failure here. Add a Serilog `MinimumLevel.Override` scoped to *this logger's source context only*

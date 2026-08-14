@@ -443,7 +443,7 @@ The stoplist and the Step-5 receiver are both real. `CandidateSurfaceFilter.cs:1
 `"Fed"`, `"Bank of England"`, `"BoE"`, `"Bank of Japan"`, `"BoJ"`, `"People's Bank of China"`,
 `"PBoC"`, `"Treasury"`, `"Congress"`, `"Senate"`, `"OPEC"` (plus IMF/BIS/WTO/OECD, the US federal
 agency set, and the trailing-"Fed" regional rule). Rejected at
-`EntityResolutionPrepass.cs:327-339` with `reason=institution`, never POSTed. And cascade Step 5
+`EntityResolutionPrepass.cs:404-416` with `reason=institution`, never POSTed. And cascade Step 5
 (`SecMaster/src/Services/EntityResolutionService.cs:630-638`) is deliberately kind-agnostic and
 would resolve them.
 
@@ -587,7 +587,7 @@ properties make relying on it uncomfortable:
 And when Step 1 *is* correctly dodged and Step 5 fires, the result scores
 `SignalIdentityDirect = 0.90` (`:1152`) against local-fuzzy's `0.85` (`:1143`). The prepass then
 does `OrderByDescending(e => e.Confidence).Take(EntityResolutionMaxResolvedEntities /* = 5 */)`
-(`EntityResolutionPrepass.cs:211-218`). **So an un-binned central bank outranks a real
+(`EntityResolutionPrepass.cs:219-226`). **So an un-binned central bank outranks a real
 fuzzy-matched issuer and displaces it from the 5-row prompt table** — to contribute a row with no
 ticker and no sector. The displaced issuer was the row that could have lifted a sector.
 
