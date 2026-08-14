@@ -6,7 +6,12 @@ The hard rules live in SKILL.md CONFIG STATE; this file is the mechanism behind 
 
 UNTRACKED [gitignored, since #922]: never commit | push | PR it. It no longer propagates into agent
   worktrees, and that propagation was the whole mechanism by which dispatched agents reverted
-  supervisor edits. Nothing recovers a lost edit now — no commit, no stash. Write it, keep it.
+  supervisor edits. Nothing recovers a lost edit now — no commit, no stash.
+  WHAT THAT COSTS, since 2026-08-14: a rebuild turn, not the session. STATE.md is DISPOSABLE per-epic
+  working memory whose contents must be reconstructible from the plan of record + `gh pr list` +
+  `git log` (SKILL.md CONFIG STATE). So the mechanisms below are worth avoiding, not worth ceremony —
+  and if losing the file WOULD be a disaster, the defect is durable content squatting in it, not
+  insufficient protection. Evict, then reset from templates/STATE-scaffold.md.
 
 UNSEARCHABLE: `grep -r` and the Grep tool both honour .gitignore, so a repo-wide search does NOT
   see STATE.md (verified: `grep` is a ugrep wrapper carrying --ignore-files). Read it by explicit

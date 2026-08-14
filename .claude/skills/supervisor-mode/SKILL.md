@@ -1,6 +1,6 @@
 ---
 name: supervisor-mode
-description: Long-running autonomous supervisor for multi-epic plans. Activate when the user says "supervisor mode", "kick off the plan", "go autonomous", "drive the epic", "run heads-down", goes AFK with a plan, or hands off any plan with more than one independent workstream — even if they don't say "supervisor" explicitly. Dispatches ALL impl/test/build/review work to background subagents via the Task tool (never works code directly), maintains STATE.md as durable memory, and communicates with the human asynchronously via the sentinel-ntfy MCP.
+description: Long-running autonomous supervisor for multi-epic plans. Activate when the user says "supervisor mode", "kick off the plan", "go autonomous", "drive the epic", "run heads-down", goes AFK with a plan, or hands off any plan with more than one independent workstream — even if they don't say "supervisor" explicitly. Dispatches ALL impl/test/build/review work to background subagents via the Task tool (never works code directly), keeps STATE.md as disposable per-epic working memory (durable content is evicted to docs/BACKLOG.md, CLAUDE.md, LESSONS.md or the service cards), and communicates with the human asynchronously via the sentinel-ntfy MCP.
 argument-hint: optional plan path; reads STATE.md by default
 ---
 
@@ -20,7 +20,9 @@ doing X -> read Y, THIS turn, before acting:
                                       -> references/parallel-dispatch.md
   picking a template | a brief running long | a story that looks too big | an agent stopped
     mid-thought                       -> references/brief-construction.md
-  writing ANY dispatch brief          -> LESSONS.md # 7 lessons agents cannot read from supervisor memory
+  STARTING a new epic, or CLOSING the current one out
+                                      -> templates/STATE-scaffold.md # evict-then-reset ritual
+  writing ANY dispatch brief          -> LESSONS.md # lessons agents cannot read from supervisor memory
   the mandatory brief stanzas, MERGE_GATE, TURN_BUDGET, RED_FLAGS -> stay HERE, never lazily loaded
 CARVE-OUT [without it this router orders a read two HARD_STOPs forbid]: a read of a file named in
   the table above is EXEMPT from TURN_BUDGET's <=2-file cap and does NOT trip the RED_FLAGS
@@ -50,11 +52,20 @@ STATE: /home/james/ATLAS/STATE.md # WORKING MEMORY for the epic at hand. read fi
     before an op that moves HEAD (a checkout to a ref that still tracks it OVERWRITES the live file,
     rc=0, no prompt), and forbid `git clean -x` in every dispatch. Losing it now costs a rebuild
     turn, not the session.
+  EPIC BOUNDARY [the reset is what keeps the file disposable — without it, eviction never happens]:
+    a new epic starts on a CLEAN scratchpad, never on the last one annotated. Close out, then
+    instantiate: templates/STATE-scaffold.md carries the evict-then-reset ritual and the command.
+    ✗ never carry the outgoing epic's POSITION | IN FLIGHT | DO-NOT-RETRY forward # they are answers
+      to the old epic's questions, and they read as current
+    ✓ the scaffold FORCES an ACCEPTANCE block written before the first dispatch, as something that
+      can FAIL # an epic whose bar lives only in a plan doc gets it renegotiated downward silently:
+      measured 4x on the news-extraction epic, ending in a phase recorded DONE on a path scoring 0/10
   mechanism (which HEAD moves destroy it, which preserve it): references/state-file.md
 TEMPLATES: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ # one per dispatch class
   PICK ONE per dispatch and fill it; never hand-roll a brief. Name the tool AND show the shape.
   roster + SIZE budget (<=700w, justify past ~550): references/brief-construction.md
   review dispatches have no template — the shape is MERGE_GATE below.
+  STATE-scaffold.md is NOT a dispatch brief — it is the STATE.md file scaffold; see CONFIG STATE.
 LESSONS: /home/james/ATLAS/.claude/skills/supervisor-mode/LESSONS.md
   READ before writing any brief; cite it by path in dispatches instead of transcribing it
   # transcription is what grew briefs past 700w AND corrupted two lessons on 2026-08-07/08
