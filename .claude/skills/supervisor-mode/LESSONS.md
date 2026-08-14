@@ -21,6 +21,21 @@ CITE section anchors, never file:line. # numeric citations rotted three times in
   # deploy.yml:972 (moved to 1043 by #924; 972 now names an unrelated finnhub build task),
   # supervisor-mode SKILL.md:109 (cited by git-push-guard.sh for GIT_OPS, which is not at 109),
   # autofix.sh:240
+WRITE_TRIGGER [added 2026-08-13 — this file had no write path at all, which is why two lessons paid
+  for that night went to supervisor memory instead, where NO dispatched agent can read them]:
+  a defect RECURS -> entry here. Once is an incident; twice is a lesson. A first occurrence goes to
+    STATE.md or nowhere — that is what keeps this file short enough to be read.
+  WHICH STORE [never both — "a lesson enforced in two places drifts in one of them"]:
+    can a DISPATCHED AGENT act on it? -> here, and the supervisor's memory entry becomes a POINTER
+    is it the supervisor's own judgement or recall? -> memory only
+  the moment to write is the verdict, not the retro: recording a BLOCK for a class you have blocked
+    before IS the second occurrence. Write it then, while the evidence line is still re-checkable.
+RULE_MUST_BE_CHEAP: the RULE field names the CHEAPEST SUFFICIENT action, not the most correct one.
+  # measured 2026-08-13: L2 existed, was exactly on point, and did NOT fire — its remedy was "run
+  # it through TIER1_CLAIM_CHECK", i.e. dispatch an agent, which is disproportionate against a
+  # one-line refutation inside a review report, so it was skipped. The remedy that works is one
+  # sentence of thinking. If the only sufficient remedy IS expensive, say so in the RULE and expect
+  # it to be skipped under time pressure — an unaffordable rule is a rule that does not exist.
 FORMAT per entry, in this order: the lesson in one line / EVIDENCE — the scar, in as many lines as
   it takes to RE-CHECK it (dates, the command, the measured outcome; ~3-5 lines in practice) /
   APPLIES where / RULE what to do instead / GRADUATES to what.
@@ -57,10 +72,29 @@ L2 A CORRECTION is a claim. Verify it before amplifying it.
     accusation was withdrawn. 2026-08-08 a guard comment's `rm -rf "/"` hazard was relayed as a
     live mechanism; it cannot occur (the assignment happens even on failure, so the expansion is
     one empty argument that removes nothing).
+    2026-08-13, and this entry EXISTED and did not fire: a reviewer called
+    "the console bounds the token figure from above" false, testing it against the $1.76-2.86/day
+    BAND (a value inside an interval bounds it from neither side) when the sentence's subject was
+    the token LEG (console = token cost + an unseen grounded-prompt fee, fee >= 0, so
+    console >= token cost — true by construction). Every number in the refutation was right; only
+    the SUBJECT differed. Relayed as a CRITICAL fix instruction, it deleted a true sentence from
+    four files including a D-entry's INTENT. Two rounds to detect and undo.
   APPLIES: any report that CORRECTS an earlier claim — a correction arrives framed as the fix, so
     it skips the check the original claim would have got.
-  RULE: run the correction through TIER1_CLAIM_CHECK exactly like the claim it corrects.
-  GRADUATES: when `templates/claim-verification.md` names corrections as in-scope input.
+  RULE: run the correction through TIER1_CLAIM_CHECK exactly like the claim it corrects — AND, when
+    it says "X is false", restate X's proposition in your own words and NAME ITS SUBJECT before
+    relaying it. One sentence of work. Arithmetic-flavoured refutations are the dangerous ones:
+    the numbers can all be correct while the quantity they are about is the wrong one.
+  ASYMMETRY [why this outranks an ordinary claim check]: acting on a false ordinary claim ADDS
+    something wrong, and the next review catches it. Acting on a false refutation DELETES something
+    right — and deletion is the one edit later review CANNOT audit, because reviewers read what is
+    in the tree, not what used to be. Raise the bar highest when the refutation licenses a delete.
+    # corroborating: three agents disagreed across three rounds over whether `0.81%` was correct.
+    # It was right from the start; the refutation was wrong; the refutation of the refutation was
+    # also partly wrong. Chained refutations converge on noise unless someone RE-DERIVES the
+    # underlying quantity instead of adjudicating the previous opinion.
+  GRADUATES: when `templates/claim-verification.md` names corrections as in-scope input AND carries
+    the restate-the-subject step.
 
 L3 Analysis is not a review record. A review that never invokes the `review-pr` Skill leaves the
   merge blocked, however good the analysis was.
@@ -77,11 +111,23 @@ L4 Prune the finished agent's worktree BEFORE dispatching the next agent onto th
   EVIDENCE: on 2026-08-07/08 the fix-round branches of the guard-hardening chain were repeatedly
     still held by the worktree of the agent that had finished with them; an agent told to work
     `{branch}` finds it held elsewhere and either stalls or branches off a stale copy.
-  APPLIES: every FIX ROUND and every re-dispatch onto a branch another agent has finished with.
+    2026-08-13 it stopped being a nuisance and became a DESTRUCTION hazard: FOUR abandoned worktrees
+    were found holding a live branch with the whole change STAGED AS DELETIONS — 1,301 on one, 357
+    on another, byte-identical to the round before. A bare `git commit` in any of them rewrites the
+    branch and silently reverts merged work. HEAD follows the ref, so it LOOKS current; the stale
+    thing is the index. One was found only because a reviewer looked OUTSIDE the diff, and my own
+    cleanup missed a second instance after I had reported the hazard closed.
+  APPLIES: every FIX ROUND and every re-dispatch onto a branch another agent has finished with —
+    and every dispatch that ENDS, because the hazard is what it leaves behind.
   RULE: the supervisor prunes; the agent never deletes another agent's worktree — it takes the
     branch with `git checkout --ignore-other-worktrees`. # `templates/implementation-fix.md`
     WHERE TO WORK states the agent half, which only works if the supervisor does this half
-  GRADUATES: when a pre-dispatch worktree check lands in the dispatch templates or a hook.
+    AND: that flag is what permits several worktrees on ONE branch, so the instruction that fixes
+    the dispatch is what creates the hazard — the supervisor owes a sweep for STAGED CHANGES, not
+    just for held branches, and must scan ALL worktrees rather than the one a reviewer named.
+    Require every dispatch to release its branch and leave nothing staged.
+  GRADUATES: when a pre-dispatch worktree check lands in the dispatch templates or a hook, and it
+    checks `diff --cached` and not merely which branch is held.
 
 L5 One merge act per Bash invocation. Never chain two.
   EVIDENCE: measured 2026-08-07 with #921 approved and #923 carrying no verdict at all —
@@ -118,11 +164,71 @@ L7 Squash merge makes "is this commit on a remote ref" answer NO for work that a
     distinguish "merged by squash" from "genuinely unpushed", and it fails toward "unpushed".
   GRADUATES: when the prune step gets a scripted check that reads PR state instead of reachability.
 
+L8 Repair citations LAST, and treat every fact-shaped claim as a citation.
+  EVIDENCE: 2026-08-12/13 on one PR chain. Round 2 repaired ONE line citation and broke FOURTEEN
+    (its own edits shifted `server.py`, moving D-1/D-2/D-3 GUARD lines that were exact at
+    merge-base) — in a commit whose message NAMED that class. Round 4 was told to re-run its own
+    sweep, did, and still shipped two new instances, because its sweep resolved `file:line` while
+    the new breakage was in COUNTS and ROSTERS ("the four tests beside it" after the list grew
+    4->6; a plan doc saying a card "already holds D-1..D-4" after that same PR added D-5 and D-6,
+    which would have made the next agent mint a colliding D-6). Round 5's own content edits then
+    shifted 27 more, including D-6's own GUARD, caught only because it re-ran the tool afterwards.
+  APPLIES: any edit to a file a D-entry, card or CLAUDE.md cites INTO — which is most service code.
+  RULE: make content edits first, repair citations last, then re-run over your OWN diff. Enumerate
+    the KINDS of fact-shaped claim before sweeping (line numbers, counts, rosters, "N tests", "the
+    three files"). Best of all, DELETE the derived spelling: a bare count beside an enumerated list
+    is one fact written twice, which is the defect, not a description of it.
+  A GREEN SWEEP IS NOT PROOF: `scripts/verify-citations.py` is content-blind by design — it flags
+    BLANK and out-of-range only, so a citation drifted onto a comment, a brace or an unrelated task
+    reads GREEN, and ranges are blank-checked at the START only. Every instance found this session
+    was found by READING the entry. Two (`EventStreamService.cs:256`/`:91`, D-18) were wrong the DAY
+    THEY WERE WRITTEN, off by 4 lines each — citations ship broken, they do not only rot.
+  GRADUATES: when the tool resolves a citation to the NAMED CONSTRUCT rather than a live line, and
+    a hook runs it on changed files. Until then this is judgement, not tooling.
+
+L9 A fix round fixes exactly what you NAME and adds what you did NOT ask for. Brief the class, ban
+  the framing.
+  EVIDENCE: 2026-08-13, two PRs, seven rounds. NAMING: a reviewer named 3 stale citations; the round
+    fixed 3 and left 3 (one landing inside its own new loop). Named 3 more; found 6 — the two worst
+    in neither list, incl. an INTERFACE CONTRACT declaring "does not throw" for a client that throws
+    and whose D-entry guard fires ONLY because it throws. A later review then found 4 more. The
+    round that worked was told "do NOT fix the three I name — search for the PROPOSITION and report
+    the COUNT before the fixes." FRAMING: successive fix rounds shipped 7, then 5, then 3, then 1
+    NEW false claims, and every one came from explanatory prose the round volunteered while fixing
+    something else ("the real mechanism is…", "every one of those is…", "six rows, all stamped…").
+    The round that added zero was told "correct these sentences and add NOTHING."
+  APPLIES: every fix round, and every sweep for a defect that has more than one instance.
+  RULE: brief the CLASS with a searchable predicate, never a list of sites; require the count BEFORE
+    the fixes, and treat "more than you named" as the useful result. Forbid volunteered framing —
+    the ONE justified addition is a clause that closes a contradiction your own edit opens. A list
+    in the brief is the ceiling on what comes back. # measured four times in one day
+  ALSO: "report it, do not fix it" is right for JUDGEMENT and wrong for a CHEAP FACT. A round
+    surfaced "if any inactive row were a series this count is wrong" and left it open; one SELECT
+    settled it and CHANGED THE ANSWER (16 -> 17). If one query closes it, close it and report.
+  GRADUATES: when `templates/implementation-fix.md` carries a "state the class, report the count
+    first, add nothing" stanza.
+
+L10 Run the build AFTER the final commit. The marker keys to the TREE.
+  EVIDENCE: 2026-08-13, twice in one evening. An agent edited, compiled green, then committed the
+    card and its INTENT comments — comments still change `HEAD^{tree}`, so the tests-passed marker
+    keyed to the PRE-commit tree and the push gate refused a tree nobody had built. Both pushes
+    needed a fresh verify pass. The content was identical in each case; only the tree hash moved.
+  APPLIES: every dispatch that both compiles and commits — which is most of them.
+  RULE: final commit, THEN `compile.sh`, then report the attested tree hash and check it equals
+    `HEAD^{tree}`. # one line in the brief; it removes a whole re-verification round
+  GRADUATES: when the dispatch templates carry the ordering and the report asks for the tree hash.
+
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, line number or severity as settled fact
 never amplify a correction you have not verified
+never relay "X is false" without restating X's proposition and naming its subject
+never repair citations before your last content edit, and never trust a green sweep as proof
+never hand a fix round a list of sites — brief the class and require the count before the fixes
+never let a round volunteer framing it did not measure, and never leave a cheap fact unqueried
+never compile before the final commit — the marker keys to the tree, not the content
 never expect a merge verdict from a review that did not invoke the Skill
 never dispatch onto a branch still held by a finished agent's worktree
+never leave a worktree behind with a staged index — it is one commit from reverting merged work
 never chain two merge acts in one command
 never put a quoted push or merge form in a commit message, comment or grep pattern
 never read commit reachability as proof that work did not land

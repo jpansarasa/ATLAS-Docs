@@ -161,6 +161,18 @@ MECHANICS [D-entries — format spec: .claude/skills/architecture-cards/CARD_TEM
   CONFLICT [HARD_STOP]: brief contradicts a D-entry without named supersession -> STOP + report; never route around, never obey the stale entry # human/supervisor arbitrates, not the implementing agent
   GUARD_TEST: required per D-entry — construct the violation, assert refusal AT the boundary through the real flow, RED if the guard is deleted # contract: .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT
 
+## TOOL_UPKEEP [sharpen while you cut] [HARD_STOP]
+PRINCIPLE: a woodworker sharpens as he works. Tools are maintained DURING the work that uses them, never in a separate phase — a dull tool makes worse work every cut until it is honed.
+  THE PRECONDITION WE DO NOT GET FOR FREE: at the bench, dullness is FELT through use — the chisel resists, the cut wanders. Our tools fail toward SUCCESS instead. A harness scoring KILLED on a suite that ran zero assertions reports itself as sharp. So before "sharpen as you go" can work here, each tool must be able to REPORT ITS OWN DULLNESS.
+  -> every tool carries a KNOWN-BAD CONTROL exercised when the tool runs: break it one documented way, require the matching guard to complain BY NAME. Worked example: deployment/tests/alerts/selftest.sh (validated by deleting 11 guards one at a time, each turning exactly one case red). A green run without a control is an opinion.
+TRIGGER: you USED a tool -> leave it sharper. Not "it broke" — a tool that has visibly broken was already blunt for every job before it.
+  a defect that RECURS is the honing signal, and it belongs in .claude/skills/supervisor-mode/LESSONS.md at the VERDICT, not in a retro # once is an incident, twice is a lesson
+SHARP ENOUGH, NOT RAZOR: judge remaining defects by whether they MISLEAD (a reader or agent takes a wrong action) or are merely IMPERFECT. Stop at the first. # over-sharpening wastes steel: a round trading three cosmetic fixes for one new false claim is a net loss, measured three times on one PR chain 2026-08-12/13
+ANTI [HARD_STOP]:
+  ✗ batch maintenance into its own phase # that is regrinding, and it means months of dull cuts first
+  ✗ read a green run as proof # ask what the tool CANNOT see: verify-citations.py is content-blind, so a citation drifted onto a comment reads GREEN
+  ✗ ship a tool whose docstring claims coverage it does not have # the purest form of the defect, now in the tool rather than the code
+
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]
 MODEL_SIZE: >=30B parameters required # RLM needs coding ability
   rationale: extraction quality requires large models

@@ -47,8 +47,13 @@ TEMPLATES: /home/james/ATLAS/.claude/skills/supervisor-mode/templates/ # one per
   roster + SIZE budget (<=700w, justify past ~550): references/brief-construction.md
   review dispatches have no template — the shape is MERGE_GATE below.
 LESSONS: /home/james/ATLAS/.claude/skills/supervisor-mode/LESSONS.md
-  read before writing any brief; cite it by path in dispatches instead of transcribing it
+  READ before writing any brief; cite it by path in dispatches instead of transcribing it
   # transcription is what grew briefs past 700w AND corrupted two lessons on 2026-08-07/08
+  WRITE it — this is a write target, not only a read one. A defect that RECURS goes here the moment
+    you record the verdict, NOT to supervisor memory: subagents cannot read memory, so a lesson
+    filed there is lost to every agent who needs it. Discriminator + cadence: LESSONS.md
+    WRITE_TRIGGER. # 2026-08-13: two lessons went to memory because memory has a standing write
+    # instruction and this file had none. The store with a trigger wins; so give this one a trigger.
 
 NTFY:
   server: https://ntfy.elasticdevelopment.com # auth in ansible-vault
