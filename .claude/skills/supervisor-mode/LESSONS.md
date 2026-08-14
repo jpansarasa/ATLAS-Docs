@@ -11,8 +11,11 @@ This file must SHRINK as often as it grows # an append-only lessons doc becomes 
   lesson in it is lost a second time
 ADD nothing already enforced elsewhere -> cross-reference under ALREADY_ENCODED instead.
 CITE section anchors, never file:line # numeric citations rotted three times in one day
-WRITE_TRIGGER: a defect RECURS -> entry here. Once is an incident; twice is a lesson. A first occurrence goes to
-  STATE.md or nowhere — that is what keeps this file short enough to be read.
+WRITE_TRIGGER: a defect RECURS -> entry here. Once is an incident; twice is a lesson.
+  A first occurrence goes to **docs/BACKLOG.md**, NOT to STATE.md # STATE.md is wiped at every epic boundary, so an
+  incident parked there makes the SECOND occurrence unrecognisable and the lesson is never earned. BACKLOG is what
+  carries an incident ACROSS epics until it recurs; keeping first occurrences out of here is what keeps this file
+  short enough to be read.
   WHICH STORE [never both]: can a DISPATCHED AGENT act on it? -> here, and the memory entry becomes a POINTER.
     Is it the supervisor's own judgement or recall? -> memory only.
   Write at the VERDICT, not the retro: recording a BLOCK for a class you have blocked before IS the second occurrence.

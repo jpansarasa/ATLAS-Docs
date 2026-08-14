@@ -36,12 +36,9 @@ STATE: /home/james/ATLAS/STATE.md # WORKING MEMORY for the epic at hand. read fi
     the test of its contents — if losing it would be a disaster, something DURABLE has moved in and
     the fix is to evict that, never to guard the file harder. Treating it as precious is what grew
     it to 9,772 words (~17k tokens EVERY turn) before 2026-08-14.
-  EVICT, do not accumulate [CANONICAL]:
-    defects | deferred work | parked epics -> docs/BACKLOG.md
-    engineering | deploy | observability rules -> CLAUDE.md
-    recurring failure modes agents must read -> LESSONS.md
-    service shape | invariants | D-entries -> <Service>/AGENT_README.md
-    what happened -> git log | PR bodies | tags | docs/RELEASES.md
+  EVICT, do not accumulate: route every durable line by CLAUDE.md §WHERE_WORK_LANDS # CANONICAL there,
+    never restated here — three copies of that table drifted to three rosters within an hour of being
+    written. The one row it cannot carry: durable user direction existing in no artifact -> memory.
   WRITE_GATE: current position + what aims the NEXT dispatch, nothing that outlives this epic.
     ✗ per-turn progress | dispatch IDs | merged-PR summaries | review verdicts | hook-bug notes
     -> those go to TaskUpdate | ntfy | durable-memory | BACKLOG, NEVER STATE.

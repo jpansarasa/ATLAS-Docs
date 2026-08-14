@@ -8,6 +8,12 @@ that must survive that epic belongs here, in a card, in a code comment, or in a 
 Each entry carries the measurement that makes it re-checkable. An entry with no measurement is an opinion, and the
 next agent cannot tell whether it is still true. Close an entry in the PR that fixes it; do not leave tombstones.
 
+It also holds FIRST occurrences. `LESSONS.md` takes a failure mode only once it has RECURRED — once is an incident,
+twice is a lesson — and STATE.md is wiped at every epic boundary, so an incident parked there makes the second
+occurrence unrecognisable and the lesson is never earned. Land it here, and a later repeat has something to match.
+
+Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
+
 ## KNOWN DEFECTS
 
 **`SecMasterDiscoveryTimeoutsElevated` structurally cannot fire.** The rule is `timeout/total > 0.5`, but a

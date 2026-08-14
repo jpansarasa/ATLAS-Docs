@@ -8,15 +8,14 @@ FIRST, CLOSE OUT THE OUTGOING EPIC. STATE.md is gitignored: the copy has no undo
 Nothing below rescues content you failed to evict, so evict before you copy.
 
   1. archive it:  cp STATE.md ~/atlas-ops/state-archive/STATE.md.<epic-slug>-<YYYYMMDD>
-  2. EVICT, entry by entry — anything that outlives this epic:
-       defect | measurement debt | deferred work | parked epic -> docs/BACKLOG.md, WITH its measurement
-       engineering | deploy | observability rule                -> CLAUDE.md
-       failure mode that RECURRED (twice, not once)             -> LESSONS.md, per its WRITE_TRIGGER
-       service shape | invariant | precondition                 -> <Service>/AGENT_README.md D-entry
-       durable user direction that exists in no artifact        -> supervisor memory
-       what happened                                            -> git log, PR bodies, tag, docs/RELEASES.md
-     # the test: read each line and ask "does this change what someone does NEXT, in the NEW epic?"
-     # no -> it is history or it is durable; either way it does not belong in the new file
+  2. EVICT, entry by entry, routing each by CLAUDE.md §WHERE_WORK_LANDS (canonical — do not restate it
+     here; three copies of that table drifted to three different rosters within an hour of being written).
+     The ONE destination that table does not carry, because only the supervisor has it:
+       durable user direction that exists in no artifact -> supervisor memory
+       # measured: the standing autonomy directive was user speech in no file, so it would not have
+       # survived a reset. A reset is not a repeal.
+     THE TEST, per line: "does this change what someone does NEXT, in the NEW epic?"
+       no -> it is history or it is durable; either way it does not belong in the new file
   3. phase/epic tag + RELEASES.md entry: CLAUDE.md PHASE_TAGS
   4. only then instantiate, and fill every <angle-bracket> placeholder
   5. delete any section you left empty — an empty heading reads as "nothing here yet" when the truth
@@ -36,16 +35,13 @@ and `git log`. That is the test of whether it is holding the right things — if
 disaster, something durable has moved in and needs evicting. Treating it as precious is what grew the
 previous one to 9,772 words (~17k tokens EVERY turn) before it was reset.
 
-WHERE THINGS LIVE — never restate these here, point at them:
-  defects, deferred work, parked epics -> `docs/BACKLOG.md`
-  engineering + deploy + observability rules -> `CLAUDE.md`
-  supervisor behaviour, turn loop, merge gate -> `.claude/skills/supervisor-mode/SKILL.md`
-  recurring failure modes agents must read -> `.claude/skills/supervisor-mode/LESSONS.md`
-  service shape, invariants, D-entries -> `<Service>/AGENT_README.md`
-  what happened -> git log, PR bodies, tags, `docs/RELEASES.md`
+WHERE ANYTHING DURABLE GOES: **`CLAUDE.md` §WHERE_WORK_LANDS** — the canonical routing table, plus this
+file's own handling rules (unsearchable, never commit, never `git clean -x`). Deliberately not restated
+here: three copies of that table existed for one hour and had already drifted to three different rosters.
 WRITE_GATE: current position and what aims the next dispatch. ✗ merged-PR summaries ✗ review verdicts
   ✗ per-turn progress ✗ dispatch IDs ✗ anything that outlives this epic.
-UNTRACKED + gitignored, so `grep -r` cannot see it — read it by explicit path.
+AT EPIC CLOSE: evict by that table, then reset from `.claude/skills/supervisor-mode/templates/STATE-scaffold.md`
+  — it carries the ritual and the instantiate command. The next epic starts CLEAN, never on this one annotated.
 
 ## STANDING DIRECTIVES
 <Live user direction governing THIS epic — scope, autonomy, cost ceilings, hard prohibitions.

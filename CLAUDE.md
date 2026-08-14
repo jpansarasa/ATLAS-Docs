@@ -15,6 +15,28 @@ YOU_ARE_ON: mercury # this machine, the production server
 compose.yaml never docker-compose.yml | Containerfile never Dockerfile | devcontainer never local install
 rationale: runtime-agnostic (nerdctl|docker|podman) + compose v2 + clean host
 
+## WHERE_WORK_LANDS [canonical routing — every other copy POINTS here, never restates]
+you found or learned X -> write it HERE, in the SAME PR as the work:
+  defect | measurement debt | deferred work | parked epic -> docs/BACKLOG.md, WITH the measurement that
+    makes it re-checkable # an entry with no number is an opinion, and the next agent cannot tell
+    whether it is still true. Close an entry in the PR that fixes it; no tombstones.
+  engineering | deploy | observability rule                -> this file
+  failure mode that RECURRED (twice, not once)             -> .claude/skills/supervisor-mode/LESSONS.md
+    # a FIRST occurrence goes to docs/BACKLOG.md, which is what makes the SECOND one recognisable
+  service shape | invariant | earned-exception precondition -> <Service>/AGENT_README.md D-entry
+  phase | epic outcome                                      -> git tag + docs/RELEASES.md # PHASE_TAGS
+  what happened                                             -> git log + the PR body # never a doc
+STATE.md [supervisor-owned, repo root]: DISPOSABLE working memory for the epic in flight, reset from
+  .claude/skills/supervisor-mode/templates/STATE-scaffold.md at each epic boundary.
+  UNSEARCHABLE: untracked + gitignored, and `grep -r` honours .gitignore — a repo-wide search silently
+    misses it. Read it by explicit path; never report "not found in the repo" without that check.
+  ✗ never commit | push | PR it
+  ✗ never `git clean -x` # it deletes ignored files, STATE.md among them, with no recovery
+  ✗ never stash | restore | checkout supervisor-owned files (.claude/skills/supervisor-mode/**) to get a
+    clean tree # `git checkout -b` and `git pull --ff-only` already preserve dirty tracked files when the
+    new ref does not touch them — proceed as-is
+  ✗ nothing durable goes in it — if it would outlive this epic, it belongs at a row above
+
 ## VERIFY [before_commit]
 IF code change THEN verify it compiles BEFORE commit # "straightforward -> commit anyway" is how bugs ship
   dotnet: {Project}/.devcontainer/compile.sh [--no-test]
