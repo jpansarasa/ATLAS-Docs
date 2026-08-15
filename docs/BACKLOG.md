@@ -34,22 +34,79 @@ increments `SecMasterResolutionCounter` only on its REJECTION paths, so `sentine
 failure-biased counter — `status="resolved"` totalled 2 in 24h while the DB recorded ~180 real resolutions/day.
 Fix needs a per-observation outcome counter at the persist boundary, landed WITH the rule; a window-only fix swaps
 a silent alert for a permanently-firing one on a ratio that does not mean what it says.
+Both DB figures above (~3% real rate, ~180 real resolutions/day) are POST-erasure `instrument_id` readings and are
+therefore FLOORS — see the `ReExtractBackgroundService` entry below. The three alert defects are unaffected; the
+magnitudes understate by an unknown margin.
 
-**Sentinel symbol resolution has never exceeded 4.21%, and the metric said 67%.** Honest rate
+**Sentinel's reported resolution rate read 67% while the honest column has not read above 4.21% since April — and both
+are POST-erasure readings** (see the `ReExtractBackgroundService` entry below). Scope of that caveat: the HONEST-rate
+figures are FLOORS, each understating the true rate by an unknown margin. The 67.11% reported rate is NOT a floor —
+it is inflated by the mislabel, which is what this entry is for and which the erasure does not affect. Honest rate
 (`instrument_id IS NOT NULL`) by month: Apr 4.21%, May 3.09%, Jun 0.79%, Jul 0.34%, Aug 2.58%. The reported rate
 (`resolution_state='Resolved'`) read 67.11% in April because rows were stamped Resolved with a NULL instrument —
 28,298 of them that month, 21,671 in May. PR #854 (2026-07-05) fixed the mislabel, and from July the two figures
 agree, which is why the June "collapse" in any dashboard built on `resolution_state` is an artifact of the FIX, not
 a regression. Re-check: compare the two percentages in the same query before concluding anything moved.
 
-**No `DeterministicResolver` outcome has ever been persisted.** `llm_candidate_pick`, `llm_candidate_exact`,
-`hybrid_subject` and `gemini_fallback` appear 0 times across 658,167 `sentinel.extracted_observations` rows, while
-the resolver demonstrably runs (`exact_rejected_name` ~920/day). Every real resolution comes from the legacy legs:
-`cove_VectorSearch` 3,977, `ticker_in_quote` 6,702, `cove_FuzzySql` 235. Cause NOT established — the leading
-hypothesis (ExtractionSchemaV2 `required[]` omitting `resolution_confidence`) was DISPROVEN by probing vLLM with the
-shipped schema, which emitted the field non-null 5/5. The value it gates on is not persisted anywhere
-(`extracted_observations.resolution_confidence` holds the resolver OUTCOME's value), so it is unobservable from
-outside the process; `sentinel_resolver_rule1_decision_total` was added to answer it.
+**Rule 1's outcome is ERASED downstream, not never produced — and the column that says otherwise cannot tell the
+difference.** `sum by (reason)(sentinel_resolver_rule1_decision_total)` read 2026-08-15T01:10Z: `picked` 108,
+`no_index` 26 — cumulative since the container was created 2026-08-15T00:17:47Z and last incremented 00:32Z, so ~14
+minutes of counting on a counter that the restart zeroed. **Not comparable to the 24h DB figures below**; no
+108-against-6,099 ratio can be formed from them. `no_confidence`, `below_threshold` and `index_out_of_range` are
+ABSENT series, not measured zeros — the query returns two rows. The instrument itself is exporting (two of its reason
+values are present), so absent means those branches never executed since that restart, not that the meter is missing.
+Measured in the DB 2026-08-15 (UTC) over the preceding 24h, 6,099 `sentinel.extracted_observations` rows carry
+`OriginalResolutionMethod='llm_candidate_pick'` — the resolver fires at scale — and **1,421 of them (23%) lost an
+instrument they already held** (`OriginalInstrumentId` NOT NULL, `instrument_id` NULL), with 0 quarantined.
+**The erasure hits EVERY `DeterministicResolver` leg, not only Rule 1**: the same window loses 549 `hybrid_subject`,
+128 `gemini_fallback` and 1 `llm_candidate_exact` row, which with Rule 1's 1,421 sum to the ALL-METHODS total of
+2,099 in the `ReExtractBackgroundService` entry below (identical under `extracted_at` and `re_extracted_at` windows).
+`hybrid_subject` and `gemini_fallback` fire in production too. Do not read 2,099 as a Rule 1 figure: against Rule 1's
+6,099 rows it implies a 34% loss rate where the measured one is 23%. Worked
+examples, ids 689274 / 689275 / 689284: `OriginalResolutionMethod=llm_candidate_pick`, `resolution_method` NULL,
+`QuarantinedAt` NULL, `review_notes="[re-extract] processed 2026-08-15T00:29:03Z"`. Mechanism: the
+`ReExtractBackgroundService` entry immediately below.
+THE TRAP, and it cost hours of wrong root-cause search: **any query over `resolution_method` reads POST-erasure state
+and cannot distinguish "never set" from "overwritten".** This entry previously read "no `DeterministicResolver` outcome
+has ever been persisted" off 0 occurrences of `llm_candidate_pick` / `llm_candidate_exact` / `hybrid_subject` /
+`gemini_fallback` in 658,167 rows — literally true of the column, false about the resolver, and it sent the
+investigation into the extraction path instead of the writer. Read `OriginalResolutionMethod` alongside
+`resolution_method`, always; the legacy-leg counts recorded in the same round (`cove_VectorSearch` 3,977,
+`ticker_in_quote` 6,702, `cove_FuzzySql` 235) are readings of that same post-erasure column and carry the same caveat.
+A SECOND column carries the same circularity, and it is a distinct trap: the value Rule 1 gates on is never PERSISTED
+(`extracted_observations.resolution_confidence` holds the resolver OUTCOME's value —
+`DeterministicResolver.cs:293-297`), so that column cannot answer what Rule 1 received, and querying it is circular.
+It is observable, just not in the DB: PR #963 added `sentinel_resolver_rule1_input_confidence` ("ResolutionConfidence
+as received by Rule 1", `SentinelMeter.cs:1614-1616`, recorded at `DeterministicResolver.cs:315`), which is the only
+thing that sees the input value — and is where the 0.850 reading below comes from.
+Not to be re-derived: the `ExtractionSchemaV2 required[]` hypothesis was DISPROVEN by probing vLLM with the shipped
+schema, which emitted `resolution_confidence` non-null 5/5.
+One cross-check is structurally inert and will agree forever: all 108 observations of
+`sentinel_resolver_rule1_input_confidence_bucket` sit at exactly 0.850 (the entire count lands in `le="0.9"`, none at
+or below 0.8), which IS `DslPreselectionConfidence`, a hardcoded constant — so the `< 0.7` gate can never trip (an
+absent `below_threshold` is a property of the constant, not evidence about the data) and `bucket{le="0.7"}` reads
+0=0 indefinitely.
+
+**`ReExtractBackgroundService` strips instruments off brand-new live rows, and no counter exists for the loss.** It is
+running in prod as a backfill (`/opt/ai-inference/compose.yaml:1212-1216`: `ReExtract__Enabled=true`,
+`Mode=resolve-only`, `Cohort=all`, `RowsPerMinuteResolveOnly=600`) but it is not confined to legacy rows:
+`ApplyCohortPredicate("all")` filters only on `ReExtractedAt IS NULL`, so every freshly-inserted row qualifies and is
+claimed **~10-180s after insert (2026-08-15 UTC, n=189 over 2h: min 10.2s, p50 ~50s, p95 133s)**, well inside the
+live path.
+`ApplyReExtraction` then assigns `ResolutionMethod` unconditionally from its own one-shot resolve — NULL on a miss,
+overwriting a good value rather than declining to write — and recomputes `ResolutionState` from that. Measured in the
+DB 2026-08-15 (UTC) over the preceding 24h: **2,099 rows lost an instrument they already held against 127 that gained
+one — 16:1 destructive**, 0 quarantined. That 2,099 is ALL resolution methods; the per-method split is in the Rule 1
+entry above. Do not re-check the ratio against `sentinel_reextract_rows_processed_total{outcome="recovered"}`:
+`ReExtractBackgroundService.cs:685-696`
+(mirrored verbatim at `:496-507`) emits `Recovered` only when the SYMBOL CHANGES, so a row that gains an instrument
+under an unchanged symbol is classed `Unchanged` — the counter undercounts recoveries by construction, and a
+cumulative read of it is worthless for hours after any container restart.
+It ran unseen because `ReExtractOutcome` has no counter for "had an instrument, lost it": the outcome enum cannot
+express the regression, so no dashboard or alert could have shown it, and the loss surfaced only by diffing
+`OriginalInstrumentId` against `instrument_id` in SQL. Land that counter WITH any fix — a fix verified on the same
+blind instrument proves nothing. `NoResolutionSweepWorker` is EXONERATED and should not be re-suspected: it only calls
+`SetReviewStatus`, and its predicate requires `extracted_at < now-7d`, which no row of this age can satisfy.
 
 **gemini-resolver runs at 100% of its daily cap while its gate rejects ~1 call in 3,000.** Measured 2026-08-14:
 `gemini_resolver_live_calls_24h` 1500 against `gemini_resolver_daily_cap` 1500, `gemini_resolver_gated_24h` = 1 of
@@ -130,6 +187,18 @@ calibrated constant.
 **CI is advisory, not blocking** — branch protection 403s on this GitHub plan, so a red run does not stop a merge.
 
 ## DEFERRED WORK
+
+**`Extraction__GuardsEnabled=false` — AWAITING AN OWNER DECISION.** This is a deliberate experiment, not an accident:
+`/opt/ai-inference/compose.yaml:1155` carries it dated 2026-05-03, on the rationale that the Phase 4.3 client-side
+guards (token-overlap + asset-class) were defensive bandaids that had become precision sinks, with the PR-3 prose
+template plus cosine expected to disambiguate without literal-token rules. This entry records what that buys and costs
+today, and prejudges nothing. Exposure, measured live 2026-08-15T00:46Z: `/api/semantic/resolve-local?q=OpenAI`
+returned `symbol=BBAI` (BigBear.ai) WITH an instrument id, at confidence 0.85 — a private company resolving to an
+unrelated public issuer with an id attached, not a low-confidence near-miss.
+`SubjectNameNormalizer.SharedTokenCount("OpenAI", "BigBear.ai Holdings")` scores 0 and WOULD reject it; the guard
+simply does not run. So the call is a real tradeoff and belongs to the owner: re-enabling recovers this class of false
+accept and re-imposes the precision cost the experiment was set up to measure. Re-check with the same probe — it needs
+no deploy.
 
 **17 person-named catalog rows remain in the `GeminiFallback` bucket** — 16 active all-series, plus one inactive
 series `MCRFPC1` = "Justin Trudeau". #961's repair allowlist keyed on `entity_resolution:gemini` only, so these were
