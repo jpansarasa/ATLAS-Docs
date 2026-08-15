@@ -113,6 +113,71 @@ readings taken before 2026-08-15 understate the real resolution rate by an unkno
 historical backfill was DRAINED (0 of 671,571 rows had a null watermark) and every row claimed in the preceding 7 days
 was extracted the same day — 100% of the worker's throughput was live traffic, which is what the floor stopped.
 
+**The candidate surface filter gates 4.3% of the rows that attach instruments; 95.7% resolve without ever meeting
+it.** The guard is not broken and does not need fixing — `EntityResolutionPrepass.ApplySurfaceFilter` is
+unconditional (`const string mode = "enforce"`, `EntityResolutionPrepass.cs:396`, no flag) and live: 30d
+`sentinel_candidate_surface_filtered_total{mode="enforce"}` carries 12 reason series (institution 9,190,
+gpe_country 167). It is POSITIONED wrong. `Classify` has three production call sites — the NER-candidate prepass
+(`EntityResolutionPrepass.cs:404`), Rule 2.5's paid-Gemini leg (`DeterministicResolver.cs:560`, D-6) and its V1
+mirror (`GeminiSymbolFallbackService.cs:85`, D-12) — while the LLM-extracted `SubjectEntity` reaches
+`DeterministicResolver` through Rule 1 (`:60`) and Rule 2 (`:96`, raw `SubjectEntity` straight to hybrid resolve),
+neither of which consults it. Measured over `extracted_at` [2026-07-15, 2026-08-15) reading
+`OriginalInstrumentId`/`OriginalResolutionMethod` — **never the live columns; ReExtract erases those, see the two
+entries above** — **45,831 of 47,891 instrument-attaching rows (95.7%) take an unfiltered leg** (llm_candidate_pick
+30,575 + hybrid_subject 14,675 + llm_candidate_exact 581; only gemini_fallback's 2,060 passed the filter), and
+**7,957 (16.6%) carry a subject the filter already has a verdict on** (gpe_country 7,184 over 38 distinct surfaces,
+crypto 747, institution 26). That 16.6% is a FLOOR: it was replayed in SQL from the three exact-match sets only,
+the shape classes (byline, garbled, multiline, bare-suffix) were not re-run. Consequence in the same window:
+`U.S.` -> `U` (Unity Software) 2,470 times, `S&P 500` -> `S` 683, `Sensex` -> `SNSE` 677, `Wall Street` -> `IEP`
+243, `yen` -> `U` 237 — **3,060 country-subject rows land on `U` alone**, and not one of those pairs arrives via
+`gemini_fallback`, the one leg that is filtered.
+SAME-ARTICLE CONTROL, and it is the cheapest re-check: `raw_content_id=146707` has 12 rows, every one
+`subject_entity='U.S.'`, one process. Its `extracted_at` is 2026-08-15T03:26-03:27Z — **3.4h AFTER the window
+above closes**, so re-running the window query will NOT return it; it is a separate, still-decisive observation,
+not one of the counts above and not a fabrication. Nine attached `U` via `hybrid_subject`; Loki carries exactly
+three `leg=sentinel-v2-direct decision=rejected reason=gpe_country surfaceJson="U.S."` lines for that id
+(same timestamps, trace `b9dd745b5aa5d29976eaf84055a88298`). Identical string, identical source, opposite
+outcomes — the three rejected are precisely the rows Rule 2 failed to resolve and which therefore fell through to
+Rule 2.5 where the filter finally ran. The filter sits AFTER Rule 2, so it only ever sees Rule 2's misses.
+THREE CAVEATS, because the obvious fix — "hoist the filter, country subjects are junk" — is wrong on all three:
+(1) **country subjects also produce DEFENSIBLE resolutions**, so the discriminator is country -> single-issuer
+EQUITY, never country -> anything. Same window: `Brazil` -> `EWZ` 446, `Germany` -> `DAX` 345, `Middle East` ->
+`EIS` 248, `Israel` -> `EIS` 242, `China` -> `GXC` 190, `South Korea` -> `EWY` 176, `Mexico` -> `EWW` 133,
+`Taiwan` -> `EWT` 89, plus FRED macro series (`India` -> `DEXINUS` 123, `China` -> `NGDPXDCCNA` 73). A
+country -> reject rule destroys these.
+(2) **the filter false-positives on live issuers today.** `IsInstitution`'s narrow-generic arm rejects any name
+with no corporate suffix whose last word is in `GenericLastWords` — which includes `Association`. `Bancorporation`
+is absent from `CorporateSuffixes` (only `Bancorp` is there), so `Zions Bancorporation, National Association`
+(5 rows in-window, 7 all-time) and `Flagstar Bank, National Association` (5 in-window, 7 all-time) both classify
+as `institution` — and both are ACTIVE catalog issuers, held under the abbreviated form of the very words that
+trip the rule (`ZION` = `ZIONS BANCORP NA`, `FLG` = `FLAGSTAR BANK NA`, both `is_active`). The bare
+`Zions Bancorporation` (4 in-window, 12 all-time) Keeps: same company, two surfaces, opposite verdicts. Hoisting
+the filter onto the resolution path promotes that false-positive from "skips a paid call" to "silently drops a
+real resolution" — the exact error D-1/D-5's PRECOND is built to avoid.
+(3) **`Sensex` / `S&P 500` / `yen` are unfixable at either ingress.** They arrive on `llm_candidate_pick`: same
+window and same Original-column rule, `GROUP BY subject_entity, coalesce("OriginalResolutionMethod",
+resolution_method)` over every instrument-attaching row bearing the surface — so the denominator is the SUBJECT'S
+WHOLE POPULATION, not the single-symbol pairs listed above — `Sensex` 675/677, `S&P 500` 1,221/1,230, `yen`
+234/238; the balance is `hybrid_subject` (2, 9, 3) plus one `gemini_fallback` `yen` -> `DEXJPUS`. And Rule 1's PICK
+IS CORRECT — "Rule 1 picked the wrong row" is REFUTED, measured over the same window across the WHOLE
+`llm_candidate_pick` leg (the 30,575 of the 95.7% count above, not a sub-slice of it): `subject_entity` equals the
+picked candidate's `Name` (`candidate_symbols_json -> selected_candidate_index ->> 'Name'`) in 30,575 of 30,575
+rows case-insensitively and 30,573 exactly, the 2 exceptions being case-only
+(`NASDAQ`/`Nasdaq`, `Blackrock`/`BlackRock`). The wrong answer is a SUBSTITUTION
+AFTER the pick — the resolver fuzzy-matches the candidate's model-authored slug instead of its `Name`; the full
+account belongs with the Rule 1 entries above, not here. Either way the subject SURFACE is not the input that went
+wrong, so no surface filter at any position can help. By contrast `U.S.` -> `U` (2,470) and `Wall Street` -> `IEP`
+(243) are entirely `hybrid_subject`, i.e. genuinely subject-driven and in scope for a seam.
+TWO CANDIDATE SEAMS, not chosen — measure before picking. **Seam A**: hoist `Classify` out of
+`TryGeminiResolveAsync` up to `ResolveAsync` entry (~`DeterministicResolver.cs:46`). `_surfaceFilter` is already
+injected and `ResolveAsync` has one production caller (`V2ExtractionPipeline.cs:77`), so the change is small — but
+it puts every false-positive in caveat (2) directly on the resolution path. **Seam B**:
+`DslToMergedExtractionAdapter.cs:499`, where `SubjectEntity` is born, which is where GIGO says to clean and which
+covers SecMaster, Gemini, `extracted_observations.source_entity` and the matrix in one edit (the D-15 precedent) —
+but it is upstream of the candidate list, so it cannot address caveat (3) either.
+Whichever seam wins, land a counter for rows attaching on a subject the filter would reject; today that number is
+obtainable only by replaying the classifier over the DB in SQL, which is how this entry was written.
+
 **gemini-resolver runs at 100% of its daily cap while its gate rejects ~1 call in 3,000.** Measured 2026-08-14:
 `gemini_resolver_live_calls_24h` 1500 against `gemini_resolver_daily_cap` 1500, `gemini_resolver_gated_24h` = 1 of
 3,076 total calls, and 877 of SecMaster's 3,425 dispatches/24h refused as `cap_exhausted`. Refusal is
