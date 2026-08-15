@@ -102,7 +102,9 @@ grafana alerting: `--tags alerting --skip-tags always` THEN `sudo nerdctl restar
   startup-loaded AND grafana lives in the separate OTEL stack, so no ansible form reloads it.
   Dashboards differ — they auto-reload (updateIntervalSeconds: 30), no restart.
 inventory: deployment/ansible/inventory/hosts.yml # ansible.cfg default; run from deployment/ansible/
-filter test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'Name~{Test}'
+filter test: nerdctl compose exec -T {svc}-dev dotnet test --filter 'DisplayName~{Test}' # xUnit exposes
+  DisplayName | FullyQualifiedName, NOT Name. `Name~` matches ZERO and STILL EXITS 0 — bare, no pipe needed —
+  so a filtered run that tested nothing reads as a pass. Measured: Name~should_return 0 tests, DisplayName~ 304.
 VERIFY_TRAP: `nerdctl inspect <svc>` RETURNS THE IMAGE, NOT THE CONTAINER # every service shares a name between the
   two and bare inspect resolves the image first, yielding a plausible .Created that is the BUILD time -> a deploy
   "verified" that way compared the fresh image to itself. Use `nerdctl container inspect`.

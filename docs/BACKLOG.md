@@ -168,6 +168,84 @@ emitting. The entry exists so that the first time it does, the collapse is alrea
 Fix: add the name to the same `AddView` list in `SentinelCollector/src/Program.cs` that already applies
 `confidenceBuckets` — the [0,1] boundaries suit a ratio unchanged.
 
+**Quarantining a SecMaster instrument row retires its SYMBOL, and 82 of them are real tradeable tickers.**
+`idx_instruments_symbol` is a FULL (non-partial) unique index, so a soft-deleted row owns its symbol exactly as
+hard as an active one and no row can ever take that symbol again. Migrations `QuarantineGeminiJunkInstruments`
+and `QuarantineGeminiEquityEtfJunk` (2026-07-18) soft-deleted 91 rows to retire a junk NER-surface NAME —
+`HON`="TD Cowen", `MELI`="Amy Legate-Wolfe", `AEM`="Toronto Stock Exchange", `ANGX`="Minions & Monsters" — and
+the second migration's own header says every one of its 82 symbols "is a real, tradeable ticker". So the catalog
+is now permanently unable to hold Honeywell, MercadoLibre, Agnico Eagle, Diageo, AB InBev or Mesoblast, and every
+news mention of one pays the full confirmation cascade (per D-1, up to the paid Gemini leg) and self-seeds
+nothing. Measured 2026-08-14: `SELECT count(*) FROM instruments WHERE is_active=false` = 91, all but one
+`discovery_source='GeminiFallback'`, all `updated_at` in the two migration transactions; no active row exists for
+`HON` (only the foreign lines `HON.NE`/`HON.VI`/`HON.MX`/`HON.TO`), and none at all for MELI/AEM/MESO.
+91 IS THE QUARANTINE COUNT, NOT THE TICKER COUNT, and this entry headlined 91 while its own body cited the
+migration's 82. Re-measured 2026-08-15, `SELECT asset_class, count(*) FROM instruments WHERE is_active=false
+GROUP BY asset_class` = Equity 74 / ETF 8 / fred_series 8 / Economic Indicator 1. So 9 of the 91 are not
+tickers at all: 8 `asset_class='fred_series'` (`NAPMII`="Asian share markets", `CONCCONF`="US",
+`WCSPOIL`="U.S. Strategic Petroleum Reserve", `MCRFPC1`="Justin Trudeau", …) plus 1 `'Economic Indicator'`
+(`GSV.NE`="2025 full year GSV"). Those 9 are the D-4 macro-junk class — a hallucinated macro label, which is a
+different defect from a retired equity ticker and wants a different disposition. Every count below is therefore
+stated over the population it actually applies to, 82 or 91, never both at once.
+A SECOND LOSS SURVIVES THE FIX, deliberately, and is recorded here because a known data loss with no entry and
+no counter is how one becomes permanent. `CatalogService.cs:197-208` drops a quarantined discovery item with a
+bare `continue` and no `results.Add`, so `EntityResolutionService.cs:850` `result.Results.FirstOrDefault()` is
+null and a CompanyName candidate loses its ticker PROPOSAL — the surface goes into the confirm cascade with
+nothing proposed. The drop is CORRECT and must stay: surfacing an inactive row would undo the quarantine, and
+`AddAsync` has no reactivation branch, so the alternatives are both worse. But correct is not the same as free,
+and this one is invisible — it is also reachable from the `search_catalog` MCP tool, i.e. outside entity
+resolution entirely, where the item simply vanishes from an operator's catalog search with no indication the
+symbol exists. Closing it means deciding the reactivation policy above; until then the loss is real and known.
+Re-check: the `is_active=false` count above, plus
+`sum(secmaster_entity_resolution_self_seed_total{result="quarantined_skip"})` — which
+is a FLOOR on the wall-hits, NOT "the live rate" this entry first called it. That tag is emitted at ONE of four
+self-seed skip paths (`EntityResolutionService.cs:1032`); silent are `:877` (unconfirmed), `:901`
+(contextFactor<=0), `:1002` (EnableSelfSeed=false), and the `CatalogService.cs:197` drop above, which carries a
+LogWarning but no metric at all. Left as a floor rather than closed by emitting at `CatalogService.cs:197`,
+deliberately: that would still leave three silent paths, so the qualification is needed either way, whereas the
+emission is a new untested signal in a PR whose thesis is the pre-insert read. Measured 2026-08-15, prod carries
+three series — `idempotent_skip`=1492, `inserted`=67, `error`=22 (the 23505s this PR stops) — and NO
+`quarantined_skip`, because the emitting code is unmerged. `EntityResolutionSelfSeed` is also absent from
+`MetricWarmupHostedService`, so even after deploy an absent series cannot be read as zero. The tag VALUE is
+pinned by `EntityResolutionServiceTests.should_record_the_quarantined_skip_result_tag_when_the_symbol_is_held_by_a_quarantined_row`;
+without it this PromQL could be renamed or typo'd and ship green (the pre-fix proxy,
+`{service_name="SecMaster"} |= "Self-seed persistence failed"`, is VARIABLE, not a fixed rate: 30 lines/24h with
+ANGX 21 of them in the window ending 2026-08-14T12:00Z, 7 with ANGX 6 ending 2026-08-15T13:00Z, so a low
+post-deploy reading is that variance and not a regression). NOT fixed by the PR that added this entry — that one
+only stopped the guaranteed-to-fail INSERT and its ~3KB stack. The repair is a policy call and needs a migration: either reactivate with `name = symbol` and let the
+D-2 enrichment fill-gaps re-name them,
+or make the unique index partial on `is_active` and let a fresh row take the symbol. Reactivating as-is is the
+one option that is definitely wrong: it reinstates the junk names the quarantine existed to remove.
+TWO NUMBERS, NOT ONE — this entry previously welded them into a single conjunct ("all 91 satisfy Figi=null AND
+Country=null … so all 91 are in BOTH enrichment pools"), and only the first half was true. Figi=null AND
+Country=null does hold for 91 of 91 (measured 2026-08-15). Pool MEMBERSHIP is 82 of 91, because both candidate
+queries also require an equity-shaped class, `EquityAssetClasses {Equity,ETF,Stock}` —
+`OpenFigiEnrichmentBackgroundService.cs:112` (IsActive AND class AND Figi==null) and
+`CatalogEnrichmentBackgroundService.cs:96` (IsActive AND class AND (AtlasSectorCode==null OR Exchange==null OR
+Country==null)); same SELECT plus `asset_class IN ('Equity','ETF','Stock')` = 82. CONSEQUENCE, and it is the
+reason the conflation mattered: the reactivate-with-`name = symbol` repair would strand those 9 PERMANENTLY at
+Name=Symbol. The class filter keeps them out of BOTH candidate queries, so no timer ever selects them and the
+fill-gap that was supposed to re-name them never runs — the row goes active, un-named, and stays that way. The 9
+need their own disposition decided BEFORE that migration runs, not discovered after it.
+A THIRD SITE carries the same predicate mismatch and is deliberately NOT fixed here. `RegistrationService.cs:309`
+is another active-only pre-insert read — `GetBySymbolAsync`, whose `IsActive` filter is itself load-bearing for
+the FRED-pollution recovery path, so it cannot simply be swapped — feeding `AddAsync` at `:391`. A collector
+registering any of the 82 real tickers hits the same guaranteed 23505 the fix above stops on the self-seed path,
+and `DuplicateInstrumentException` (`: Exception`, so it passes `RegisterWithRetryAsync`'s `DbUpdateException`-only
+catch at `:216`) is caught by `catch (Exception ex)` at `RegistrationService.cs:135`. It does NOT escape: it is
+surfaced as a failed registration response — `Success=false, Message="Registration failed:
+DuplicateInstrumentException: …"` — which the collector re-logs as a Warning. Pre-existing, not a regression, and
+out of scope of the PR that recorded it — the fix is the same reactivation policy call as the repair above, not a
+second local patch. No counter covers the path (`InstrumentsCreated` bumps only after `AddAsync` returns), but the
+`LogError` at `:137` is a working re-check: `{service_name="SecMaster"} |= "Failed to register"` reads 0 over 7d
+(measured 2026-08-15T13:00Z; the same selector unfiltered carries 12,444 lines in that window, so the zero is a
+real zero and not a dead query). It is NOT firing today — re-run that before treating it as a live burn.
+Dead code at the same site, worth deleting
+whenever that policy lands: `RegistrationService.cs:313` `if (!instrument.IsActive)` sits AFTER the
+`IsActive`-filtered read, so its operator-facing "registering against INACTIVE instrument" warning is
+UNREACHABLE. Its sibling at `:258` IS live and must not be removed with it — that one reaches the instrument
+through `existingMapping.Instrument`, a different lookup with no active-only filter.
+
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
 **Empty-but-valid results grade CORRECT.** A schema-valid `qualitative_result` with `sentiment_polarity:
