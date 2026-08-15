@@ -58,7 +58,7 @@ GOTCHAS: ✗bulk-preload ✗backfill-rows-to-green ✗NotFound="not-in-table" �
   ✗ALIAS_MATCH-emitted(dead-wire) ✗Economic-from-untrusted-collector
   ✗freq/lag/prefer-as-sort ✗LookupSource-live-prod ✗ContextFactor=0-as-lower
 
-SEE: README §Reference (API endpoints, config tables) · secmaster.proto · EntityResolutionService.cs:1180(ContextFactor) · ResolutionService.cs(ranking) · RegistrationService.cs:181(EvaluateGuard)
+SEE: README §Reference (API endpoints, config tables) · secmaster.proto · EntityResolutionService.cs:1278(ContextFactor) · ResolutionService.cs(ranking) · RegistrationService.cs:181(EvaluateGuard)
 
 ---
 

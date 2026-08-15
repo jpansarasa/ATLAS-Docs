@@ -221,8 +221,9 @@ NUM slot names). Still present in the live DSL prompt at
 schema. `[I→M]` `description`, `label`, `period_start`, `period_end` were never emitted by *either*
 path — they are dead reads, not cutover casualties. `[M]`
 
-**2.5 "Wrong symbol → quarantine" would destroy good rows.** `idx_instruments_symbol` is UNIQUE `[M]`,
-so there is exactly one KOF row and one TEM row in the catalog. Both are real tickers whose authoritative
+**2.5 "Wrong symbol → quarantine" would destroy good rows.** `idx_instruments_symbol` is unique among
+ACTIVE rows `[M]` (it is PARTIAL — `WHERE is_active` — since `ScopeSymbolUniquenessToActiveRows`),
+so there is exactly one LIVE KOF row and one LIVE TEM row in the catalog. Both are real tickers whose authoritative
 names are already in the local cache (§1.2). Quarantining them removes Coca-Cola FEMSA and Tempus AI
 from the catalog entirely. The corrupt artifact is the *name* and the *surface→ticker association*, not
 the instrument. Absence from the OpenFIGI cache is also not evidence of junk — PUK (Prudential) and ELME
@@ -566,8 +567,10 @@ Population: `discovery_source IN ('entity_resolution:gemini','entity_resolution:
 | **Q — Quarantine** | the symbol is not a real ticker (no FIGI, no cache hit, and the surface does not correspond to any instrument) | `IsActive = false`, `Metadata.quarantine_reason` | per-row corroborated, **not** predicate-driven |
 
 **Class Q is deliberately small and manual.** Per §2.5, KOF/TEM/JAN/OLCLY are class **R**, not Q —
-quarantining them would remove real instruments, since `symbol` is UNIQUE and these are the only rows
-for those tickers. And absence from the cache (PUK, ELME) is *not* evidence of junk — that is NT-2, and
+quarantining them would remove real instruments, since `symbol` is unique among ACTIVE rows and these are
+the only LIVE rows for those tickers. (Quarantining no longer RETIRES the ticker — the partial index lets a
+fresh row take it — but it still removes the only instrument anything currently resolves to, so the argument
+against Q stands unchanged.) And absence from the cache (PUK, ELME) is *not* evidence of junk — that is NT-2, and
 it is the single easiest way for this repair to do damage. The existing precedent agrees:
 `QuarantineGeminiEquityEtfJunk.cs:46-64` used an **enumerated symbol list**, not a predicate, precisely
 because each disposition was per-row corroborated (82 quarantined, 20 kept) `[M]`. C1 keeps that

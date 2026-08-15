@@ -131,8 +131,17 @@ TABLES: news obs sentinel.extracted_observations | raw_content · matrix feed pu
   cells public.matrix_cells · regime public.sector_regimes · SecMaster DB atlas_secmaster (source_mappings, instruments)
 MIGRATIONS [HARD_STOP]:
   ✗ NEVER hand-write a migration .cs # missing Designer.cs -> EF records it in __EFMigrationsHistory, schema unchanged
-  ✓ nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project src/Data
+  ✓ nerdctl compose exec -T {svc}-dev sh -c "cd /workspace/{Svc}/src && dotnet ef migrations add {Name} --output-dir Data/Migrations"
+    `--project src/Data` is WRONG and was documented here for months: NO service has a src/Data project (verified —
+      zero */src/Data/*.csproj in the tree). Each service is ONE csproj at {Svc}/src/ with Data/ as a FOLDER, so that
+      form resolves to {Svc}/src/src/Data and dies with MSB1009, after creating a stray src/src/obj to clean up.
+    --output-dir is relative to the project: Data/Migrations for all but CalendarService (Migrations) and
+      MacroSubstrate (its project is src/MacroSubstrate/, so cd there and use Data/Migrations).
+    `dotnet tool restore` FIRST if dotnet-ef is missing # it is a local tool manifest, not a global install
   required: {Migration}.cs + {Migration}.Designer.cs + ModelSnapshot.cs
+  PARTIAL INDEX: EF expresses it natively via .HasFilter("\"col\" = TRUE") — no raw-SQL escape needed
+    ✗ a partial unique index does NOT back a bare `ON CONFLICT (col)` # arbiter inference needs a predicate implying
+      the index's; bare raises 42P10 "no unique or exclusion constraint matching". Write `ON CONFLICT (col) WHERE <pred>`
 ANTI: ✗ raw SQL during deployment ✗ bypassing EF to seed/migrate ✗ manual DB fixes
 
 ## DATA_ML_CONTEXT
