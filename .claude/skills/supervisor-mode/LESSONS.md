@@ -162,6 +162,27 @@ L10 Run the build AFTER the final commit. The marker keys to the TREE.
     # one line in the brief; it removes a whole re-verification round
   GRADUATES: when the dispatch templates carry the ordering and the report asks for the tree hash.
 
+L11 An alert rule is unproven until a test asserts it FIRES. Green promtool says only that it did not crash.
+  EVIDENCE: 2026-08-14, second occurrence of the same class. `SentinelLowResolutionRate` stepped over 6h at 5m:
+    9 of 18 samples NaN (empty `rate(...[5m])` denominator across the idle gaps between bursts), the other 9 exactly
+    `0` — it oscillates pending -> inactive and never holds `for: 15m`. 24 pending cycles, 0 fires in 24h, through a
+    real resolution rate of ~3%. FIRST occurrence already in docs/BACKLOG.md: `SecMasterDiscoveryTimeoutsElevated`,
+    whose ratio a double-count pins at exactly 0.5 against a `> 0.5` test. Both rules live in files that HAVE
+    promtool suites; neither had a positive assertion naming it.
+  APPLIES: every rule in `deployment/artifacts/monitoring/alerts/` — and hardest to the ones written to catch a
+    condition that is not currently happening, because nothing on the box will ever contradict them.
+  RULE: adding or changing a rule -> ONE `promql_expr_test` asserting `alertstate="firing"` on an input series shaped
+    like the real traffic, which for this fleet means BURSTS WITH GAPS, not a steady rate. A rule whose test only
+    shows it staying silent has pinned nothing: silence is also what a rule that can never fire produces.
+    # `deployment/tests/alerts/run.sh` already executes these and check-assertion-counts.py already ratchets the
+    # count, so the cost is one fixture, not a harness
+  WHY THE CHEAP VERSION IS ENOUGH: both defects here are visible the moment you feed the rule a gappy series — no
+    soak, no prod data, no judgement about thresholds. The expensive version (measure the live distribution first) is
+    what nobody will do under pressure.
+  GRADUATES: when the alert-rules CI step fails any rule file containing an `alert:` with no positive assertion
+    naming it — a coverage checker beside `check-matchers.py`, which already resolves alertname literals and so
+    already holds both halves of the join.
+
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, line number or severity as settled fact
 never amplify a correction you have not verified

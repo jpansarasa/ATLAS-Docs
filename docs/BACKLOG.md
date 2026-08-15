@@ -22,6 +22,44 @@ candidate, two increments, ratio pinned at exactly 0.5. Only the pre-discovery s
 Fix the double-count, not the threshold; an alert tuned around a miscount hides the miscount.
 Metric gotcha: OTEL appends `_total`, so alert on `secmaster_fred_search_skipped_total`, not the bare name.
 
+**`SentinelLowResolutionRate` cannot fire, and fixing only the window would make it scream instead.** Measured
+2026-08-14 over 6h at 5m steps: 9 of 18 samples are NaN (`sum(rate(...[5m]))` denominator empty during the idle
+gaps between bursts) and the other 9 are exactly `0` — so it oscillates pending -> inactive and never holds the
+`for: 15m` dwell. 24 pending cycles and 0 fires in 24h, straight through a real resolution rate of ~3%.
+THREE defects, and the window is only the first. (2) The denominator includes the sector-grounding statuses
+`no_subject_match` (4,263/24h) and `matched_no_sector` (1,622/24h), emitted by `DeterministicResolver.LiftSector`
+with `resolution_state="no_sector"` — those can never carry `status="resolved"`, so they structurally depress the
+ratio. (3) The numerator misses the successes: `ResolutionWorker` resolves with method `async_finnhub` and
+increments `SecMasterResolutionCounter` only on its REJECTION paths, so `sentinel_secmaster_resolution_total` is a
+failure-biased counter — `status="resolved"` totalled 2 in 24h while the DB recorded ~180 real resolutions/day.
+Fix needs a per-observation outcome counter at the persist boundary, landed WITH the rule; a window-only fix swaps
+a silent alert for a permanently-firing one on a ratio that does not mean what it says.
+
+**Sentinel symbol resolution has never exceeded 4.21%, and the metric said 67%.** Honest rate
+(`instrument_id IS NOT NULL`) by month: Apr 4.21%, May 3.09%, Jun 0.79%, Jul 0.34%, Aug 2.58%. The reported rate
+(`resolution_state='Resolved'`) read 67.11% in April because rows were stamped Resolved with a NULL instrument —
+28,298 of them that month, 21,671 in May. PR #854 (2026-07-05) fixed the mislabel, and from July the two figures
+agree, which is why the June "collapse" in any dashboard built on `resolution_state` is an artifact of the FIX, not
+a regression. Re-check: compare the two percentages in the same query before concluding anything moved.
+
+**No `DeterministicResolver` outcome has ever been persisted.** `llm_candidate_pick`, `llm_candidate_exact`,
+`hybrid_subject` and `gemini_fallback` appear 0 times across 658,167 `sentinel.extracted_observations` rows, while
+the resolver demonstrably runs (`exact_rejected_name` ~920/day). Every real resolution comes from the legacy legs:
+`cove_VectorSearch` 3,977, `ticker_in_quote` 6,702, `cove_FuzzySql` 235. Cause NOT established — the leading
+hypothesis (ExtractionSchemaV2 `required[]` omitting `resolution_confidence`) was DISPROVEN by probing vLLM with the
+shipped schema, which emitted the field non-null 5/5. The value it gates on is not persisted anywhere
+(`extracted_observations.resolution_confidence` holds the resolver OUTCOME's value), so it is unobservable from
+outside the process; `sentinel_resolver_rule1_decision_total` was added to answer it.
+
+**gemini-resolver runs at 100% of its daily cap while its gate rejects ~1 call in 3,000.** Measured 2026-08-14:
+`gemini_resolver_live_calls_24h` 1500 against `gemini_resolver_daily_cap` 1500, `gemini_resolver_gated_24h` = 1 of
+3,076 total calls, and 877 of SecMaster's 3,425 dispatches/24h refused as `cap_exhausted`. Refusal is
+first-come-first-served, so genuine resolutions are dropped at random once the window is spent. `_company_gate`
+(gemini_resolver/server.py) is purely syntactic — it rejects money, markup, code-slugs and 13 abbreviations, and
+cannot reject a well-formed noun phrase that is not a tradeable issuer, which is what the junk is
+("Birmingham Legion", "Hellenic Shipping News World", "Focus On Inflation"). Not a matrix-corruption event as of
+this measurement: recent Gemini self-seeds are legitimate issuers. Re-check with `curl :9300/health`.
+
 **The merge gate reads a shell redirect as a PR number.** `gh pr merge <N> --squash 2>&1` denies with "names more
 than one PR number: 2 <N>". Same redirect-parsing class the push guard already fixed; a third guard still carries it.
 Workaround until fixed: drop the redirect.
@@ -61,6 +99,17 @@ highest value because it states the dead-code conclusion outright (403s reaching
 
 **#960's docs state `sum() - budget_exhausted` as "rows scored".** The true figure is
 `accepted + rejected + below_floor`. One-line fix, and it must land before anyone builds that Grafana panel.
+
+**A third histogram still carries the SDK default buckets a [0,1] value cannot use.**
+`sentinel_chunk_extraction_dedup_ratio` (`SentinelCollector/src/Telemetry/SentinelMeter.cs:253`, unit `{ratio}`) has
+no `AddView`, so it keeps the SDK boundaries `[0, 5, 10, 25, ...]` and every observation of a `1 - post/pre` fraction
+would land in `le=5.0` — the identical collapse #963 fixed on `sentinel_dsl_adapter_resolution_confidence` and
+`sentinel_resolver_rule1_input_confidence`. Nothing is misled TODAY: measured 2026-08-15 UTC, the metric has NO series
+in prod (`count({__name__=~"sentinel_chunk_extraction_dedup_ratio.*"})` empty, against the sibling confidence
+histogram returning all 16 default-bucket series in the same query shape), because the v2 chunked path is not
+emitting. The entry exists so that the first time it does, the collapse is already known rather than rediscovered.
+Fix: add the name to the same `AddView` list in `SentinelCollector/src/Program.cs` that already applies
+`confidenceBuckets` — the [0,1] boundaries suit a ratio unchanged.
 
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
