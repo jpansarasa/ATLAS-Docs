@@ -59,8 +59,10 @@ Measured in the DB 2026-08-15 (UTC) over the preceding 24h, 6,099 `sentinel.extr
 `OriginalResolutionMethod='llm_candidate_pick'` — the resolver fires at scale — and **1,421 of them (23%) lost an
 instrument they already held** (`OriginalInstrumentId` NOT NULL, `instrument_id` NULL), with 0 quarantined.
 **The erasure hits EVERY `DeterministicResolver` leg, not only Rule 1**: the same window loses 549 `hybrid_subject`,
-128 `gemini_fallback` and 1 `llm_candidate_exact` row, which with Rule 1's 1,421 sum to the ALL-METHODS total of
-2,099 in the `ReExtractBackgroundService` entry below (identical under `extracted_at` and `re_extracted_at` windows).
+128 `gemini_fallback` and 1 `llm_candidate_exact` row, which with Rule 1's 1,421 sum to an ALL-METHODS total of
+2,099 for that window (identical under `extracted_at` and `re_extracted_at` windows). The window is what makes that
+number move: the same measurement re-run 2026-08-15T15:00Z read 1,046 all-methods (726 / 256 / 63 / 1) — the RATIO
+and the per-method COMPOSITION reproduce, the absolutes do not, so cite the composition.
 `hybrid_subject` and `gemini_fallback` fire in production too. Do not read 2,099 as a Rule 1 figure: against Rule 1's
 6,099 rows it implies a 34% loss rate where the measured one is 23%. Worked
 examples, ids 689274 / 689275 / 689284: `OriginalResolutionMethod=llm_candidate_pick`, `resolution_method` NULL,
@@ -87,26 +89,29 @@ or below 0.8), which IS `DslPreselectionConfidence`, a hardcoded constant — so
 absent `below_threshold` is a property of the constant, not evidence about the data) and `bucket{le="0.7"}` reads
 0=0 indefinitely.
 
-**`ReExtractBackgroundService` strips instruments off brand-new live rows, and no counter exists for the loss.** It is
-running in prod as a backfill (`/opt/ai-inference/compose.yaml:1212-1216`: `ReExtract__Enabled=true`,
-`Mode=resolve-only`, `Cohort=all`, `RowsPerMinuteResolveOnly=600`) but it is not confined to legacy rows:
-`ApplyCohortPredicate("all")` filters only on `ReExtractedAt IS NULL`, so every freshly-inserted row qualifies and is
-claimed **~10-180s after insert (2026-08-15 UTC, n=189 over 2h: min 10.2s, p50 ~50s, p95 133s)**, well inside the
-live path.
-`ApplyReExtraction` then assigns `ResolutionMethod` unconditionally from its own one-shot resolve — NULL on a miss,
-overwriting a good value rather than declining to write — and recomputes `ResolutionState` from that. Measured in the
-DB 2026-08-15 (UTC) over the preceding 24h: **2,099 rows lost an instrument they already held against 127 that gained
-one — 16:1 destructive**, 0 quarantined. That 2,099 is ALL resolution methods; the per-method split is in the Rule 1
-entry above. Do not re-check the ratio against `sentinel_reextract_rows_processed_total{outcome="recovered"}`:
-`ReExtractBackgroundService.cs:685-696`
-(mirrored verbatim at `:496-507`) emits `Recovered` only when the SYMBOL CHANGES, so a row that gains an instrument
-under an unchanged symbol is classed `Unchanged` — the counter undercounts recoveries by construction, and a
-cumulative read of it is worthless for hours after any container restart.
-It ran unseen because `ReExtractOutcome` has no counter for "had an instrument, lost it": the outcome enum cannot
-express the regression, so no dashboard or alert could have shown it, and the loss surfaced only by diffing
-`OriginalInstrumentId` against `instrument_id` in SQL. Land that counter WITH any fix — a fix verified on the same
-blind instrument proves nothing. `NoResolutionSweepWorker` is EXONERATED and should not be re-suspected: it only calls
-`SetReviewStatus`, and its predicate requires `extracted_at < now-7d`, which no row of this age can satisfy.
+**`ReExtractBackgroundService`'s overwrite is still destructive — the age floor bounds WHO it reaches, not WHAT it
+does.** The live-traffic half is CLOSED (D-21: `MinRowAgeDays` default 7 on the cohort predicate, plus the
+`instrument_lost` outcome the enum previously could not express). What is NOT closed: `ApplyReExtraction` still
+assigns `ResolutionMethod`/`InstrumentId` unconditionally from its own one-shot resolve — NULL on a miss, overwriting
+a good value rather than declining to write. `ReExtractResolutionAdapter.ResolveOnlyAsync` is a STRICTLY NARROWER
+cascade than the live one (ticker-in-quote plus `ResolveLocalFromQuoteAsync` with `enableRag=false`, and none of the
+`DeterministicResolver` legs), so it structurally cannot reproduce what those legs ground. Measured 2026-08-15 over
+all 671,571 rows: of the 84,531 claimed more than 7d after their `extracted_at` — i.e. genuinely aged rows, the
+population the floor still admits — **49,616 lost an instrument against 213 that gained one**. So a row resolved by
+`llm_candidate_pick` is still stripped, just 7 days later. The fix is to make the overwrite conditional on the new
+resolve being BETTER (never null out a held instrument on a miss); it is a separate decision from the floor and was
+deliberately not bundled with it. Re-check with the `instrument_lost` outcome now that it exists —
+`sum(rate(sentinel_reextract_rows_processed_total{outcome="instrument_lost"}[1h]))` — rather than by diffing
+`OriginalInstrumentId` against `instrument_id`, which is how this had to be found the first time.
+Two traps that survive the fix. (1) Do not re-check the ratio against `outcome="recovered"`: `ClassifyOutcome` emits
+`Recovered` only when the SYMBOL CHANGES, so a row that gains an instrument under an unchanged symbol is classed
+`Unchanged` — the counter undercounts recoveries by construction, and a cumulative read is worthless for hours after
+any container restart. (2) `NoResolutionSweepWorker` is EXONERATED and should not be re-suspected: it only calls
+`SetReviewStatus`.
+Historical note for the POST-erasure caveats referenced above: the erasure already happened, so `instrument_id`
+readings taken before 2026-08-15 understate the real resolution rate by an unknown margin. At the time of the fix the
+historical backfill was DRAINED (0 of 671,571 rows had a null watermark) and every row claimed in the preceding 7 days
+was extracted the same day — 100% of the worker's throughput was live traffic, which is what the floor stopped.
 
 **gemini-resolver runs at 100% of its daily cap while its gate rejects ~1 call in 3,000.** Measured 2026-08-14:
 `gemini_resolver_live_calls_24h` 1500 against `gemini_resolver_daily_cap` 1500, `gemini_resolver_gated_24h` = 1 of
@@ -263,6 +268,26 @@ window is the MISS direction for a dead-man's switch, and the file's own banner 
 calibrated constant.
 
 **CI is advisory, not blocking** — branch protection 403s on this GitHub plan, so a red run does not stop a merge.
+
+**A Sentinel unit test fails spuriously, and it fails in the shape of a real regression.** Measured 2026-08-15: over
+5 consecutive full runs of the Sentinel suite on identical trees, `ExtractionProcessorArticleEmbeddingTests`
+`.should_tag_skipped_empty_when_text_blank` went red ONCE — `Expected capture.Results to contain a single item, but
+found {"failed", "skipped_empty"}` — and the same committed tree then passed 2218/2218 on the immediately following
+run. Root cause located, not guessed: exactly two test classes touch
+`sentinel_news_article_embedding_total`, and only ONE of them is collected. `ExtractionProcessorArticleEmbeddingTests`
+carries `[Collection("SentinelMeterStatic")]`; `ExtractionProcessorTests` — which reaches the same
+`TryCaptureArticleEmbeddingAsync` through the real pipeline, with no embedder configured, i.e. emitting exactly the
+leaked `"failed"` — carries NO collection attribute, so it sits in its own implicit collection and runs IN PARALLEL
+with the listening class. The capture is a global `MeterListener` filtered by meter+instrument name but NOT by test,
+so that concurrent measurement is indistinguishable from the one under assertion.
+Two candidate fixes, neither verified here: put `ExtractionProcessorTests` in the same collection (one line, but
+serialises a large class), or scope the capture per-test — a tag the test alone sets, or an assertion on the DELTA
+rather than the absolute set. Never a retry. NOT fixed in the PR that found it because flake reproduction is
+stochastic (2 in 7 runs), so a green suite would not have demonstrated the fix worked.
+Cost is not the flake, it is the DIAGNOSIS: the failure looks exactly like a real cross-test regression, and it lands
+on whoever is running the suite for an unrelated reason — here a re-extract change that touches none of this code,
+including on a DOCS-ONLY commit whose predecessor tree had just passed 2218/2218, which is what proves it
+content-independent.
 
 ## DEFERRED WORK
 
