@@ -67,7 +67,7 @@ and the per-method COMPOSITION reproduce, the absolutes do not, so cite the comp
 6,099 rows it implies a 34% loss rate where the measured one is 23%. Worked
 examples, ids 689274 / 689275 / 689284: `OriginalResolutionMethod=llm_candidate_pick`, `resolution_method` NULL,
 `QuarantinedAt` NULL, `review_notes="[re-extract] processed 2026-08-15T00:29:03Z"`. Mechanism: the
-`ReExtractBackgroundService` entry immediately below.
+`ReExtractBackgroundService` entry below.
 THE TRAP, and it cost hours of wrong root-cause search: **any query over `resolution_method` reads POST-erasure state
 and cannot distinguish "never set" from "overwritten".** This entry previously read "no `DeterministicResolver` outcome
 has ever been persisted" off 0 occurrences of `llm_candidate_pick` / `llm_candidate_exact` / `hybrid_subject` /
@@ -77,9 +77,9 @@ investigation into the extraction path instead of the writer. Read `OriginalReso
 `ticker_in_quote` 6,702, `cove_FuzzySql` 235) are readings of that same post-erasure column and carry the same caveat.
 A SECOND column carries the same circularity, and it is a distinct trap: the value Rule 1 gates on is never PERSISTED
 (`extracted_observations.resolution_confidence` holds the resolver OUTCOME's value —
-`DeterministicResolver.cs:293-297`), so that column cannot answer what Rule 1 received, and querying it is circular.
+`DeterministicResolver.cs:324-328`), so that column cannot answer what Rule 1 received, and querying it is circular.
 It is observable, just not in the DB: PR #963 added `sentinel_resolver_rule1_input_confidence` ("ResolutionConfidence
-as received by Rule 1", `SentinelMeter.cs:1614-1616`, recorded at `DeterministicResolver.cs:315`), which is the only
+as received by Rule 1", `SentinelMeter.cs:1625-1627`, recorded at `DeterministicResolver.cs:346`), which is the only
 thing that sees the input value — and is where the 0.850 reading below comes from.
 Not to be re-derived: the `ExtractionSchemaV2 required[]` hypothesis was DISPROVEN by probing vLLM with the shipped
 schema, which emitted `resolution_confidence` non-null 5/5.
@@ -88,6 +88,121 @@ One cross-check is structurally inert and will agree forever: all 108 observatio
 or below 0.8), which IS `DslPreselectionConfidence`, a hardcoded constant — so the `< 0.7` gate can never trip (an
 absent `below_threshold` is a property of the constant, not evidence about the data) and `bucket{le="0.7"}` reads
 0=0 indefinitely.
+
+**Rule 1's pick was never the wrong row — the resolver SUBSTITUTED a different instrument after it, and #969 fixed
+that.** Framing first, because the wrong one costs hours: the entry above establishes that Rule 1 fires and that its
+outcome is erased downstream, and the natural next reading — "then the LLM must be picking the wrong candidate out of
+the article-wide list" — is REFUTED. The pick is correct. `DeterministicResolver` then fuzzy-resolved the picked
+candidate's `Symbol`, which on the production V2 producer is a model-authored slug of the DSL `local_id`, not an
+identifier, and SecMaster's fuzzy/RAG stage returned whatever that string happened to look like. Do not re-search the
+candidate list; the defect lives between the pick and the write.
+
+WINDOW AND COLUMN RULE, stated before any figure because every number below is on THIS window and nothing else. The
+figures here stood as "the 31 days to 2026-08-15", which is ROLLING: it re-derives differently every day, and the
+`Sensex 704` / `yen 230` that used to sit in the table reproduce only under `now() - interval '31 days'`. Numbers on
+different windows inside one entry is what took #968 four rounds. FIXED:
+
+    extracted_at >= '2026-07-15 00:00:00+00' AND extracted_at < '2026-08-15 00:00:00+00'   -- 31 days
+    Rule 1 population: coalesce("OriginalResolutionMethod", resolution_method)
+                         IN ('llm_candidate_pick','llm_candidate_hybrid')
+                       AND selected_candidate_index IS NOT NULL AND candidate_symbols_json IS NOT NULL
+    picked Name  = candidate_symbols_json -> selected_candidate_index ->> 'Name'
+    picked slug  = candidate_symbols_json -> selected_candidate_index ->> 'Symbol'
+    attaches     = coalesce("OriginalInstrumentId", instrument_id) IS NOT NULL
+    persisted    = coalesce("OriginalSymbol", "Symbol")
+
+`Original*`-preferred throughout, because ReExtract overwrites the live columns (see above) while leaving `Original*`
+holding the pre-re-extract answer. On that window: 134,612 Rule 1 rows, 31,392 attaching, 103,220 attaching nothing.
+
+    picked Name | picked slug | persisted | n
+    S&P 500     | S_P_500     | S         | 683   <- SentinelOne
+    S&P 500     | S_P_500     | SP500     | 528   <- same slug, different answer
+    Sensex      | Sensex      | SNSE      | 675   <- Sensei Biotherapeutics
+    yen         | yen         | U         | 234   <- Unity Software
+
+**29,140 of 31,392 instrument-attaching Rule 1 rows (92.83%)** persisted a symbol matching NEITHER surface the pick
+named; 103,220 further rows resolved to nothing and still stored the raw slug in a column called `Symbol`. The
+figures this replaces (93.6%, 28,377/30,326, 102,411) were the rolling window; on the rolling window measured
+2026-08-15 they now read 28,877/31,122 = 92.79% and 101,149, which is the point — they move daily.
+NOT a same-denominator correction: 92.83% moved BOTH the numerator rule (matching neither surface, not merely not
+the slug) and the denominator, so it cannot be differenced against the superseded 95.47% "by 576" and that
+subtraction must not be re-cited. The figure also falls MONOTONICALLY BY CONSTRUCTION, which is a property of the
+column rule rather than of the pipeline: the 817 rows the re-extract path attached enter the denominator through
+`coalesce("OriginalInstrumentId", instrument_id)` while their `"OriginalSymbol"` — all 817 of them — is still the
+picked slug from the original null-instrument resolution, so they can never enter the numerator. Every re-extract
+pass therefore drags the percentage down without anything changing at Rule 1. (Only 66 of those 817 have
+Name == slug; the mechanism is the SYMBOL column, not the Name/slug relation.)
+TWO CAVEATS the headline does not carry: 12,227 of the attaching rows (38.95%) have Name == slug, so the fix is a
+BYTE-IDENTICAL no-op for them — including `Sensex` and `yen` above, whose wrong answers the fix does NOT address —
+and `subject_entity` equals the picked Name in 31,390 of 31,392 rows (not all of them, as previously written),
+because the V2 adapter selects the candidate BY matching subject to ENT name, so post-fix Rule 1 sends the same
+string Rule 2 would.
+STILL OPEN, one pair, and the re-check is two HTTP calls rather than a probe nobody kept. `#969`'s pre-merge
+blast-radius probe reported an aggregate improvements-vs-regressions count; it left behind no script, no captured
+output and no query, and re-deriving its two named regressions on 2026-08-15 contradicted one of them, so the
+aggregate is STRUCK rather than restated — do not reinstate it from the PR body or the commit message, and do not
+treat its absence as evidence the fix is one-directional. What reproduces, against live SecMaster
+(`nerdctl exec secmaster curl -s "http://localhost:8080/api/semantic/resolve-local?q=<surface>&enableRag=true&limit=5"`,
+the same endpoint `ResolveLocalFromQuoteAsync` calls):
+`Intel Corporation` -> `INL.DEX` (`FuzzySql`, 0.9, catalog name "Intel Corporation" — the German line) while the slug
+`INTC` -> `INTC` (`ExactSql`, 1.0, "Intel Corp"). That IS a regression, and **its in-window exposure is 24 rows, not
+155** — on the fixed window AND on the rolling one, which agree exactly here. The 155 is every row with picked Name
+`Intel Corporation`; 131 of them attached NO instrument and reach 155 only because they are counted by the persisted
+`Symbol` column, which the UNFIXED code fills with the raw slug on non-resolution. Both slug and persisted value are
+the string `INTC`, so the defect under repair inflated the measurement of itself 6.5x. Under this entry's own
+attaching rule the number is 24.
+The companion claim — `Dow Jones` `DIA` -> `DOW`, "the chemical company", 91 rows — was struck here as
+NOT REPRODUCING, and that strike was itself wrong. The `91` was right; the MECHANISM was not. Measured on both
+windows: 136 in-window rows, of which `Dow Jones`|`Dow_Jones`|`DIA` **77** and `Dow Jones`|`Dow_Jones`|`DOW` **14**
+= **91 attaching**, plus 45 that attached nothing. The slug's endpoint response is indeed `RagSynthesis` with a null
+`instrumentId` — but the endpoint is not the outcome: it returns hypothesis `DIA`, and
+`TryHybridResolveAsync`'s materialisation branch looks that up (`GetInstrumentBySymbolAsync`,
+`DeterministicResolver.cs:505`) and attaches it. `DIA` is the catalog's quote stub, literally named "DIA (Quote)";
+`DOW` is `DOW INC`, the chemicals company (`MATERIALS`, NAICS 325211), which is the RAG candidate list's top entry at
+0.730. So one slug produces three different outcomes — `DIA`, `DOW`, nothing — and the pair still IMPROVES, because
+the Name resolves deterministically to `DJIA` ("Dow Jones Industrial Average", `FuzzySql` 0.9), the index the surface
+names. It improves by removing a nondeterministic wrong answer, NOT by replacing a null.
+The direction the same probe was right about is re-checkable the same way: `S&P 500` -> `SP500` (`FuzzySql`, 0.9,
+deterministic) against slug `S_P_500` -> `RagSynthesis`/`VectorSearch`, whose answer moves between runs — 683 rows
+landed on `S` (SentinelOne) and 528 on `SP500` off the SAME slug, which is the nondeterminism the fix removes.
+Follow-up, NOT decided here: an exact-symbol-first leg at Rule 1 would keep `INTC`, but nothing measures what it
+would cost — it is a new ungated exact path and would need D-8's subject-overlap companion, which is its own PR.
+NOT DONE and deliberately so: `SubjectNameNormalizer.SharedTokenCount` scores 0 for all four bad pairs above and is
+already invoked at `DeterministicResolver.cs:430` and `:509`. "Never on this branch" was the wrong compression and
+is corrected here to match D-22 in the card: `:430` is D-8's leg, which Rule 1 never reaches. `:509` IS reachable
+from Rule 1 — it sits on the RagSynthesis hypothesis-materialisation branch inside `TryHybridResolveAsync`, which
+the id-less Rule 1 leg calls — but a DTO already carrying an instrument id bypasses it, and the whole guard is
+behind `Extraction__GuardsEnabled=false` (`/opt/ai-inference/compose.yaml:1155`), so it is inert on both counts.
+The 77 `DIA` rows above went straight through it: `SharedTokenCount("Dow Jones", "DIA (Quote)")` is 0, so with the
+flag on they would have been refused. Adding a THIRD call behind that same disabled flag would read as protection
+that does not exist. Deciding the flag's fate is the prerequisite, and it is its own entry's worth of work.
+TWO GAPS #969 LEFT OPEN, recorded rather than fixed because both need a decision this PR is not the place for.
+(a) The `!candidate.InstrumentId.HasValue &&` exemption on the blank-Name refusal (`DeterministicResolver.cs:361`)
+has NO test. It is dead code today — 0 non-null candidate ids across 503,446 rows carrying candidates — so nothing
+exercises it, and it activates the day SecMaster's search endpoint starts returning ids: a SERVER-SIDE change with
+no compile-time signal here, on a branch whose whole point is that the two producers disagree. Same blind spot as
+the id-carrying Rule 1 branch, which at least has a test.
+(b) The `ResolutionConfidence` contract for the new hybrid leg (`IDeterministicResolver.cs:63-79`) has no test
+either. The FALSE half of that comment is fixed in #969 — it claimed res_conf is null on "the null-instrument
+hybrid/gemini fall-throughs", which is not true of the leg #969 created (it coalesces to
+`input.ResolutionConfidence`, so a null-instrument `llm_candidate_hybrid` row still carries the LLM's PICK
+confidence) — but a comment is not a guard. The >= 0.8f event-publish predicate reads this field, so "instrument is
+null, therefore confidence is null" is exactly the inference a consumer would make and exactly the one that is wrong.
+
+**Two unit tests fail nondeterministically on static-meter pollution, and the suite reads GREEN on a re-run.**
+Measured 2026-08-15 on `fix/rule1-resolve-on-candidate-name`, two consecutive full runs of
+`SentinelCollector/.devcontainer/compile.sh` on an identical tree: run 1 `Failed: 2, Passed: 2222`, run 2
+`Failed: 0, Passed: 2224`. The two were `ExtractionProcessorArticleEmbeddingTests.should_tag_failed_when_store_throws`
+("Expected capture.Results to contain a single item, but found {"failed", "failed"}") and
+`ExtractionProcessorStreamingTests.should_degrade_to_retry_not_host_die_when_producer_warmup_throws`. Both classes
+pass 155/155 when run alone. Mechanism: `ExtractionProcessorArticleEmbeddingTests` is in
+`[Collection("SentinelMeterStatic")]` (line 21) and `ExtractionProcessorStreamingTests` is in NO collection, so it
+runs in PARALLEL with the meter-bound classes and its measurements land in their open `MeterListener`s — the exact
+cross-pollution that collection exists to prevent. Pre-existing, NOT introduced by #969, and the dangerous half is
+the direction of the failure: a re-run turns it green, so the standing incentive is to re-run rather than to fix,
+and a REAL regression in any meter-asserting test would be indistinguishable from this. Fix is one attribute on
+`ExtractionProcessorStreamingTests`; the audit worth doing with it is which other classes emit SentinelMeter
+instruments without joining the collection.
 
 **`ReExtractBackgroundService`'s overwrite is still destructive — the age floor bounds WHO it reaches, not WHAT it
 does.** The live-traffic half is CLOSED (D-21: `MinRowAgeDays` default 7 on the cohort predicate, plus the
@@ -118,9 +233,9 @@ it.** The guard is not broken and does not need fixing — `EntityResolutionPrep
 unconditional (`const string mode = "enforce"`, `EntityResolutionPrepass.cs:396`, no flag) and live: 30d
 `sentinel_candidate_surface_filtered_total{mode="enforce"}` carries 12 reason series (institution 9,190,
 gpe_country 167). It is POSITIONED wrong. `Classify` has three production call sites — the NER-candidate prepass
-(`EntityResolutionPrepass.cs:404`), Rule 2.5's paid-Gemini leg (`DeterministicResolver.cs:560`, D-6) and its V1
+(`EntityResolutionPrepass.cs:404`), Rule 2.5's paid-Gemini leg (`DeterministicResolver.cs:604`, D-6) and its V1
 mirror (`GeminiSymbolFallbackService.cs:85`, D-12) — while the LLM-extracted `SubjectEntity` reaches
-`DeterministicResolver` through Rule 1 (`:60`) and Rule 2 (`:96`, raw `SubjectEntity` straight to hybrid resolve),
+`DeterministicResolver` through Rule 1 (`:60`) and Rule 2 (`:124`, raw `SubjectEntity` straight to hybrid resolve),
 neither of which consults it. Measured over `extracted_at` [2026-07-15, 2026-08-15) reading
 `OriginalInstrumentId`/`OriginalResolutionMethod` — **never the live columns; ReExtract erases those, see the two
 entries above** — **45,831 of 47,891 instrument-attaching rows (95.7%) take an unfiltered leg** (llm_candidate_pick
