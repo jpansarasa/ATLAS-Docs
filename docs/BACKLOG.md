@@ -537,27 +537,6 @@ writes `publicationFrequencyDays` and `PatternConfigurationLoader.cs:320-322` di
 author any value in a pattern JSON with no `PublicationFrequencyDaysOverride` and confirm
 `thresholdengine_pattern_severe_overdue_threshold_days` for it still reads `max(3 * SecMaster-derived freq, 14)`.
 
-**A stalled Finnhub quote feed was being masked by the same hardcoded 120, and surfaces the moment the join
-deploys.** `small-cap-relative-weakness` requires `FH/IWM` + `FH/SPY` — daily quotes — and its
-`data_overdue_days` climbed **+1/day with no break, 9 -> 16 across 2026-08-10 -> 2026-08-17** (step 1d), which means
-no new observation for either series landed in that window at all. It crossed its own published threshold of 14 on
-**2026-08-16** and has been above it since; under `> 120` it could never have fired. (The gauge read exactly 14 on
-08-15 and the rule is `>`, so the first strictly-greater sample is 15 at **2026-08-16T00:15Z** — an earlier revision
-of this entry said 08-15.) This is the rule working, not a regression, but expect the alert to appear ~24h after
-deploy and the underlying feed still needs fixing. Re-check:
-`thresholdengine_pattern_data_overdue_days{pattern_id="small-cap-relative-weakness"}` — a flat or falling value means
-the feed recovered.
-**THE STALL IS THE WHOLE QUOTE COLLECTOR, NOT TWO SERIES.** All **18** symbols in `public.finnhub_quotes` stop at the
-SAME instant — `max(timestamp)` = **2026-07-31 20:00:00+00** for every one of DIA, GLD, IWM, QQQ, SPY, TLT, VTI, XLB,
-XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY, last `collected_at` 2026-07-31T21:33-21:34Z (measured
-2026-08-17). `FH/IWM` + `FH/SPY` are simply the two that a threshold-14 pattern happens to bind, so scoping the feed
-fix to them fixes nothing. The only other quote-bound pattern is `cu-au-ratio` (`FH/GLD`), which reads 47 against a
-threshold of 90 and so is nowhere near crossing — so ONE firing pattern is the visible surface of an 18-symbol
-outage, and the alert count is not the blast radius. Nothing else at this age is Finnhub: the 10 patterns sitting at
-overdue 17 are monthly FRED macro series at threshold 90 (3 x 30), and only `small-cap-relative-weakness` crosses now
-because its threshold is 14. Re-check:
-`SELECT symbol, max(timestamp) FROM public.finnhub_quotes GROUP BY symbol;` — 18 rows still pinned to 2026-07-31
-means the collector is still down.
 **Four more patterns are within 4 days of the same crossing**, all climbing +1/day: `challenger-layoff-surge`,
 `challenger-vs-payroll`, `sentinel-challenger-divergence` and `truflation-vs-cpi` all read **86 against a threshold
 of 90** at 2026-08-17T11:17:04Z, so they cross ~2026-08-21 unless their sources publish. Recorded so that a burst of
@@ -924,6 +903,68 @@ without re-deciding every row that carries one: row 2 flips to deny outright, an
 keep denying on the NEW rule, so they stop exercising the property they were written for. The fixtures must be
 re-pointed at this checkout's slug in the same change as the rule, or the suite goes green while testing nothing.
 
+**An attempted BLOCK that is refused leaves a prior APPROVE standing, and the merge gate honours it.** Narrow, and
+NOT the thing it first looks like. THE MOVED-HEAD CASE IS ALREADY COVERED — do not re-open it:
+`.claude/hooks/git-push-guard.sh:2667` compares the marker's sha against the PR's live `headRefOid` and calls
+`deny` (`:770`, which emits a deny decision and exits) when they differ, and between the marker read at `:2617` and
+that comparison every branch is a deny — no marker, unreadable verdict, `blocked` verdict, unreadable head. The one
+`allow` sits after the comparison passes. Hook wired at `.claude/settings.json:87`. So a verdict recorded against a
+superseded head cannot unblock anything, and a read-side fix is already shipped.
+What IS reachable is a write-side gap. `scripts/claude-pr-verdict` calls `warn_surviving_marker` (`:147`) before
+every refusal, leaving any earlier `pr-reviewed-<N>` on disk. When the refusal is the head-mismatch one (`:195`)
+that is harmless: the surviving marker cannot match the current head either, so the guard denies. But the other
+refusals — missing pending record (`:166`), malformed pending (`:179`), unreadable `gh` (`:192`), invoke-then-stamp
+too fast (`:220`, the `MIN_REVIEW_SECONDS` guard, NOT a reason-length check) — can fire while a prior approve sits
+at the CURRENT head. That approve stays valid, the guard correctly honours it, and the merge proceeds even though
+the reviewer's last action was an attempted BLOCK. The auto-unlink is declined on purpose (silently deleting a prior
+verdict on an unrelated refusal destroys a legitimate record), so the fix is to invalidate or DOWNGRADE the prior
+approve when a block is attempted and refused — write side, not read side. Related in shape only to the historical
+defect where `review-pr` wrote a passing marker at INVOCATION.
+**THE SCRIPT'S OWN WARNING IS WHERE THIS DEFECT GETS MIS-DIAGNOSED, and it is armed right now.**
+`warn_surviving_marker` reads only `v verdict rest` off the marker and branches on `verdict == "approved"`; the
+recorded sha sits unparsed in `rest` and is never compared to anything. So its message body — lines 155-156 of
+`scripts/claude-pr-verdict`, written here in non-citation form for the reason the entry below gives — prints
+"an APPROVED verdict ... is still on disk and still unblocks the merge" UNCONDITIONALLY, including after the
+moved-head refusal where `git-push-guard.sh:2667` will in fact deny. The function's own header comment, lines
+144-145, states the same thing as fact. That sentence is how this entry came to assert the opposite of the code in its first
+revision — a reviewer runs the script, reads the warning, and believes it. Fix: compare the marker sha to the head
+and stay silent when they differ, or weaken the wording to "may still unblock the merge — check the head".
+Scope note: this is the MERGE gate (`pr-reviewed-<N>`) alone, ON THE BASH PATH. The PUSH gate is a different gate
+keyed on a TREE hash and never reads this marker. And "the read-side fix already ships" must not be read as "merges
+are gated": `.claude/hooks/git-push-guard.sh:128-145` records a KNOWN GAP, dated 2026-08-06 and deliberately left
+open, that the hook is wired at PreToolUse with matcher `Bash`; PreToolUse DOES fire for MCP tools, but matchers are
+compared exactly, so `Bash` matches no MCP tool name, and the comment states no hooks block in any settings file
+carries an `mcp__` matcher. It names three tools that reach gated outcomes with no marker consulted at all —
+`mcp__plugin_github_github__merge_pull_request` (merges with no verdict marker), and `push_files` and
+`create_or_update_file` (write main with no PR and no marker) — all of which sit in a dispatched agent's tool set.
+The recorded fix shape is a second PreToolUse entry matching `mcp__.*`, routed to a sibling hook that reads the
+structured `.tool_input` rather than `.tool_input.command`. So the verdict gate holds for `gh pr merge` run through
+Bash and is ABSENT on the MCP merge path.
+**BUT THAT ENTRY'S STATED BLOCKER IS DISCHARGED, AND ITS FIX SHAPE DOES NOT COVER MERGE.** The "deny may not bind"
+rationale is a 2026-08-06 record, and the guard closes it with "Confirm the deny binds empirically, then build" —
+which was done the NEXT DAY. Measured 2026-08-07 on this host (Claude Code 2.1.224, isolated `claude -p` runs
+against a purpose-built probe MCP server, nothing live mutated): PreToolUse matchers DO fire for MCP tools and
+**deny BINDS** — `server_calls=0`, proven by the probe server's own log showing non-execution rather than by a
+transcript claim. The matcher is an unanchored REGEX when it contains a metacharacter and an exact full-name
+comparison otherwise, which is why a plain `mcp__plugin_github_github` matcher ships and gates NOTHING silently.
+The residual is narrow: confirmation against the LIVE `plugin_github_github` server, which needs one log-only
+`mcp__.*` hook in live settings plus one read-only call.
+The real obstacle is elsewhere, and it is why this must not be built by reflex: **the recorded fix shape misses the
+very tool the entry exists for.** A sibling hook reading `owner/repo/pullNumber/branch` cannot gate
+`merge_pull_request`, whose input carries only `owner`, `repo`, `pullNumber` (plus optional commit title/message and
+merge method) and **no `branch` at all** — verified against the live tool schema. A branch-reading gate would cover
+`push_files` and `create_or_update_file` and silently no-op on merge. Gating merge needs `pullNumber -> base.ref`
+resolved INSIDE the hook's ~5s budget, or a verdict marker keyed by PR number rather than by branch.
+Both repo artifacts still carry the superseded rationale and neither is touched here (gate-layer, outside this PR's
+blast radius): `.claude/hooks/README.md:404-406` says the fix is unbuilt because deny-binds "has not been exercised
+on this host", while `.claude/hooks/README.md:377-380` — twenty-six lines earlier in the SAME document — already
+says the regex matcher "works" and notes it caught its own earlier wrong revision; `git-push-guard.sh:141-145`
+carries the same superseded reason. Re-check for that pair: both must either cite the 2026-08-07 measurement or
+state the `branch`-field obstacle; today neither does. Re-check, static and safe — it needs no PR and writes no marker:
+`grep -n warn_surviving_marker scripts/claude-pr-verdict` must list refusal sites OTHER than the head-mismatch one
+at `:195` (those are the reachable ones), AND `git-push-guard.sh:2667` must still compare `MARKER_COMMIT` against
+`PR_HEAD_COMMIT`. If the second ever stops being true the moved-head case re-opens and this entry is wrong.
+
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
 **Empty-but-valid results grade CORRECT.** A schema-valid `qualitative_result` with `sentiment_polarity:
@@ -1023,16 +1064,6 @@ ThresholdEngine change with no defect driving it, and this round's blast radius 
 grep above must still return only the `Dispose` hit; more than that means the class has grown a real channel path
 and stops being inert.
 
-**A FAILED Prometheus reload is a GREEN deploy, so a new alert rule can sit on disk unevaluated.**
-`deployment/ansible/playbooks/deploy.yml:649-654` sends the config reload with `failed_when: false`, so the task
-cannot fail the play. If the HUP does not land — or lands and Prometheus REJECTS the file — the rule file is on
-disk, ansible reports success, and Prometheus keeps evaluating the PREVIOUS rule set. For the rule this PR replaces
-that means continuing to evaluate a dead-man that was structurally unable to fire. Nothing anywhere asserts that a
-rule reached the running Prometheus. NOT fixed here: it is a deploy-pipeline change and this round's blast radius is
-FinnhubCollector plus its alerts. Re-check, after any `--tags monitoring` deploy: `curl -s
-localhost:9090/api/v1/rules | jq '[.data.groups[].rules[].name]'` must contain the rule just shipped; today that
-command is the only thing that can tell a landed reload from a silently failed one.
-
 **Alert rules and the metrics they read ship on different schedules, and rule-first pages a healthy system.**
 `FinnhubCollectorQuoteCollectionStalled` carries an `absent()` leg and ships via `--tags monitoring`, while the gauge
 it watches ships inside the container image. Deploy the rule first and `absent()` is true from the moment
@@ -1073,6 +1104,93 @@ Finnhub one — "can anything other than this collector's own scheduler move thi
 either. OFR at ~9 req/business-day has almost no margin for a confounder to hide in; AlphaVantage at ~870/day has
 plenty. NOT fixed here. Re-check: for each, enumerate every caller that can reach the collector's upstream, then
 confirm the counter goes flat when its scheduler alone is stopped.
+
+**The staleness-origin fallback degrades the dead-man SILENTLY — no log line, no metric, nothing.**
+`FinnhubMeter.ProcessStartTicksOrNow` (`FinnhubCollector/src/Telemetry/FinnhubMeter.cs:89`) catches a failed
+`Process.StartTime` read and returns `DateTime.UtcNow.Ticks`. The catch is correct — an escaping exception becomes a
+CLR-cached `TypeInitializationException` that kills every meter in the process — but the fallback then measures
+staleness from METER INIT rather than process start, understating it by the whole boot duration, and nothing
+anywhere says so. That understatement runs in the direction that makes `FinnhubCollectorQuoteCollectionStalled`
+LESS likely to fire, and boot duration is unbounded here because no `lock_timeout` is set on the migration
+connection (see DEFERRED WORK). So the degraded state is indistinguishable from the healthy one at every surface an
+operator can read. The comment previously justified the silence by claiming "no logger exists this early", which was
+FALSE and is corrected as of 2026-08-17: `FinnhubCollector/src/Program.cs:38` sets `Log.Logger` before `:63`'s
+`AddMeter` and long before `:144`'s migration, so Serilog's static `Log` is available at this point. NOT fixed here: emitting the signal is a
+behaviour change. Re-check: force the catch (make `readProcessStart` throw) and confirm that no log line is written
+and no metric distinguishes the meter-init origin from a process-start one.
+
+**A conflicted path in the index makes the alerts selftest report a permissions defect that does not exist.**
+`deployment/tests/alerts/selftest.sh:457` reads a file's mode with `git ls-files -s -- "$f" | cut -d' ' -f1`, which
+assumes ONE row per path. During an unresolved merge `git ls-files --stage` returns stages 1/2/3, so the mode
+variable becomes the mangled `100755\n100755\n100755`, fails the `= "100755"` comparison, and the control prints
+`a #! file is not executable in the index` — naming a permissions failure for a file whose permissions are fine.
+Measured 2026-08-17 during the #975/#973 merge: the suite scored **41/42** with the conflict unresolved and
+**42/42** the moment the resolutions were staged, with no file mode touched in between. It is a conflict-state
+artifact misreporting as a permissions defect, and it misleads in the expensive direction — an agent mid-merge is
+told to run `git update-index --chmod=+x` on a file that needs nothing. Fix: take the last field, or filter to
+stage 0. Re-check: run `selftest.sh` with any conflicted path in the index and read the FAIL line.
+
+**Loki's `service_name` for this service is `finnhub-collector-service`, and the bare name matches NO stream.**
+Measured 2026-08-17: a health query filtered on `service_name="finnhub-collector"` returned zero Warning entries and
+was nearly reported as clean health — it had matched no stream at all. This is the worst possible failure shape
+here, because prod log level defaults to Warning and a HEALTHY container therefore emits NOTHING: an empty result
+from a wrong label value is byte-identical to an empty result from a healthy service. The value comes from
+`FinnhubCollector/src/Program.cs:35` (`["service.name"] = "finnhub-collector-service"`). Whether every ATLAS service carries the
+`-service` suffix is NOT established — `list_loki_label_values` for `service_name` over the last 24h returned
+`SecMaster`, `sentinel-collector`, `finnhub-collector-service`, `threshold-engine-service`, `reports-daily-host`,
+`reports-weekly-host`, so the suffix is demonstrably NOT uniform, and that listing covers only services that logged
+in the window rather than the full roster. Do not infer a service's label from its container or tag name. Re-check:
+`list_loki_label_values` for `service_name`, or assert that a known-noisy window returns rows before trusting an
+empty one.
+
+**`verify-citations.py` reports GREEN on a citation that has drifted onto the WRONG line — it only catches the ones
+that land on a blank.** The tool resolves a `file.cs:NN` reference and confirms line NN exists; it does not and
+cannot confirm NN is still the line the prose meant. So a green run is evidence that a citation points at a line
+that EXISTS, never that it points at the RIGHT one. Measured 2026-08-17: a 6-line comment edit inside
+`FinnhubCollector/src/Telemetry/FinnhubMeter.cs` shifted five D-2 GUARD citations in `FinnhubCollector/AGENT_README.md`
+down by six lines each (`TrackActiveSymbols` 144->150, `SeedLastQuoteCollected` 172->178, `MarkQuoteOriginsDurable`
+212->218, `QuoteCollectionStaleness` 246->252, `QuoteStalenessOriginDurable` 286->292). The tool flagged exactly
+ONE of the five — `:212`, and only because six lines further on happened to be blank. The other four had drifted
+onto real-but-wrong lines and read GREEN. Worse, a bare exit-code check catches none of it: this repo's docs already
+carry 2 unrelated unresolvable citations, so rc is 1 both before and after, and "still rc 1" looks like no change.
+Only the COUNT moved: base `21b02a58` measured **91 citations checked / 2 cannot land**; the same two docs with the
+comment edit applied and the drift NOT yet repaired measured **94 / 3**. The third cannot-land is the `:212`
+citation and ONLY that one — six lines on from its old target happened to be blank. The other four drifted
+citations are counted inside the 94 and reported as landing, which is the entire point: the arithmetic reconciles
+as 2 standing unresolvables + 1 blank = 3, so a sweep can never have flagged more than one of the five.
+CONSEQUENCE: any edit that shifts line numbers in a cited file requires a BASELINE COMPARISON, not a green run —
+and after repairing, re-derive each cited line's content by hand, because the tool will pass whatever you write.
+Re-check: run the tool on the touched docs from a pristine checkout of the merge-base and again from the branch, and
+compare the `N citation(s) checked, M cannot land` line from each; M must not rise, and any rise in N must be
+accounted for by citations you deliberately added.
+
+**`verify-citations.py` silently skips a citation whose file has an extension outside a 10-item allowlist, and
+skips a bare `:NN` continuation entirely unless `--bare` is passed.** Two separate gates, both read from the code
+2026-08-17. The first is `scripts/verify-citations.py:121-122`:
+`_EXTS = "py|cs|yml|yaml|md|sh|json|csproj|ts|sql"` feeding
+`CITATION = re.compile(rf"(?P<file>[\w./-]+\.(?:{_EXTS})):(?P<start>\d+)(?:-(?P<end>\d+))?\b")` — the `\.` is
+mandatory, so an extensionless path never matches, and neither does a real extension that is not on the list. This
+is DELIBERATE and the rationale is at `:119-120`: a permissive `\w+\.\w+:\d+` also swallows version strings and
+`host:port` URLs. So the gap is a precision/recall tradeoff already priced in, NOT a bug to widen on sight —
+widening it changes what the whole repo's sweep reports and needs its own before/after counts. The second gate is
+`:127` `BARE`, which parses a continuation like ``(`:147`)`` only when `--bare` is passed; the docstring at `:103`
+says to leave it off by default, so in a default run those references are not checked at all.
+MEASURED, 190 tracked docs swept on base `21b02a58`: **ZERO** citations anywhere name an extensionless file, so the
+`scripts/` executables (`claude-pr-verdict`, `claude-mark-verified`) carry no `file:NN` citation in any doc — that
+exposure is latent, not live. What IS live is the allowlist: **5** citations resolve to a real file and are
+invisible — one in `deployment/artifacts/compose.yaml.j2`, one in `.gitignore`, one in
+`SentinelCollector/src/cod-prompts/cod-dsl-v2.3.gbnf`, and two `/opt/ai-inference/prompts/cod/*.txt` host paths.
+The `.j2` is the one that bites, because ansible templates are gate-layer files whose line numbers move.
+Probe confirming the mechanism rather than inferring it from a count: a file citing line 183 of the extensionless
+`scripts/claude-pr-verdict` alongside line 122 of `scripts/verify-citations.py` reports `1 citation(s) checked` —
+the `.py` one. NOTE the file:line pairs above and in that probe are deliberately written in a NON-citation form
+(bare filename, line number in prose). Spelled the normal way they would be invisible citations pointing at real
+lines, so this entry would silently rot while documenting exactly that failure — and it would make its own
+"zero extensionless" measurement false. Regenerate them from the re-check instead of maintaining them here.
+The entry above on `scripts/claude-pr-verdict` is this file's own worked example of the second gate: its references
+are bare continuations, so none of them is checked by any default invocation. Re-check: sweep every tracked `.md`
+for `path:NN` tokens that resolve to a real file but do not match `CITATION`, and confirm the count and the
+extension breakdown before trusting a sweep that reports "every one lands".
 
 ## DEFERRED WORK
 
@@ -1300,12 +1418,20 @@ exist` here means the fix has not shipped yet, not that the check passed.
 
 **A failed Prometheus reload is a GREEN deploy with the old ruleset still evaluating.** `deploy.yml:649` runs
 `nerdctl exec prometheus kill -HUP 1` with `failed_when: false`, and nothing afterwards asserts the rules actually
-landed. PR #975 ships THREE rules (`FinnhubCollectorQuoteCollectionStalled`, `FinnhubCollectorQuoteErrorsSustained`,
-`FinnhubCollectorQuoteSymbolCoverageDropped`) that exist only if that HUP takes effect, so a silently-failed reload
-leaves a service believed to be watched and watched by nothing — the exact state the 16-day stall was found in.
-Fix: a post-reload assertion task that greps `/api/v1/rules` for the rule names the run just copied. Re-check:
-`curl -s localhost:9090/api/v1/rules | python3 -c "import json,sys; print(sorted(r['name'] for g in json.load(sys.stdin)['data']['groups'] for r in g['rules']))"`
-after any `--tags monitoring` run — every rule in `deployment/artifacts/monitoring/alerts/*.yml` must appear.
+landed. Two failure modes, neither of which can fail the play: the HUP does not land at all, or it lands and
+Prometheus REJECTS the file — in both cases the rule sits on disk, ansible reports success, and the PREVIOUS rule
+set keeps evaluating. NOT theoretical: the 2026-08-17 deploy shipped THREE rules through this task
+(`FinnhubCollectorQuoteCollectionStalled`, `FinnhubCollectorQuoteErrorsSustained`,
+`FinnhubCollectorQuoteSymbolCoverageDropped`), and because the playbook cannot tell a landed reload from a silently
+failed one, all three had to be verified against the Prometheus API BY HAND before the deploy could be called done.
+A silently-failed reload leaves a service believed to be watched and watched by nothing — the exact state the 16-day
+stall was found in. Fix: a post-reload assertion task that greps `/api/v1/rules` for the rule names the run just
+copied. Re-check, after any `--tags monitoring` run — every rule in `deployment/artifacts/monitoring/alerts/*.yml`
+must appear:
+`sudo nerdctl exec prometheus wget -qO- http://localhost:9090/api/v1/rules | python3 -c "import json,sys; print(sorted(r['name'] for g in json.load(sys.stdin)['data']['groups'] for r in g['rules']))"`
+It must be `nerdctl exec`: prometheus publishes NO host port, so a host-side `curl localhost:9090` exits 7 and reads
+as a failed reload rather than as an unreachable probe. Verified 2026-08-17 — 86 rules, the three PR #975 rules
+among them.
 
 **A Postgres lock wait inside `MigrateAsync` defeats the 3-minute retry budget — SEVEN services.**
 `MigrateWithRetryAsync` (`Events/src/Events.EntityFrameworkCore/DatabaseMigrationExtensions.cs`) retries on
