@@ -988,6 +988,92 @@ nothing else. A sweep that counts `PASS:` lines therefore scores this suite 0 an
 rather than passing; the failure direction is visible, the coverage direction is not. Either print per-assertion
 lines or teach the sweep to read `PASS=<n>` — until then, count 2,138 here by hand.
 
+**FredCollector writes to an UNBOUNDED channel nobody reads — the same orphan that wedged Finnhub, failing the
+other way.** `FredCollector/src/Events/ObservationChannel.cs` extends `EventChannel<ObservationCollectedEvent>`
+(`Channel.CreateUnbounded`). Two live writers — `DataCollectionService.cs:231` and `BackfillService.cs:147`, both
+`PublishAsync` — and ZERO readers: `EventChannel.ReadAllAsync` (`:35`) is DEFINED and never called, measured
+2026-08-17 by `grep -rn "ReadAllAsync" FredCollector/src`, whose only hits are the definition itself. Because it is
+unbounded it grows instead of blocking, so it leaks rather than halting; the card already says so
+(`ObservationChannel no reader=memory-growth`) but there is no gauge and no measured growth rate, so nobody knows
+whether it matters. This is the SAME dead scaffold FinnhubCollector carried (channel + a never-implemented
+`IEventPublisher`, both from the service's first commit), and the same reasoning applies: FredCollector's gRPC
+`EventRepository` serves `FredObservations` straight from the DB, so the channel carries nothing to anyone. NOT
+fixed here — deliberately out of this change's blast radius. `FredCollector/README.md:24` actively asserts the
+opposite ("published over the `ObservationChannel` to gRPC subscribers"), which `:146` of the same file then
+correctly denies ("polls the DB events table — it does NOT emit from an in-process channel"); that first line is the
+reason a reader can believe this channel is load-bearing, and it should go in whatever PR fixes the channel.
+Re-check: `grep -rn "ReadAllAsync\|\.Reader"
+FredCollector/src` must show a real consumer, or the writers must be gone. Related and smaller: FinnhubCollector's
+`IFinnhubRepository.GetObservationsSinceAsync` (`src/Data/FinnhubRepository.cs:530`) is likewise a zero-caller
+survivor of that scaffold — harmless (a read, it cannot block) and left in place.
+
+**ThresholdEngine builds a channel per event type that has neither a reader NOR a writer.**
+`ThresholdEngine/src/Events/ChannelEventBus.cs:190` — `GetOrCreateChannel<TEvent>` creates a
+`Channel.CreateUnbounded<TEvent>` for every event type published, and nothing ever enqueues to it or drains it:
+`PublishAsync` (`:58`) invokes the subscribed handlers directly through `Task.Run` and BYPASSES the channel
+entirely. Measured 2026-08-17: `grep -n "\.Writer\|\.Reader\|ReadAllAsync\|WriteAsync"
+ThresholdEngine/src/Events/ChannelEventBus.cs` returns exactly ONE hit, `Channel.Writer.Complete()` in `Dispose`
+(`:257`). So this is the third variant of the same dead scaffold and the only HARMLESS one: with no writer it
+cannot grow (unlike FredCollector's above) and with no bounded capacity it cannot block (unlike the Finnhub
+channel that wedged prod for 16 days). Recorded because PR #975 enumerated the repo's remaining channels and this
+one is absent from that table, which reads as "there is no third channel" rather than "the third one is inert" —
+and because the class NAME is the trap: an event bus called ChannelEventBus that dispatches without touching its
+channel is exactly the thing the next agent reasons about wrongly. NOT fixed here: deleting it is a
+ThresholdEngine change with no defect driving it, and this round's blast radius is FinnhubCollector. Re-check: the
+grep above must still return only the `Dispose` hit; more than that means the class has grown a real channel path
+and stops being inert.
+
+**A FAILED Prometheus reload is a GREEN deploy, so a new alert rule can sit on disk unevaluated.**
+`deployment/ansible/playbooks/deploy.yml:649-654` sends the config reload with `failed_when: false`, so the task
+cannot fail the play. If the HUP does not land — or lands and Prometheus REJECTS the file — the rule file is on
+disk, ansible reports success, and Prometheus keeps evaluating the PREVIOUS rule set. For the rule this PR replaces
+that means continuing to evaluate a dead-man that was structurally unable to fire. Nothing anywhere asserts that a
+rule reached the running Prometheus. NOT fixed here: it is a deploy-pipeline change and this round's blast radius is
+FinnhubCollector plus its alerts. Re-check, after any `--tags monitoring` deploy: `curl -s
+localhost:9090/api/v1/rules | jq '[.data.groups[].rules[].name]'` must contain the rule just shipped; today that
+command is the only thing that can tell a landed reload from a silently failed one.
+
+**Alert rules and the metrics they read ship on different schedules, and rule-first pages a healthy system.**
+`FinnhubCollectorQuoteCollectionStalled` carries an `absent()` leg and ships via `--tags monitoring`, while the gauge
+it watches ships inside the container image. Deploy the rule first and `absent()` is true from the moment
+Prometheus loads it, so a healthy collector pages 15 minutes later; deploy the image first and the worst case is a
+few minutes of an unwatched gauge. Sequenced image-first BY HAND for this PR, which is exactly the kind of
+knowledge that does not survive. NOT fixed here: the durable fix is ordering (or gating) inside `deploy.yml`.
+Re-check: `deployment/ansible/playbooks/deploy.yml` must either template rule files after the service image is
+running, or refuse a rule whose metric is absent from `/api/v1/label/__name__/values`.
+
+**A test class that forgets `[Collection(StalenessGaugeCollection.Name)]` silently re-opens a data race, and the
+suite stays green.** `FinnhubCollector/tests/Workers/StalenessGaugeProbe.cs` declares the collection that serialises
+every class touching FinnhubMeter's process-global staleness origins; membership is enforced by PROSE in that
+docstring and by nothing else. Measured 2026-08-17 on the pre-existing pair: as shipped the two classes are strictly
+disjoint (6.3s wall, serialised); split into two collections they run concurrently (3.0s) and 2 of 4 unsynchronised
+appends were lost — and the split control still ran GREEN 4/4, which is the whole problem. The blast radius grew with
+this PR: the origins are now a dictionary that `TrackActiveSymbols` PRUNES, so an unserialised sibling can delete the
+symbol another test is reading, not merely move a timestamp. NOT fixed here. Re-check: `grep -L
+"StalenessGaugeCollection.Name" FinnhubCollector/tests/Workers/*Tests.cs` must return nothing.
+
+**`QuoteStalenessSeeder` resolves its repository OUTSIDE the try, so a DI failure is fatal to startup.**
+`FinnhubCollector/src/Workers/QuoteStalenessSeeder.cs` calls `GetRequiredService<IFinnhubRepository>()` before the
+`try`, so a resolution failure throws out of `StartAsync` and takes the host down — where every other failure in this
+seeder is deliberately Warning-and-continue, because collection does not depend on the seed. Theoretical today:
+`FinnhubRepository`'s constructor takes only a `FinnhubDbContext`, and `FinnhubCollector/src/Program.cs:144` would already have thrown on
+a dead database. It stops being theoretical the moment that constructor grows a dependency. NOT fixed here: moving it
+inside the try changes the startup failure mode of a service that is currently wedged in prod, and this PR's job is
+to make the wedge visible. Re-check: the `GetRequiredService` call must sit inside the `try` block, or
+`FinnhubRepository`'s constructor must still take exactly one parameter.
+
+**The two remaining collector dead-man alerts may be as blind as Finnhub's was, and nobody has checked.**
+`FinnhubCollectorScheduledCollectionMissed` watched `sum(increase(finnhub_api_requests_total[3d])) == 0` and could not
+fire during a 16-day total collection stall, because SecMaster catalog-enrichment and SentinelCollector resolution
+call FinnhubCollector's live-passthrough endpoints on their own schedules: measured 2026-08-17,
+`sum(increase(finnhub_api_requests_total[3d]))` = **104,135** with quote collection dead since
+2026-07-31T21:34:45Z. That rule is now replaced by a work-path gauge. `OfrCollectorScheduledCollectionMissed` and
+`AlphaVantageCollectorScheduledCollectionMissed` still use the counter form, and the question that invalidated the
+Finnhub one — "can anything other than this collector's own scheduler move this counter?" — has not been asked of
+either. OFR at ~9 req/business-day has almost no margin for a confounder to hide in; AlphaVantage at ~870/day has
+plenty. NOT fixed here. Re-check: for each, enumerate every caller that can reach the collector's upstream, then
+confirm the counter goes flat when its scheduler alone is stopped.
+
 ## DEFERRED WORK
 
 **`Extraction__GuardsEnabled=false` — AWAITING AN OWNER DECISION.** This is a deliberate experiment, not an accident:
@@ -1172,6 +1258,126 @@ bumping seven files is the cheap one.
 Re-check: `curl -s --compressed https://api.nuget.org/v3/vulnerabilities/index.json` then the base+update pages
 (`--compressed` is required; without it the response is gzip and unreadable). Measured 2026-08-15.
 NasdaqCollector's gRPC-Swagger chain is old but clean for CVE-2026-49451, and Nasdaq is DISABLED in prod anyway.
+
+**FinnhubCollector's quote-staleness gauges are bounded by the DATA, not by the code.** Two series per
+active Quote symbol (`finnhub_quote_collection_staleness_seconds` + `finnhub_quote_staleness_origin_durable`,
+both keyed `symbol`), 36 in prod today against CLAUDE.md's <100 bounded-cardinality rule. Nothing enforces it:
+`POST /api/admin/series` -> `SeriesManagementService.cs:54` sets `IsActive = true` UNCONDITIONALLY, with no
+ceiling and no warning, and the MCP `add_series` tool exposes that path. The consequence that matters is not
+Prometheus load: `FinnhubCollectorQuoteCollectionStalled` pages per symbol, so a universe grown past what anyone
+watches degrades it into chronic noise and it gets MUTED — which returns coverage to zero by a second route,
+after PR #975 closed the first. Fix: refuse or loudly warn past a configured ceiling at the add boundary, and
+add the ceiling to D-2 as a scaling PRECOND with that guard (a PRECOND with no guard is the decorative-guard
+antipattern, which is why #975 did not add one). Re-check:
+`sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data -c "SELECT count(*) FROM finnhub_series WHERE is_active AND series_type = 'Quote';"`
+(18 on 2026-08-17; the column is `series_type` and holds the enum NAME, not an ordinal) — if it has grown past ~50, this is due.
+
+**The stamps table's single-writer invariant is one negative test plus convention.** `finnhub_quote_collection_stamps`
+is the staleness ORIGIN and D-2 INV stamps-single-writer requires the collection loop to be its only writer — but
+`UpsertQuoteCollectionStampsAsync` sits on the shared `IFinnhubRepository` that `SeriesManagementService` already
+injects for other reasons, and `FinnhubDbContext.cs:14` exposes a public `DbSet<QuoteCollectionStamp>` that
+bypasses the repository entirely. What actually holds the line is one test
+(`SeriesManagementServiceTests.TriggerCollectionAsync_DoesNotWriteTheDurableStalenessOrigin`) that names one
+caller: a second writer added anywhere else compiles, passes, and silently disarms the dead-man across the next
+restart. Structural fix is a refactor, not a patch: a narrow writer interface the cycle alone takes, and a
+non-public `DbSet`. Re-check:
+`grep -rn "QuoteCollectionStamps\|UpsertQuoteCollectionStampsAsync" FinnhubCollector/src --include=*.cs` — 2026-08-17
+it returns the DbSet declaration, the repository implementation, the interface, and exactly one caller
+(`QuoteCollectionWorker.PersistCollectionStampsAsync`). A fifth non-test hit means a second writer exists.
+
+**The staleness stamp measures a successful FETCH, not an advancing quote — needs a design call, not a reflex fix.**
+`QuoteCollectionWorker.cs:114-120` upserts and stamps on any non-null quote and never consults `quote.Timestamp`.
+A halted or delisted symbol whose upstream keeps serving a frozen non-zero `t` therefore advances the stamp every
+cycle with no exception raised: staleness stays ~60s, the durable gauge stays 1, no error counter moves, and the
+matrix takes a price frozen at the halt date. Every leg of both PR #975 rules is false throughout. The reflex fix
+(stamp only when `t` advances) is WRONG as stated: a closed market legitimately freezes `t` across a weekend and a
+holiday, which is why the sibling collectors' dead-men use 3-4 DAY windows while this one uses 6h. Any fix needs a
+market-calendar-aware window or a separate slower gauge, so it is a design decision. Re-check:
+`sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data -c "SELECT symbol, max(timestamp) FROM finnhub_quotes GROUP BY symbol ORDER BY 2;"`
+— a symbol whose max(timestamp) is days old while its row in `finnhub_quote_collection_stamps` is minutes old is
+this defect, live. That table does NOT exist in prod until PR #975's migration deploys, so a `relation does not
+exist` here means the fix has not shipped yet, not that the check passed.
+
+**A failed Prometheus reload is a GREEN deploy with the old ruleset still evaluating.** `deploy.yml:649` runs
+`nerdctl exec prometheus kill -HUP 1` with `failed_when: false`, and nothing afterwards asserts the rules actually
+landed. PR #975 ships THREE rules (`FinnhubCollectorQuoteCollectionStalled`, `FinnhubCollectorQuoteErrorsSustained`,
+`FinnhubCollectorQuoteSymbolCoverageDropped`) that exist only if that HUP takes effect, so a silently-failed reload
+leaves a service believed to be watched and watched by nothing — the exact state the 16-day stall was found in.
+Fix: a post-reload assertion task that greps `/api/v1/rules` for the rule names the run just copied. Re-check:
+`curl -s localhost:9090/api/v1/rules | python3 -c "import json,sys; print(sorted(r['name'] for g in json.load(sys.stdin)['data']['groups'] for r in g['rules']))"`
+after any `--tags monitoring` run — every rule in `deployment/artifacts/monitoring/alerts/*.yml` must appear.
+
+**A Postgres lock wait inside `MigrateAsync` defeats the 3-minute retry budget — SEVEN services.**
+`MigrateWithRetryAsync` (`Events/src/Events.EntityFrameworkCore/DatabaseMigrationExtensions.cs`) retries on
+EXCEPTIONS, and a lock wait is not one: `MigrateAsync` blocks indefinitely inside the DDL transaction, so the retry
+loop never engages and the budget never starts. It presents as the `Applying database migrations...` startup
+Warning followed by silence, with no timeout to end it — no `lock_timeout` or `statement_timeout` is set on that
+connection anywhere. Callers: `Program.cs` of ThresholdEngine, FinnhubCollector, SecMaster, FredCollector,
+OfrCollector, SentinelCollector, CalendarService (7, verified 2026-08-17). Pre-existing, found during PR #975's
+migration review. Fix: set `lock_timeout` on the migration connection so a wait becomes a retryable exception.
+Re-check: `grep -rn "lock_timeout\|statement_timeout" Events/src/Events.EntityFrameworkCore/ */src/Program.cs` —
+zero hits today.
+
+**`__EFMigrationsHistory` is one shared table for every ATLAS service in `atlas_data`.** 58 rows, measured
+2026-08-17 (`SELECT count(*) FROM "__EFMigrationsHistory";`). Safe TODAY — EF filters by the migrations assembly
+and the IDs are timestamp-prefixed, so collisions need two services to generate the same `yyyyMMddHHmmss_Name` —
+but it is a namespace the services compete in rather than an isolation boundary, and nothing enforces the naming
+that keeps them apart. Recorded as a known shape, not an action: separate schemas per service would be the durable
+answer and it is a migration of the migration table. Re-check:
+`sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data -c "SELECT \"ProductVersion\", count(*) FROM \"__EFMigrationsHistory\" GROUP BY 1;"`
+— a duplicate `MigrationId` is the failure mode, and it would surface as a service silently skipping a migration.
+
+**`finnhub_quote_staleness_origin_durable` LATCHES at 1 and nothing ever lowers it.** Measured 2026-08-17 in
+`FinnhubCollector/src/Telemetry/FinnhubMeter.cs`: `Durable` is set true in exactly two places (the accepted seed in
+`SeedLastQuoteCollected`, and `MarkQuoteOriginsDurable`), `MarkQuoteCollected` CARRIES it forward through
+`current with { Ticks = ..., Stamped = true }`, `TrackActiveSymbols` re-adds with `GetOrAdd` so an already-tracked
+symbol keeps whatever it had, and no path sets it false on an existing entry. So a symbol armed at boot by an
+accepted seed whose stamp write then fails for ten days publishes `durable=1` for the whole process life, and the
+dead-man's third leg — which exists to report precisely that state — stays silent through it.
+`CollectAllQuotesAsync_StampWriteFails_LeavesTheDeadManDisarmed` exercises only the NEVER-armed half. NOT blocking,
+and the mitigations are why: `FinnhubCollectorQuoteErrorsSustained` fires at 1h on
+`operation="persist_quote_stamps"`, and the next restart seeds from the now-stale row so the 6h staleness leg pages.
+The fix is not a one-liner — clearing `Durable` on a failed write needs the failure attributed PER SYMBOL, and
+`PersistCollectionStampsAsync` currently fails the batch. Re-check: arm a symbol via an accepted seed, make its
+stamp write fail, then read `finnhub_quote_staleness_origin_durable{symbol="<it>"}` — it should be 0 and is 1.
+
+**The coverage rule's 18 must be re-pinned in two files plus a monitoring deploy, and until it is the alert fires
+continuously.** `FinnhubCollectorQuoteSymbolCoverageDropped` is `count(finnhub_quote_collection_staleness_seconds) < 18`
+(`deployment/artifacts/monitoring/alerts/collectors-deadman.yml:145`) and the same number is pinned as
+`ProdActiveQuoteSeries` in `FinnhubCollector/tests/Workers/QuoteCollectionWorkerTests.cs:160`. The hardcoding is
+deliberate — a self-referential form goes blind to a one-a-week drip — but the cost is unpriced: after ONE
+legitimate deactivation the rule fires every 30m forever until someone edits both files AND redeploys monitoring
+(`--tags monitoring --skip-tags always`, which does not reload Grafana or assert the rules landed — see the
+Prometheus-reload entry above). A permanently-firing alert is a muted alert, which returns coverage to zero by the
+same route the 16-day stall took. Cheapest de-risk: source the number from one place both consumers read, so
+re-pinning is a single edit. Re-check:
+`grep -n "< 18" deployment/artifacts/monitoring/alerts/collectors-deadman.yml && grep -n "ProdActiveQuoteSeries = " FinnhubCollector/tests/Workers/QuoteCollectionWorkerTests.cs`
+— two hits, two files, both must move together.
+
+**That coverage rule is ONE-SIDED: it sees the universe shrink and cannot see it grow, which is how the constant
+rots.** `count(...) < 18` fires on 17 and is silent on 19. Nothing anywhere compares the published series count
+against the DB's active-Quote count, so a symbol added and never reflected in the rule leaves a constant that is
+quietly wrong in the direction that WEAKENS it: at a true universe of 25, coverage can fall to 18 — seven symbols
+dark — with every leg of every rule false. Measured 2026-08-17: the DB says 18 and the rule says 18, so it is
+correct today and nothing would tell us when it stops being. Fix is the same one-source-of-truth as the entry above,
+or a rule that alerts on ANY divergence rather than on a floor. Re-check:
+`sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data -t -c "SELECT count(*) FROM finnhub_series WHERE is_active AND series_type = 'Quote';"`
+against the `< 18` in `collectors-deadman.yml` — a DB count ABOVE the constant is this defect, live, and silent.
+
+**A symbol added at runtime inherits the PROCESS-START origin, so its first staleness reading is the container's
+age.** `TrackActiveSymbols` does `GetOrAdd(symbol, ProcessStartOrigin)`, and that origin is fixed once per process,
+so a symbol added two minutes into a long-lived container publishes staleness measured from the container's start,
+not from its own. Measured 2026-08-17: `finnhub-collector` was created 2026-07-31T20:38:51Z and is still up, so a
+symbol added now would publish ~1.45 million seconds — 67x the 6h threshold — on its first scrape. The DIRECTION is
+safe (it over-reports, never under-reports) and it self-corrects on the first cycle that collects the symbol, well
+inside the 15m dwell; PR #975's move from `DateTime.UtcNow` at type-init to the real process start made the number
+larger without changing that. What it costs is a per-symbol value that lies to whoever reads the gauge by symbol —
+which the alert's own runbook instructs — and a symbol that never collects (permanent 403) shows an age that
+implies a stall far older than the symbol. Whether a runtime-added symbol should instead start at `UtcNow` is a
+design question: it trades this for a symbol that is genuinely uncollectable from birth taking 6h longer to page.
+Re-check: `sudo nerdctl container inspect finnhub-collector --format '{{.Created}}'` against
+`finnhub_quote_collection_staleness_seconds{symbol="<a symbol added since that time and not yet collected>"}` — the
+gauge reports the container's age, not the symbol's.
 
 **Accepted risks, do not re-flag.** Plaintext DB password `atlas_secure_password_2025` in 10+ tracked files, and
 `OfrCollector/.env` tracked with `DB_PASSWORD` / `SMTP_PASSWORD` / `FRED_API_KEY`. The user accepted both

@@ -19,7 +19,7 @@ flowchart LR
     FC -->|OTLP| OC[otel-collector]
 ```
 
-Scheduled background workers poll configured series via the rate-limited HTTP client and persist results. Each successful collection is published to an in-memory channel and streamed via gRPC to ThresholdEngine. Live-data endpoints bypass storage entirely and proxy directly to Finnhub. Migrations are applied at startup (`Program.cs:141`).
+Scheduled background workers poll configured series via the rate-limited HTTP client and persist results. **The upsert IS the publish**: nothing is pushed to ThresholdEngine. `UpsertQuoteAsync` writes `finnhub_quotes`, `EventRepository` reads that table directly, `ObservationEventStream` serves it over gRPC, and ThresholdEngine pulls. An in-process queue in the quote path would carry no data anywhere and could only add a way to stop — one did, for 16 days (see `AGENT_README.md` D-2). Live-data endpoints bypass storage entirely and proxy directly to Finnhub. Migrations are applied at startup (`FinnhubCollector/src/Program.cs:144`).
 
 ## Features
 
@@ -31,6 +31,7 @@ Scheduled background workers poll configured series via the rate-limited HTTP cl
 - **SecMaster Integration**: Optional series registration when `SECMASTER_GRPC_ENDPOINT` is set
 - **Resilience**: Polly retry (3x, exponential), circuit breaker (5 failures / 60s break), 30s timeout
 - **Observability**: OpenTelemetry traces + metrics, Serilog → OTLP, ASP.NET health checks
+- **Quote-collection dead-man**: `finnhub_quote_collection_staleness_seconds{symbol}` — the service's primary health signal, one series per active Quote series, emitted on the OTEL reader's thread so it keeps rising while the collection loop is blocked. Its origin is durable across restarts (`finnhub_quote_collection_stamps`, seeded at startup), and `finnhub_quote_staleness_origin_durable` reports whether that seed succeeded. Alerts: `FinnhubCollectorQuoteCollectionStalled`, `FinnhubCollectorQuoteErrorsSustained`
 
 ## Configuration
 
@@ -148,14 +149,13 @@ FinnhubCollector/
 │   ├── Api/              # Finnhub HTTP client + FinnhubApiClientOptions
 │   ├── Data/             # EF Core DbContext + repositories
 │   ├── Endpoints/        # ApiEndpoints, LiveDataEndpoints, AdminEndpoints
-│   ├── Events/           # In-memory observation channel
 │   ├── Grpc/             # EventStreamService + gRPC repositories
 │   ├── HealthChecks/     # DatabaseHealthCheck
 │   ├── Interfaces/       # Service contracts
 │   ├── Models/           # Domain models (Series, Quote, Sentiment, ...)
 │   ├── Services/         # SeriesManagementService, BackgroundCollectionQueue, TokenBucketRateLimiter
 │   ├── Telemetry/        # FinnhubActivitySource + FinnhubMeter
-│   ├── Workers/          # QuoteCollectionWorker (background poller)
+│   ├── Workers/          # QuoteCollectionWorker (background poller) + QuoteStalenessSeeder (startup origin)
 │   ├── DependencyInjection.cs
 │   └── Program.cs
 ├── migrations/           # SQL inspection helpers (schema is managed by EF Core)
