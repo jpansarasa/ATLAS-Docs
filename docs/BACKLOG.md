@@ -339,6 +339,17 @@ this measurement: recent Gemini self-seeds are legitimate issuers. Re-check with
 than one PR number: 2 <N>". Same redirect-parsing class the push guard already fixed; a third guard still carries it.
 Workaround until fixed: drop the redirect.
 
+**`whole_act_git` still picks its subcommand the naive way, so a git global option hides the two acts that name no
+path.** `ansible-gate-guard.sh`'s operand dispatch now finds the subcommand by SHAPE, which is what opened `git -C
+<dir> show <rev>:<gate>` and closed `git -C /opt/ai-inference checkout -- compose.yaml`. `whole_act_git` was not
+changed and takes the first non-dash token as the subcommand, which under `-C <dir>` or `-c <k>=<v>` is the option's
+VALUE. Measured 2026-08-17 on ddbaff89 and on the fix alike: `git -C /tmp/r clean -fdx` and `git -c user.name=x clean
+-fdx` ALLOW, while the bare `git clean -fdx` denies; same for `git -C /tmp/r update-index --cacheinfo …` vs the bare
+spelling. A pathspec-less `clean -x` removes IGNORED files, and `.claude/settings.local.json` — the wiring for every
+hook in this layer — is ignored globally, so this is the most complete unwiring available and it is one flag away.
+Fix is the same two-line shape test already used in the operand dispatch (`[[ "$w" =~ ^[a-z][a-z0-9-]*$ ]]` when
+selecting `sub`). Re-check: `git -C /tmp/r clean -fdx` must deny.
+
 **`SentinelExtractionDead` inhibits every sentinel warning if it fires** (`equal: ['service']`), including the
 collapse alert. 0 inhibited to date, but the coupling is undocumented anywhere else.
 
@@ -965,6 +976,184 @@ state the `branch`-field obstacle; today neither does. Re-check, static and safe
 at `:195` (those are the reachable ones), AND `git-push-guard.sh:2667` must still compare `MARKER_COMMIT` against
 `PR_HEAD_COMMIT`. If the second ever stops being true the moved-head case re-opens and this entry is wrong.
 
+**`sudo` and `env` set `PFX_SKIP` even when the wrapper span is ABANDONED.** `ansible-gate-guard.sh:prefix_span`
+assigns `PFX_SKIP=$n` from the `sudo`/`env`/`VAR=` arm before it is known whether the span will be accepted, and the
+abandonment line at the end clears only `PFX_CHECK`. An abandoned span therefore still tells the token walk to skip
+tokens, and the executable slot — the one slot exempt from being read as a write target — lands on the wrong word.
+Same root as the wrapper-allowlist regression closed in #974, and the allowlist does NOT close it: the `sudo` arm
+sits above the wrapper branch and never consults `WRAPPER_RE`. Measured 2026-08-17:
+`nice -n /opt/ai-inference/compose.yaml sudo rm /tmp/x` ALLOWS both before and after the #974 fix, and DENIES at
+ddbaff89. No spelling of it that actually writes a guarded path has been constructed, which is why it is recorded
+rather than fixed — the desynchronised walk is real, the reachable act is not yet. Re-check: feed that command
+string to the guard as INPUT (never execute it); it must deny.
+
+**A write verb ABUTTING an opening quote is never walked at all.** `WRITE_RE` anchors every verb on
+`(^|[[:space:]])`, so a verb sitting against a quote character matches nothing, the segment is skipped before any
+operand rule runs, and no amount of widening the operand classes can reach it. Measured 2026-08-17, ALLOW at
+ddbaff89 AND after the #974 fix: `printf '%s' 'rm .claude/settings.local.json' | bash`,
+`echo 'rm .claude/settings.local.json' | bash`, `bash -c 'rm .claude/settings.local.json'` and the double-quoted
+spelling of the last. The space-anchored counterparts DENY after the fix
+(`printf '%s\n' rm .claude/settings.local.json | bash`, `echo rm .claude/settings.local.json | bash`), which is what
+pins the cause to the anchor rather than to the pipe. `bash -c` deserves its own line: it has no unquoted spelling
+at all, so that shape is unwalked unconditionally and cannot be repaired by respelling a fixture. This bit #974's
+test authoring twice — a new row passed for this reason and only the mutation battery exposed it — so it costs
+test-authoring time, not merely coverage. Re-check: feed both spellings of any one pair to the guard as input; they
+must agree.
+
+**A write-capable command outside `_WRITE_VERBS` is not walked unless something else in the segment matches, and
+closing it needs a DECISION rather than an edit.** Inherited, and named in the guard's own comment as a known gap;
+#974 measured the pipeline shape of it. Measured 2026-08-17, ALLOW at ddbaff89 AND after the fix:
+`echo shred /opt/ai-inference/compose.yaml | bash` and `echo .claude/settings.local.json | xargs rm` — neither
+upstream segment carries a verb `WRITE_RE` knows, so no operand rule ever runs on it. The same acts spelled with a
+known verb DENY after the fix (`echo rm -f /opt/ai-inference/compose.yaml | sh`,
+`echo rm .claude/settings.local.json | xargs -n1 rm`). Closing it means widening `_WRITE_VERBS` or widening the
+walk gate, and the walk gate was measured to cost real ordinary work: `ls .claude/hooks | awk '{print}'` and
+`find .claude/hooks | xargs grep x` both ALLOW today and would start denying. Widening `_WRITE_VERBS` also widens
+`NEVER_WRAPPER_RE`, which is coupled to it by construction, so the blast radius is not one list. Someone must
+choose which cost to pay; a one-line edit here would be choosing silently. Re-check: the four command strings
+above as input — the first two must deny, and the two ordinary-work rows must still allow.
+
+**The Bash path and the Edit/Write path do NOT apply the same rules, despite the header saying they do.**
+`ansible-gate-guard.sh:183-184` claims "ONE definition, consulted by the Edit/Write path AND the Bash path, so the
+two can never drift apart". That is true of `is_gate_path` and `is_deployed_path` and false of `GATE_BASENAMES`,
+which is read at exactly two sites (`check_token` and `prefix_span`), both on the Bash path. Measured 2026-08-17 at
+ddbaff89 AND after the #974 fix, with the guard sited beside the hook set so `GATE_BASENAMES` is populated: Bash
+`cp /tmp/a /tmp/scratch/ansible-gate-guard.sh` DENIES, while an Edit naming `/tmp/scratch/ansible-gate-guard.sh`
+ALLOWS. The direction is safe — Bash is the stricter path — but the header overstates the coupling, and the
+asymmetry is load-bearing for anyone reasoning about the bare-basename rule, which is the only rule that follows a
+guard's NAME out of the gate layer. A docstring claiming coverage it does not have is the defect moved into the
+tool. Re-check: the two inputs above through one guard copy sited beside the hook set; they must agree, or the
+header must stop claiming they do.
+
+**`run-wiring-smoke.sh` has been RED for nine days, and the red is the suite's own stale list.** Measured
+2026-08-17 at `8d04fd33`: `bash .claude/hooks/test/run-wiring-smoke.sh` -> rc 1, 48 `PASS:` lines and exactly ONE
+`FAIL:`, reading `registered set drifted:5a6 > dream-pending-notice.sh`, ending `WIRING SMOKE: FAIL`. READ THE
+DIFF DIRECTION BEFORE ACTING ON IT — the failure text invites the opposite conclusion. The check diffs
+`EXPECTED_WIRED` against `ACTUAL_WIRED` in that order (`:72`), so a `>` line is present in ACTUAL and missing from
+EXPECTED: the hook IS registered in tracked `.claude/settings.json` (15 distinct basenames), and it is the suite's
+hardcoded list (`:63-66`, 14 names, whose pass message still says "exactly the expected 14 hooks") that never
+learned about it. The registration landed 2026-08-08 in #936; the list was last touched 2026-08-07 in #918, so the
+suite has failed on every run since. The check is doing precisely the job its comment claims — proving nothing was
+"added unnoticed" — and nobody noticed the notice.
+
+The cost is not the one red row. The suite exits 1, so its other 48 assertions — including the marker writers must
+be 100755 IN THE INDEX rows, which exist because a 100644 shipped once and broke the merge gate — sit behind a
+failing summary, and anything gating on rc reads the whole suite as broken rather than as one stale line. A suite
+that is permanently red teaches its readers to skip it, which is the failure mode that lets the NEXT drift through.
+
+Pre-existing and independent of PR #974: all three inputs (`.claude/settings.json`, `run-wiring-smoke.sh`,
+`dream-pending-notice.sh`) are unmodified at `8d04fd33`, and the drift check reads neither file that PR touches.
+Decide the direction rather than silencing the row: either the dream notice is a wired participant and belongs in
+`EXPECTED_WIRED`, or it should not be registered at all. Re-check:
+`bash .claude/hooks/test/run-wiring-smoke.sh; echo rc=$?` — rc must be 0 and the summary `WIRING SMOKE: PASS`.
+
+**A write in one tool call and its execution in the NEXT are invisible to any command-string guard. ACCEPTED LIMIT,
+not an open bug — nothing in a future round can close it.** `ansible-gate-guard.sh` is a `PreToolUse` hook: it is
+handed ONE `tool_input.command` and must decide on that string alone. `echo cp /tmp/evil
+/opt/ai-inference/compose.yaml > /tmp/run.sh` in call 1 and `bash /tmp/run.sh` in call 2 are two strings, neither of
+which contains the other's half, and no amount of parsing reaches across them. Recorded because the shape looks like
+a defect to every reviewer who meets it, and three rounds of #974 were spent on designs that implicitly promised to
+cover it.
+
+WHAT COVERS IT: denying call 1. Since #974 the guard checks echo/printf operands whenever the segment's stdout lands
+in a file, whatever happens to that file afterwards — which is `ddbaff89`'s rule, restored deliberately after a
+narrower one was measured open. Measured 2026-08-17, all three DENY on the current guard and at `ddbaff89`, all
+three ALLOWED at `6c276949`: the bare write with no run anywhere, the same write followed only by `ls -l`, and the
+gate-layer spelling naming `.claude/settings.local.json`.
+
+THAT INVARIANT IS BOUNDED BY HOW A REDIRECT IS RECOGNISED, and the bound is written down because the sentence above
+overstated it for one round. `>&N` was excluded as "a descriptor is not a file" until #974 round 5. It is not: `>&N`
+means stdout goes wherever descriptor N goes, and N is aimed at a file by a `3>/tmp/run.sh` in the same segment or an
+`exec 3>/tmp/run.sh` before it — six spellings that DO put echo's text into a script were answering "no redirect",
+and `echo cp /tmp/evil /opt/ai-inference/compose.yaml 3>/tmp/run.sh >&3` needs no `exec` at all. That exclusion is
+deleted and all six deny, matching `ddbaff89`. What remains open is ONE property, measured 2026-08-17: an operator is
+recognised only where it STARTS a token. So `echo cp /tmp/evil /opt/ai-inference/compose.yaml>/tmp/run.sh` — operator
+welded to the preceding WORD — still ALLOWS, and so do the `exec` spellings `exec>/tmp/run.sh`, `\exec > /tmp/run.sh`
+and `>| /tmp/f exec` (below).
+TWO OF THE FIVE THIS ENTRY LISTED ARE NOW CLOSED and are struck rather than left standing: `> /tmp/run.sh exec`, the
+operator SPACED from its target, was round 6's blocker and now DENIES, and `eval "exec > /tmp/run.sh"` denies with it —
+the walk already strips one quote layer, so `"exec` reaches the test as `exec` (double-, single- and welded-target eval
+spellings all deny).
+
+`>| /tmp/f exec` IS DISCLOSED OPEN, AND ITS ROOT CAUSE IS UPSTREAM OF THE PREDICATE — which is why it is listed here
+rather than fixed in the round that found it. `>|` is the noclobber-override redirect and it BINDS: measured
+2026-08-17 on bash 5.2.21 against a benign target, both `>| f exec` and `>|f exec` put the following segment's echo
+text in the file and leave stdout empty. It ALLOWS at this branch's head and DENIES at `ddbaff89`. It is NOT a
+regression from the exec-walk rewrite — measured at `2bddf6de` as well, where it also ALLOWS — so no round of this PR
+introduced it. `segment_opens_exec_redirect` never sees it: `split_segments` treats the `|` of `>|` as a PIPE and cuts
+the operator in half, so `>| /tmp/f exec; echo hi` tokenises to segments `[|>]`, `[; /tmp/f exec]`, `[; echo hi]` and
+the operator never reaches the predicate as one token. Note the scope is narrow — the plain `echo cp /tmp/evil
+/opt/ai-inference/compose.yaml >| /tmp/run.sh` still DENIES; only the exec-binding form escapes.
+NOT CLOSED, DELIBERATELY: the fix is an edit to `split_segments`, the tokenizer every other mechanism in this guard
+depends on, and four of this PR's five preceding rounds introduced a FRESH defect in exactly that class of change —
+a predicate rewritten to cover one shape and walked past by another. The risk of the fix exceeds the risk of the gap,
+which is a deliberate-evasion spelling nobody writes by accident, so it is disclosed with its measurement instead.
+Re-check (INPUT only, never execute — it writes the path it names): `>| /tmp/f exec; echo cp /tmp/evil
+/opt/ai-inference/compose.yaml; bash /tmp/f` allows today and must deny if `split_segments` is ever taught `>|`.
+
+CLOSING THE REST DOES NOT MEAN RESTORING MAIN'S RULE, and the sentence that stood here implied it did by calling the
+cost "unmeasured". It is measured. `segment_redirects_to_file` can recognise an operator welded INSIDE a word (a second
+arm, `[[ "$tok" =~ [^0-9<>&]\> ]]`); applied alone it leaves `run-advisory-guards-smoke.sh` at ZERO FAILURES and
+flips both the welded write and `exec>/tmp/run.sh` to deny. The figure is keyed to the FAILURE COUNT, not to the row
+total, because the total moves whenever a row is added and this measurement has already rotted once that way: it read
+"426 rows" until the round that added a control row, and a re-check whose denominator no longer matches what a reader
+counts invites the conclusion that the measurement was never taken. It buys nothing for the VERBLESS prose spelling, because
+WRITE_RE's redirect arm anchors at `(^|[[:space:]])` so a welded operator never opens the walk gate; widening that arm
+TOO costs exactly ONE new denial — `echo we should review /opt/ai-inference/compose.yaml>/tmp/run.sh`, which ALLOWS at
+`ddbaff89` AND at this branch's head — and also moves zero suite rows. One new cost row, not blanket denial. NOT DONE
+HERE: the decision to leave it open stands, and what changed is that the entry now states the price instead of pleading
+ignorance of it. Re-check (INPUT only, never execute — it writes the path it names):
+`echo cp /tmp/evil /opt/ai-inference/compose.yaml>/tmp/run.sh` allows today and must deny if either widening lands.
+
+`ddbaff89` DENIES THE SPELLINGS THAT REMAIN OPEN, AND THAT IS NOT THE ENDORSEMENT IT LOOKS LIKE — recorded because the
+sentence above reads as "pre-existing, nobody covers it" and the next agent would otherwise close it by reverting to
+main's rule. Measured 2026-08-17, guard sited beside a full hook set so GATE_BASENAMES seeds: the welded-operator
+write, `exec>/tmp/run.sh` and `\exec > /tmp/run.sh` all ALLOW here and DENY at `ddbaff89`. But `ddbaff89` also denies
+`echo cp /tmp/evil /opt/ai-inference/compose.yaml` with NO redirect anywhere, and `echo we should patch
+/opt/ai-inference/compose.yaml` with no write verb either, emitting the SAME reason string for all of them. It does
+not read redirects on this path at all — it denies any command string naming a guarded path. So its deny on the three
+is the blanket prose deny this branch removes ON PURPOSE, not coverage this branch lost, and restoring it is not the
+fix: it re-instates the false denials the branch exists to remove. Live proof, not a fixture — the installed hook at
+`/home/james/ATLAS/.claude/hooks/` is byte-identical to `ddbaff89` (verified with `cmp` 2026-08-17) and refused
+`time bash <a gate path> > /tmp/out 2>&1`, i.e. running a guard suite and logging it, which both this branch and its
+parent allow.
+
+"MAIN DENIES, HEAD ALLOWS" IS NOT BY ITSELF A LOOSENING, and that is written down because a review of this PR read it
+as one. Main denies essentially ANY command string naming a guarded path — the control in the paragraph above proves
+it: no redirect, no write verb, still denied — so the comparison holds for a large class of strings and cannot
+distinguish a real gap from a false denial this branch removed on purpose. "Did THIS change loosen X" has exactly one
+correct baseline: the commit BEFORE the change, not main. Worked example, measured 2026-08-17 —
+`1> exec; echo we should patch .claude/hooks/git-push-guard.sh` and its `2>` spelling both DENY at `ddbaff89` and
+ALLOW at this branch's head, which reads as a regression and is not one: both also ALLOW at `2bddf6de`, so no round of
+this PR moved them. Neither binds anything (verified on bash 5.2.21: the file named `exec` is created EMPTY and the
+prose stays on stdout), so allowing them is correct rather than merely harmless. Name the pre-change commit, not main,
+whenever a verdict is called a loosening.
+
+AND "`ddbaff89` COVERS THE WELDED FORM" IS ONLY HALF TRUE, which the sentence above asserted flatly. It holds for a
+`/opt`-prefixed path and fails for a gate-layer one, because `is_deployed_path` anchors `/opt/*` at the FRONT while
+every gate glob anchors a SUFFIX — and the welded `>` moves the end of the token into the REDIRECT TARGET. Measured
+2026-08-17 at `ddbaff89`: `echo rm -f .claude/settings.local.json>/tmp/run.sh` ALLOWS, while the same string with the
+target spelled `/tmp/run.json` DENIES, `*.claude/settings*.json` matching the target's extension rather than the gate
+file's. The hooks spelling splits on the same accident — `…git-push-guard.sh>/tmp/run.sh` denies via `*.claude/hooks/*.sh`
+and `…git-push-guard.sh>/tmp/run.txt` allows. Main's coverage of this shape is an artefact of what the redirect target
+happens to be called, so it is not a standard this branch is failing to meet.
+Re-check (INPUT only, never execute — each writes the path it names): the three allow here and deny at `ddbaff89`;
+`echo cp /tmp/evil /opt/ai-inference/compose.yaml` with no redirect at all must ALSO deny at `ddbaff89`, and that is
+the control proving the deny is redirect-blind rather than a redirect this branch stopped seeing; and the
+`/tmp/run.sh` vs `/tmp/run.json` pair must keep its SPLIT verdict at `ddbaff89`, which is what makes the coverage
+claim conditional rather than general.
+
+WHAT WOULD NOT COVER IT: any design keyed on "the target is later executed". `6c276949` carried one, and it leaked
+three ways in the SAME command string before the two-call case was even reached — the target compared as raw text
+while every other site resolves with `realpath -m` (7 spellings), the runner tested by an enumeration defaulting to
+allow (12 spellings, including `dash`, `python3` and every wrapped form, which the PIPE route denies because it asks
+the inverted question), and a redirect opened by an earlier `exec >` (4 spellings). Do not reintroduce one: the cost
+of the broad rule is a single shape, `echo <prose naming a guarded path> > <file>`, pinned by its own COST fixtures
+in `run-advisory-guards-smoke.sh`.
+
+Re-check (feed as INPUT to the guard, never execute — each writes the path it names):
+`echo cp /tmp/evil /opt/ai-inference/compose.yaml > /tmp/run.sh` must deny on its own, with no second segment.
+
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
 **Empty-but-valid results grade CORRECT.** A schema-valid `qualitative_result` with `sentiment_polarity:
@@ -1304,6 +1493,22 @@ corpus measured that way. The mutation counts in this file are quoted net of tha
 `run-advisory-guards-smoke.sh` twice, once in place and once with `ATLAS_GATE_HOOK` at a copy, and diffing the
 FAIL lists. Not fixed: the honest fix is a hook-dir fixture, and creating files named after the other guards is
 itself denied by the installed guard.
+
+**A SECOND siting axis exists, it has no self-check at all, and it surfaces as one ordinary red row.**
+`design-intent-dispatch-guard.sh` resolves `REPO=$(cd "$_dir/../.." && pwd)` and globs `"$REPO"/*/AGENT_README.md`.
+With no service cards under that root it logs `ANOMALY: no service card ... failing open` and returns `none`, which
+lands in `run-advisory-guards-smoke.sh` as `design-intent-dispatch-guard returned 'none', expected 'deny'` — a row
+that names the GUARD, reads exactly like a guard regression, and says nothing about the harness. Measured 2026-08-17
+on a scratch tree carrying every `.claude/hooks/**` file but no cards: **418/1**; siting the 12 cards at `$REPO` and
+changing nothing else: **419/0**, matching the in-place count. The suite's `HARNESS MISCONFIGURED` check covers only
+the OTHER axis — it tests `$(dirname "$ATLAS_GATE_HOOK")/git-push-guard.sh` so `GATE_BASENAMES` is populated — and is
+silent about cards, so an agent who mirrors the hook set without also being told to mirror the cards spends the round
+chasing a phantom guard regression. That happened on this PR; the brief's "mirror the cards" line is the only reason
+it was caught. Re-check: copy `.claude/hooks/**` into a scratch tree with no `*/AGENT_README.md` beside it and run the
+suite — the row above must be the ONLY red one, and must go green when the cards are added.
+NOT A PRODUCTION HOLE, stated so nobody reads it as one: failing open with no cards to enforce against is that
+guard's deliberate behaviour, and in the repo the cards always exist. This is harness siting, not a live gap in
+dispatch gating.
 
 **The gate refuses its own maintenance, and until 2026-08-16 the documented escape could not be typed.**
 `ansible-gate-guard.sh` denies every Edit, Write and Bash write to `.claude/hooks/**` — correct, and the reason
