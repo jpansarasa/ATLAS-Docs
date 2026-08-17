@@ -20,6 +20,8 @@ Context-aware hooks that inject patterns when working on specific file types.
 | `design-intent-dispatch-guard.sh` | Agent dispatch that WRITES to a service carrying D-entries | **BLOCK** - requires a DESIGN INTENT stanza in the brief. Fires only when all four hold: write-shaped judged AFTER prohibition clauses are stripped, a clause ending at `.`, `;`, or a comma that an instruction-verb list says begins a new instruction (a bare comma terminator was measured and rejected — it leaves `open a PR, or deploy` write-shaped); an agent type whose remit is writing code — the exempt types are ENUMERATED (`Explore`, `Plan`, `claude-code-guide`, `statusline-setup`, and the five `pr-review-toolkit` reviewers), never matched by namespace, because `pr-review-toolkit:code-simplifier` holds All tools and exists to MODIFY code, and compared ANCHORED so `Explorer` cannot inherit `Explore`'s exemption; no read-only self-declaration in the brief's opening 400 chars; and the brief names a service whose `AGENT_README.md` DECISIONS block has >=1 D-entry. Everything else passes silently — a stanza with no D-entries in scope is `none`, which carries nothing. Presence-only and content-agnostic, with one structural exception: an EMPTY label is denied. The stanza is the rest of the label's line plus following lines up to the first BLANK line, so `DESIGN INTENT:` followed by a blank line and then the brief body is an empty label, not a stanza. The phrase in prose, in a filename, or as a bare substring (`redesign intentionally`) still satisfies the gate — KNOWN GAP, see the hook header. Harness- or repo-shape anomaly -> open + loud; jq missing -> degraded raw-grep, verdict-identical to the jq path |
 | `service-decisions-context.sh` | Edit/Write `<Service>/src/**` | **ADVISE** - inject the service card's DECISIONS block (skipped on `DECISIONS: none`). Neutral (empty output) on no-op; anomalies neutral + loud |
 | `plan-retirement-guard.sh` | Bash `git rm` of `docs/proposals/**`, `*PLAN*.md`, `*-design.md` | **ADVISE** - injects the migration checklist via `additionalContext`. Deliberately not a block: a script cannot verify migration semantics, and PHASE_TAGS step 4 makes `git rm` of a plan doc a normal step. Was ASK until 2026-08-06, so the checklist was never actually shown (see [`ask` is inert](#ask-is-inert-on-this-host)). Scope is `git rm` only: plain `rm` is silent (KNOWN GAP, asserted by `run-intent-fidelity-smoke.sh`) even though `rm` + `git commit -a` orphans the decisions identically. Anomaly -> open + loud; jq missing -> degraded raw-grep, still advises on match |
+| `lessons-uncommitted-notice.sh` | Agent dispatch (PreToolUse) | **ADVISE** - notices that `.claude/skills/supervisor-mode/LESSONS.md` carries uncommitted edits, staged or unstaged. Every worktree-isolated agent reads that file at HEAD, so an uncommitted lesson is not a weak one, it is an ABSENT one. Never denies and emits no `permissionDecision` (an active `allow` would widen the permission flow for every dispatch). **Silent when the file is clean** — empty stdout, exit 0 — which is the load-bearing half: a hook that speaks on every dispatch gets filtered out and then switched off. Needs no jq; the text is a constant plus one word from a closed set. Fires on EVERY Agent dispatch while the file is dirty, not only worktree-isolated ones, because `.tool_input.isolation` has never been observed in a real payload on this host |
+| `commit-marker-staleness.sh` | Bash naming `git … commit` (PostToolUse) | **ADVISE** - after a commit, notices that the tree carrying a tests-passed marker is no longer `HEAD^{tree}`, so the push guard will refuse. Fires only when HEAD's tree has NO marker AND a tree the commit moved off does — the parent, or the reflog's `HEAD@{1}`, which is the only one that sees a content-carrying `--amend`. A **message-only amend therefore stays silent with no special case**, because it does not move `HEAD^{tree}`. Honours the same `v2`/`v2-manual` marker shapes `git-push-guard.sh` honours. Read-only: it never writes a marker, so it cannot widen the gate |
 
 ## Failure Direction (intent-fidelity hooks)
 
@@ -750,6 +752,52 @@ the verdict text.
 Pre-2026-08-06 markers are deliberately rejected rather than migrated — they
 attest only invocation, which is exactly the claim being removed.
 
+### A recorded DECISION refuses an approve (2026-08-17)
+
+A fifth precondition sits in front of the four above, and it is not friction of
+the same kind: the four raise the cost of an absent-minded approval, this one
+refuses to let a measurement overrule a human. Before an `approve` is recorded,
+`claude-pr-verdict` searches `docs/BACKLOG.md` for a decision already taken about
+that PR — `BLOCKED`, `do not merge`, `do not patch-round`, `superseded`,
+`rejected` — and exits 1 if it finds one. `block` is never gated by it: a
+reviewer who finds a decision must still be able to record the block. It earned
+its place on 2026-08-15, when four consecutive review rounds ran against #935's
+"Do not merge and do not patch-round it" entry while it sat byte-identical on
+main.
+
+**The match is structural, not proximity.** The first version scored a PR number
+and a decision word inside an 8-line window of one paragraph, and that cannot
+work here: the decision vocabulary IS the backlog's ordinary working vocabulary.
+"the work is blocked on #979 landing first", "three earlier attempts were
+rejected", "the older design in #900 was superseded by" and a fourth modelled on
+CLAUDE.md's OBSERVABILITY sentence about rejected calls and cap slots each
+refused a legitimate approve. The fourth is MODELLED, not quoted — CLAUDE.md's
+passage names no PR at all, so it could never have refused anything. What a
+RECORDED decision looks like in that file is an ENTRY HEADLINE, so the number
+must sit inside a `**bold span**` (or on a `#` heading line) with a decision word
+in that same span or on that same line. Swept over the real file at `112449be`,
+29 distinct `#NNN`: the window refused 5 — #729 and #935 right, #730, #736 and
+#99901 wrong — and this matcher refuses 2, both genuine. The revision stamp is
+load-bearing: the count moves whenever an entry names a PR, and only the refusing
+set is asserted by a test (`BD18`), never the population. The cost, stated rather than hidden: a
+decision written in BODY PROSE is invisible to it. An over-denial is not the safe
+failure it looks like — the escape a blocked reviewer reaches for is a bypass,
+and a bypass is permanent.
+
+**No override exists, deliberately.** `ATLAS_BACKLOG_FILE` is ADDITIVE, not a
+replacement: the repository's own backlog is searched on every approve whatever
+that variable says, and no refusal message names it. It was a bypass token until
+2026-08-17 — `ATLAS_BACKLOG_FILE=/dev/null … 935 approve` recorded an approve for
+the explicitly-blocked PR, rc 0, with the fail-closed message printing the
+variable's name as advice. The store is resolved from the repository's MAIN
+toplevel (`git rev-parse --git-common-dir`), because a linked worktree gets its
+own `scripts/` copy and a worktree whose branch predates `docs/BACKLOG.md` has no
+such file — one exists today — so a script-relative resolution refused every
+approve recorded from there and handed over the bypass in the same breath. Every
+way the store can go unsearched (missing, not a regular file, unreadable, `awk`
+absent, `awk` failing) refuses; the audit line records which store was consulted,
+so a checked approve is distinguishable from one that was not.
+
 ### Which PR is being merged (fixed 2026-08-07)
 
 A verdict is per-PR, so the gate is only as good as its answer to "which PR is
@@ -1318,7 +1366,7 @@ merge, delete that block (keep `permissions`) and confirm with `dotnet vstest`
 | `test/run-push-guard-smoke.sh` | `git-push-guard.sh` marker lookup: global tree-hash scan, orphaned markers, block diagnostics. Runs against an isolated `ATLAS_MARKER_DIR` |
 | `test/run-push-exemption-smoke.sh` | the docs-only / docs-config allowlists on the push path |
 | `test/run-push-config-destination-smoke.sh` | the bare-push route: 1020 cells over config state x HEAD x content x marker x command shape, plus 14 targeted and 21 config-injection rows, each cross-checked against what `git push --dry-run --porcelain` says the fixture would really write. Liveness is asserted in both directions — a cell whose fixture *cannot* push proves nothing, and six (state, HEAD) pairs were in that condition until 2026-08-08. `PUSH_GUARD_HOOK` points it at another guard — against the pre-fix one it must go RED, which is how its teeth are demonstrated |
-| `test/run-pr-verdict-smoke.sh` | `claude-pr-verdict` preconditions, the merge gate's verdict parsing, and which PR a merge is judged as (stubs `gh`, uses PR numbers 99901-99904) |
+| `test/run-pr-verdict-smoke.sh` | `claude-pr-verdict` preconditions, the recorded-DECISION refusal and its over-denial sweep, the merge gate's verdict parsing, and which PR a merge is judged as (stubs `gh`, uses PR numbers 99901-99907) |
 | `test/run-command-guards-smoke.sh` | `ef-migration-guard.sh`, `dotnet-guard.sh`, `node-guard.sh` |
 | `test/run-advisory-guards-smoke.sh` | `ansible-gate-guard.sh`, `plan-retirement-guard.sh`, `deploy-smoke-reminder.sh` |
 | `test/run-intent-fidelity-smoke.sh` | `design-intent-dispatch-guard.sh`, `service-decisions-context.sh`, `plan-retirement-guard.sh`, `testing-context.sh`, incl. degraded (jq-less) parity |

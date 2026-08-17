@@ -352,9 +352,9 @@ STATE.md: read first + write last each turn
 - About to relay a CORRECTION of an earlier claim without verifying the correction itself
 - About to dispatch new work on a foundation that contradicts plan §X
 - About to chain two merge acts in one command, or quote a push | merge form inside a commit
-  message, comment or grep pattern -> both are denied by the gate [[LESSONS.md L5, L6]]
+  message, comment or grep pattern -> both are denied by the gate [[LESSONS.md ALREADY_ENCODED]]
 - About to conclude work did NOT land because its commits are not ancestors of main — a squash
-  merge rewrites them, so reachability fails toward "unpushed" [[LESSONS.md L7]]
+  merge rewrites them, so reachability fails toward "unpushed" [[LESSONS.md ALREADY_ENCODED]]
 - About to dispatch onto a branch a finished agent's worktree still holds
 -> STOP. Either dispatch (background) or ntfy.publish + end turn.
 

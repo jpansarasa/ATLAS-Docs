@@ -876,6 +876,26 @@ used: write the fragments to a file elsewhere and `cp` it in, so no gate path ap
 three. Re-check: try the documented `printf … > .claude/.ansible-gate-confirmed` and read the path the guard names.
 A FOURTH sighting of the `git show <rev>:<path>` spelling recorded above also landed 2026-08-16, on a worktree-scoped
 agent, so that one is not rare.
+(5) A FIFTH spelling, measured 2026-08-17 against the merged #974 guard (`ee1a957c`) — NOT a regression of it, and
+the first of the five to refuse a plainly READ-ONLY command. The read-verb exemption is keyed to the verb being the
+segment's FIRST WORD, so anything that displaces it — a group opener `(` or `{`, or one of the prefix words already
+recorded at (2) — lets a stdout redirect anywhere in that segment turn the command's gate-path OPERAND into the
+reported write target. TWELVE shapes DENY: `(grep -n marker git-push-guard.sh > /tmp/o.txt)` and the same read with
+`cat`, `wc -l`, `head -20`, `sed -n`, `awk`; a two-`grep` batch; a `{ …; }` brace group; a `time`-prefixed and a
+`nice`-prefixed `grep`; and the `.claude/hooks/…` and absolute spellings of the operand. NINE of twelve controls ALLOW — the same reads
+with the group opener removed, with the redirect removed, piped instead of redirected, sent to `2>` instead of
+stdout, or reading a non-gate file. (The three controls that still deny are a different shape: `sed` and `awk` are
+write-capable verbs at segment head too, and `>>` behaves as the twelve do.) With a BARE BASENAME the invented path
+is repo-root-relative — `/home/james/ATLAS/git-push-guard.sh`, which DOES NOT EXIST, the file being
+`.claude/hooks/git-push-guard.sh` — so a command merely MENTIONING a gate file's basename is refused as a write to a
+path that is not there, while nothing outside `/tmp` is read or written. Cost measured on this round: the harness
+mirror had to be re-sited twice and every probe run from a file, because naming a gate path on the command line is
+itself refused. Same root as (1)-(4) — path CONSTRUCTION over command text rather than over the resolved write
+target — so one fix still covers all five. Re-check, from the repo root; the command is itself not refused, and the
+trailing pipe keeps it valid when copied across the line break:
+`jq -n '{tool_input:{command:"(grep -n x git-push-guard.sh > /tmp/o)"}}' | bash .claude/hooks/ansible-gate-guard.sh |
+jq -r .hookSpecificOutput.permissionDecision` prints `deny` today. Fixed, it prints NOTHING — an allowing guard
+emits no JSON at all, so there is no `permissionDecision` to read and jq exits 0 with empty output.
 
 **A nested `sh -c` hides the redirect from every scan, and this is the one placement still open.** The outer
 tokenizer delivers a quoted `-c` argument as ONE token, so `-R` is never a token to test; the span-based scan would
@@ -1172,6 +1192,39 @@ calibrated constant.
 
 **CI is advisory, not blocking** — branch protection 403s on this GitHub plan, so a red run does not stop a merge.
 
+**Three figures the PR-verdict decision check leaves un-re-checkable.** All measured 2026-08-17 while fixing that
+check; none is a defect in it, and each is a number that will drift with nothing going red.
+
+The POPULATION of the over-denial sweep is unpinned while its RESULT is pinned. `run-pr-verdict-smoke.sh` BD18
+sweeps every `#NNN` in this file and asserts the refusing set is exactly {729, 935}, so a new decision entry turns
+that row red — but NOTHING asserts how many numbers were swept, in either store that quotes the figure. Both now
+carry a revision stamp instead (`112449be`, where it read 29), which keeps them true but leaves the quantity
+uncheckable: the count moves whenever an entry here names a PR, and THIS entry moved it to 30. A stamped figure and
+an asserted one are not the same guarantee, and only the second survives a reader who re-quotes it without the
+stamp. Re-check: `grep -oE '#[0-9]+' docs/BACKLOG.md | sort -u | wc -l`. Fix is a BD row asserting the population
+beside the set, which costs one line and makes the drift visible where the other numbers already are.
+
+Rounds and recorded verdicts are different quantities and only one is mechanical. PR #978's body says seven review
+rounds on #974; `~/.claude/atlas-pr-verdict.log` holds SIX verdict records for it (four block, two approve,
+14:01-18:24 on 2026-08-17). Neither falsifies the other — a round ending without a recorded verdict leaves no trace
+in that log, which is the log's designed scope — but "rounds" is a human count with no store behind it while the
+six is the only mechanical record, so a claim citing rounds cannot be checked against anything. Re-check:
+`grep -c 'PR#974' ~/.claude/atlas-pr-verdict.log`.
+
+Which PUSH deny answers which shape is asserted by no test, and the one carrying the useful remedy is reachable
+only by a shape prose cannot produce. `git-push-guard.sh`'s two-pushes-merged-into-one-span deny is the only push
+refusal naming the pair `git commit -F <file>` / `gh pr create --body-file <file>`; every prose shape reaches an
+EARLIER deny — the span/prefix mismatch ("Run the pushes as separate commands"), direct-to-main ("use a feature
+branch"), or unknown-branch ("check 'git branch --list'") — because both push-count derivations read the same
+`git … push` text, so a second mention raises the prefix count too and the mismatch fires first. It is NOT dead
+text, which an earlier draft of this entry guessed it might be: measured 2026-08-17, a newline inside a quoted
+option value reaches it — `git -c "user.name=A<newline>B" push origin main` yields raw count 1 and isolated count
+0, so the prefix comparison passes on 0 == 0 and the backstop fires. Recorded because
+`supervisor-mode/LESSONS.md` ALREADY_ENCODED now cites which denies say what while nothing pins that mapping, so
+reordering a rule would silently change the message a blocked reviewer reads. Re-check both halves: put
+`git push origin <a real branch> # git push origin main` and the newline shape through the hook and read which
+deny answers each.
+
 **A Sentinel unit test fails spuriously, and it fails in the shape of a real regression.** Measured 2026-08-15: over
 5 consecutive full runs of the Sentinel suite on identical trees, `ExtractionProcessorArticleEmbeddingTests`
 `.should_tag_skipped_empty_when_text_blank` went red ONCE — `Expected capture.Results to contain a single item, but
@@ -1380,6 +1433,41 @@ The entry above on `scripts/claude-pr-verdict` is this file's own worked example
 are bare continuations, so none of them is checked by any default invocation. Re-check: sweep every tracked `.md`
 for `path:NN` tokens that resolve to a real file but do not match `CITATION`, and confirm the count and the
 extension breakdown before trusting a sweep that reports "every one lands".
+
+**Applying a patch here drops the executable bit, `core.fileMode=false` hides that from every normal read, and a
+disarmed hook then fails SILENTLY.** Four mechanisms compose into a defect with no symptom, and the composition is
+the point — each one alone is survivable. (a) A patch applied to this tree has twice landed its touched files
+non-executable on disk, both times on 2026-08-17; the second occurrence left two LIVE hooks disarmed until they were
+repaired by hand. (b) `core.fileMode=false` is set in this repo, so git ignores the on-disk mode entirely: `git status`
+is CLEAN across the whole hazard and `git diff` emits no `old mode`/`new mode` line. Nothing in the ordinary
+pre-commit read can show it — the index must be inspected explicitly. (c) `.claude/settings.json` wires every hook as
+a BARE PATH — `$CLAUDE_PROJECT_DIR/.claude/hooks/<name>.sh`, **18** entries, and **0** of them prefixed `bash` — so a
+non-executable hook is an exec failure the harness swallows: no notice, no stderr in the transcript, the guard simply
+never speaks again. A gate that has stopped gating is indistinguishable from a gate with nothing to say, which is why
+this belongs here and not under KNOWN DEFECTS. (d) `git add` records a NEW file as **100644 regardless of disk mode**
+under `core.fileMode=false`, so a hook authored executable and staged the normal way ships disarmed on its first
+commit. Probed in a throwaway repo 2026-08-17: disk 755, plain `git add` -> 100644, `git add --chmod=+x` -> 100755.
+Note `git update-index --chmod=+x` — the form most references reach for — is DENIED by `ansible-gate-guard.sh` for
+ANY path, not merely a gate-layer one (probed directly against the guard, deny; `git add --chmod=+x` allows), so it
+is not an available repair here.
+MEASURED: SIX files carried the hazard in that one day — `commit-marker-staleness.sh` and
+`lessons-uncommitted-notice.sh`, both NEW at `1f813af9` and therefore mechanism (d); the three suites
+`test/run-advisory-guards-smoke.sh`, `test/run-wiring-smoke.sh` and `test/run-pr-verdict-smoke.sh`; and
+`scripts/claude-pr-verdict`, modified at `d4c5b244`. All six read 100755 in HEAD, 100755 in the index and 775 on disk
+as of this entry, so what is recorded here is the HAZARD and its re-check, not an open break.
+SCOPE, so the re-check is not widened on sight: the bit matters only where something execs the file DIRECTLY, which
+here is `.claude/hooks/**` plus the two extensionless `scripts/claude-*` executables. An interpreter-invoked script
+does not need it, and **13** tracked files under `scripts/` carry a shebang while sitting 100644 in the index —
+`verify-citations.py`, `devcontainer-owner.sh`, `agent-stall-watchdog.sh`, the four `gemini-spend-calibration`
+modules, the four `sentinel-quality-check` modules and the two `test-devcontainer-*` scripts. Every one is invoked as
+`python3 …` or `bash …` and is CORRECT as it stands; the 13 `compile.sh` recorded in CLAUDE.md are the same story. A
+shebang-based sweep flags all of them and teaches the next reader to ignore the check entirely.
+Re-check — it must read the INDEX, because the disk is the part already repaired by hand twice and the index is what
+ships. Silence is the pass:
+`git ls-files -s -- .claude/hooks scripts/claude-pr-verdict scripts/claude-mark-verified | awk '$4 !~ /\.md$/ && $1 != "100755" { print "NOT 100755 IN THE INDEX:", $1, $4 }'`
+CONTROL, because a sweep whose only output is silence is an opinion: pipe one fabricated
+`100644 <sha> 0<TAB>.claude/hooks/git-push-guard.sh` line into that same `awk` and it must name that file back.
+Verified both ways 2026-08-17. Repair is `git add --chmod=+x -- <path>`; a `chmod` on disk fixes nothing that ships.
 
 ## DEFERRED WORK
 

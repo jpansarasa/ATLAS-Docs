@@ -31,6 +31,8 @@ FORMAT per entry: the lesson in one line / OCCURRENCES the instances that earned
   shrinking. # measured 2026-08-17: three of five new entries had none
 
 ## ALREADY_ENCODED [go there, never restate here]
+Every line NAMES the mechanism that enforces it now, so removing that mechanism removes a visible pointer
+  instead of silently losing the lesson # a deleted entry with no pointer cannot be told from one never earned
 verify a claim before relaying it -> SKILL.md TIER1_CLAIM_CHECK + `templates/claim-verification.md`
 two reviewers need DIFFERENT lenses -> SKILL.md TIER1_CLAIM_CHECK TWO REVIEWERS + REVIEW_FIX_LOOP LENSES
 a measured number in a brief is a hypothesis -> `templates/implementation-fix.md` Notes for the supervisor
@@ -41,6 +43,20 @@ gate the ACT not a spelling; a FAST oracle answering a different question is sti
   BRANCH would go, not what the push would WRITE) -> `.claude/skills/guard-change/SKILL.md` CHECKLIST item 9
 find a recorded DECISION about a PR (BLOCKED, do-not-merge, superseded) BEFORE reviewing its code -> SKILL.md
   MERGE_GATE SEQUENCE, step 0 # the incident that earned it is in docs/BACKLOG.md, filed under #935
+analysis is not a review record; the Skill invocation is what makes a verdict possible -> SKILL.md MERGE_GATE,
+  fail-closed at both ends by `.claude/hooks/pr-review-marker.sh` (sole writer of the pending record) and
+  `scripts/claude-pr-verdict`, which exits 1 without it # was L3
+one merge act per Bash invocation -> `.claude/hooks/git-push-guard.sh` denies any command carrying more than one,
+  and SKILL.md RED_FLAGS carries the stop-line # was L5
+prose quoting a gated push or merge form trips that gate; pass long text by path -> `.claude/hooks/README.md`
+  Accepted cost explains it. Whether the DENY says so depends which one fires: both merge denies name the remedy
+  (`git commit -F`, `gh pr comment --body-file`), and so does the two-pushes-merged-into-one-span push deny; the
+  three a quoted push actually reached in probing do not — `push origin main` answers "use a feature branch", a
+  name main lacks answers "the branch does not exist … check 'git branch --list'", and a second `git push`
+  anywhere in the line answers "Run the pushes as separate commands" # was L6; round 1 said the denies name it and
+  round 2 said they do not, and the narrow form is the only true one
+squash merge makes commit reachability answer NO for work that landed -> SKILL.md RED_FLAGS; ask the PR's state
+  or compare CONTENT # was L7
 
 ## LESSONS
 
@@ -75,15 +91,6 @@ L2 A CORRECTION is a claim. Verify it before amplifying it.
     previous opinion.
   GRADUATES: when `templates/claim-verification.md` names corrections as in-scope AND carries the restate-the-subject step.
 
-L3 Analysis is not a review record. A review that never invokes the `review-pr` Skill leaves the merge blocked,
-  however good the analysis was.
-  EVIDENCE: `pr-review-marker.sh` is PostToolUse(Skill), fires only on `pr-review-toolkit:review-pr` (or `review-pr`),
-    and alone writes `pr-review-pending-<N>`; `scripts/claude-pr-verdict` exits 1 without it. Fail-closed at both ends.
-  APPLIES: every review dispatch that reaches a mergeable verdict.
-  RULE: reviews that must end in a merge go through the Skill; ad-hoc review agents ADD lenses and can never produce a
-    verdict. # dispatching three sharp agents and no Skill leaves zero record
-  GRADUATES: when the review dispatch gets a template naming the Skill invocation as step 1.
-
 L4 Prune the finished agent's worktree BEFORE dispatching the next agent onto that branch.
   EVIDENCE: 2026-08-07/08 fix-round branches were repeatedly still held by the worktree of the agent that had finished
     with them — the next agent stalls or branches off a stale copy. 2026-08-13 it became a DESTRUCTION hazard: FOUR
@@ -98,32 +105,6 @@ L4 Prune the finished agent's worktree BEFORE dispatching the next agent onto th
     held branches, and require every dispatch to release its branch leaving nothing staged.
   GRADUATES: when a pre-dispatch check lands in the templates or a hook AND it checks `diff --cached`, not merely which
     branch is held.
-
-L5 One merge act per Bash invocation. Never chain two.
-  EVIDENCE: 2026-08-07 with #921 approved and #923 carrying no verdict, chaining both merges in one command was
-    ALLOWED, merging the unverdicted PR under the other's approval. Six shapes in all, recorded in the guard's own M1
-    comment block (git-push-guard.sh) — sharpest being a `/pulls/<other>/merge` anywhere in the string, even inside a
-    `--subject`, hijacking the verdict lookup. The gate now denies any command carrying more than one merge act.
-  APPLIES: every merge; also the `gh api .../pulls/<N>/merge` and `curl` forms.
-  RULE: merge, end the command, then merge the next. # chaining is denied now, so it is also a wasted round
-  GRADUATES: never — enforced by the gate; this stays as the explanation of the denial.
-
-L6 Prose that quotes a gated command form TRIPS that gate. Pass long text by path.
-  EVIDENCE: the merge gate counts "one merge plus TEXT naming another" as two acts; a commit message merely QUOTING a
-    push form used to produce an authoritative allow for a real push to main. Reproduced while writing this file: a
-    `command grep` whose PATTERN contained a merge form was denied by the merge gate.
-  APPLIES: commit messages, PR comments, review briefs, dispatch prompts, grep patterns.
-  RULE: `git commit -F <file>`, `gh pr comment <N> --body-file <file>`, brief text passed by path. # the gate reads the
-    command string; it cannot know your text is only ABOUT a merge
-  GRADUATES: never — the gate's deny message names the remedy; this records why it is right.
-
-L7 Squash merge makes "is this commit on a remote ref" answer NO for work that already landed.
-  EVIDENCE: 2026-08-07 a reachability check flagged worktrees as holding unpushed work that had already merged.
-    Reproducible any time: #931 is MERGED and `git merge-base --is-ancestor <its headRefOid> origin/main` returns 1.
-  APPLIES: before pruning a worktree or branch, and any "has this landed" check.
-  RULE: ask the PR's state (merged / mergeCommit) or compare CONTENT. Commit reachability cannot distinguish "merged by
-    squash" from "genuinely unpushed", and it fails toward "unpushed".
-  GRADUATES: when the prune step gets a scripted check reading PR state instead of reachability.
 
 L8 Repair citations LAST, and treat every fact-shaped claim as a citation.
   EVIDENCE: 2026-08-12/13, one PR chain. Round 2 repaired ONE line citation and broke FOURTEEN (its own edits shifted
@@ -282,12 +263,8 @@ never repair citations before your last content edit, and never trust a green sw
 never hand a fix round a list of sites — brief the class and require the count before the fixes
 never let a round volunteer framing it did not measure, and never leave a cheap fact unqueried
 never compile before the final commit — the marker keys to the tree, not the content
-never expect a merge verdict from a review that did not invoke the Skill
 never dispatch onto a branch still held by a finished agent's worktree
 never leave a worktree behind with a staged index — it is one commit from reverting merged work
-never chain two merge acts in one command
-never put a quoted push or merge form in a commit message, comment or grep pattern
-never read commit reachability as proof that work did not land
 never accept a self-authored "nothing loosened" as a merge signal — the corpus must come from a
   different mind than the fix, and the shape that leaks is a SPELLING VARIANT of one already covered
 never dispatch gate-layer work worktree-isolated, and never create the confirm file yourself
