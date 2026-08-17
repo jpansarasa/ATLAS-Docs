@@ -1561,6 +1561,41 @@ same way. Nothing here is reproducible by a later reviewer without rebuilding it
 to re-measure from scratch — and why measuring against a previous head instead of against main went unnoticed for
 three rounds.
 
+**A recorded do-not-merge DECISION on PR #935 went unread through four review rounds** (2026-08-15). The entry
+titled "#935 ansible-gate — BLOCKED. Do not merge and do not patch-round it." landed on main in `f235e79d`
+(2026-08-14), written because THREE rounds had already each claimed "loosened writes = 0" and each been falsified
+by hand-probing outside the template sweep — and it PREDICTED that shape in those words. FOUR further patch-rounds
+then ran against it and reproduced it exactly, with the entry byte-identical on main and on the PR head. The split
+is three-before / four-after: #935's commit dates cannot establish it (the branch was rebased, so they all read
+08-15/16); the evidence is the entry's landing commit plus the round count in the session's working memory.
+WHY IT SURVIVED: every dispatch asked agents to verify CLAIMS — do the numbers reproduce, do
+the citations resolve, is the guard real — and nobody was ever asked whether a DECISION already existed. Agents read
+this file repeatedly and correctly answered the question they were given. The discriminator: a claim is falsifiable
+by measurement, a decision is only reversible by a human, so finding one means STOP and escalate, never "measure
+harder until it goes away". PRE-FLIGHT, now step 0 of `SKILL.md` MERGE_GATE SEQUENCE: before reviewing a PR's code,
+grep this file for its number and for the decision vocabulary (`BLOCKED`, `do not merge`, `do not patch-round`,
+`superseded`, `rejected`) — one command, run before a review round rather than after the fourth one to miss it. FIRST
+occurrence, recorded here so a second is recognisable; a second sends it to `LESSONS.md`. Re-check:
+`grep -n -e '#935' -e 'do not merge' docs/BACKLOG.md` returns the blocking entry today, and a review dispatch either
+carries that grep as its first step or it does not.
+
+**The zero-loosened SERIES for #935 and its salvage — the figures that lived only in `STATE.md`.** Each round
+measured its own corpus honestly and each zero was falsified by the next, bigger corpus (2026-08-15/16): 83-row
+corpus -> claimed 0, actually **14** loosened shapes · 181-row -> found those 14, missed 46 · 342-row -> **60**
+(detailed in the CORRECTION entry above) · 968-row -> **88** write shapes, 52 of them landing in `/opt` or `/etc`.
+**Each ~3x corpus finds ~2-6x more. NOT converging.** Separately, #935 measured "loosened = 0" against its own
+PREVIOUS HEAD — true each time — while against MAIN the branch opened **41 shapes, 32 of them executing a real
+write**, sandbox-proved; the sweep that found them was agent-scratch and is not in the repo, so its row count is
+not recorded. Every zero claimed on this work — at 83 rows, at 342 rows, and the HARD_STOP zero at 498 rows — was
+later falsified by a larger corpus. Recorded here because 41, 32 and 14 existed nowhere but `STATE.md`, which is
+gitignored and wiped at every epic boundary, while still being cited in briefs as settled. ONE COPY OF 41 IS ALREADY
+LOOSE and it is the copy a guard author meets first: `.claude/hooks/README.md` says "which is what #935 did, drifting
+41 shapes" — no corpus, no baseline, exactly the bare figure this entry legislates against. Left as written on
+purpose: that file is gate layer and the guard refuses writes to it, so the fix is this entry carrying the
+provenance the sentence lacks. Re-check: the corpora themselves were thrown away (see "The gate's corpora and
+harness are still not in the repo"), so what these numbers buy is the standing rule — any future "loosened = 0" must
+name its corpus SIZE and the baseline it was measured against, and a claim carrying neither is not evidence.
+
 **Dependency debt — the 10.0.8 pin WAS the NU1903 fix and has become the NU1903 exposure.** PR #703 (`eb81d03b`)
 pinned `System.Security.Cryptography.Xml` to 10.0.8 specifically to clear NU1903, and it pinned exactly the SIX
 TEST projects. It did NOT touch MacroSubstrate: that project's 10.0.8 predates #703 and arrived with #604

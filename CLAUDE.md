@@ -219,6 +219,11 @@ SHARP ENOUGH, NOT RAZOR: judge a remaining defect by whether it MISLEADS (a read
 ANTI: ✗ batch maintenance into its own phase # that is regrinding, after months of dull cuts
       ✗ read a green run as proof # ask what the tool CANNOT see — verify-citations.py is content-blind, so a
         citation drifted onto a comment reads GREEN
+      ✗ check citations with a bare rc after an edit that SHIFTS LINE NUMBERS — compare counts against a
+        pristine baseline instead # measured 2026-08-17: a 6-line comment edit shifted five D-entry GUARD
+        citations by six lines each and the tool flagged ONE — the only one that landed on a blank line. The
+        other four pointed at real-but-wrong lines and read GREEN. Baseline (91 citations/2 cannot-land on
+        main vs 94/3 on the drifted tree) is what exposed it; rc alone passes, and BOTH sides are rc 1
       ✗ ship a tool whose docstring claims coverage it does not have # the defect, moved into the tool
 
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]

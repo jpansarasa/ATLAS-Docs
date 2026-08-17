@@ -23,8 +23,12 @@ RULE_MUST_BE_CHEAP: the RULE names the CHEAPEST SUFFICIENT action, not the most 
   L2 existed, was exactly on point, and did NOT fire — its remedy was "dispatch an agent", disproportionate against a
   one-line refutation, so it was skipped. If the only sufficient remedy IS expensive, say so and expect it to be
   skipped under pressure — an unaffordable rule is a rule that does not exist.
-FORMAT per entry: the lesson in one line / EVIDENCE re-checkable in ~3-5 lines (date, command, measured outcome) /
-  APPLIES where / RULE what to do instead / GRADUATES to what.
+FORMAT per entry: the lesson in one line / OCCURRENCES the instances that earned it (two minimum — this is what
+  makes WRITE_TRIGGER auditable; L1-L11 carry theirs inside EVIDENCE) / EVIDENCE re-checkable in ~3-5 lines (date,
+  command, measured outcome) / APPLIES where / RULE what to do instead / GRADUATES to what.
+  GRADUATES IS NOT OPTIONAL and must be CHECKABLE — name the observable state that retires the entry, so a later
+  session can test it. An entry with no exit condition is permanent by construction, which is how this file stops
+  shrinking. # measured 2026-08-17: three of five new entries had none
 
 ## ALREADY_ENCODED [go there, never restate here]
 verify a claim before relaying it -> SKILL.md TIER1_CLAIM_CHECK + `templates/claim-verification.md`
@@ -35,6 +39,8 @@ what a guard test must do to count -> `.claude/skills/intent-review/SKILL.md` GU
 what the verdict marker attests -> SKILL.md MERGE_GATE + `.claude/hooks/README.md` PR Review Verdict Gate
 gate the ACT not a spelling; a FAST oracle answering a different question is still wrong (`@{push}` reports where the
   BRANCH would go, not what the push would WRITE) -> `.claude/skills/guard-change/SKILL.md` CHECKLIST item 9
+find a recorded DECISION about a PR (BLOCKED, do-not-merge, superseded) BEFORE reviewing its code -> SKILL.md
+  MERGE_GATE SEQUENCE, step 0 # the incident that earned it is in docs/BACKLOG.md, filed under #935
 
 ## LESSONS
 
@@ -183,6 +189,91 @@ L11 An alert rule is unproven until a test asserts it FIRES. Green promtool says
     naming it — a coverage checker beside `check-matchers.py`, which already resolves alertname literals and so
     already holds both halves of the join.
 
+L13 An instrument that dies silently scores its silence as a PASS.
+  OCCURRENCES: five in one session, 2026-08-15 — and the `awk` one fired TWICE, the second time while writing the
+    comment that warns about it.
+  EVIDENCE: five distinct harness failures, EVERY one biased toward false success. A relative guard path under a
+    fixture `cd` -> bash rc 127 -> every row scored invalid, reading as "the guard is broken" rather than "my probe
+    is broken". An apostrophe inside a single-quoted `awk` program closed the program, so the guard emitted NO
+    decision — which the permission layer reads as ALLOW. A suite that prints only a `PASS=<n>` summary scored 0
+    under a per-row grep: a 2,138-assertion undercount that read as green. `$(git ls-files '*.md')` unquoted
+    word-split on a path with spaces and aborted the tool two-thirds through with no summary, and the truncated
+    sweep was read as a complete one. Parallel agents overwrote each other's harness in the shared scratchpad,
+    producing an all-zero mutation result that read as "no coverage".
+  APPLIES: every measurement brief, and every harness a dispatch builds for one job and throws away.
+  RULE: absolute tool paths; abort on rc 127; syntax-check the thing under test before measuring; blob-check each
+    copy against its git object; a uniquely-named private scratch dir; and make the harness ABORT BY NAME on a
+    missing anchor rather than scoring the row. # three of the five were caught only because a harness aborted
+    instead of scoring — a tool that fails toward SUCCESS cannot be caught by reading its output
+  GRADUATES: when `templates/recon-measurement.md` carries those checks as a TRAJECTORY step, so a measurement brief
+    cannot omit them — grep that file for `rc 127`, which returns nothing today (the file exists, the checks do
+    not, so an empty result is not-yet-graduated rather than wrong-file).
+
+L14 A guard that matches TEXT instead of ACTS inherits the whole grammar — and every round attacks the NEWEST
+  mechanism, so the oldest defect is never re-attacked.
+  OCCURRENCES: `git-push-guard.sh` and `ansible-gate-guard.sh`, thirteen review rounds between them, 2026-08-15/17.
+  EVIDENCE: every round found the previous round's fix broken by a piece of bash grammar it did not model — span cut
+    at metacharacters, then act-bounding, then the nesting-depth counter, then escape handling; each fix correct and
+    each creating the next surface. The tell runs BOTH ways: these guards refuse a DESCRIPTION of an act (a filename
+    quoted in a verdict reason; `2>&1` and `Rule 1` read as PR numbers) while permitting the act under a spelling
+    they do not parse. A bypass that let the gate approve one PR while the tool merged another was BISECTED to the
+    third commit and had been live through all eight rounds — every brief said "attack what the last round
+    introduced", which is correct and which left the original change permanently behind the frontier. Eleven rounds
+    measured only whether the guard refuses enough; the two that also measured whether it still PERMITS ordinary
+    work caught the swings in each direction, one of which would have locked the session out of its own repo.
+  APPLIES: every round on a text-matching guard, and every review of one.
+  RULE: bisect a confirmed bypass across the BRANCH'S OWN COMMITS, every time — it is cheap, it names the commit,
+    and it is the only thing that finds a defect older than the review that keeps missing it. Measure over-denial
+    EVERY round, not only bypasses. When a round's fix is "handle one more grammar construct", say so out loud and
+    price it: that is an approximation converging on a reimplementation of bash. # the act-not-a-spelling half of
+    this lesson is ALREADY_ENCODED above — go there, do not restate it here
+  GRADUATES: when `guard-change/SKILL.md` CHECKLIST item 18 names the ACT ("bisect every confirmed bypass across the
+    branch's own commits") and item 16 requires the over-denial count REPORTED beside the bypass count — grep that
+    file for `bisect`, which returns NOTHING today: item 18 describes the check ("Check WHEN a surviving defect was
+    introduced") without ever naming the act, so an empty grep means not-yet-graduated, not wrong-file.
+
+L15 A "nothing loosened" claim is scoped to its author's imagination. Fixing the BASELINE is necessary and not
+  sufficient.
+  OCCURRENCES: #935's seven rounds, then the salvage round built specifically to avoid #935's error — which fixed
+    the baseline, measured zero against MAIN, and was still wrong (2026-08-16).
+  EVIDENCE: every zero was measured honestly and every one was falsified by the NEXT, bigger corpus. The series is
+    the whole argument: 83 rows -> 14 loosened shapes · 181 rows -> those 14 plus 46 more · 342 rows -> 60 · 968
+    rows -> 88, 52 of them landing in `/opt` or `/etc`. **Each ~3x corpus finds ~2-6x more. NOT converging.** #935's
+    own seven rounds each measured against its PREVIOUS HEAD rather than main, were right every time, and the branch
+    drifted anyway. Corpus sizes, per-round detail and the drift-against-main figures: `docs/BACKLOG.md`, the #935
+    entries.
+  THE TELL, and every miss that week fits it: **the shape that leaks is a SPELLING VARIANT of one the fixtures
+    already cover.** Object-store rows spelled without `--`, so the `--` spelling leaked. The only destination-flag
+    row unbundled, so `-rt` leaked. The tab-stripping heredoc rows without whitespace, so `<<- EOF` leaked. The
+    heredoc row unterminated, so the terminated form — the one bash actually runs — leaked. A fixture set reads as
+    coverage of a CONSTRUCT while covering one SPELLING.
+  APPLIES: any self-authored negative offered as a merge signal ("nothing loosened", "no regressions", "no new
+    findings"), and any corpus built by whoever wrote the fix — corpus author and fix author being the SAME MIND is
+    the residual flaw once the baseline is right, and the holes are the shapes that mind was not thinking about.
+  RULE: the corpus must come from a DIFFERENT mind than the fix — say so in the brief, literally: "build your own
+    matrix; do not replay theirs". For each construct a rule names, enumerate its SPELLINGS and test each: separator
+    present/absent, flag bundled/glued/spaced, delimiter quoted/unquoted, terminator present/absent. Require the
+    corpus SIZE and the sentence "this number is only as good as this corpus" in the report.
+  GRADUATES: when an adversarial corpus is generated from the guard's own rule table rather than by hand, so the
+    spellings come from the code instead of from whoever is feeling thorough today.
+
+L16 A guard that gates writes to ITSELF cannot be repaired by the isolation we default to.
+  OCCURRENCES: PR #970, PR #974. Recorded once in `docs/BACKLOG.md` as a one-off; it is not one.
+  EVIDENCE: gate-layer work dispatched with isolation:"worktree" deadlocks — ansible-gate-guard refuses every write
+    to `.claude/hooks/**`, including the edit that FIXES the guard, and its only documented escape is a confirm file,
+    so the agent's choices are "create a bypass" or "deliver nothing". The deadlock is invisible at dispatch time:
+    the brief looks ordinary, the worktree is created normally, and the refusal appears only after the agent has
+    done all the analysis, so the cost is paid in full before the blocker is discovered. #974 is what good looks
+    like — the agent hit the wall, created NO bypass, and delivered the finished work as a patch verified with
+    `git apply --check`.
+  APPLIES: every dispatch that edits `.claude/hooks/**` or the suites that guard it.
+  RULE: dispatch gate-layer work NON-ISOLATED, or fix `project_dir` resolution to use the actual toplevel. A blocked
+    agent that hands back an applicable patch has lost nothing but the commit. Deciding to create the confirm file
+    is the USER's, never the supervisor's — self-authorizing past a HARD_STOP is indistinguishable from routing
+    around it, and it is the supervisor who is least able to see that difference in the moment.
+  GRADUATES: when a gate-layer dispatch either resolves its own project_dir or is REFUSED AT DISPATCH, so the
+    deadlock costs a turn instead of an agent-hour.
+
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, line number or severity as settled fact
 never amplify a correction you have not verified
@@ -197,4 +288,7 @@ never leave a worktree behind with a staged index — it is one commit from reve
 never chain two merge acts in one command
 never put a quoted push or merge form in a commit message, comment or grep pattern
 never read commit reachability as proof that work did not land
+never accept a self-authored "nothing loosened" as a merge signal — the corpus must come from a
+  different mind than the fix, and the shape that leaks is a SPELLING VARIANT of one already covered
+never dispatch gate-layer work worktree-isolated, and never create the confirm file yourself
 never add an entry here that a template, hook or checklist already enforces

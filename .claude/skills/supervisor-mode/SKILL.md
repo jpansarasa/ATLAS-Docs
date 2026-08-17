@@ -106,7 +106,12 @@ MERGE_GATE [never re-guess]: `gh pr merge` needs /tmp/atlas-test-markers/pr-revi
   pr-review-pending-<N> — proof the review was invoked, never a verdict. Until
   2026-08-06 it wrote the merge marker at INVOCATION, before any analysis existed, so
   DO-NOT-MERGE reviews left a fresh passing marker and #908/#911/#913 merged anyway.
-  SEQUENCE: review-pr <N> -> read the findings -> claude-pr-verdict <N> approve|block.
+  SEQUENCE: step 0, grep docs/BACKLOG.md for `#<N>` and for the decision vocabulary
+  (BLOCKED, do not merge, do not patch-round, superseded, rejected) -> review-pr <N> ->
+  read the findings -> claude-pr-verdict <N> approve|block. A recorded DECISION is not
+  falsifiable by measurement: finding one means STOP and escalate to the human, never
+  "measure harder until it goes away". # 2026-08-15: four review rounds ran against a
+  do-not-merge entry already on main (docs/BACKLOG.md, under #935)
   A review that states no verdict leaves the merge blocked, by design.
   Uploading after the review -> marker stale -> re-run review-pr <N>, record a new
   verdict, THEN merge. Needs a cwd where `gh` resolves (cd the main checkout first).
