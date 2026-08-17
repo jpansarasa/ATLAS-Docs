@@ -504,7 +504,8 @@ until its successor is RELEASED, i.e. until `date + 90 + lag`, so age peaks at *
 lag exceeds the rule's `> 120` by 42 days, so this alert is guaranteed to fire every quarter on a healthy feed.
 136 is INSIDE the normal wait; Q1-2026 Z.1 is due ~2026-09.
 **Decision: re-threshold, do not retire and do not touch the feed.** Two independent defects, and the alert rule was
-deliberately NOT changed in the PR that recorded this:
+deliberately NOT changed in the PR that recorded this. **(2) is now CLOSED and (1) is OPEN but no longer
+alert-affecting** — see the two notes appended below.
 (1) The pattern's authored `"publicationFrequencyDays": 120` is DEAD CONFIG —
 `ThresholdEngine/src/Configuration/PatternConfigurationLoader.cs:320-322` overwrites it unconditionally with
 `PublicationFrequencyDaysOverride ?? RequiredSeries.Max(frequencies)`, so only the OVERRIDE is honoured and the
@@ -519,6 +520,49 @@ lines above it — corrected 2026-08-15. **180** clears the floor with headroom 
 duplicating the threshold formula in PromQL (single source: PatternDataHealthEvaluator)". The rule hardcodes 120
 anyway, so for 14 days the alert has said SEVERELY OVERDUE while the service's own health evaluator does not
 (136 < 270). Fixing only (1) leaves the two surfaces free to disagree again.
+
+**(2) CLOSED 2026-08-17.** The rule now joins `thresholdengine_pattern_data_overdue_days` against
+`thresholdengine_pattern_severe_overdue_threshold_days` on `pattern_id`, so the two surfaces read one number.
+Measured over all **71** patterns publishing both gauges at 2026-08-17T11:17:04Z: `buffett-indicator` 138 vs 270
+stops firing, and **zero** patterns lose coverage (`count(overdue unless on(pattern_id) threshold)` = 0). A pattern
+whose threshold is NOT published falls back to the old literal 120 rather than dropping out of the join — the
+alternative silently un-covers it — and carries `threshold_source="fallback_literal_120"` so the degraded mode is
+visible. Guards: `deployment/tests/alerts/thresholdengine_test.yml`, 14 assertions; reverting the rule to `> 120`
+turns 5 of them RED, the buffett negative among them. Re-check: `promtool test rules ./thresholdengine_test.yml`
+after restoring the literal must FAIL.
+**(1) stays OPEN, but its alert consequence is gone.** With the join in place, the peak `overdue` of 162-199 sits
+under the derived threshold of 270, so the authored-vs-derived frequency mismatch no longer produces a false page and
+the `>= 169` override floor above is no longer needed to stop one. What remains is the trap itself: a pattern author
+writes `publicationFrequencyDays` and `PatternConfigurationLoader.cs:320-322` discards it without a word. Re-check:
+author any value in a pattern JSON with no `PublicationFrequencyDaysOverride` and confirm
+`thresholdengine_pattern_severe_overdue_threshold_days` for it still reads `max(3 * SecMaster-derived freq, 14)`.
+
+**A stalled Finnhub quote feed was being masked by the same hardcoded 120, and surfaces the moment the join
+deploys.** `small-cap-relative-weakness` requires `FH/IWM` + `FH/SPY` — daily quotes — and its
+`data_overdue_days` climbed **+1/day with no break, 9 -> 16 across 2026-08-10 -> 2026-08-17** (step 1d), which means
+no new observation for either series landed in that window at all. It crossed its own published threshold of 14 on
+**2026-08-16** and has been above it since; under `> 120` it could never have fired. (The gauge read exactly 14 on
+08-15 and the rule is `>`, so the first strictly-greater sample is 15 at **2026-08-16T00:15Z** — an earlier revision
+of this entry said 08-15.) This is the rule working, not a regression, but expect the alert to appear ~24h after
+deploy and the underlying feed still needs fixing. Re-check:
+`thresholdengine_pattern_data_overdue_days{pattern_id="small-cap-relative-weakness"}` — a flat or falling value means
+the feed recovered.
+**THE STALL IS THE WHOLE QUOTE COLLECTOR, NOT TWO SERIES.** All **18** symbols in `public.finnhub_quotes` stop at the
+SAME instant — `max(timestamp)` = **2026-07-31 20:00:00+00** for every one of DIA, GLD, IWM, QQQ, SPY, TLT, VTI, XLB,
+XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY, last `collected_at` 2026-07-31T21:33-21:34Z (measured
+2026-08-17). `FH/IWM` + `FH/SPY` are simply the two that a threshold-14 pattern happens to bind, so scoping the feed
+fix to them fixes nothing. The only other quote-bound pattern is `cu-au-ratio` (`FH/GLD`), which reads 47 against a
+threshold of 90 and so is nowhere near crossing — so ONE firing pattern is the visible surface of an 18-symbol
+outage, and the alert count is not the blast radius. Nothing else at this age is Finnhub: the 10 patterns sitting at
+overdue 17 are monthly FRED macro series at threshold 90 (3 x 30), and only `small-cap-relative-weakness` crosses now
+because its threshold is 14. Re-check:
+`SELECT symbol, max(timestamp) FROM public.finnhub_quotes GROUP BY symbol;` — 18 rows still pinned to 2026-07-31
+means the collector is still down.
+**Four more patterns are within 4 days of the same crossing**, all climbing +1/day: `challenger-layoff-surge`,
+`challenger-vs-payroll`, `sentinel-challenger-divergence` and `truflation-vs-cpi` all read **86 against a threshold
+of 90** at 2026-08-17T11:17:04Z, so they cross ~2026-08-21 unless their sources publish. Recorded so that a burst of
+new alerts a few days after this deploy is recognised as the pre-existing feed lag it is, and not read as the join
+misfiring. Re-check: the same gauge for those four `pattern_id`s.
 
 **The `BrokenCircuitException` classification gap is OPEN. Recovering the 55 `raw_content` rows it already orphaned
 is CLOSED as won't-do — alpha decay.** Two opposite verdicts on one finding; revised 2026-08-17, superseding the
