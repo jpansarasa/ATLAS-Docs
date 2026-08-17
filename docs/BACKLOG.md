@@ -940,7 +940,141 @@ Main's gate is UNCHANGED by this PR, so main retains the 120 real-write holes th
 are real and worth salvaging in a rewrite. Verified good and worth keeping: escaping/dequoting 14/14, HARD_STOP
 matrix 33/33 deny with the ansible remedy as the reason, degraded-PATH fail-closed 27/27 across 9 externals.
 The 5,005-cell sweep and 40-mutant battery live in an agent worktree, NOT the repo, so neither headline number is
-reproducible by a later reviewer.
+reproducible by a later reviewer. PARTIALLY SUPERSEDED 2026-08-16: the classification-layer salvage landed on
+main's guard — 15 of those write shapes closed, and the object-store carve-out deliberately NOT opened.
+#935 itself stays blocked and unmergeable; what it still holds over the salvage is the lexer, worth 3 more shapes
+(see the correction two entries below).
+
+CORRECTION 2026-08-16, and it is the SAME correction #935 needed three times: the salvage's "LOOSENED=0 against
+`67396749` on an 83-row regression corpus" was FALSE, and false for the reason that number has always been false
+here — **the corpus did not contain the shapes**. Re-measured on a 342-row corpus (312 write rows, 30 read rows),
+the landed salvage LOOSENED **60 write shapes** against `67396749`, in two classes it had no fixture for:
+  OBJECT STORE, reopening the exact route #935 was blocked for. `git_operand_class` read `POS[1] == "--"` as proof
+    the content came from the index, but a source-selecting FLAG never enters `POS` — the walk consumes dash
+    tokens — so `--` slid into that slot. `git restore --source=<rev> -- <gate>`, `-s<rev>` glued, `--worktree
+    --source=`, `--staged --source=`, `git checkout --ours --` and `--theirs --` all ALLOWED. Proven end to end:
+    `hash-object -w` -> `mktree` -> `commit-tree` -> `git restore --source=<commit> -- <path>`, every step allowed,
+    tracked file contents replaced. The three existing OBJECT STORE fixtures stayed green because every one of
+    them is spelled WITHOUT the `--`.
+  BUNDLED DESTINATION FLAGS. `dest_flag` tested `-t` and `--target-directory` by exact string, so `-rt`, `-at`,
+    `-vt`, `-ft` and `install -Dt` never set it and `dest_last` then trusted `POS[-1]`, which under `-t` is the
+    SOURCE. `cp -rt .claude/hooks /tmp/evil/.` overwrites every hook in the layer and was ALLOWED.
+FIXED in the same PR by one rule at two sites — an unrecognised dash token makes the class fail closed, rather
+than a list of flag spellings. That round claimed "LOOSENED=0 write rows on the 342-row corpus"; **that number was
+false for the fourth time, and for the same reason every time — the corpus did not contain the shapes.** Chasing
+zero is what produced four rounds; the bar was changed to NET BETTER with a strict zero only on HARD_STOP paths.
+
+MEASURED 2026-08-16 on an independently built 498-row corpus (447 write, 16 read, 35 ordinary), guard versions run
+IN their own hook directories, against `170be75a` (main; guard blob `c5ac440a`, unchanged by #970):
+  writes  **tightened 110, loosened 4, NET +106**. All 4 loosened rows are the MANDATED seam
+    (`git checkout|restore -- <gate>`), which the acceptance bar requires to allow. Unmandated write loosenings: 0.
+  **"HARD_STOP loosened: 0" was FALSE, for the fifth time and by the mechanism named three lines above — the
+    corpus did not contain the shape.** The 4 mandated-seam rows were counted as gate-only, but `reader` checks
+    NOTHING, so the same class skipped the DEPLOYED rule too: 16 rows spelling `git checkout|restore -- <deployed
+    path>` BARE deny on `c5ac440a` and were allowed here, `/opt/ai-inference/compose.yaml` among them (measured
+    2026-08-16; the flag-carrying form was covered, the bare form was not). Closed in the round below, which
+    re-applies the deployed rule — and only that rule — to a `reader` `checkout`/`restore`'s operands.
+  reads 16 rows: 3 loosened, counted separately so the reader-class price cannot bury a write regression. One of
+    the three names a HARD_STOP path — `cp /opt/ai-inference/compose.yaml /tmp/compose.bak` — and it is a READ:
+    the destination is `/tmp`, and `dest_last` is sound for `cp` now that the destination FLAG is parsed.
+  ordinary work 35 rows: **0 new false denials**, against main and against the branch head.
+The corpus is only as good as itself: 498 rows chosen by one author, and each previous round's zero was true of its
+own corpus too. Corroborating evidence that does not depend on the corpus: every one-change mutant kills assertions
+in the repo suite, and the harness carries a known-bad control that must show a planted loosening before any zero
+is reported. Per-fix mutation counts, suite assertions killed / corpus rows flipped to allow (suite counts net of
+the 2 bare-basename artefacts recorded two entries below):
+  destination-flag prefix match, reverted to the exact canonical name   4 / 124
+  glued short-bundle value, reverted to the unpinned greedy prefix      2 /  27
+  `WRITE_RE` git arm, reverted to requiring the subcommand to abut git  6 /  74
+  ambiguity signal, reverted to requiring a positional first            4 /  60
+  known-bad control (short-bundle `dest_flag` disarmed)                 3 /  36
+No mutation measured zero. The last two are the SAME family: neither closes the global-option shape alone.
+Suite: **172/0 at `170be75a` -> 215/0 at the branch head -> 234/0 -> 239/0 with the reader/deployed round**, all
+measured, not counted. That round's mutation counts (suite assertions killed): drop the deployed re-check 3,
+widen it to the gate rule as well 3, drop its `checkout`/`restore` condition 1. No mutation measured zero.
+
+**RECORDED, NOT CHASED — what the 498-row corpus surfaced beyond the two families it was scoped to fix.**
+None touches a HARD_STOP path, which is the only reason each was left open (2026-08-16):
+  `cp <gate file> /tmp/x` and `cat <gate file> > /tmp/x` ALLOW here and DENY on main. This is the reader/`dest_last`
+    class working as designed — the gate file is the SOURCE — but it is also **the obstruction that stopped the
+    previous review measuring deletion counts**, and it disappears the day this merges. CONFIRMED by measurement,
+    since the entry is what the next reviewer will plan around: the INSTALLED guard (`/home/james/ATLAS/.claude/
+    hooks/ansible-gate-guard.sh`, blob `c5ac440a`, identical to main) DENIES `cp <hook> /tmp/backup.sh`, so mutants
+    cannot be staged out of the layer without a bypass. Re-check by feeding that command to the installed hook.
+  `cp -T <gate file> /tmp/x` and `cp --no-target-directory <gate file> /tmp/x` ALLOW, same class, same reason.
+    `--no-target-directory` is deliberately NOT a prefix of `target-directory`, so it keeps `dest_last`.
+  Every finding above is a READ of a gate path. No write shape against the gate layer was left open.
+
+**`run-wiring-smoke.sh` has been RED on main since #940, and its whole job is to notice a hook being
+unwired.** Measured 2026-08-16: `WIRING SMOKE: FAIL`, one assertion, `registered set drifted: >
+dream-pending-notice.sh`. `.claude/settings.json:160` wires that hook (added by #940, merged) but the
+suite's `EXPECTED_WIRED` list at `run-wiring-smoke.sh:63-67` still names 14 hooks and its pass message
+says "exactly the expected 14". So the tool that would report "a guard got unwired" has been reporting
+FAIL for an unrelated reason, which is how that signal gets ignored. Not fixed here: bumping the list to
+15 asserts the hook SHOULD be wired, which is a judgement about #940 and not this round's to make.
+Re-check with `bash .claude/hooks/test/run-wiring-smoke.sh`; it is red on main, not on this branch's
+changes. Nothing in this repo runs these ten suites automatically (already recorded in hooks/README).
+
+**A harness that copies the guard into a scratch directory cannot see the bare-basename rule, and it fails GREEN.**
+`GATE_BASENAMES` is built from `$_hookdir/*.sh`, i.e. the guard's OWN directory, so a copy in a private scratch dir
+knows only the basenames of whatever sits beside it. Measured 2026-08-16: pointing `ATLAS_GATE_HOOK` at a scratch
+copy of the CURRENT guard turns 2 of the suite's 234 assertions red ("unwiring by bare basename after cd",
+"deleting a hook by bare basename") with no code defect present — and the same 2 rows are silently absent from any
+corpus measured that way. The mutation counts in this file are quoted net of that constant. Re-check by running
+`run-advisory-guards-smoke.sh` twice, once in place and once with `ATLAS_GATE_HOOK` at a copy, and diffing the
+FAIL lists. Not fixed: the honest fix is a hook-dir fixture, and creating files named after the other guards is
+itself denied by the installed guard.
+
+**The gate refuses its own maintenance, and until 2026-08-16 the documented escape could not be typed.**
+`ansible-gate-guard.sh` denies every Edit, Write and Bash write to `.claude/hooks/**` — correct, and the reason
+the layer holds. The problem is the remedy. The README's own scoping example,
+`printf '%s\n' .claude/hooks/ansible-gate-guard.sh > .claude/.ansible-gate-confirmed`, is itself DENIED (measured
+on `67396749` and on the current guard): the guard reads gate paths out of a command's CONTENT, so naming the file
+you want to authorise is a gate act. That left only `touch .claude/.ansible-gate-confirmed`, a four-hour bypass of
+the WHOLE layer, so "edit one guard" became "switch off every guard" — the same false-denial-forces-a-global-bypass
+shape #925 was reverted for, aimed at the guard itself. It cost a full round of work before anyone tried a shorter
+fragment. Matching is SUBSTRING, so a STEM (`ansible-gate-guard`) scopes identically and contains no gate path;
+the README example is now stems and is verified executable. STILL OPEN: nothing makes the guard's own maintenance
+a first-class path, and nothing tests that the README's bypass instructions can be run. Re-check by feeding each
+fenced command in the bypass section to the hook on stdin and asserting it is not denied.
+
+**4 write shapes still reach the gate layer and are ALLOWED**, measured on `67396749` and on the landed guard
+(2026-08-16). Each needs a real lexer rather than a token walk, which is what made #935 unmergeable:
+  `echo x >| <path>` — `split_segments` splits on `|`, so the redirect operand lands in the next segment.
+  `git stash push -u` with NO pathspec — the `stash` arm fires only on a named operand.
+  `awk '{print > "<gate file>"}' f` — the target is a string literal inside the program text.
+  `bash -c 'sed -i … <gate file>'` — `WRITE_RE` anchors verbs to `(^|[[:space:]])`, so a verb abutting a quote is
+    invisible. Pre-existing and conceded in the guard's own header.
+CORRECTION, and it changes the trade: an earlier revision of this entry said all four were ALLOW on `1d098006`
+too, "so there is nothing to port". Three of them DENY there — `>|` (both the gate and deployed spellings), the
+awk form, and the quote-abutting form — each naming the exact gate path in its refusal. Only pathspec-less
+`git stash push -u` allows on both. So #935's lexer bought three real shapes and dropping them is a real cost,
+not a free simplification. Re-check with a synthetic Bash payload per shape against
+`git show 1d098006:.claude/hooks/ansible-gate-guard.sh`.
+
+**16 read-only shapes are now ALLOWED that main denied**, beyond the 8 the suite names, and they are the price of
+the reader classes. Every one is a READ of a gate or deployed path in a segment that happens to carry a write verb
+or a redirect elsewhere: `head`/`wc`/`md5sum`/`diff`/`stat`/`readlink`/`cat`/`jq` of a gate or deployed file with
+the output redirected to `/tmp`, `grep -c rm <gate file>`, `cp -r .claude/hooks /tmp/backup`,
+`install <gate file> /tmp/x`, `git show HEAD:<gate file> > /tmp/x`, `git grep rm -- <gate file>`,
+`git ls-files --stage .claude/hooks`, `git blame <gate file> > /tmp/b`, and `git checkout -- .claude/hooks`.
+They are listed as loosenings rather than folded into the regression corpus, because burying them there is exactly
+how #935 reported a clean zero three times.
+
+**The `cp A B` row in the guard suite has gone decorative.** `test/run-advisory-guards-smoke.sh`, section "a
+command is a SET of acts": the row asserts "two guarded tokens in ONE segment" and still passes, but `dest_last`
+makes the source operand a read, so it now carries ONE finding and would no longer go RED if the decide-once loop
+were reverted to `refuse`-on-first. Measured through the bypass announcement, the only place the finding SET is
+observable: both guards named on `67396749`, one on the landed guard. Needs a single-segment, two-destination
+re-spelling (`tee <gate1> <gate2> < /tmp/x` is the shape) — not attempted here, because the landing round was
+scoped to the measured patch.
+
+**The gate's corpora and harness are still not in the repo.** The salvage landed with 3 corpora (31 target rows,
+83 regression rows, 16 class-reach rows), a per-rule mutation battery and a main-vs-`1d098006` inversion control,
+all built in an agent scratch directory and all thrown away. The 5,005-cell sweep from the #935 rounds went the
+same way. Nothing here is reproducible by a later reviewer without rebuilding it, which is why each round has had
+to re-measure from scratch — and why measuring against a previous head instead of against main went unnoticed for
+three rounds.
 
 **Dependency debt — the 10.0.8 pin WAS the NU1903 fix and has become the NU1903 exposure.** PR #703 (`eb81d03b`)
 pinned `System.Security.Cryptography.Xml` to 10.0.8 specifically to clear NU1903, and it pinned exactly the SIX

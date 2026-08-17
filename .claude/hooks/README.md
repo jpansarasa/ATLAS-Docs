@@ -977,7 +977,11 @@ first because `(>|>>)` matched `2>&1`, then because a runner's flag VALUE
 (`-i <inventory>`) consumed the slot where the playbook argument was expected,
 so the playbook itself was judged a write target. That is CLAUDE.md's mandated
 deploy invocation, and denying it also blocked the test marker, and so the push.
-Reads (`cat`, `grep`, `ls`) are never blocked.
+Reads (`cat`, `grep`, `ls`) are never blocked — true since 2026-08-16 and an
+aspiration before it. Every operand was a candidate write target regardless of
+what the command did with it, so `cat <gate file> > /tmp/x` and `grep mv <gate
+file>` were DENIED; see [which operands a command
+WRITES](#which-operands-a-command-writes).
 
 Flag-value skipping is keyed to the **executable**, not to "is this a runner":
 `-f` is `--forks` to `ansible-playbook` but `--force` to `rm`, and skipping it
@@ -1008,8 +1012,20 @@ containing one of them — substring, not glob, because the fragment a human
 writes is a path piece and not a pattern:
 
 ```
-printf '%s\n' .claude/hooks/ansible-gate-guard.sh > .claude/.ansible-gate-confirmed
+printf '%s\n' ansible-gate-guard run-advisory-guards-smoke > .claude/.ansible-gate-confirmed
 ```
+
+**Write STEMS, not paths — the full-path spelling cannot be typed.** This example
+read `printf '%s\n' .claude/hooks/ansible-gate-guard.sh > …` until 2026-08-16, and
+that command is DENIED by this very hook (measured on `67396749` and on the current
+guard): the guard reads gate paths out of a command's CONTENT, so naming the file
+you want to authorise is itself a gate act. The documented way to scope a bypass
+therefore could not be executed, leaving only the all-or-nothing `touch` — which is
+how a request to edit one guard turned into switching off the whole layer, and it
+cost a round of work before anyone tried a shorter fragment. Because matching is
+SUBSTRING, `ansible-gate-guard` scopes exactly as `.claude/hooks/ansible-gate-guard.sh`
+does while containing no gate path, so it is allowed. Keep fragments distinctive:
+a substring is not anchored, and a short one scopes more than it looks like.
 
 An **empty** file keeps the documented `touch` meaning — bypass everything —
 because that spelling is what the deny message has always instructed. A
@@ -1033,6 +1049,161 @@ it would ship the gating layer switched off. Creating it is deliberately *not*
 gated: this hook's own deny message instructs it, and gating the documented
 remedy is the same self-contradiction as blocking the build it demands.
 
+### Which operands a command WRITES
+
+Until 2026-08-16 every non-exempt token was a candidate write target regardless of
+what the command *does* with it, so `cp <gate file> /tmp/`, `cat <gate file> >
+/tmp/x`, `git checkout -- <gate file>` and `grep mv <gate file>` were all DENIED.
+Those are reads, refused by a write gate, and the only remedy the deny message
+offers is `touch .claude/.ansible-gate-confirmed` — a four-hour bypass of every
+guard in this layer. A guard whose false denial is remedied only by switching off
+all the guards teaches exactly one lesson, and it is the lesson #925 was reverted
+for. 24 shapes were measured denied on `67396749` and are open here — the 8 named
+above and in the suite, plus the 16 more the reader classes reach; every one of the
+24 is a read of a gate or deployed path, and nothing else moved.
+
+**The default does not move.** `operand_class` returns `all` for anything it does
+not list, so a command nobody thought about still writes every operand and still
+denies. The reader lists are the only paths opened. That inversion is the whole
+safety argument: a *writer* list defaults to allow, and every command its author
+did not think of walks through it — which is what #935 did, drifting 41 shapes.
+
+| class | who | operands are |
+|-------|-----|--------------|
+| `reader` | `cat grep head tail wc diff cmp stat jq md5sum readlink …` | inputs |
+| `dest_last` | `cp`, `install` | last is the destination, the rest sources |
+| `git` | `git` | the SUBCOMMAND decides — `git_operand_class` |
+| `all` | everything else | every operand is a target (unchanged) |
+
+**A redirect target is a write no matter what the executable is**, and it is
+resolved BEFORE the class rules run. `cat /tmp/x > <gate file>` and `git show
+HEAD:README.md > <gate file>` still deny; only the operand side moved. The suite
+pairs every opened read with the write that shares its shape, because "the reader
+class opened this" and "the reader class opened everything" look identical from a
+one-sided fixture.
+
+`awk` is deliberately **not** a reader: `awk '{print > "<gate file>"}' f` hides its
+target inside the program text where no operand rule can see it, so classing awk as
+a reader would open its operands for nothing. Same for `sort` (`-o`), `tar` and the
+archivers.
+
+**That shape is OPEN, not shut, and the earlier wording here said otherwise.**
+Measured 2026-08-16 on `67396749` and on this guard: `awk '{print > "<gate file>"}' f`
+and `sort -o <gate file> /tmp/f` and `tar -xf /tmp/a.tar -C .claude/hooks` all
+ALLOW on both. Not classing awk a reader keeps the loosening from being made
+*worse*; it does not close the program-text write, and nothing here does. The
+deployed spelling `awk '{print > "/opt/…"}'` denies on both, but only incidentally —
+`is_deployed_path` anchors on the `/opt` prefix, which survives the trailing quote
+and brace, while the gate globs need a `*.sh` suffix the same trailing characters
+destroy. Do not read that deny as coverage of the class.
+
+`cp -t <dir> <src>` puts the destination in a FLAG, so that spelling falls back to
+`all` rather than trusting the last word — and the flag is matched as a CLASS
+(`-t`, `--target-directory`, any short bundle carrying `t` such as `-rt`/`-at`/
+`-Dt`, and a glued `-t<dir>`), because matching the two exact spellings let every
+bundled form walk past it while `dest_last` trusted `POS[-1]`, which under `-t` is
+the SOURCE.
+
+**The long spelling was still an enumeration of one.** `--target-directory*` matches
+the canonical name and nothing shorter, but `getopt_long` accepts any *unambiguous
+abbreviation*, and `target-directory` is the only `cp`/`install` long option that
+begins with `t` — so `--t`, `--ta`, `--targ`, `--target-dir` and nine more relocated
+the destination while leaving the flag unset. The test is now
+**prefix-of-the-canonical-name**, which is one rule rather than fourteen spellings.
+A bare `--` is excluded explicitly: the empty abbreviation prefixes every name, and
+letting it through would widen the class on a trailing `cp a b --` and hide the real
+destination. `--no-target-directory` is deliberately not a prefix of it and keeps
+`dest_last`, which is correct — under `-T` the destination IS the last operand.
+Measured 2026-08-16: 120 rows allowed on the classification-layer head that this
+denies, 60 of them naming `/opt` or `/etc`.
+
+**And the glued value must start at the FIRST `t`.** POSIX ERE is leftmost-longest,
+so `^-[^-]*t(.+)$` ran its greedy prefix past the real `t` whenever the value itself
+contained a dash: `cp -t/opt/ai-inference/compose.yaml` yielded
+`/ai-inference/compose.yaml`, which fails `is_deployed_path`'s `/opt/*` anchor and
+ALLOWED — on this branch and on main. Excluding `t` from the bundle prefix pins it.
+18 rows, every one naming `/opt` or `/etc`.
+
+**A git GLOBAL option sits before the subcommand, and two separate rules had to see
+it.** `git --git-dir=/tmp/evil/.git --work-tree=. checkout -- <gate file>` writes one
+repository's index over another repository's tracked file; measured 2026-08-16 it
+ALLOWED on main *and* on this branch's head — inherited, not introduced. `WRITE_RE`'s
+git arm required the subcommand to ABUT `git`, so the segment was never walked at all
+and no classification ever ran; and the ambiguity signal in the token walk required a
+positional to exist first, so a pre-subcommand flag raised nothing even once the walk
+happened. Both are fixed and **neither closes the shape alone** (mutation-measured: 6
+and 4 suite assertions, 74 and 60 corpus rows). `git-push-guard.sh` learned this same
+lesson first — see [Every dash token is a global
+option](#every-dash-token-is-a-global-option); the gate guard did not have it. The
+widened `WRITE_RE` matches *git, then options, then the subcommand* rather than *git,
+then anything*, because the looser spelling also matches `git commit -m "restore
+compile.sh"`, whose message words become operands and whose bare basename is in
+`GATE_BASENAMES` — a commit refused for its own prose.
+
+**The object-store route is not opened by this.** `git checkout -- <path>` restores
+from the index and is the revert spelling this layer must not obstruct.
+`git checkout <rev> -- <path>` and `git restore -s <rev>` write content from an
+ARBITRARY tree, and a caller can author that tree with `hash-object -w` + `mktree`
++ `commit-tree` without ever naming a gate path — so "the content came out of the
+object database, therefore review has seen it" is FALSE for the treeish forms.
+
+**And that premise is REPO-SCOPED, so the bare form is a read of the GATE layer
+only.** It is a claim about TRACKED paths, and no ansible-managed artifact is one —
+the index cannot hold `/opt` or `/etc` content, so nothing review saw is what would
+land there. `reader` checks nothing at all, so classing the revert spelling a reader
+skipped the DEPLOYED rule along with the gate rule: measured 2026-08-16, 16 rows
+naming `/opt` or `/etc` DENY on `c5ac440a` and ALLOWED on the classification-layer
+head, `/opt/ai-inference/compose.yaml`, `/opt/otel/collector.yaml`,
+`/etc/systemd/system/atlas.service`, `/etc/sudoers.d/atlas` and
+`/etc/containerd/config.toml` among them, plus env-prefixed spellings. The
+flag-carrying form was already covered by the ambiguity signal; the BARE form was
+not. `GIT_WORK_TREE=<root> git checkout -- <absolute path>` from an unrelated cwd
+overwrites the target (demonstrated in a sandbox), so it is a write. The operand
+dispatch now re-applies the DEPLOYED rule — and only that rule — to a `reader`
+`checkout`/`restore`'s operands. `git checkout -- <gate file>` still allows, which
+is the seam this layer must not obstruct; `git log -- /opt/… > /tmp/x` still allows,
+which is why the re-check is keyed to `checkout`/`restore` and not to `reader`.
+
+**"Only the form whose first argument is `--` is read as a read" was the rule, and
+it was not enough — the route was OPEN.** A treeish can be selected by a FLAG
+rather than a positional, and a dash token never enters the operand list (the walk
+consumes it), so `--` slid into the slot the rule inspects and the operands went
+unchecked. Measured 2026-08-16, ALLOW on the classification-layer head and DENY on
+`67396749`: `git restore --source=<rev> -- <gate file>`, `-s<rev>` glued,
+`--worktree --source=`, `--staged --source=`, `git checkout --ours --` and
+`--theirs --`. Proven end to end — `hash-object -w` → `mktree` → `commit-tree` →
+`git restore --source=<commit> -- <path>`, every step allowed, tracked file
+contents replaced.
+
+The rule is now: `--` in that slot AND no unrecognised dash token between the
+subcommand and it. The source flags are deliberately **not** enumerated — an
+enumeration grows another member — so the walk records only that the source is
+unprovable and the class falls back to `all`. **Accepted cost, measured:**
+`git checkout -f -- <path>` denies too, which is a false deny since `-f` selects no
+source; it is `67396749`'s answer as well, so it costs nothing against main, and
+"ambiguity resolves to deny" is this layer's own rule. The documented revert
+spelling `git checkout -- <path>` is untouched.
+
+**Acts that name no path and still write this layer** are found on the ACT, since
+no operand rule can see them: every `git update-index` and `git checkout-index`
+(`--index-info` takes its path list on stdin, `checkout-index -a` writes every index
+entry), and pathspec-less `git clean` carrying `-x`/`-X`, which removes IGNORED
+files — `.claude/settings.local.json`, the wiring for every hook here, is ignored
+globally. `--refresh` denies too; both are plumbing with no ordinary-work use here.
+
+**KNOWN GAP — four shapes reach this layer and are ALLOWED**, each needing a real
+lexer rather than a token walk, and each measured on `67396749` and on the landed
+guard: `echo x >| <path>` (`split_segments` splits on `|`, so the operand lands in
+the next segment), pathspec-less `git stash push -u`, `awk '{print > "<path>"}'`,
+and a verb abutting a quote (`bash -c 'sed -i … <path>'` — `WRITE_RE` anchors verbs
+to `(^|[[:space:]])`). The first, third and fourth DENY on `1d098006` (#935's head),
+which is what #935's lexer rewrite bought and what made it unmergeable; dropping
+them is a real cost, recorded in `docs/BACKLOG.md`.
+
+**Guard test**: `test/run-advisory-guards-smoke.sh`, section "an executable's
+semantics pick the write targets" — 30 rows, of which 21 are RED against the
+unfixed guard.
+
 ### A command is a SET of acts; one uncovered act refuses all of them
 
 `refuse()` emits a decision and **exits**, so the first guarded token settled the
@@ -1048,7 +1219,14 @@ never looked at. With the scope naming only `ansible-gate-guard.sh`:
 | `sed -i … ansible-gate-guard.sh && sed -i … /opt/ai-inference/compose.yaml` | allow | deny |
 
 The second row is one **segment**, so segment-splitting cannot help: two guarded
-tokens, and only the first was consulted. The third crosses the rules — and with
+tokens, and only the first was consulted. It still denies, but since `dest_last`
+landed on 2026-08-16 it carries only ONE finding — the destination — so it no
+longer demonstrates the property it was written for, and it would no longer go RED
+if the decide-once loop were replaced by `refuse`-on-first (measured: the bypass
+announcement names both guards on `67396749` and one here). Recorded in
+`docs/BACKLOG.md` rather than papered over. The fixture that DID need two findings
+is the bypass-announcement check below, and that one was re-spelled to two `cp`s
+with two genuine destinations rather than weakened. The third crosses the rules — and with
 the documented **empty** `touch`, a gate act followed by a deployed one was
 allowed too, inverting the invariant that an unscoped bypass must not reach
 deployed config. The deployed write *alone* was correctly denied; only the chain
