@@ -520,8 +520,32 @@ duplicating the threshold formula in PromQL (single source: PatternDataHealthEva
 anyway, so for 14 days the alert has said SEVERELY OVERDUE while the service's own health evaluator does not
 (136 < 270). Fixing only (1) leaves the two surfaces free to disagree again.
 
-**55 `raw_content` rows were abandoned by a circuit-breaker classification gap — and the "438 orphans" figure that
-surfaced them is a mixed predicate.** Corrected 2026-08-15; quote the 55, not the 438.
+**The `BrokenCircuitException` classification gap is OPEN. Recovering the 55 `raw_content` rows it already orphaned
+is CLOSED as won't-do — alpha decay.** Two opposite verdicts on one finding; revised 2026-08-17, superseding the
+2026-08-15 revision that framed the whole thing as pending data loss. Every measurement below still reproduces
+(re-measured 2026-08-17) — the VERDICT moved, not the evidence.
+
+**Won't-do: the 55 rows. Letting them prune is the DECISION, not an oversight.** Financial news alpha-decays — its
+predictive value falls off sharply with age — so re-extracting content collected 2026-07-19 -> 2026-07-24 buys close
+to nothing now that it is ~4 weeks old (measured 2026-08-17: oldest row 28d 17h, all 55 still present, all 55 still
+childless). The one-off `POST /admin/reprocess` that would recover them is deliberately NOT worth making, and the
+prune described below is the EXPECTED OUTCOME rather than a loss. **A later re-check returning 0 is this decision
+landing on schedule** — not fabrication, not an unexplained count, and not grounds to re-raise recovery.
+
+**Open, and this is the whole of the remaining value: the classification gap itself.** It is not scoped to these 55 —
+the NEXT breaker-open event orphans whatever is in flight at the time, which is FRESH content, and fresh is exactly
+where the predictive value lives. The alpha-decay argument does not reduce this defect's importance; it INVERTS where
+that importance sits: all of it is now in preventing future orphaning, none of it in backfilling past rows. A vLLM or
+llama-server outage long enough to trip the breaker (3 consecutive failures, `DependencyInjection.cs:342`, `:359`)
+silently abandons that day's articles with no retry and no queue presence.
+**The precedent for the fix is already in-repo** — three other SentinelCollector call sites name
+`BrokenCircuitException` explicitly (`DigestNarrativeGenerator.cs:331`, `FinnhubLookupClient.cs:51`,
+`VllmClient` count-tokens per `VllmClientCountTokensTests.cs:59`); `ExtractionProcessor`'s classifier is the one that
+does not. Fix = add it to the transient set at `:967-973`, with a guard test asserting `RetryCount` increments on a
+circuit-open failure instead of taking the permanent branch.
+
+**The measurement that re-derives all of the above** — every number below is unchanged from the 2026-08-15 revision;
+the "438 orphans" figure that originally surfaced this is a mixed predicate, so quote the 55, not the 438.
 `sentinel.raw_content` (94,799 rows) carries **440** rows with a terminal `processing_error`: 377 `age_cutoff`,
 **55** `The circuit is now open and is not allowing calls.`, 7 HttpClient-timeout, 1
 `v2_pipeline_failed: prompt_too_large_after_chunking`. The 438 was `age_cutoff` (all 377) PLUS the never-extracted
@@ -542,17 +566,25 @@ those genuinely exhausted.
 `SentinelMeter.cs:423-431`); `ExtractionProcessor.cs:508` states it outright — setting `ProcessingError` exits the
 row from the queue. The only clearing path is `POST /admin/reprocess`
 (`SentinelCollector/src/Endpoints/AdminEndpoints.cs:189`), which requires an
-explicit `rawContentIds` array. No sweeper, no retry service. Fix is to classify `BrokenCircuitException` as
-transient; the 55 then still need a one-off reprocess call, because nothing re-queues them retroactively.
-**THE 55 ARE ON A DELETION CLOCK, so a later re-check will return 0 and must not read that as fabrication.**
+explicit `rawContentIds` array. No sweeper, no retry service. This is why the classification fix alone does NOT
+recover the 55 — nothing re-queues them retroactively, the reprocess call would have to be made by hand, and per the
+verdict above it will not be.
+**THE 55 ARE ON A DELETION CLOCK — that is now the intended ending, and a later re-check returning 0 is the decision
+executing, not a missing measurement.**
 `StaleContentPrunerService` runs its passes once per host start and pass 1 calls
 `repo.DeleteChildlessOlderThanAsync(cutoff, ...)` (`StaleContentPrunerService.cs:83`, pass 2 at `:100`) with
 `cutoff = UtcNow - MaxArticleAgeDays` (30 days, the
-banner at `:73` says "full 30-day raw_content retention"). These 55 have no extraction children, so they qualify:
-collected 2026-07-19 -> 2026-07-24, they become deletable **2026-08-18 -> 2026-08-23** and vanish at the first
-SentinelCollector restart after that. Re-check BEFORE that window against the `processing_error` predicate above;
-after it, an empty result means pruned, not absent. The classification fix is still worth landing — it is the
-recurrence that matters, not these 55 rows.
+banner at `:73` says "full 30-day raw_content retention", `ExtractionOptions.cs:588` default, overridden nowhere in
+`/opt/ai-inference/compose.yaml`). The predicate is `CollectedAt < cutoff && !r.Observations.Any()`
+(`RawContentRepository.cs:106-111`) — these 55 have no extraction children, so they qualify: collected
+2026-07-19 -> 2026-07-24, they become deletable **2026-08-18 -> 2026-08-23** and vanish at the first
+SentinelCollector restart after that. Because the pruner only runs in `StartAsync`, a long-lived container can hold
+them well past the window; 55 on a re-check means "no restart yet", not "decision reversed".
+Re-check (psql is SELECT-only):
+`SELECT count(*), min(collected_at), max(collected_at), count(*) FILTER (WHERE retry_count=0) FROM
+sentinel.raw_content WHERE processing_error LIKE '%circuit is now open%';` — returned
+`55 | 2026-07-19T17:14:25Z | 2026-07-24T11:00:06Z | 55` on 2026-08-17. After the prune window an empty result means
+pruned as decided, not absent. **What stays open is the classifier, and only the classifier.**
 
 **10 of SentinelCollector's 16 hosted workers log their startup banner at `LogInformation`, so prod has no record
 those started — while 2 siblings already log theirs at Warning, on purpose.** Prod log level defaults to Warning,
