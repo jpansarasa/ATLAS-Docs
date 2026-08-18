@@ -276,6 +276,28 @@ TIER1_CLAIM_CHECK [mechanical — the DATA-vs-DIAGNOSIS rule above kept failing 
     manufactures false confidence. Different lenses surface disjoint classes: an intent lens
     finds the structurally unreachable outcome, an observability lens finds the burst/flap and
     the missing span status, and neither would have found the other's.
+  RE-REVIEW [three rules, one failure: a consensus suppressing the evidence only one reader holds]:
+    DISSENT OUTRANKS NOVELTY — every re-review brief carries this verbatim: "if you believe
+      something a previous round cleared is wrong, say so; that outranks any new finding."
+      Marking prior ground settled is what makes a later round affordable AND is the instruction
+      that closes consensus, so the brief must reopen it explicitly.
+      # 2026-08-17 (#978): a fixture label calling a sentence CLAUDE.md's own VERBATIM was false —
+      # only its opening clause was — carried at THREE sites, and a later round caught it. In the SAME
+      # rounds a SECOND "verbatim" label was re-checked, reported holding, and disputed; #979
+      # re-examined it and direct comparison UPHELD it. Cleared ground caught one, confirmed the other;
+      # both outcomes are the rule working, and only the first is a catch.
+    RE-ATTACK THE OLDEST, never only the newest — "attack what the last round introduced" is correct
+      and leaves the ORIGINAL CHANGE permanently behind the frontier [[LESSONS.md L14]]
+    MEASURE BEFORE YOU ANCHOR — ask for the independent measurement FIRST and reveal the previous
+      round's figures AFTER. Handing a low-variance reader the prior numbers anchors it to them.
+      AFTER means it has WRITTEN ITS MEASUREMENT DOWN and cannot silently revise it — ordering two
+      paragraphs inside one brief does not defeat anchoring.
+    rationale: agents converge on the evidence everyone already shares and do not press private
+      evidence once a consensus exists. Model strength has NOT eliminated this: PERFORMANCE scales
+      with capability WITHOUT saturating, and the strongest models measured still fall short of the
+      one-agent-holds-every-fact ceiling. So it is a brief-shape problem, not a
+      wait-for-a-better-model problem.
+      (anthropic.com/research/multiagent-systems, hidden-profile result)
 
 ## NTFY_CADENCE
 PUBLISH (atlas-claude-ask):
@@ -297,7 +319,7 @@ AUTO_FIRE on supervisor-opened PR (no user gate):
   2. aggregate findings: {critical, important, suggestion}
   3. dispatch fix per severity | commit-as-you-go | selective pathspec
   4. push only after critical+important addressed
-  5. re-run review -> verify no regression + catch new issues
+  5. re-run review -> verify no regression + catch new issues # brief shape: TIER1_CLAIM_CHECK RE-REVIEW
   6. iterate until convergent -> merge -> next story
 LENSES [step 1]: ONE lens per dispatch, and never the same brief for two of them — same brief
   converges and manufactures false confidence (evidence: TIER1_CLAIM_CHECK TWO REVIEWERS).
