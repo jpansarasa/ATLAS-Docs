@@ -25,7 +25,7 @@ cd deployment/tests/alerts
 ./selftest.sh                                  # do the guards still fire? (also runs in CI)
 ./matrix.sh                                    # the whole matrix, one verdict line per mutant
 ./run-mutant.sh drop-floor                     # one mutant
-# is that fixture load-bearing? The name must match EXACTLY -- select.py refuses a near miss
+# is that fixture load-bearing? The name must match EXACTLY -- select-groups.py refuses a near miss
 # rather than silently selecting nothing.
 ./isolate.sh 'a bursty but healthy gate stays silent on the 6h window' win-1h-num win-1h-den
 ```
@@ -93,7 +93,7 @@ selector matches no group name — silently, with output byte-identical to a cle
 renamed by a comment reword therefore turns "this fixture alone kills the mutant" into a run of
 nothing in which every mutant SURVIVES, and the proof reads perfect.
 
-`isolate.sh` physically subsets the suite with `select.py` (which exits non-zero on a name that
+`isolate.sh` physically subsets the suite with `select-groups.py` (which exits non-zero on a name that
 matches nothing) and pins the resulting case count via `EXPECT_CASES`, which `preflight.py` asserts
 on the mirror. If you must use `--run` for something, `runsel.py <test-file> <expected-count>
 <selector>...` asserts the selection selected what you intended — non-zero is necessary but not
@@ -109,7 +109,7 @@ class of lie.
 | `preflight.py` | classes 6 and 9 on the mirror: the suite really loads the mutated bytes and really runs cases |
 | `matrix.sh` | the full catalogue, four arms; aborts on a broken control |
 | `isolate.sh` | `only` / `minus` for one fixture; runs a `none` control per variant |
-| `select.py` | emits a suite carrying only, or all but, the named groups |
+| `select-groups.py` | emits a suite carrying only, or all but, the named groups (hyphenated: a `select.py` here would shadow the stdlib `select` for every script in this directory) |
 | `runsel.py` | asserts what a `--run` selector would actually select |
 | `selftest.sh` | breaks each of the above on purpose and requires its guard to fire (runs in CI) |
 
