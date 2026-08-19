@@ -547,10 +547,15 @@ the `>= 169` override floor above is no longer needed to stop one. What remains 
 writes `publicationFrequencyDays` and `PatternConfigurationLoader.cs:320-322` discards it without a word. Re-check:
 author any value in a pattern JSON with no `PublicationFrequencyDaysOverride` and confirm
 `thresholdengine_pattern_severe_overdue_threshold_days` for it still reads `max(3 * SecMaster-derived freq, 14)`.
+The SAME `Max`-over-inputs rule has a second, distinct consequence recorded in the dead-feed entry below: on a
+MIXED-cadence pattern it lets a stalled MONTHLY input mask a dead DAILY one (`truflation-vs-cpi` judged at 90 days
+where its Daily series implies 14). Same line, two defects — fix one and re-read the other before closing either.
 
 **Four more patterns are within 4 days of the same crossing**, all climbing +1/day: `challenger-layoff-surge`,
 `challenger-vs-payroll`, `sentinel-challenger-divergence` and `truflation-vs-cpi` all read **86 against a threshold
-of 90** at 2026-08-17T11:17:04Z, so they cross ~2026-08-21 unless their sources publish. Recorded so that a burst of
+of 90** at 2026-08-17T11:17:04Z, so they cross ~2026-08-21 unless their sources publish — but the ALERT fires
+~2026-08-23, not 08-21: the strict `>` plus `for: 24h` add two days, derived in the dead-feed entry below, so seeing
+nothing on 08-21 is the rule working, not a broken join. Recorded so that a burst of
 new alerts a few days after this deploy is recognised as the pre-existing feed lag it is, and not read as the join
 misfiring. Re-check: the same gauge for those four `pattern_id`s.
 
@@ -1173,6 +1178,195 @@ in `run-advisory-guards-smoke.sh`.
 
 Re-check (feed as INPUT to the guard, never execute — each writes the path it names):
 `echo cp /tmp/evil /opt/ai-inference/compose.yaml > /tmp/run.sh` must deny on its own, with no second segment.
+
+**Four of the six series Sentinel is PRIMARY SOURCE for have not published since April 2026, and FOUR of the six
+emit no freshness gauge — three have no pattern (`ADP_EMPLOYMENT`, `INDEED_POSTINGS`, `REDBOOK_SALES`) and
+`BDIY`'s pattern file is disabled — so no overdue alarm, so a death there is silent. Two of the four already died
+that way; the other two are not dead, and the two dead series that WERE noticed are the two that are gauged.**
+Measured 2026-08-19 across the D-18 owned set
+(`SentinelCollector/AGENT_README.md` D-18) — last publish, pattern status:
+- `CHALLENGER_JOB_CUTS` **2026-04-23 05:01:12** — 3 live patterns (`challenger-layoff-surge`,
+  `challenger-vs-payroll`, `sentinel-challenger-divergence`) — dead, visible.
+- `TRUFLATION_CPI` **2026-04-23 04:43:57** — 1 live pattern (`truflation-vs-cpi`) — dead, visible.
+- `INDEED_POSTINGS` **2026-04-16 13:35:19** and `REDBOOK_SALES` **2026-04-23 08:26:30** — no pattern — dead, invisible.
+- `ADP_EMPLOYMENT` **2026-07-10 12:24:50** — no pattern — **NOT dead**: 11 rows published after 2026-05-01, 40 days
+  silent at measurement. Never carry the April cohort's "four months" onto it.
+- `BDIY` **2026-08-19 13:19:43**, the measurement day — pattern FILE exists carrying `"enabled": false`
+  (`ThresholdEngine/config/patterns/recession/baltic-freight-recession.json:24`) — **ALIVE**, equally ungauged.
+Re-derive (SELECT only): `SELECT coalesce("Symbol","OriginalSymbol") AS sym, max(published_at), count(published_at)
+FROM sentinel.extracted_observations WHERE coalesce("Symbol","OriginalSymbol") IN ('ADP_EMPLOYMENT','BDIY',
+'CHALLENGER_JOB_CUTS','INDEED_POSTINGS','REDBOOK_SALES','TRUFLATION_CPI') GROUP BY 1;`
+
+**READ BEFORE SELECTING ANY POPULATION: a NULL `instrument_id` today does NOT mean resolution failed at extraction
+time.** `ApplyReExtraction` (`SentinelCollector/src/Entities/ExtractedObservation.cs:247`) snapshots the prior
+resolution into the `Original*` columns **only when all three are still null** (`:260-268`, preserving the EARLIEST
+snapshot across repeat runs — guarded by
+`SentinelCollector.UnitTests/Workers/ReExtractBackgroundServiceTests.cs:519`
+`should_preserve_earliest_audit_snapshot_on_second_re_extract`), then overwrites `InstrumentId`/`Symbol` with the
+new result **including NULL**. `Quarantine()` (`:220`) and `QuarantineInPlace()` (`:331`) write the same three
+columns, so a quarantine can be the snapshot event a later re-extract then declines to overwrite.
+Only two of the five call sites can null a resolved row:
+`SentinelCollector/src/Workers/ReExtractBackgroundService.cs:487` (full re-extract) and `:663` (resolve-only, **the
+leg prod runs**) pass the shim's result through, and that result may be null. The other three — `:369` (null
+`RawContent`), `:438` (zero extractions), `:573` (empty `Description`) — pass `observation.InstrumentId`/
+`observation.Symbol` straight back in: watermark-only stamps that cannot change a row's instrument or symbol — they
+still run the full `ApplyReExtraction` body, which recomputes `ResolutionState` from the passed-back instrument
+(`SentinelCollector/src/Entities/ExtractedObservation.cs:287`, flipping a Resolved-with-null-instrument row to
+`NoResolution`) and can clear `QuarantinedAt` (`:304`). So a sweep turns resolved rows into `instrument_id IS NULL,
+resolution_state='NoResolution'` while `published_at` still stands, but
+only via `:487`/`:663`. Measured 2026-08-19: **329 of 329** Challenger rows carry `re_extracted_at` and only
+**4** still hold an instrument — and those same 4 now carry a DIFFERENT `Symbol` than the key they were filed under
+(ids **10714**, **10716**, **17490** = `UNRATE`, id **12528** = `BLK`; OPEN LEAD, unexplained), which is also why
+`WHERE "OriginalSymbol"='CHALLENGER_JOB_CUTS'` returns **329** rows while the `coalesce("Symbol","OriginalSymbol")`
+form returns **325**. A 2026-05-16 sweep re-extracted **286** Challenger rows, **all 286** carrying a non-null
+`"OriginalInstrumentId"` — but for **275** of them that snapshot was taken **22 days earlier**, by the 2026-04-24
+quarantine, not by the sweep (re-verified 2026-08-19: all 275 carry `"QuarantinedAt"='2026-04-24 00:18:52.867997+00'`;
+only the remaining **11** were first snapshotted at the sweep itself). ADP rows **466076**/**466077** published
+2026-07-10 12:24:50.729671 and were re-extracted at
+12:25:10.108552 / 12:25:10.266989 — **twenty seconds later** — leaving `instrument_id` NULL on published rows.
+**Any population keyed on current `instrument_id` mixes "never resolved" with "resolved, then re-extracted to null";
+no conclusion drawn that way is safe.** Separate them: `SELECT re_extracted_at IS NOT NULL, "OriginalInstrumentId"
+IS NOT NULL, count(*) FROM sentinel.extracted_observations WHERE instrument_id IS NULL AND extracted_at >= '<from>'
+GROUP BY 1,2;` Read the second axis precisely: because the snapshot is first-writer-wins across `Quarantine()`,
+`QuarantineInPlace()` and `ApplyReExtraction()`, `"OriginalInstrumentId" IS NOT NULL` means **"held an instrument at
+the EARLIEST snapshot event"** — NOT "at extraction", and NOT "immediately before the latest re-extract". On a row
+quarantined first, the column reports the pre-quarantine state and says nothing about what the re-extract found.
+CONFOUND, not cause — **the April trigger remains unestablished.**
+
+**THE DETECTION BLIND SPOT, and the crossing it explains.** No pattern -> no `RequiredSeries` entry -> no
+`PatternDataHealthEvaluator` freshness row -> no `thresholdengine_pattern_severe_overdue_threshold_days` -> nothing
+to alert on. That gauge reads **90** for each of the four Challenger/Truflation patterns and returns nothing at all
+for `baltic-freight-recession`; `grep -rl` over `ThresholdEngine/config/patterns/` returns **zero** files for
+`ADP_EMPLOYMENT`, `INDEED_POSTINGS` or `REDBOOK_SALES` (their only mention in the service is
+`ThresholdEngine/AGENT_README.md`). Those three are outside its coverage and BDIY would die the same way: a
+PATTERN-level instrument used as a FEED-level one, with nothing enumerating the gap. Neither the pattern FILES nor
+the live registry is an authority alone — `ThresholdEngine/src/Configuration/PatternConfigurationLoader.cs:143`
+`continue`s on `!pattern.Enabled` at load, so the registry cannot contain a disabled pattern and "all N enabled" is a
+tautology, not a cross-check.
+The four gauged patterns read **88** against threshold **90** on 2026-08-19 (`..._pattern_data_overdue_days`=88,
+`..._pattern_severe_overdue_threshold_days`=90, `..._pattern_data_age_days`=118). `PatternDataSeverelyOverdue`
+compares with a strict `>` (`deployment/artifacts/monitoring/alerts/thresholdengine.yml:145`) under `for: 24h`
+(`:157`): from 88, equality falls 2026-08-21 and `90 > 90` is false, the condition first holds 08-22, so it fires
+**~2026-08-23**. The climb is not a source waiting to publish, so the crossing is unavoidable and its alerts true.
+
+**The publish gate, and why a plausible symbol does not survive it.** The gate is
+`o.InstrumentId.HasValue && o.ResolutionConfidence >= 0.8f && o.Certainty is Definite or Expected`
+(`SentinelCollector/src/Workers/ExtractionProcessor.cs:848` v1, `:1972` v2). **`Symbol` is not in the predicate**, so
+a row carrying a plausible symbol and no instrument is dropped without a trace on the symbol axis. Nor is
+`"InstrumentId": null` inside `candidate_symbols_json` the defect: **0 of 3,650,818** candidates all-time carry a
+non-null value there, including every candidate on every row that published successfully. That field is the
+pre-resolution proposal; the result lands on the ROW's `instrument_id`.
+
+**THE LAST PUBLISHED VALUE ON BOTH VISIBLE FEEDS WAS JUNK**, so restoring resolution without auditing what gets
+published resumes publishing junk into a recession detector and an inflation-divergence detector. Remediation must
+gate on value plausibility, not merely on whether rows resolve again.
+- `CHALLENGER_JOB_CUTS` published **600** (id **27753**, 2026-04-23 05:01:12), quote *"Electrolux ... will close its
+  Jaszbereny factory in Hungary ... affecting around 600 employees"* — a single-company non-US layoff under a US
+  NATIONAL monthly key, where a real print is tens of thousands. `challenger-layoff-surge`'s trigger is
+  `cuts.HasValue && cuts.Value > 100000m` (`expression`, no default — an absent series simply does not fire), while
+  the `?? 30000m` default lives ONLY in `signalExpression`; frozen at 600 the trigger can NEVER fire — and the stale
+  value is worse than absence: the default yields signal 0, the stale 600 a confident +0.98.
+- `TRUFLATION_CPI` published **3.3** (id **27425**, 2026-04-23 04:43:57), description `U.K. inflation`, quote *"U.K.
+  inflation rose to 3.3% in March ... Office for National Statistics"* — a UK ONS print under the US
+  `Truflation Daily Inflation Index` key (ids 24914/24913 before it are UK `transport inflation`, 2.4/4.7).
+  `truflation-vs-cpi` returns Signal **-0.0019280253531531587**, Triggered **false**; `signalExpression` is
+  `divergence = truflation - cpi(YoY)` then `signal = ±divergence/2`, so the DIVERGENCE is `3.3 - 3.3039` =
+  **-0.0039** and the halved signal **-0.00195** — three decimals of agreement, NOT the five-decimal reproduction an
+  earlier revision claimed. It establishes the served value **3.3000** rather than the `?? 2.5m` default (-0.40).
+  **The UK print of 3.3 is what the matrix reads for TRUFLATION_CPI**, and sitting ~0.004 from US CPI YoY it reads as
+  "no divergence": a dead feed on a foreign country's number presenting as a healthy null, the corpse-detector shape
+  at its worst — no anomalous reading to notice. Re-checking the CPI leg REQUIRES a latest-vintage filter, since
+  `CPIAUCSL` 2025-07-01 also carries an older vintage **322.132** (AsOf 2025-08-12) yielding YoY **3.3157**.
+Both rows carry `"OriginalInstrumentId"` set with `instrument_id` now null. `SELECT id, description, value,
+published_at, text_quote FROM sentinel.extracted_observations WHERE "OriginalSymbol"='<SERIES>' AND published_at
+IS NOT NULL ORDER BY published_at DESC LIMIT 3;`
+
+**A SECOND independent defect: `TRUFLATION_CPI` is declared Daily but judged at its monthly companion's cadence.**
+`PublicationFrequencyDays` is `PublicationFrequencyDaysOverride ?? RequiredSeries.Max(...)`
+(`ThresholdEngine/src/Configuration/PatternConfigurationLoader.cs:320-322` — the SAME unconditional overwrite
+recorded for `buffett-indicator` earlier in this file; neither pattern carries an override), so `truflation-vs-cpi`
+takes `Max(TRUFLATION_CPI=1, CPIAUCSL=30) = 30` and severe becomes `Math.Max(pubFreq * 3, 14)`
+(`ThresholdEngine/src/HealthChecks/PatternDataHealthEvaluator.cs:32-33`) = **90**, where a TRUFLATION_CPI-only
+pattern gets `Math.Max(3, 14)` = **14**. Overdue measures against pubFreq (118 - 30 = 88), so severe lands
+~2026-08-23 instead of ~2026-05-08. Under a `Max` rule a stalled MONTHLY series always masks a dead DAILY one.
+
+**D-18 RE-CHECK, recorded here and deliberately NOT applied to the card.** D-18 cites `challenger-layoff-surge 0.98`
+(2026-08-12) as evidence that blanket namespacing would sever live feeds. `evaluate_pattern` returned Signal **0.98**
+/ Triggered **false** / `DaysSinceLatestData` **118** on 2026-08-19, and under signal `-(cuts - 30000)/30000` that
+0.98 inverts to `cuts = 600` exactly — the frozen value, confirmed without a `GetLatest` handle. The EXEMPLAR
+therefore shows a frozen feed, not a live one. D-18's DECISION is not in question: Sentinel IS the primary source for
+these six, so namespacing severs their only feed either way. No supersession.
+
+**The bulk quarantine is NOT the forward-blocking mechanism.** A quarantine stamped at exactly
+`2026-04-24 00:18:52.867997+00` hit **15,894** rows across **1,054** distinct `"OriginalSymbol"` values (re-verified
+2026-08-19): **275** CHALLENGER_JOB_CUTS, **66** TRUFLATION_CPI, **35** ADP_EMPLOYMENT, **25** BDIY, **20**
+REDBOOK_SALES, **17** INDEED_POSTINGS — it hit BDIY too, and BDIY recovered. **272 of the 275** Challenger rows had
+ALREADY published before being quarantined, so there it is retroactive on already-sent data; the three exceptions
+are ids **11152**, **12344**, **12815** (`resolution_state='Resolved'`, `published_at IS NULL`), which do not make it
+a forward block either. `SELECT "OriginalSymbol", count(*), count(published_at) FROM sentinel.extracted_observations
+WHERE "QuarantinedAt"='2026-04-24 00:18:52.867997+00' GROUP BY 1 ORDER BY 2 DESC;`
+Its origin is INFERRED — do not repeat this search expecting to close it. `ExtractedObservation.Quarantine()`
+(`SentinelCollector/src/Entities/ExtractedObservation.cs:218`) has never had a production call site in git history,
+and `QuarantineInPlace()` (`:326`) is called only from `SentinelCollector/src/Endpoints/AdminEndpoints.cs:1589`,
+added in `1040861f` on 2026-05-15 — three weeks AFTER the event. Likely a manual script or interactive session.
+
+**SecMaster is not the defect.** Controlled 2026-08-19, both tools against both strings, the answer depends only on
+the tool: `hybrid_resolve` returns `ExactSql` -> InstrumentId `ee98373d-cf04-4b16-bc7b-a3e6cf3ae57f` for BOTH
+`"job cuts announced"` and `"challenger job cuts"`, `search_catalog` returns 0 for BOTH, and both are correct.
+`search_catalog` matches symbol+name; `hybrid_resolve`'s first stage hits the ALIAS table, and `SELECT a.alias FROM
+aliases a JOIN instruments i ON i.id=a.instrument_id WHERE i.symbol='CHALLENGER_JOB_CUTS'` returns **12** aliases
+including the literal rows `job cuts announced` and `challenger job cuts` — neither a substring of the Name
+`Challenger Job Cut Announcements` ("cuts" vs "cut"), which is why the name search misses and the alias resolve hits.
+One live GIGO datapoint, and the reason it is NOT a hazard — do not re-raise it without re-reading this: **CFIGY**
+(`CHALLENGER LTD-UNS ADR`, an Australian annuities firm) is a real instrument created **2026-08-18** by
+`discovery_source='entity_resolution:gemini'`. Tempting, and refuted: resolving the vendor's own name proposes CFIGY
+on NEITHER route (measured 2026-08-19, `q=Challenger, Gray & Christmas`) — the string appears nowhere in either
+response body. Both routes retrieve the SAME five neighbours at the SAME scores, all FRED credit-card and
+expected-inflation series (`RCCCBBALREV`, `EXPINF21YR`, `RCCCBACTDPD60P`, `EXPINF12YR`, `RCMFLBACTDPDPCT90POCC1`,
+0.678-0.680), and differ only in method and in whether they resolve — so a resolution quoted without NAMING its
+endpoint is unattributable. `/api/semantic/resolve-local` returns method **RagSynthesis**, `hypothesis` **MATCH**,
+`instrumentId`/`symbol`/`confidence` null; it has NO `resolution` and NO `answer` field to report — its shape is
+`{method, instrumentId, symbol, hypothesis, confidence, candidates}`
+(`SecMaster/src/Endpoints/SemanticSearchEndpoints.cs:341`). `/api/semantic/resolve` returns method
+**UpstreamDiscovery** and resolves to the CORRECT instrument, `CHALLENGER_JOB_CUTS` /
+`ee98373d-cf04-4b16-bc7b-a3e6cf3ae57f`, its `ragResponse.answer` `NO_MATCH` over those same five. `sudo nerdctl exec
+threshold-engine curl -s -G 'http://secmaster:8080/api/semantic/resolve-local' --data-urlencode 'q=<query>'` — the
+param is `q`, not `query` (`query` is HTTP 400 on both routes); `secmaster` itself DOES have `curl` (`/usr/bin/curl`
+8.5.0), `secmaster-mcp` is the container without it.
+
+**METHOD NOTE, because it manufactured a false finding twice.** In `public.macro_observations`, `source_id` has the
+form `{raw_content_id}:sig:{signal_identity_id}` for **39,689 of 42,716** rows (93%) — the rest are OFR/FRED feeds
+keyed on a bare symbol, so it is a majority convention, never a schema guarantee. The numeric prefix is
+`sentinel.raw_content.id`, NOT `sentinel.extracted_observations.id`; joining it to the latter lands on unrelated rows
+and yields a convincing "systemic identity mismapping" that does not exist. **No order-of-magnitude separation
+protects you from that join**: measured 2026-08-19 the id spaces were `raw_content` 1..**150,090** and
+`extracted_observations` 10,604..**714,614** — a ratio of **4.8x**, OVERLAPPING across [10,604 .. 150,090], which is
+precisely why the bad join looked convincing.
+**EVERY absolute count in this entry is a moving snapshot of an append-only table — compare RATIOS AND SHAPES, never
+integers.** Re-measured the SAME day, hours later, every figure this entry records moved: `NoResolution`
+**620,351** where the `"OriginalSymbol"` paragraph below records 620,174; candidates **3,651,864** where the publish
+gate above records 3,650,818; `macro_observations` **42,739**/**39,712** against the 42,716/39,689 in the METHOD NOTE
+above; id bounds 1..**150,145** and 10,604..**714,827**. Every ratio and conclusion held — 93%, 4.8x, still
+overlapping. The
+two figures that did NOT move are the ones that are structurally exact rather than a running total: **358,398**, and
+the **0** in "0 of N". A re-check returning different integers is this note working, not a contradiction; a re-check
+changing a RATIO, or turning that 0 non-zero, is a real finding.
+THREE THINGS ARE CALLED "Symbol": (1) the COLUMN `sentinel.extracted_observations."Symbol"` — quoted, PascalCase,
+the resolved catalog symbol, NULL until resolution succeeds; (2) the KEY `"Symbol"` INSIDE `candidate_symbols_json`
+— an LLM-minted slug of the proposed entity's name (`Challenger_Gray_Christmas`), not a catalog symbol and usually
+absent from SecMaster; (3) the AXIS — any query or index keyed on (1). `"OriginalSymbol"` is NOT a fallback identity
+for (1): it is written only by `Quarantine()` (`SentinelCollector/src/Entities/ExtractedObservation.cs:220`),
+`ApplyReExtraction()` (`:265`) and `QuarantineInPlace()` (`:331`), each as `OriginalSymbol = Symbol`, making it a
+PRE-REMEDIATION AUDIT SNAPSHOT — keying on it selects rows that were quarantined or re-extracted, NOT "the feed"
+(**620,174** rows are `NoResolution` and **358,398** of those carry a NON-NULL `"OriginalSymbol"`). Rows with neither
+column populated are invisible to every symbol-keyed query; reach them through the CANDIDATE or the description, and
+use `LEFT JOIN LATERAL ... ON true` because a plain `,`-LATERAL drops every row whose `candidate_symbols_json` is
+NULL or empty — those are dead rows too:
+`SELECT o.id, o.description, o.value, o.resolution_state, o.resolution_method, c->>'Name' AS candidate
+FROM sentinel.extracted_observations o LEFT JOIN LATERAL jsonb_array_elements(o.candidate_symbols_json) c ON true
+WHERE o.extracted_at >= '<from>' AND (c->>'Name' ILIKE '%<vendor>%' OR o.description ILIKE '%<surface>%');`
+No remediation is recorded, and one route is closed on principle: re-keying historical rows is a WRITE to production
+data and is not on the table.
 
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
