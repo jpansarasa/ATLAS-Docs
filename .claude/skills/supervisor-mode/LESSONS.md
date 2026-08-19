@@ -255,6 +255,22 @@ L16 A guard that gates writes to ITSELF cannot be repaired by the isolation we d
   GRADUATES: when a gate-layer dispatch either resolves its own project_dir or is REFUSED AT DISPATCH, so the
     deadlock costs a turn instead of an agent-hour.
 
+L17 An alert that fires by ACCIDENT is not coverage, and coverage cannot be enumerated from the alerts that exist.
+OCCURRENCES: GeminiResolverNotResolving (CLAUDE.md §OBSERVABILITY) worked only because rejected calls consumed cap
+  slots, so sustained rejection tripped the APPROACHING-CAP alert — nobody designed that, and fixing the cap
+  accounting switched it off silently. 2026-08-19: the approaching-severe alert surfaced a four-month feed outage
+  only because a pattern happened to reference the dead series.
+EVIDENCE [2026-08-19]: `grep -rl ADP_EMPLOYMENT ThresholdEngine/config/patterns/` returns ZERO — same for
+  INDEED_POSTINGS and REDBOOK_SALES. All three are Sentinel-primary (SentinelCollector/AGENT_README.md D-18), so no
+  pattern means no `thresholdengine_pattern_data_overdue_days` series, means no alert is POSSIBLE. Last publish:
+  2026-07-10, 2026-04-16, 2026-04-23. Two were already dead and nothing anywhere could have said so.
+APPLIES: any alerting or observability change, and any claim that a subsystem is monitored.
+RULE: enumerate coverage from the DATA side, never from the alert list — for the thing you care about, grep the
+  config that would HAVE to mention it. One grep, before trusting that something is watched. The alert list is
+  structurally blind to absence, so reading it can only ever confirm what already fires.
+GRADUATES: delete this when every series in D-18's owned-series list has a freshness metric independent of whether
+  any pattern references it — checkable by grepping the metric name per series and getting a non-empty result for all.
+
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, line number or severity as settled fact
 never amplify a correction you have not verified
