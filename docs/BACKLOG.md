@@ -55,21 +55,124 @@ candidate, two increments, ratio pinned at exactly 0.5. Only the pre-discovery s
 Fix the double-count, not the threshold; an alert tuned around a miscount hides the miscount.
 Metric gotcha: OTEL appends `_total`, so alert on `secmaster_fred_search_skipped_total`, not the bare name.
 
-**`SentinelLowResolutionRate` cannot fire, and fixing only the window would make it scream instead.** Measured
-2026-08-14 over 6h at 5m steps: 9 of 18 samples are NaN (`sum(rate(...[5m]))` denominator empty during the idle
-gaps between bursts) and the other 9 are exactly `0` — so it oscillates pending -> inactive and never holds the
-`for: 15m` dwell. 24 pending cycles and 0 fires in 24h, straight through a real resolution rate of ~3%.
+**`SentinelLowResolutionRate` spends its life oscillating pending -> inactive, and fixing only the window would
+make it scream instead.** Measured 2026-08-14 over 6h at 5m steps: 9 of 18 samples are NaN
+(`sum(rate(...[5m]))` denominator empty during the idle gaps between bursts) and the other 9 are exactly `0` — so
+it rarely holds the `for: 15m` dwell. 24 pending cycles and 0 fires in 24h, straight through a real resolution
+rate of ~3%.
+THAT ZERO-FIRE COUNT IS TRUE FOR ITS WINDOW AND ONLY FOR ITS WINDOW — re-confirmed 2026-08-20,
+`count_over_time(ALERTS{alertname="SentinelLowResolutionRate",alertstate="firing"}[2d])` at 2026-08-15T00:00:00Z
+is empty, so nothing fired on 08-13 or 08-14. RUN THE CONTROL ALONGSIDE IT — empty is ambiguous on its face
+between "did not fire" and "the series was never recorded". Re-run the identical query at `alertstate="pending"`:
+it returned **1,423** at that same instant, which proves the series WAS being recorded and is what makes the
+emptiness mean something. The rule is NOT structurally unable to fire: the entry below
+measures five firing episodes in the 7 days to 2026-08-20. Do NOT widen the window to make it fire — it already
+does, on burst shape rather than on resolution health.
 THREE defects, and the window is only the first. (2) The denominator includes the sector-grounding statuses
 `no_subject_match` (4,263/24h) and `matched_no_sector` (1,622/24h), emitted by `DeterministicResolver.LiftSector`
 with `resolution_state="no_sector"` — those can never carry `status="resolved"`, so they structurally depress the
 ratio. (3) The numerator misses the successes: `ResolutionWorker` resolves with method `async_finnhub` and
 increments `SecMasterResolutionCounter` only on its REJECTION paths, so `sentinel_secmaster_resolution_total` is a
 failure-biased counter — `status="resolved"` totalled 2 in 24h while the DB recorded ~180 real resolutions/day.
+THE MECHANISM IN (3) IS RIGHT BUT THE RESOLVER NAMED IS NOT: the entry below measures `async_finnhub` at **0** rows
+over 7 days and identifies `DeterministicResolver` as the live leg, with the shortfall an order larger.
 Fix needs a per-observation outcome counter at the persist boundary, landed WITH the rule; a window-only fix swaps
-a silent alert for a permanently-firing one on a ratio that does not mean what it says.
+a near-silent alert for a permanently-firing one on a ratio that does not mean what it says.
 Both DB figures above (~3% real rate, ~180 real resolutions/day) are POST-erasure `instrument_id` readings and are
 therefore FLOORS — see the `ReExtractBackgroundService` entry below. The three alert defects are unaffected; the
 magnitudes understate by an unknown margin.
+
+**`SentinelLowResolutionRate` does not measure a resolution rate: 49 of 16,030 real resolutions — 0.31% — ever
+touch the counter it divides.** The rule is Prometheus-native — loaded by the `rule_files` glob at
+`deployment/artifacts/monitoring/prometheus.yml:12`, not Grafana unified alerting.
+`deployment/artifacts/monitoring/alerts/sentinel.yml:277-288`:
+`sum(rate(sentinel_secmaster_resolution_total{status="resolved"}[5m]))` divided by
+`sum(rate(sentinel_secmaster_resolution_total[5m]))`, `< 0.5`, `for: 15m`. The other 99.7% of real resolutions are
+invisible to BOTH numerator and denominator, so the ratio is not a degraded measurement of resolution — it measures
+something else.
+CORRECTS THE ENTRY ABOVE, which named the wrong resolver and understated the magnitude by an order.
+`ResolutionWorker`'s `async_finnhub` is not the active leg: **0** rows in 7 days, in `resolution_method` AND in
+`"OriginalResolutionMethod"`. That entry's three MECHANISMS all stand — the 5m rate genuinely does go NaN and
+break the dwell — and its 2026-08-14 zero-fire count is correct for the window it measured. What does NOT stand is
+the generalisation drawn from it: "cannot fire" / "never holds the dwell" is falsified by the five firing episodes
+below. The numerator's cause and size change as well.
+- The live leg is `DeterministicResolver`, called at `SentinelCollector/src/Services/V2ExtractionPipeline.cs:77`.
+  Its only consumer is `BuildObservationFromV2Result` (`SentinelCollector/src/Services/V2ExtractionPipeline.cs:172-235`),
+  an `internal static` PURE BUILDER — it does NOT touch the database. It sets `instrument_id` and
+  `resolution_state` on an in-memory `ExtractedObservation` (`UpdateResolution` / `SetResolutionState`), returns it
+  into `observations` at `SentinelCollector/src/Services/V2ExtractionPipeline.cs:97`, and the row reaches
+  `ExtractionProcessor` on `V2PipelineResult` to be persisted downstream. It calls
+  `SentinelMeter.SecMasterResolutionCounter.Add` for **no** outcome — neither success nor failure; the whole file
+  has **zero** call sites (`grep -c SecMasterResolutionCounter` = 0). That is the whole defect: the resolution
+  OUTCOME is decided here and metered nowhere, so nothing between the decision and the persist is counted.
+- Inside `DeterministicResolver` the counter has FIVE emission sites and exactly one carries `status="resolved"`:
+  `SentinelCollector/src/Services/DeterministicResolver.cs:449` (`TryExactCandidateMatchAsync` success,
+  `llm_candidate_exact`). The other four are refusals or non-resolutions — `:253` (`LiftSector`; ONE site whose
+  status is a ternary over `no_subject_match` / `matched_no_sector`, always `resolution_state="no_sector"`), `:437`
+  (`TryExactCandidateMatchAsync` co-mention rejection, `exact_rejected_name`), `:521` and `:538`
+  (`TryHybridResolveAsync` guard rejections).
+- `ExtractionProcessor.cs` never calls `DeterministicResolver` — **zero** grep hits — and its own two
+  `status="resolved"` emissions (`SentinelCollector/src/Workers/ExtractionProcessor.cs:1195` `ticker_in_quote`,
+  `:1313` `cove_*`) have not fired in prod for 30 days. Those two cite the `status` label line, one BELOW their
+  `.Add(`; the `DeterministicResolver` citations above cite the `.Add(1,` line itself. Both land inside the correct
+  emission block — do not "fix" either to match the other. A sixth site outside the resolver,
+  `SentinelCollector/src/Workers/ReExtractResolutionAdapter.cs:190`, emits only `comention_rejected`.
+- Over 30 days the metric carries EIGHT `(method, status)` pairs in total, and `llm_candidate_exact`/`resolved` is
+  the only resolved one; `ticker_in_quote` appears solely as `comention_rejected`. Re-check:
+  `count by (method, status) (increase(sentinel_secmaster_resolution_total[30d]))`.
+
+METRIC VS GROUND TRUTH, 7 days to 2026-08-20T17:27Z. The expression evaluates to NaN, exactly 0, or small
+positives; `max_over_time(<expr>[7d:5m])` = **0.111**. `sum(increase(...{status="resolved"}[7d]))` = **50.0**
+(raw cumulative counter **49**, all `llm_candidate_exact`) against `sum(increase(...[7d]))` = **39,523** — a
+counter-side ratio of **0.13%**. **30,802 of that 39,523 (78%) is `sector_grounding`**, which by construction can
+never carry `status="resolved"`. The DB over the same window says **36.1%** (16,030 resolved / 44,410 total),
+computed correcting for the re-extraction erasure trap; the naive current-`instrument_id` read gives **30.1%**
+(13,365 / 44,410), itself an undercount. SQL, SELECT only — note the ABSOLUTE bounds: under a `now() - interval
+'7 days'` moving window the two clipped edge buckets drift within minutes (measured: 20.3 -> 20.8 and 40.8 -> 41.4
+over 28 minutes), so a re-check would not land on the window these figures came from.
+```sql
+SELECT count(*) AS total,
+       count(*) FILTER (WHERE CASE WHEN re_extracted_at IS NULL
+                        THEN instrument_id ELSE "OriginalInstrumentId" END IS NOT NULL) AS resolved_corrected,
+       count(*) FILTER (WHERE instrument_id IS NOT NULL)                                AS resolved_naive
+FROM sentinel.extracted_observations
+WHERE extracted_at >= timestamptz '2026-08-20T17:27:00Z' - interval '7 days'
+  AND extracted_at <  timestamptz '2026-08-20T17:27:00Z';
+```
+Daily (same two bounds, `GROUP BY date_trunc('day', extracted_at)`; 8 buckets because a 7-day window clips both
+ends): 20.3, 27.9, 29.7, 32.7, 40.4, 40.2, 38.5, 40.8 — chronically below the 50% threshold, and trending UP while
+the metric sat near zero. Those are UTC days only because the psql session inside the `timescaledb` container runs
+`TimeZone = UTC` (`SHOW timezone`); the 2-arg `date_trunc('day', <timestamptz>)` takes its day boundaries FROM
+the session TimeZone rather than from UTC — measured: the same instant truncates to 2026-08-20 under `UTC` and to
+2026-08-19 under `America/New_York`, which is mercury's host TZ — so verify the session rather than assume it.
+Both queries re-run 2026-08-20T18:0xZ and
+reproduced 44,410 / 16,030 / 13,365 and all eight buckets unchanged. Carry the caveat from the `ReExtractBackgroundService` entry below: `"OriginalInstrumentId" IS NOT NULL` means
+held-at-EARLIEST-snapshot, not at extraction, so 36.1% is not a clean upper bound either — but every reading here is
+two orders above what the counter reports.
+
+RESOLUTION_METHOD BREAKDOWN of the 16,030, erasure-corrected
+(`CASE WHEN re_extracted_at IS NULL THEN resolution_method ELSE "OriginalResolutionMethod" END`), summing to 16,030
+exactly: `llm_candidate_hybrid` **9,337**, `hybrid_subject` **3,552**, `llm_candidate_pick` **2,309**,
+`gemini_fallback` **781**, `llm_candidate_exact` **51**. The naive `resolution_method` column instead sums to 13,365
+over eight methods, and is the ONLY place `cove_VectorSearch` (544), `ticker_in_quote` (46) and `cove_FuzzySql` (1)
+appear — those are what the re-extract adapter wrote, not what resolved the row. **Never mix the two columns in one
+total**: a breakdown taken from the naive column under the corrected headline is short by 2,665 and still reads as a
+plausible list. `async_finnhub` is **0** in both.
+
+WHY IT FIRED ON 2026-08-20. Pending 16:32:30 to 16:47:30 — **900s, exactly the `for: 15m`** — bridged by a rare
+uninterrupted extraction burst; firing 16:47:30 to ~16:49:00, then inactive the moment the burst ended and
+`rate[5m]` went NaN. Two notifications, one fire: the 16:52:55 notification is Alertmanager's group re-flush at
+`group_interval` 5m while `resolve_timeout` 5m still held it active. Across the 7 days the rule spent **7,935**
+scrape samples pending (~33h) against **118** firing (~30 min) over **five** separate episodes — so it is not that
+the dwell timer never completes, it is that completion is decided by burst shape rather than by resolution health.
+Re-check: `count_over_time(ALERTS{alertname="SentinelLowResolutionRate",alertstate="firing"}[7d])`.
+
+CONSEQUENCE, and this is the point. The exact row shape PR #980 documented — a single publisher-organisation
+candidate, no resolution — is wired to NEITHER side of the ratio, so **a source dying 100% does not move this metric
+at all**. The expression is a global `sum()` with no per-feed label, so even a correct metric could not name which
+feed died. It could not have caught the 2026-04-23 outage. That last counterfactual is INFERRED, not measured:
+Prometheus retention does not reach 2026-04-23 (an instant query at 2026-04-23T12:00:00Z returns empty; earliest
+confirmed non-empty is 2026-07-01).
 
 **Sentinel's reported resolution rate read 67% while the honest column has not read above 4.21% since April — and both
 are POST-erasure readings** (see the `ReExtractBackgroundService` entry below). Scope of that caveat: the HONEST-rate
@@ -334,6 +437,72 @@ first-come-first-served, so genuine resolutions are dropped at random once the w
 cannot reject a well-formed noun phrase that is not a tradeable issuer, which is what the junk is
 ("Birmingham Legion", "Hellenic Shipping News World", "Focus On Inflation"). Not a matrix-corruption event as of
 this measurement: recent Gemini self-seeds are legitimate issuers. Re-check with `curl :9300/health`.
+
+**The gemini-resolver daily-cap refusal is a fourth outcome that increments nothing, so refused demand has no
+metric at all.** `try_reserve_live` (`gemini-resolver-mcp/gemini_resolver/server.py:732-747`) gates dispatch on
+`if live >= daily_cap: return False` (`:744-745`). The refusal branch (`:1040-1054`) logs a WARNING (`:1050-1053`)
+and raises `HTTPException` 429 (`:1054`) — and increments nothing. `server.py` defines exactly three
+`prometheus_client` Counters: `c_ledger_live` (`:883`), `c_dispatch_rejected` (`:900`, incremented only at `:1091`
+for Google-side 401/403/429) and `c_breaker_refused` (`:905`, incremented only at `:1024` for an open breaker). A
+cap refusal increments none of them, and does not call `record_gated()` (`:952`) — that is reserved for the
+company-name gate, a different rejection class.
+MEASURED 2026-08-20: **35** cap refusals in 30 minutes (**754** in 24h), in bursts of up to **14** within a single
+second (24h to 2026-08-20T18:05Z; top per-second counts 14, 14, 12, 10, 10, and a third second also hit 10), while
+`gemini_resolver_gated_24h`, `gemini_resolver_dispatch_rejected_total` and
+`gemini_resolver_breaker_refused_total` **all read 0**. The quantity that says how much real resolution work is
+being dropped exists only as a log line.
+THE PROCESS IS BURSTY — A RE-CHECK WILL NOT LAND NEAR THESE NUMBERS. Three measurements across ~an hour gave
+**35 / 67 / 69** for the 30-minute count and **754 / 792 / 818** for the 24h count: the short window swings ~2x,
+the 24h window drifts under 10%, so compare against the 24h figure and treat the 30-minute one as an order of
+magnitude only. Re-check:
+`sudo journalctl -u gemini-resolver-mcp --since "30 min ago" | grep -c "daily call cap"` against
+`curl -s http://localhost:9300/metrics | grep -E "gated_24h|dispatch_rejected_total|breaker_refused_total"`.
+RUN BOTH HALVES. `grep -c` prints `0` and exits 1 if the log wording ever drifts, which is indistinguishable from
+"no refusals" — the `/metrics` half is what separates the two, because a real fix moves one of those counters OFF
+zero while a wording drift leaves all three at zero. The grep alone can read "fixed" when it merely stopped
+matching. (EVERY LINE CARRIES TWO TIMESTAMPS FOUR HOURS APART, AND `--utc` FIXES ONLY ONE OF THEM. `journalctl`
+prints LOCAL time here — mercury is `America/New_York` — so pass `--utc`; but the Python logger writes its own
+NAIVE LOCAL timestamp into the message body, which `--utc` does not touch. Measured 2026-08-20 with `--utc` in
+force: `Aug 20 18:05:28 mercury python[284493]: 2026-08-20 14:05:28,178 WARNING ... daily call cap 1500 reached`.
+The journal stamp on the LEFT is the UTC one; the in-message stamp on the right is still local. Quote the left.)
+
+THE CAP ITSELF IS HOLDING — record this so nobody re-raises it. Ledger file birth **2026-08-06T16:20:51Z**
+(`/opt/ai-inference/gemini-resolver-ledger.db`; `stat` reports it as `2026-08-06 12:20:51 -0400`, and mercury is
+`America/New_York`, so read that field as local and convert). `ledger_meta.lifetime_live_calls` = **18,586** over
+**14.04 days** = **1,324/day**; every measured restart-to-restart interval is at or below 1500/day; the full UTC day
+2026-08-19 is **exactly 1500** live, against `gemini_resolver_daily_cap` 1500. The gauge is bounded by real
+enforcement, not by a display clamp.
+INTENT VIOLATION. The alert's own annotation
+(`deployment/artifacts/monitoring/alerts/gemini-resolver.yml:320`) states "A true last resort is dozens/day".
+Measured sustained volume is ~1,324/day — **15-100x the documented design intent**. This is the CLAUDE.md
+INTENT_FIDELITY worked example recurring in the service it was written about: the frontier last-resort operating as
+a primary path.
+WHAT IS BEING SENT — **a FAILURE-BIASED SAMPLE**, because only failed or truncated calls log their subject at
+production log level. It is qualitative and cannot support a fraction. Distinct `subject=` values over 3 days
+include: tech sector, euro zone, Brazilian currency, Dollar Index, New Orleans, government agencies, Reserve Bank of
+Australia, Donald Trump, Large Fries, Hershey's Zero Sugar, Coke Zero, Health Care and Social Assistance, and a
+headline fragment carrying an embedded newline (`'Data Center Growth Remains a Key Driver\nFabrinet'`).
+`_company_gate` (`gemini-resolver-mcp/gemini_resolver/server.py:412-433`, with its regexes and abbreviation set at
+`:403-409`) is a SHAPE filter — money/number strings, markup, hyphenated code slugs, a fixed 13-entry abbreviation
+list, and >10-word boilerplate — not a semantic company classifier, so sectors, cities, currencies, people and
+product names pass it **by design**.
+`gated_24h` near zero is therefore consistent with the gate working as specified, not with it being broken.
+RE-CHECK CAVEAT. The ledger's `call_events` table is pruned to 48h (`PRUNE_RETENTION_WINDOWS = 2` at
+`gemini-resolver-mcp/gemini_resolver/ledger.py:39`, applied at `:187` as
+`ts < reference - PRUNE_RETENTION_WINDOWS * window_seconds`), so it **cannot answer any question spanning more than
+two days** — measured span 2026-08-18T17:03:59Z to 2026-08-20T17:04:04Z, 6,569 rows. For longer windows use
+`ledger_meta.lifetime_live_calls` plus restart checkpoints from `journalctl`. Open the file read-only
+(`sqlite3.connect("file:...?mode=ro", uri=True)`); the service is writing it.
+
+**METHOD NOTE — a Prometheus Counter's `_created` is the exporting PROCESS's age, not the data's.** It is stamped at
+object instantiation. Dividing a persisted lifetime total by an age decoded from `_created` produced "**2,803**
+calls/day against a 1,500/day cap" and a false conclusion that the cap was not enforcing. Measured 2026-08-20:
+`gemini_resolver_ledger_live_calls_created`, `..._dispatch_rejected_created` and `..._breaker_refused_created` all
+decode to **2026-08-14T02:02:47.98Z**, which is exactly `systemctl show gemini-resolver-mcp -p
+ActiveEnterTimestamp` (`Thu 2026-08-13 22:02:47 EDT`) — the last restart, and nothing to do with the ledger. The
+error is stable, not a one-off arithmetic slip: re-running it the same way at 17:27Z gives 18,586 over a 6.64-day
+process age = 2,799/day, while the ledger's true 14.04-day age gives 1,324/day and the cap holds. Use the data
+store's own age, never a Counter's `_created`, and cross-check against a second source.
 
 **The merge gate reads a shell redirect as a PR number.** `gh pr merge <N> --squash 2>&1` denies with "names more
 than one PR number: 2 <N>". Same redirect-parsing class the push guard already fixed; a third guard still carries it.
