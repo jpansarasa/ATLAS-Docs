@@ -49,6 +49,26 @@ its extension, so that one fragment admits the rule and its rows together rather
 Re-check: with a bypass containing `git-push-guard.sh` ONLY, edit
 `.claude/hooks/test/run-pr-verdict-smoke.sh` — it must be refused today.
 
+**D-23's thin-draw gate can never deny, because `.Bind()` APPENDS to a non-empty list default.**
+`SearxngIssuerProbeOptions.Engines` initialises to `["duckduckgo", "bing"]`
+(`SentinelCollector/src/Configuration/SearxngIssuerProbeOptions.cs:72`) and `appsettings.json:75` configures the
+byte-identical `["duckduckgo", "bing"]`. .NET's options binder APPENDS to an existing `List<T>` rather than
+replacing it, so the bound list is FOUR entries, all duplicates. `RespondingPinnedEngines` is then
+`pinnedEngines.Count - missingPinned.Count` (`IssuerProbeScorer.cs:189`) = 4 - 2 = **2**, which is exactly
+`MinRespondingPinnedEngines`'s default of 2 (`:85`) — so the floor whose entire purpose is "never judge on a thin
+draw" sits at its own minimum and passes even when ZERO real engines answered. The guard's own code is correct,
+which is why no mutation test catches it: the denominator is inflated OUTSIDE the guard, by configuration that
+looks like it agrees with the default. Note this is a SECOND inflation route into D-23 — the one the D-entry
+already documents is SearXNG silently serving its default set for an unknown engine name; this one needs no
+SearXNG involvement at all. **Currently inert and therefore not urgent: `IssuerProbePinVerifier` is registered
+(`DependencyInjection.cs:108`) but no consumer reads a probe verdict, so nothing acts on the floor today. It goes
+live the moment the probe is wired**, which is what makes it worth recording rather than fixing now. Fix shape:
+either drop the property initialiser and let configuration be the sole source, or clear the list in the binder
+callback before binding — not by raising `MinRespondingPinnedEngines`, which tunes around the miscount. Re-check
+(cheap, no deploy): a unit test that binds the shipped `appsettings.json` section and asserts
+`options.Engines.Count == 2`; it goes RED today. Recorded from the PR #947 review 2026-08-15; code re-verified on
+main 2026-08-23, both line citations unmoved.
+
 **`SecMasterDiscoveryTimeoutsElevated` structurally cannot fire.** The rule is `timeout/total > 0.5`, but a
 per-candidate deadline propagates through the `finally` (emitting `not_found`) and THEN emits `timeout` — one
 candidate, two increments, ratio pinned at exactly 0.5. Only the pre-discovery semaphore arm can exceed it.
