@@ -88,6 +88,44 @@ names the deterministic check performed, not a quote.
 | INDEX | unindexed file, dangling index link, or index over its byte budget | memory | `Evidence:` names the deterministic check (e.g. "file present, absent from index"); `Recheck:` MUST carry a real directive whenever the finding depends on a file's existence -- `file_exists:<path>` for an unindexed file, `file_absent:<path>` for a dangling link to retire. `none` only when the finding depends on nothing that can change (e.g. a pure byte-budget claim). INDEX auto-applies on TYPE, so emitting `none` buys nothing and only discards the check that stops a repair writing a dangling link. |
 | GRADUATE | a lesson is now enforced by a hook, a test, or CLAUDE.md, so the memory entry has done its job | proposal only | `Evidence:` locates the hook/test/CLAUDE.md line that now enforces it; do not propose a `Replacement:`, a human confirms retirement. |
 
+### The index hook a correction leaves behind
+
+`MEMORY.md` is loaded into EVERY session; a topic file is read only when
+recall surfaces it. So a claim that survives in a one-line hook after being
+corrected in its own file is strictly MORE visible than its own correction --
+the index becomes the loudest wrong answer in the corpus.
+
+Measured 2026-08-24, run `20260824T134317Z`: finding 4 retired
+`deploy.yml:1450-1453` from `ansible_deploy_stale_image.md`, whose body then
+read "grep the COMPOUND form, never a line number ... it sits at `:1635`".
+`MEMORY.md` kept "(deploy.yml:1453 skips it on scoped runs)" and nothing
+noticed. It was the ONLY line-number citation in the whole index, and it was
+wrong in the worst available way: three unrelated tasks carry a bare
+`when: not (scoped_restart | bool)` at `:1441`/`:1454`/`:1473`, so `:1453`
+lands BETWEEN two plausible matches rather than on anything obviously broken.
+
+Neither existing instrument can see this. `INDEX` covers link integrity --
+unindexed file, dangling link, byte budget -- and asks nothing about whether a
+hook's CONTENT is still true. `verify-citations.py` is content-blind by
+design, so `deploy.yml:1453` still resolves to a real line and reads GREEN.
+The defect falls between them.
+
+**So: whenever you emit a finding that RETIRES text from `memory/<topic>.md`
+-- CORRECTION, STALE, or a DUPLICATE merge -- read that file's hook in
+`MEMORY.md` before moving on.** If the hook restates what you just retired,
+emit a companion `CORRECTION` against `memory/MEMORY.md` anchored on the hook
+line. It is a separate finding against a separate target, so it needs no new
+type and counts against the volume cap like any other.
+
+`dream.index_hooks.hook_conflict(finding)` decides the mechanised half of this
+-- a line-number citation retired from the topic file that survives in the
+hook -- and review mode re-runs it over everything applied. Its scope is
+deliberately narrow, and the narrowness is the point of saying so: it does NOT
+catch a hook stale in prose ("4 causes" when there are five), nor one
+contradicted by a `NEW` finding that appended rather than retired. Those need
+you to read the hook. A clean `hook_conflict` is not a certificate that the
+hook is true.
+
 ### Admission gates
 
 A candidate finding must pass all four before it is written to the report.
@@ -393,12 +431,34 @@ indistinguishable from a bug that silently dropped them -- always name
 which findings were refused and why, in the same summary that reports what
 was applied.
 
+### Index hooks, after the writes
+
+Once both passes are done, call
+`dream.index_hooks.hook_conflicts(applied_findings)` over everything that was
+actually written, and report every conflict it returns in the same summary.
+A conflict means `MEMORY.md`'s hook for that topic file still asserts a line
+number the finding just retired -- see "The index hook a correction leaves
+behind" above for why that is the worst place in the corpus for a stale claim.
+
+This runs in code rather than resting on the consolidate pass having
+remembered, because the consolidate pass DID forget, once, and the result sat
+in the index for the rest of the day. Two rules for what happens next:
+
+- **Report it; do not silently repair it.** The fix is a rewrite of index
+  prose, which is a judgement, and this mode's whole shape is that a write to
+  memory has a human behind it. Offer the repair and let the operator decide,
+  exactly as with any other approval.
+- **`IndexUnreadable` is not "no conflicts".** Report that the check could not
+  run and say so plainly; an index nobody could open must never be summarised
+  as an index that agrees.
+
 ### End of session
 
 Report a summary: which findings were auto-applied, which were
 human-approved and applied, which were rejected (with reason), and which
 were refused (anchor drift or a write refusal) and therefore remain
-pending for the next report. Write this summary from inside the same
+pending for the next report, and any index-hook conflicts the check above
+returned. Write this summary from inside the same
 `finally` that releases `LOCKFILE` (Setup step 1), so the two happen
 together on every exit path, ordinary or not -- if the summary cannot be
 produced, that failure must not suppress the lock release, or a stale lock
