@@ -1707,6 +1707,47 @@ count it is describing (measured, not feared). Re-run the command rather than tr
 moves with every doc edit, and the tool cannot see content drift at all (see its module docstring), so it is a
 FLOOR on rot, never a census of it.
 
+**3 memory citations cannot land, all of one irreparable class, and until 2026-08-24 no routine sweep had ever
+included one.** The memory corpus lives outside the repo, so `git ls-files` cannot name a memory file and the documented
+sweep answered for the repo alone while printing a sentence that reads like a full answer.
+`verify-citations.py --memory` now assembles that corpus (`$DREAM_MEMORY_ROOT`); the resolver needed no change,
+only the corpus did. Reproduce: `python3 scripts/verify-citations.py --quiet --memory`. First sweep measured 105
+files, 37 citations, 9 cannot land; six were repaired the same day, leaving 36 checked. A later dream
+review retired a `deploy.yml:1453` citation from `MEMORY.md` itself, so the count is now **35 checked, 3 cannot
+land** — the figure moves whenever a citation is added to or retired from the corpus, which is why the reproduce
+command above is the durable half of this entry and the number is not.
+Composed with the tracked corpus the figures add exactly — files, citations and findings each summing — which is
+what proves the flag is additive rather than a different sweep wearing the same summary line.
+
+THE SURVIVING 3 ARE A PERMANENT EXEMPTION AND MUST STAY BROKEN, like the architecture-cards `weak-card` fixture
+above. Every one sits inside a VERBATIM `ev:` provenance quote — a transcript excerpt carrying the session id,
+turn and timestamp that a dream-authored memory rests on. NONE of the three ever resolved, so there is no correct number to move any of them to: one landed on a blank
+line at the nearest contemporaneous commit, and the other two were already AMBIGUOUS when written — a second
+`server.py` has existed since 2026-05-17 and ten files are named SKILL.md. And
+re-pointing any of them would edit quoted words, fabricating a quote in the record that exists to make the claim
+traceable. THIS IS A CLASS, NOT THREE INCIDENTS: any provenance quote may contain a citation-shaped string, so
+expect the floor to sit above zero permanently and judge a change by whether its cannot-land SET is a subset of its
+base's. Deliberately NOT solved in the tool, and measured before deciding rather than after: 0 of 411 tracked-repo
+citations sit inside an HTML comment, and 6 of 35 memory ones do — all six in dream provenance quotes. So the
+skip would cost no real citation TODAY, and would silently stop covering any that later appeared in the one place
+provenance lives. A documented floor is the smaller risk, but it is a judgement, not a free win.
+
+What the six repairs were, since they are the reusable half. THREE were bare basenames the monorepo shares
+(`AdminEndpoints.cs` once, `EventPublisher.cs` twice), fixed by giving each a directory component rather than by
+widening the tool — AMBIGUITY DENIES is working as designed, and one of them
+was also DRIFTED, so resolving the ambiguity alone would have produced a confident GREEN on a line that had become
+an unrelated `.Include(...)`. Content had to be read; the tool cannot do that half. ONE was a plain line re-point, the only repair of the class this
+entry otherwise avoids, and it was safe because the SKILL had meanwhile absorbed the finding so the target text
+changed too. The last TWO were line numbers quoted as EXAMPLES OF ROT — the card text as it read when it was
+wrong — rewritten in non-citable form, because re-pointing them would have inverted the anecdote they exist to
+tell. Three plus one plus two; the earlier wording said four plus two and counted a line-number-free prose mention
+among the findings. THIS ENTRY CARRIES NO `file` plus
+line-number FORMS, for the reason the entry above gives: the tool parses its own backlog. Same caveats as the
+tracked corpus — a green run is a FLOOR on rot, never a census, and the tool is blind to content drift. One
+hazard specific to this corpus is documented in the module docstring and deliberately NOT guarded: a memory file's
+own directory is searched first for a bare basename, so a bare `.md` cite colliding with a sibling memory filename
+would bind to the memory copy silently. Measured at 0 occurrences today.
+
 **2,138 assertions that no suite-level count can see.** `run-push-config-destination-smoke.sh` prints no
 per-assertion `PASS:` line — its `pass()` (`:44`) increments a counter silently while `fail()` (`:45`) does print
 `FAIL: <label>` — so its only positive output is the summary at `:656`. Measured 2026-08-15:
