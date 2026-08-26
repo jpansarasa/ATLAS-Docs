@@ -271,6 +271,29 @@ RULE: enumerate coverage from the DATA side, never from the alert list — for t
 GRADUATES: delete this when every series in D-18's owned-series list has a freshness metric independent of whether
   any pattern references it — checkable by grepping the metric name per series and getting a non-empty result for all.
 
+L18 A command that reports its own limit, warning or truncation has ANSWERED you; theorising past that line is
+  inventing evidence. Five instances in one session, all mine, all where the output carried its own disqualifier.
+OCCURRENCES: (1) `grep -rn CHALLENGER_JOB_CUTS` printed `SecMaster/config/instruments/challenger-job-cuts.json` in
+  its own results; I walked past that line and argued across three turns that no instrument existed, escalating a
+  guard change to the human for arbitration. (2) A `LIMIT 4` sample of the same table was reported as "the headline
+  figure is missing"; it was row 1 of the unlimited query. (3) `gh pr list --limit 300` returned exactly 300 against
+  962 merged PRs and the empty intersection was read as "none of these ever merged". (4) `SET LOCAL` printed
+  `WARNING: SET LOCAL can only be used in transaction blocks` twice and the result was used to EXONERATE the HNSW
+  index; run properly inside BEGIN, the seq scan gave the opposite answer. (5) A query echoed back
+  `Challenger, Gray \u0026amp; Christmas` — my own HTML-escaped ampersand — and the flat similarities it produced
+  were nearly reported as "the vector search is globally broken".
+EVIDENCE: 2026-08-24. (3) `search/issues total_count` = 962 vs a 300-row page. (4) exact seq scan (plan confirmed
+  `Seq Scan`) ranks CHALLENGER_JOB_CUTS #1 at cosine 0.716; the same ORDER BY under the index returns it nowhere.
+  Both wrong readings were corrected only because the USER pushed back a third time.
+APPLIES: any measurement whose result becomes a claim — sampled queries, paged APIs, forced query plans, greps whose
+  output you skim rather than read.
+RULE: before interpreting a result, read its own boundary markers — did it warn, did the row count EQUAL the limit
+  you passed, does the echoed query match what you sent. One re-read of output already on screen, no new command.
+  If the count equals the limit, the instrument has told you it is truncated and the result is not an answer.
+GRADUATES: delete when a claim-verification brief requires quoting the command's full output header/footer (limits,
+  warnings, echoed args) beside any figure it reports — checkable by grepping templates/claim-verification.md for
+  that requirement and finding it.
+
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, line number or severity as settled fact
 never amplify a correction you have not verified
@@ -284,4 +307,6 @@ never leave a worktree behind with a staged index — it is one commit from reve
 never accept a self-authored "nothing loosened" as a merge signal — the corpus must come from a
   different mind than the fix, and the shape that leaks is a SPELLING VARIANT of one already covered
 never dispatch gate-layer work worktree-isolated, and never create the confirm file yourself
+never interpret a result whose row count EQUALS the limit you passed, or whose output carried a
+  warning you did not read — the instrument has already told you the answer is not an answer
 never add an entry here that a template, hook or checklist already enforces
