@@ -51,6 +51,8 @@ Current contents:
 | [proposals/regime-news-staleness-redesign.md](./proposals/regime-news-staleness-redesign.md) | Design spec — regime news-as-staleness-perturbation |
 | [proposals/okf-rag-feasibility-spike.md](./proposals/okf-rag-feasibility-spike.md) | Feasibility spike — OKF / LLM-wiki RAG |
 | [proposals/push-gate-intent-redesign.md](./proposals/push-gate-intent-redesign.md) | Design spec — push/merge gate rebuilt around the act boundary, not parser accuracy |
+| [proposals/extraction-identity-remediation.md](./proposals/extraction-identity-remediation.md) | Build plan — sector-event v1/v2 contract break, observation identity = measurement not entity, ClaimKind loss |
+| [proposals/extraction-identity-implementation.md](./proposals/extraction-identity-implementation.md) | Implementation plan — dispatch-ready stories S0-S5 for the above, with acceptance queries |
 | [superpowers/plans/2026-07-04-sentinel-trend-visualization.md](./superpowers/plans/2026-07-04-sentinel-trend-visualization.md) | Plan — shipped (`sentinel-trend-viz-done`) |
 | [superpowers/specs/2026-07-04-sentinel-trend-visualization-design.md](./superpowers/specs/2026-07-04-sentinel-trend-visualization-design.md) | Design spec — shipped |
 | [superpowers/plans/2026-07-05-sentinel-review-queue-drain.md](./superpowers/plans/2026-07-05-sentinel-review-queue-drain.md) | Plan — shipped (`sentinel-review-queue-drain-done`) |

@@ -105,6 +105,7 @@ never hand-author migration .cs files."}
   on completion; can dispatch parallel work meanwhile.
 - For the same epic / same SecMaster project, sequence stories on the
   same branch. Across epics use parallel branches.
-- Do NOT use worktree isolation when the story needs the
-  `.devcontainer` build/test/migrate flow — the devcontainer mounts
-  the fixed `/home/james/ATLAS` path.
+- Worktree isolation IS safe for the `.devcontainer` build/test/migrate
+  flow: each compile.sh owns a compose project keyed to its worktree
+  (scripts/devcontainer-owner.sh) and attests /workspace by inode match.
+  N stories in N worktrees compile simultaneously — never sequence them.

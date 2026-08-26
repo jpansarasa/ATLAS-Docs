@@ -49,6 +49,191 @@ its extension, so that one fragment admits the rule and its rows together rather
 Re-check: with a bypass containing `git-push-guard.sh` ONLY, edit
 `.claude/hooks/test/run-pr-verdict-smoke.sh` — it must be refused today.
 
+**AN OBSERVATION'S IDENTITY IS THE ENTITY MENTIONED, NOT THE MEASUREMENT TAKEN — so N datapoints
+from one article collapse onto ONE series key, and 74% of everything ever published is in such a
+group.** The extractor is doing its job: an article legitimately carries 0..n datapoints and it
+mines them all. The defect is downstream of that — resolution answers "which instrument is this
+about", the publish path uses that answer AS the series id, and ThresholdEngine keys its
+ObservationCache by SeriesId keeping the newest write. So a series holds whichever of its n
+claimants landed last.
+
+MEASURED 2026-08-26 on sentinel.extracted_observations, published rows only:
+  20,822 published observations · 2,727 instruments · **15,344 distinct descriptions** · 35 units
+  15,397 of 20,822 (74%) sit in a (raw_content_id, instrument_id) group of size > 1; 3,591 such
+    groups against 5,425 sole claimants
+  **1,559 of 2,727 instruments (57%) carry MIXED UNITS** — percentages and dollars under one key
+Re-check both:
+  `SELECT COUNT(*) FILTER (WHERE c>1), COUNT(*) FROM (SELECT raw_content_id, instrument_id,
+     COUNT(*) c FROM sentinel.extracted_observations WHERE published_at IS NOT NULL
+     AND instrument_id IS NOT NULL GROUP BY 1,2) g;`
+  `SELECT COUNT(*) FILTER (WHERE u>1), COUNT(*) FROM (SELECT instrument_id, COUNT(DISTINCT unit) u
+     FROM sentinel.extracted_observations WHERE published_at IS NOT NULL
+     AND instrument_id IS NOT NULL GROUP BY 1) x;`
+THESE COUNTS MOVE AND THAT IS NOT A CONTRADICTION: the pipeline keeps publishing, so a re-run
+minutes later already returned 3,592 of 9,022 groups and 1,560 of 2,732 instruments. **The
+durable claims are the RATIOS — roughly three quarters of published rows in a collision, more
+than half of instruments carrying mixed units, and ~5.6 distinct descriptions per instrument.**
+Read a changed absolute as the corpus growing, and re-derive from the commands above rather than
+from the numbers printed here.
+
+THE SHAPE, from a real published group. One Procter & Gamble article, four rows, all Symbol=PG:
+  tariffs on American goods         25 PCT
+  tariffs on American goods         50 PCT
+  imported toilet paper from Canada 328,000,000 USD
+  global tissue consumption         20 PCT
+None of those is "the value of PG". They are facts MENTIONED NEAR Procter & Gamble, and TE now
+computes on whichever wrote last. The 5.6 descriptions-per-instrument ratio says this is the norm,
+not an outlier.
+
+WHY IT SURFACED AS A CHALLENGER BUG AND IS NOT ONE. CHALLENGER_JOB_CUTS was the one instance where
+the collision was VISIBLE, because that series has patterns reading it and an alert that fires when
+it goes stale. One Challenger release yields four datapoints — headline job cuts 33,429, an
+AI-attributed subset 10,970, a sector-and-YTD figure 149,023, and planned HIRES 107,500, which has
+the opposite sign. All four resolve to the same instrument and **similarity cannot separate them**:
+measured 0.8196 / 0.8125 / 0.8507 / 0.7994, so the WRONG answer scores highest, and `confidence` is
+a flat 0.85 across all four. No threshold keeps the headline and drops the rest. Publishing planned
+hires as job cuts drives challenger-layoff-surge's `-(cuts - 30000)/30000` to **-2.58**, a maximal
+false recession signal from a number meaning the opposite. Everywhere else the same collision is
+silent, because no pattern is watching and nothing alerts on a wrong value — only on a missing one.
+
+WHAT WAS TRIED AND MUST NOT BE SHIPPED AS-IS: an article-level guard refusing every claimant when
+n>1 ("ambiguity denies"). It is fail-closed and it is WRONG AT THIS SCALE — it would refuse 74% of
+the pipeline to prevent corruption that has already happened. Written, tested, and deliberately not
+committed; the patch is at /tmp/sentinel-remediation/collision-guard/ and will not survive a reboot,
+which is correct — it should be rewritten against whatever identity model wins, not resurrected.
+
+ANSWERED 2026-08-26 — this was open item (1): **NOTHING CURRENTLY READS THE CLOBBERED KEYS, so this defect is
+LATENT — mechanically real, not presently corrupting output.** Measured: **zero of TE's 71 loaded
+patterns reference a `SENTINEL:NUM:` key**, which is where 47,366 of 47,402 published observations
+land over 30 days. Exactly 3 patterns touch a Sentinel key at all, all via the `SENTINEL:SECTOR:`
+prefix through `GetSeriesCount` / `GetSectorBreadth`
+(`ThresholdEngine/src/Entities/PatternEvaluationContext.cs:312`, `:362`), both of which read
+`SeriesId` and `LatestDate` and NEVER `Value`. The matrix path is keyed
+`{raw_content_id}:sig:{slug}` in `public.macro_observations` (16,690 of 16,694 `source_id` values
+distinct over 30 days), so it does not collapse across articles. Note the reason carefully: the
+projector DOES evaluate `signalExpression` over the `ObservationCache`
+(`ThresholdEngine/src/Workers/ObservationCellProjector.cs:810-821`), so "the cache is unread" is
+FALSE and must not be written down as the explanation — the explanation is that no loaded
+expression names the key.
+THE LIVE SURFACE IS THE BARE `SentinelSeriesKey.OwnedSeries` SET, and it is one resolver outcome
+away from arming. Of its six keys, `CHALLENGER_JOB_CUTS` (3 loaded patterns) and `TRUFLATION_CPI`
+(1) have live readers and Sentinel currently publishes NEITHER — no `sentinel.extracted_observations`
+row has ever carried either as its `Symbol`, so Sentinel's Challenger rows key as
+`SENTINEL:NUM:<instrument-uuid>`, not as the bare mnemonic.
+**THIS SITS IN TENSION WITH THE "WHY IT SURFACED AS A CHALLENGER BUG" PARAGRAPH BELOW and is NOT a
+refutation of it — do not delete that paragraph on this evidence.** Unresolved: whether the -2.58
+figure there was observed on a live `challenger-layoff-surge` evaluation or derived as what WOULD
+happen, and whether `CHALLENGER_JOB_CUTS` has a non-Sentinel publisher. Establish that before either
+paragraph is edited. `BDIY` publishes 4 rows/day under a bare key (level 3056, increase 130, highest 11793,
+lowest 290 on 2026-08-26, and 290 is the last write); its only reader `baltic-freight-recession`
+would compute `bdiy < 700` TRUE and clamp its signal to **-3**, but that pattern is
+`"enabled": false` and is the one repo pattern file of 72 absent from TE's loaded set. Loaded gun,
+not fired — and #988 raising resolution success is the change that could re-arm the Challenger key.
+Re-check before treating this as still latent:
+  `grep -rl 'SENTINEL:NUM:' ThresholdEngine/config/patterns --include='*.json' | wc -l`   # expect 0
+  and confirm `baltic-freight-recession` is absent from `list_patterns(enabled_only=false)`.
+
+STILL OPEN, AND IT IS A DESIGN QUESTION, NOT A BUG FIX. Identity probably needs to be
+(instrument, measurement) rather than instrument alone, which is a schema change and touches D-18's
+ownership rules — so it needs a human decision, not a patch. One thing left to establish, item (1)
+above having been answered: (2) whether #988 (resolver retries with the description)
+is net-negative on this evidence, since it raises resolution success and therefore admits MORE rows
+into a broken identity model. Do not treat the Challenger feed as fixed: it now resolves, and
+resolving into this model is not obviously better than starving.
+
+**A SHARE OF APPARENT IDENTITY COLLISIONS ARE MIS-RESOLUTIONS, NOT IDENTITY COLLAPSE — DIFFERENT
+ENTITIES LANDING ON ONE INSTRUMENT ID. THE KEY CANNOT FIX THESE; THE RESOLVER IS THE LEVER.**
+The entry above counts a `(raw_content_id, instrument_id)` group of size > 1 as a collision. Some of
+those groups are not one entity measured n ways — they are n DIFFERENT things the resolver filed
+under one instrument. Re-keying on (instrument, claim_kind, unit) leaves every one of them wrong,
+and worse: it splits the wrong attribution across two "series" by unit, so it acquires structure.
+
+SAMPLED 2026-08-26 by adversarial review of the remediation plan: **6 of 32 groups (~19%)**.
+**That is a FLOOR** — the sample was drawn from PUBLISHED rows carrying an instrument, so it
+excludes everything unpublished and everything the resolver failed on outright.
+
+THE MACHINE-CHECKABLE PROXY IS SMALLER AND MEASURES SOMETHING NARROWER, which is why the sample
+is the number to quote. Colliding groups whose members disagree on `subject_entity`:
+**144 of 3,598 (4.00%)**. That catches only the case where the article's own subject STRINGS
+differ; the worked case below has a constant `subject_entity` and is still a mis-resolution, so
+4.00% is a floor of a floor and NOT a refutation of the 19%.
+
+THE WORKED CASE, and it names the mechanism. `raw_content_id=153978`, one Mexican market-summary
+article. Instrument `35253636-94b1-4b88-848c-30982e2de7f2` is **`EWW`, the iShares MSCI Mexico ETF**
+— SecMaster `name` is the bare word **"Mexico"**, `asset_class` ETF. `subject_entity` on all four
+rows is "Mexico", `resolution_method` is `hybrid_subject`, and the four values filed under EWW are:
+  S&P/BMV IPC daily return    0.06 PCT
+  number of rising stocks      125 COUNT
+  number of declining stocks   107 COUNT
+  number of unchanged stocks    18 COUNT
+None of those is a measurement of EWW. An index level and an exchange's advance/decline breadth
+were attached to a tradeable ETF because the resolver matched a COUNTRY word to an instrument NAMED
+for the country. The same article resolves its actual equities correctly (KOFUBL.MX, FEMSA, GAP-B),
+so this is not a broken resolver — it is a resolver with no way to say "this subject is a place, not
+a security."
+
+THE LEVER IS #988 (resolver retries with the description), NOT R2/S4's key. And note the direction:
+#988 RAISES resolution success, which admits MORE rows into both this defect and the collision one.
+Do not read a rising resolution rate as progress here without splitting these two populations.
+
+A THIRD CONFOUND, small but real: exact-duplicate rows inflate the same groups —
+**63 of 3,598 (1.75%)** colliding groups are pure duplicates (identical description, value and
+unit). `raw_content_id=153978` carries one: instrument `750b06ec` holds each of its three
+observations twice.
+
+Re-check (SELECT-only):
+  `SELECT count(*) FILTER (WHERE c>1 AND ds>1) AS multi_subject_groups,
+     count(*) FILTER (WHERE c>1) AS colliding_groups
+   FROM (SELECT raw_content_id, instrument_id, count(*) c,
+           count(DISTINCT coalesce(nullif(btrim(subject_entity),''),'(null)')) ds
+         FROM sentinel.extracted_observations
+         WHERE published_at IS NOT NULL AND instrument_id IS NOT NULL GROUP BY 1,2) g;`
+  `SELECT instrument_id, subject_entity, resolution_method, value, unit, left(description,50)
+   FROM sentinel.extracted_observations WHERE raw_content_id=153978 AND published_at IS NOT NULL
+   ORDER BY instrument_id, id;`
+  and in `atlas_secmaster`:
+  `SELECT id, symbol, name, asset_class FROM instruments
+   WHERE id='35253636-94b1-4b88-848c-30982e2de7f2';`
+THE RATIOS ARE THE DURABLE CLAIM, not the absolutes — the pipeline keeps publishing. The ~19%
+sampled share is a FLOOR and the 4.00% proxy is a floor beneath it; neither is an upper bound, and
+nothing here has measured how much of the 74% collision figure is really mis-resolution.
+
+**THE MATRIX PROVENANCE CHAIN IS EMPTY: NO `matrix_cells` ROW CAN BE TRACED TO THE OBSERVATIONS
+THAT PRODUCED IT.** The schema carries two columns for exactly this — `contributing_observation_refs`
+(jsonb) and `source_provenance` (jsonb) — and neither is written with anything usable. MEASURED
+2026-08-26 on `public.matrix_cells`, 287,763 rows:
+  `contributing_observation_refs` populated on **0 rows** — every row is NULL, `'null'`, `[]` or `{}`
+  `source_provenance` populated on **223 rows (0.08%)**, and `rawContentId` is **null on all 223**,
+    so even the 0.08% does not reach an observation. Those 223 carry only
+    `{dslVersion, producerVersion: "semantic-verifier@phase4.5", sourceTimestamp, sourceDocumentRef}`
+    with 2 distinct `sourceDocumentRef` values, and they are all `evaluated_at` 2026-04-13..2026-06-01
+    — a dead phase-4.5 experiment, not a live writer
+CONSEQUENCE, and it is why this is filed rather than noted: **every question that starts "which cells
+were affected" is unanswerable.** Damage assessment after the D-18 mnemonic corruption, damage
+assessment after the identity collision above, any audit of a wrong signal, and any decision to mark
+or recompute a subset of cells all require the join and none of them can have it. The best available
+substitute is a split on `evaluated_at` at a fix date — 241,508 cells before 2026-08-13 vs 46,255
+on-or-after — which is a COARSE UPPER BOUND over the whole table and not an attribution: it cannot
+distinguish a cell that consumed a corrupted value from one that did not, and it says nothing at all
+about collision loss, which has no fix date and is still happening. This is strictly larger than the
+S5 story in `docs/proposals/extraction-identity-implementation.md`, which had to be rewritten onto
+the time bound because of it.
+NOT A DATA-REPAIR JOB: the missing links were never written, so there is nothing to backfill. The fix
+is at the WS3 projector's write seam — populate `contributing_observation_refs` when a cell is
+computed. Until then the columns are decorative, and a reader who sees two provenance columns in the
+schema reasonably assumes provenance exists.
+Re-check (SELECT-only, no deploy):
+  `SELECT count(*) AS total,
+     count(*) FILTER (WHERE contributing_observation_refs IS NOT NULL
+       AND contributing_observation_refs::text NOT IN ('null','[]','{}')) AS refs_populated,
+     count(*) FILTER (WHERE source_provenance IS NOT NULL
+       AND source_provenance::text NOT IN ('null','[]','{}')) AS prov_populated,
+     count(*) FILTER (WHERE source_provenance->>'rawContentId' IS NOT NULL) AS prov_reaches_article
+   FROM public.matrix_cells;`
+Closes when `refs_populated` is a material share of `total` on cells written after the fix.
+`total` grows continuously — read `refs_populated` and `prov_reaches_article` as the claim, not the
+absolute row count.
+
 **D-23's thin-draw gate can never deny, because `.Bind()` APPENDS to a non-empty list default.**
 `SearxngIssuerProbeOptions.Engines` initialises to `["duckduckgo", "bing"]`
 (`SentinelCollector/src/Configuration/SearxngIssuerProbeOptions.cs:72`) and `appsettings.json:75` configures the
@@ -1958,6 +2143,31 @@ Verified both ways 2026-08-17. Repair is `git add --chmod=+x -- <path>`; a `chmo
 
 ## DEFERRED WORK
 
+**The alert-continuity acceptance from the sentinel-resolution-signal epic was never re-measured, and
+re-measuring it now says it is NOT met.** Evicted from STATE.md 2026-08-26; the criterion was written
+before that epic's first dispatch and left `UNMEASURED since the deploys`, so it would have been lost
+at the reset. Criterion: no alert fires continuously for 24h unless it has an open entry in this file
+naming the condition, or is retired. Baseline recorded at epic start (2026-08-14): 3 continuously
+firing (2x gemini-resolver, 1x TE approaching-severe) plus 2 flapping.
+
+Measured 2026-08-26T15:23Z, Prometheus up 620h so the window is not truncated by a restart
+(`max by (alertname, alertstate) (count_over_time(ALERTS[24h]))`; 15s scrape, so 5,760 samples = the
+full 24h):
+
+- `PatternDataSeverelyOverdue` — **5,760 firing, the entire window.** Has entries here.
+- `GeminiResolverCapRefusingDemand` — 3,180 firing (~13.2h). **No entry in this file names it.**
+- `GeminiResolverApproachingFreeGroundingCap` — 2,310 firing (~9.6h). One entry mentions it.
+- `GeminiResolverBillableCallRateHigh` — 1,313 firing (~5.5h). **No entry in this file names it.**
+
+So the count did not improve against baseline; it moved sideways, and two of the four now-sustained
+alerts have no entry naming their condition, which is the specific thing the criterion forbids.
+**Beware the query shape:** `count by (alertname) (count_over_time(ALERTS[24h]))` counts SERIES, not
+samples, and returns 1-4 for a continuously-firing alert — it reads as "nothing is firing" and is how
+this was first mis-called on 2026-08-26. Use `max by (...)`, and anchor `time=` to actual `date -u`.
+
+Disposition per alert (entry-or-retire) is unchosen. This is measurement debt, not a defect in any one
+rule.
+
 **`Extraction__GuardsEnabled=false` — AWAITING AN OWNER DECISION.** This is a deliberate experiment, not an accident:
 `/opt/ai-inference/compose.yaml:1155` carries it dated 2026-05-03, on the rationale that the Phase 4.3 client-side
 guards (token-overlap + asset-class) were defensive bandaids that had become precision sinks, with the PR-3 prose
@@ -2325,6 +2535,23 @@ gauge reports the container's age, not the symbol's.
 explicitly: private repo, LAN-only, public and public-derived data. Rotating touches the DB user and every consumer.
 
 ## PARKED EPICS
+
+**Candidate-pool epic — PARKED, asked of the user twice, never started.** Evicted from STATE.md
+2026-08-26 at the epic boundary; it was the last durable thing in that file and would have been lost.
+Intent: the candidate surface that feeds extraction admits entities on a filter that gates 4.3% of the
+rows attaching instruments (see the candidate-surface entry above), so the pool is the real fix behind
+the feeds that resolve to nothing. Cost of getting it wrong: it re-admits the wrong-ticker GIGO class
+that was paid for twice already (FRED surfaces, then the paid resolver), and the free wrong-ticker
+resolutions were worse than the bill. Wants shadowing before any cutover.
+- **Volume it would touch, measured 2026-08-26:** 210,000 (Jun) / 187,442 (Jul) / 167,270 (Aug-to-26)
+  observations per month. The "~115k rows/month" figure carried in STATE.md since 2026-08-14 was stale
+  and is retired — re-measure, never re-quote it.
+- **NOW OVERLAPS the extraction-identity work.** `docs/proposals/extraction-identity-remediation.md` R2
+  re-keys observation identity on (instrument, claim kind, unit). That addresses part of the same
+  surface from the other end. **Decide whether this epic is absorbed by R2 or stays distinct BEFORE
+  either starts** — running both independently re-opens the GIGO class from two directions at once.
+- Re-check the volume: `SELECT to_char(date_trunc('month', extracted_at),'YYYY-MM'), count(*) FROM
+  sentinel.extracted_observations GROUP BY 1 ORDER BY 1;`
 
 **#729 — regime news-as-staleness redesign.** Spec is PR #729, DO-NOT-MERGE. Intent: FRED/OFR benchmark is the slow
 grounding anchor; Sentinel news is a fast-decaying coincident perturbation weighted by benchmark STALENESS, so the

@@ -16,12 +16,13 @@ restart any service.
 {Design intent stanza — verbatim D-entries, per story-implementation.md}
 
 WHERE TO WORK — decide first
-Running compile.sh or build.sh? Take NO worktree: work in /home/james/ATLAS and SEQUENCE behind
-any other agent compiling. Worktrees isolate git state, not compose — every .devcontainer
-project resolves to `devcontainer`, so a second worktree's `compose exec` runs in the FIRST
-worktree's /workspace (wrong code compiled, then attested), and compile.sh's
-`trap 'nerdctl compose down' EXIT` kills the shared container mid-run. No lock exists today.
-Docs/config only? A worktree is fine. FIX ROUND: `git worktree list` first; if a stale worktree
+Running compile.sh or build.sh? A worktree is FINE and compiles run in PARALLEL — each
+compile.sh owns a compose project keyed to its own worktree (scripts/devcontainer-owner.sh:
+`atlas-<sha1(worktree)[0:12]>-<slug>`), and it proves /workspace is its OWN tree by inode match
+before mark-tests-passed.sh will attest. Never sequence agents behind each other to compile.
+Two DIFFERENT services in ONE worktree still collide on Events/src/*/obj by UID (root-user
+devcontainers vs vscode/uid-1000) -> `sudo rm -rf <worktree>/Events/src/*/{obj,bin}`; that is
+file ownership, not a race, so serializing does NOT fix it. FIX ROUND: `git worktree list` first; if a stale worktree
 holds `{branch}`, take it with `git checkout --ignore-other-worktrees {branch}` — never delete
 another agent's worktree, never branch off a copy.
 
@@ -92,6 +93,6 @@ FAILURE MODES -> THE CHECK
 - Convergence is the goal, not one-shot. Several rounds on one PR is normal and not a failed
   dispatch; each round should shrink the findings list, and that is the signal to watch.
 - Long output to `/tmp/sentinel-remediation/{slug}/`, not the report.
-- If per-agent devcontainer ownership lands (compose project keyed to the launching worktree),
-  the no-worktree rule relaxes to "confirm the workspace check passed" and compiles parallelise.
-  Until then, sequencing is the only mutual exclusion there is.
+- Per-agent devcontainer ownership LANDED (scripts/devcontainer-owner.sh; #916's flock closed
+  unmerged in favour of it). Compiles parallelise; the brief should say so, because agents that
+  inherit the old rule idle waiting for a lock that no longer exists.
