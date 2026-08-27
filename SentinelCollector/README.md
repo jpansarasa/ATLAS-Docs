@@ -241,8 +241,11 @@ SentinelCollector/
 │   └── Containerfile     # build / development / runtime targets
 ├── tests/
 │   ├── SentinelCollector.UnitTests/
+│   │   ├── GoldenCorpus/ # Regression corpus over REAL landed articles — see Fixtures/GoldenCorpus/MANIFEST.md
+│   │   └── Fixtures/GoldenCorpus/  # 30 committed articles, built by scripts/build_golden_corpus.py
 │   ├── SentinelCollector.IntegrationTests/
-│   └── Golden/           # Golden-file fixtures
+│   └── Golden/           # Hand-authored extraction-QUALITY fixtures, read by the Python eval scripts only
+│                         # (distinct from Fixtures/GoldenCorpus above, which the xUnit suite drives)
 ├── agent/                # Sandbox-agent Python sidecar (separate README)
 ├── dsl-parser-mcp/       # DSL parser + verifier sidecar (separate README)
 ├── config/               # Operator configuration assets (separate README)

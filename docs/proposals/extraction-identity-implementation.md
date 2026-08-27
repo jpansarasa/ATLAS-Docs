@@ -81,8 +81,13 @@ for every story after it. Without it these fixes are verified by assertion, not 
 
 **What we actually have** (measured 2026-08-26):
 
-- `/opt/ai-inference/raw-data/sentinel` -- **59,634 files, 5.7 GB**, retained since 2025-01-01
-- `sentinel.raw_content.raw_file_path` joins them to observations (29,197 rows carry a path)
+- `/opt/ai-inference/raw-data/sentinel` -- **60,038 files, 5.8 GB**, and it is a **30-day ROLLING
+  WINDOW, not an archive** (corrected 2026-08-26 by S0; this doc said "retained since 2025-01-01").
+  `StaleContentPrunerService` enforces a 30-day `raw_content` retention and the oldest retained file
+  on every one of the 14 sources is 2026-07-27. **A corpus drawn from it cannot be re-drawn**, which
+  is why S0's fixtures are committed; widening it means selecting RECENT articles, never older ones
+- `sentinel.raw_content.raw_file_path` joins them to observations; 48,211 of 100,383 published rows
+  (48%) carry a path, measured 2026-08-26. This absolute moves with the window in BOTH directions
 - worst-collision articles retain their raw HTML, e.g. `raw_content_id=154787` (rss-mirror,
   60 published observations from one article)
 
@@ -94,10 +99,19 @@ for every story after it. Without it these fixes are verified by assertion, not 
    observations into `SentinelCollector/tests/SentinelCollector.UnitTests/Fixtures/GoldenCorpus/`.
    Committed fixtures, not a live DB dependency: the test suite must run with no database.
 2. A corpus of ~30 articles, each with a manifest row stating *what it proves*:
-   - max-collision: the 60-observation articles (154787, 136367, 146606)
+   - max-collision: **154787 only, of the three this doc named.** Measured 2026-08-26: `136367` and
+     `146606` carry no Symbol and no instrument on any published row, so the identity falls to the
+     `{source}:{description-slug}` leg and SEPARATES them (60 rows -> 15 measurements -> 15 keys,
+     and 60 -> 32 -> 31). They are duplicate-extraction articles, not collision ones. **Counting
+     published rows is not counting keys**, and that is the whole defect. Landed replacements:
+     154787, 151480, 153630, 152410, 152406, 151362, 146762
    - mixed-unit: instruments carrying percent + count + dollars under one identity
    - the Challenger case (`challenger-rss`, 460 obs / 12 published in August)
-   - the outliers that work today: TSA, FRED, OFR -- these must stay green throughout
+   - the outliers that work today: **not TSA, FRED or OFR.** TSA last published 2026-02-07 (729 of
+     83,160 observations ever published) so it is not a working control at the publish seam, and its
+     70 retained raw files carry zero published rows; FRED and OFR are not Sentinel sources and have
+     no `raw_content` at all. S0 uses a `separating-today` bucket instead -- articles measured to give
+     every one of their measurements its own key now. See docs/BACKLOG.md for the TSA entry
    - clean single-observation controls
 3. A test class driving the real extraction path over each fixture.
 
@@ -127,11 +141,17 @@ FROM cls GROUP BY 1,2 HAVING count(DISTINCT unit_class) >= 3
 ORDER BY 3 DESC, 4 DESC LIMIT 10;
 ```
 
-Top candidates 2026-08-26: `150183` (6 classes / 34 obs), `151468` (6 / 32), `154938` (6 / 21),
-`151480` (5 / 58). Take 5-6 from the head of this list.
+Top candidates, re-run 2026-08-26 (815 groups, not 819): `151468` (6 classes / 32 obs), `154938`
+(6 / 21), `151480` (5 / 58), `152410` (5 / 49), `152553` (5 / 44). **`150183` is NOT among them** --
+it has no published row carrying an instrument, which this query requires, so it cannot appear in
+its own output. Take 5-6 from the head of this list.
 
-*Clean single-observation controls* -- one published observation for the whole article, so any
-collision the corpus reports on these is a false positive:
+*Clean single-observation controls* -- one published observation for the whole article.
+**Corrected 2026-08-26 by S0: these do NOT detect a false-positive collapse.** With one
+published row the measurement count and the key count are both forced to 1, so `keys <
+measurements` cannot hold on them whatever the key does. What they DO separate is the
+publish GATE from the key -- `control-155505` extracts 58 rows and publishes one, which is
+gating, not collapse, and the two must not be conflated:
 
 ```sql
 SELECT o.raw_content_id, o.source, count(*) AS published_obs

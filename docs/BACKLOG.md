@@ -141,6 +141,20 @@ is net-negative on this evidence, since it raises resolution success and therefo
 into a broken identity model. Do not treat the Challenger feed as fixed: it now resolves, and
 resolving into this model is not obviously better than starving.
 
+**tsa-checkpoint HAS PUBLISHED NOTHING SINCE 2026-02-07, WHILE STILL EXTRACTING — 83,160
+observations mined, 729 ever published (0.88%), and the last of those is six and a half months
+old.** Measured 2026-08-26 while selecting the golden corpus. It matters beyond the feed itself:
+`extraction-identity-implementation.md` §1 names TSA among "the outliers that work today ... these
+must stay green throughout", and a story that treats a six-month-dead publish path as a working
+control is measuring nothing. TSA is also un-fixturable for the same reason — its 70 retained raw
+files carry 237 observations with ZERO published between them, so there is no published row to
+assert on. Unknown, and worth establishing before anyone calls this a regression: whether the stop
+is a publish-gate change, a resolution change, or a deliberate retirement.
+Re-check:
+  `SELECT max(published_at)::date, count(*) FILTER (WHERE published_at IS NOT NULL), count(*)
+     FROM sentinel.extracted_observations WHERE source='tsa-checkpoint';`
+  # 2026-08-26 returned 2026-02-07 | 729 | 83160
+
 **A SHARE OF APPARENT IDENTITY COLLISIONS ARE MIS-RESOLUTIONS, NOT IDENTITY COLLAPSE — DIFFERENT
 ENTITIES LANDING ON ONE INSTRUMENT ID. THE KEY CANNOT FIX THESE; THE RESOLVER IS THE LEVER.**
 The entry above counts a `(raw_content_id, instrument_id)` group of size > 1 as a collision. Some of
@@ -1992,7 +2006,102 @@ reads 91 on 08-22, which is the first day the strict `>` against 90 holds, and `
 after that. Re-check: `thresholdengine_pattern_data_overdue_days{pattern_id="truflation-vs-cpi"}` at 300s step
 across a midnight.
 
+**`RawLayerOptions.RetentionDays: 90` IN `appsettings.json` NAMES A RETENTION POLICY THAT NOTHING
+ENFORCES.** Measured 2026-08-26 while re-verifying the 30-day-rolling-window finding below (a same-day
+pass had proposed reversing it to "raw retention is ungoverned" — it is not; that finding reproduces
+exactly against a fresh DB query and the physical files on disk, see the re-check there): `RawLayerOptions`
+(`SentinelCollector/src/Configuration/RawLayerOptions.cs`) has exactly one consumer, `RawContentService`,
+and it reads only `.BasePath` — `.RetentionDays` has zero readers anywhere in `SentinelCollector/src`. The
+retention that actually runs is a **different, appsettings-invisible** setting: `ExtractionOptions.MaxArticleAgeDays`
+(code default 30, absent from every `appsettings*.json` — there is no operator-visible knob for it at all),
+consumed by `StaleContentPrunerService` (deletes childless `raw_content` rows outright; nulls `raw_file_path`
+and calls `IFileSystem.DeleteFile` on the HTML + `.meta.json` for rows that still have `extracted_observations`
+children) and by `ExtractionProcessor`'s per-article age-cutoff skip. An operator reading `RawLayer.RetentionDays:
+90` reasonably concludes raw content lives three months; it lives one, via a knob they cannot see. Note for
+whoever re-checks this: a grep for the literal string `File.Delete` also misses the live mechanism — the delete
+runs through the injected `IFileSystem` abstraction (`DeleteOne` in `SentinelCollector/src/Data/Repositories/RawContentRepository.cs`),
+not the literal call; a pass that grepped only the literal concluded no pruner exists at all, which is false.
+Fix: wire `RawLayerOptions.RetentionDays` to actually drive the prune cutoff (retiring the invisible
+`MaxArticleAgeDays` default), or delete the dead field so `appsettings.json` stops asserting a policy nothing
+enforces. Storage is not why 30 days was chosen, if anyone weighs extending it: `sata-bulk/raw-data` reports
+5.8G live (df / zfs `REFER`) against 32.1G physical `used` (the gap is `zfs-auto-snapshot`-retained deleted
+data) at 3.67x lz4 compression (109G logical), out of 5.11T pool-available. At the lifetime average since
+collection began (`RawContentService` landed 2025-12-26, ~8 months ago) of roughly 4 GB physical/month, a
+decade of uncapped retention would land under 500 GB — under 10% of the pool.
+Re-check: `grep -n "_options\." SentinelCollector/src/Services/RawContentService.cs` (only `.BasePath`
+appears); `grep -rn "MaxArticleAgeDays" --include=*.json .` (zero hits outside its own C# default);
+`zfs get -Hp used,logicalused,compressratio,available sata-bulk/raw-data`.
+
+**1,168 FILES UNDER `rss/2026/04/23/` (PLUS 34 MORE THE SAME DAY ACROSS `searxng-content` /
+`tsa-checkpoint` / `validation-content`, AND A FEW DOZEN STRAYS FROM 2025-12-31 THROUGH 2026-07-03) HAVE
+NO MATCHING `sentinel.raw_content` ROW AT ALL — orphaned on write, not pruned after write.** Measured
+2026-08-26: `SELECT count(*) FROM sentinel.raw_content WHERE raw_file_path LIKE '%rss/2026/04/23%'`
+returns **0** against a directory holding 1,168 `.html` / `.meta.json` pairs on disk.
+`StaleContentPrunerService` cannot be the cause — both its passes select rows FROM `raw_content` and
+delete the file that row names, so a file the table never referenced was never a pruning candidate.
+`RawContentService.StoreContentAsync` writes the file (and its sidecar) BEFORE `_repository.AddAsync`
+inserts the row, and its own duplicate check ("DB unique constraint provides final protection" against
+`IX_raw_content_source_content_hash`) is check-then-write, not atomic under concurrent collection —
+consistent with, but not confirmed as, the mechanism: a lost race on that unique index would leave
+exactly this shape (file on disk, no row). Not chased further this round.
+Re-check: `sudo find /opt/ai-inference/raw-data/sentinel/rss/2026/04/23 -type f | wc -l` (1168) against
+`SELECT count(*) FROM sentinel.raw_content WHERE raw_file_path LIKE '%rss/2026/04/23%'` (0).
+
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
+
+**THE GOLDEN CORPUS PROVES ITS ASSERTIONS READ THE FIXTURE; NOTHING PROVES THEY WOULD CATCH A
+CHANGE TO THE PUBLISHER.** Those are different guarantees and the corpus only measures one of them.
+Measured 2026-08-26 on `GoldenCorpusIdentityTests` (68 cases under `DisplayName~GoldenCorpus`): the
+two committed mutation controls break a FIXTURE -- give every row of `collision-151480-walmart` its
+own symbol, force every row of `separating-150183-slug-fallback` onto one -- and require the
+matching verdict to complain by name. That is fixture mutation. No control mutates
+`EventPublisher.CreateSeriesCollectedEvent` or `SentinelSeriesKey`, so the claim "this corpus would
+catch an identity regression" rests on reading the assertions, not on having seen one caught. The
+original 5-of-96 kill figure was a one-off manual run of the same fixture-only kind and was never
+reproducible; the two controls replace it with a number the suite re-derives, on the same axis.
+Fix: mutate the SUT once and record what dies -- and if a plausible mutation survives, the corpus
+has a hole the fixture axis cannot see.
+Re-check (run it, it is two minutes, and revert the edit afterwards):
+  in `SentinelCollector/src/Publishers/EventPublisher.cs`, replace the identity derivation in
+  `CreateSeriesCollectedEvent` with a constant (`var identity = "MUTANT";`), then
+  `nerdctl compose exec -T sentinel-collector-dev sh -c "cd /workspace/SentinelCollector/tests/SentinelCollector.UnitTests && dotnet test --filter 'DisplayName~GoldenCorpus'"`
+  # expected: every separating case and every baseline case REDs; record the survivors, they are
+  # the assertions that do not depend on the publisher at all
+
+**THE SENTINEL RAW-DATA STORE IS A 30-DAY ROLLING WINDOW, NOT AN ARCHIVE — so any corpus drawn
+from it is a snapshot that cannot be re-drawn, and a plan that treats it as a queryable history is
+planning against something that does not exist.** `extraction-identity-implementation.md` §1 sizes
+it as "59,634 files, 5.7 GB, retained since 2025-01-01" and builds story S0 on that. Measured
+2026-08-26: `StaleContentPrunerService` enforces a 30-day `raw_content` retention (its own summary
+line says so), and the oldest retained raw file on EVERY source is 2026-07-27, exactly 30 days back.
+48% of published observations (48,211 of 100,383) have a raw file at all. The consequence is
+structural, not cosmetic: every article in the golden corpus stops being regenerable within a month
+of selection, which is why those fixtures are committed rather than queried, and widening the corpus
+means selecting RECENT articles rather than reaching further back. The number that would make this
+re-checkable at a glance does not exist anywhere — there is no metric or dashboard for retained-file
+age or fixturable share, so the next person to size the store will read the directory and guess
+again.
+Re-check:
+  `SELECT source, min(collected_at)::date, max(collected_at)::date, count(*) FROM sentinel.raw_content
+     WHERE raw_file_path IS NOT NULL GROUP BY 1 ORDER BY 4 DESC;`
+  # every source's min must be ~today-30; 2026-08-26 returned 2026-07-27 on all 14
+
+**THREE NAMED CANDIDATE IDs IN THE S0 SELECTION DO NOT MEAN WHAT THE PLAN SAYS, AND ALL THREE FAIL
+THE SAME WAY: THE PLAN COUNTED PUBLISHED ROWS AND THE DEFECT IS ABOUT KEYS.**
+`extraction-identity-implementation.md` §1 names `154787`, `136367` and `146606` as the
+"max-collision" articles on 60 published observations each. Measured 2026-08-26, only `154787`
+collides: `136367` and `146606` carry NO Symbol and NO instrument on any published row, so
+`CreateSeriesCollectedEvent` falls to its `{source}:{description-slug}` leg, which separates them
+(60 rows -> 15 measurements -> 15 keys, and 60 -> 32 -> 31). They are duplicate-extraction articles,
+not collision articles. Separately, `150183` is listed as the top mixed-unit candidate at "6 classes
+/ 34 obs"; the plan's own mixed-unit SQL requires `instrument_id IS NOT NULL` and `150183` has none,
+so it does not appear in that query's output at all — it is one of the cleanest SEPARATING articles
+in the corpus (35 published, 35 keys). The corrected selection is in
+`SentinelCollector/tests/SentinelCollector.UnitTests/Fixtures/GoldenCorpus/corpus.spec.json`, and
+the extractor refuses to write a fixture whose declared state disagrees with the measured one.
+Re-check: run the collapse query in `MANIFEST.md`'s "keys today" column definition against those
+four ids; only 154787 may show measurements > keys.
+
 
 **The Alertmanager `warning` route's `repeat_interval` is not what paces a Grafana-managed alert, and reading it
 as such overstates the notification volume.** Alertmanager delivered **687** webhook notifications total across
