@@ -37,9 +37,9 @@ Extraction__UseV2Pipeline=true        # flipped 2026-05-16 (PR #340)
 81da1ed4 2026-05-16 ops(sentinel): ... broaden V2 sources to all (#341)
 ```
 
-- `CreateSectorEvent` has exactly ONE production call site: `ExtractionProcessor.cs:876`
+- `CreateSectorEvent` has exactly ONE production call site: `ExtractionProcessor.cs:889`
 - that site is inside `ProcessSingleArticleAsync`, AFTER the v2 early return at `:599`
-- `RunV2ProductionAsync` (`:1746`) never calls it
+- `RunV2ProductionAsync` (`:1760`) never calls it
 - every August source with published rows is in `V2EnabledSources`:
   rss, searxng-content, challenger-rss, rss-mirror, fed-* (12 entries, indices 0-11)
 - the only non-v2 August sources are `tsa-checkpoint` (0 published) and `rss-fallback` (0 published)
@@ -313,7 +313,7 @@ theory that today's matrix numbers are wrong because of it.
   (`GUARD SentinelSeriesKey.ForNumeric applied @ src/Publishers/EventPublisher.cs:112`).
   D-18 opens, verbatim: *"D-18 sentinel-series-key-ownership: INTENT a series key belongs to
   whoever MEASURED the number, and Sentinel is on BOTH sides of that line."* The full entry is
-  ~2,000 words at `SentinelCollector/AGENT_README.md:83` -- **read it in full before designing**;
+  ~2,000 words at `SentinelCollector/AGENT_README.md:84` -- **read it in full before designing**;
   it is heavily guard-tested and it shipped 2026-08-13 on measured production breakage.
   Per CLAUDE.md INTENT_FIDELITY: a brief that contradicts a D-entry without a NAMED supersession
   is a **STOP-and-escalate**, not an agent decision -- never route around it, never obey a stale

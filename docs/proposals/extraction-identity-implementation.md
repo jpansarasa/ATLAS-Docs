@@ -252,15 +252,20 @@ destroys the before/after reading that makes the fix provable.
 
 **The defect, verbatim for the brief:**
 
-> `CreateSectorEvent` has exactly one production call site, `ExtractionProcessor.cs:876`, inside
+> `CreateSectorEvent` has exactly one production call site, `ExtractionProcessor.cs:889`, inside
 > `ProcessSingleArticleAsync`. The v2 branch returns at `:599`, before reaching it.
-> `RunV2ProductionAsync` (`:1746`) never calls it. Every August source with published rows is in
+> `RunV2ProductionAsync` (`:1760`) never calls it. Every August source with published rows is in
 > `V2EnabledSources`, so 100% of published extraction has taken the v2 path since `81da1ed4`
 > (2026-05-16). Sector events: zero for 102 days.
 >
 > `RunV2ProductionAsync`'s XML doc at `:1741-1745` claims it "publishes SeriesCollectedEvent
 > identically to the v1 branch (plan D8: contract unchanged)". v1 publishes TWO event kinds;
 > v2 publishes one. The comment records the intent the code lost.
+>
+> **That comment no longer exists as quoted.** PR #990 corrected it in place; the text above
+> is preserved verbatim as the EVIDENCE for this finding, not as a pointer to current code.
+> Do not grep for it and do not repair its line number -- the method's doc now states the gap
+> instead of denying it.
 
 **Deliverables**
 
@@ -584,7 +589,7 @@ paraphrased into a brief:
 > D-18 sentinel-series-key-ownership: INTENT a series key belongs to whoever MEASURED the number,
 > and Sentinel is on BOTH sides of that line.
 
-The full entry runs ~2,000 words at `SentinelCollector/AGENT_README.md:83`. **Whoever authors the
+The full entry runs ~2,000 words at `SentinelCollector/AGENT_README.md:84`. **Whoever authors the
 S4 spec reads it end to end first.** It shipped 2026-08-13 against measured production breakage,
 it is heavily guard-tested, and it turns on a polarity ("is this a series Sentinel OWNS?" rather
 than "does this key collide?") that a naive re-key would silently invert.
