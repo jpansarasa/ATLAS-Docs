@@ -129,7 +129,9 @@ Selected env vars (full list in `src/Configuration/*Options.cs`). Double-undersc
 | `ResolutionWorker__FinnhubCollectorEndpoint` / `__MaxResolutionAttempts` | Finnhub-backed resolution loop | `http://finnhub-collector:8080` / `5` |
 | `AlphaVantageSweep__AlphaVantageCollectorEndpoint` / `__CronExpression` | Nightly AV sweep | `http://alphavantage-collector:8080` / `0 0 4 * * ?` |
 | `ReExtract__Enabled` / `__Mode` / `__Cohort` / `__RowsPerMinute` / `__RowsPerMinuteResolveOnly` | Legacy-row re-extract job | `false` / `re-extract` / `all` / `30` / `600` |
-| `RawLayer__BasePath` / `__RetentionDays` | Raw-content filesystem layer | `/opt/ai-inference/raw-data/sentinel` / `90` |
+| `RawLayer__BasePath` | Raw-content filesystem layer | `/opt/ai-inference/raw-data/sentinel` |
+| `Extraction__RawRetentionDays` | How long `sentinel.raw_content` is KEPT (startup pruner; `0` disables) | `180` |
+| `Extraction__MaxArticleAgeDays` | How old an article may be and still be extracted — eligibility, not retention | `30` |
 | `R2__Endpoint` / `__AccessKeyId` / `__SecretAccessKey` / `__BucketName` | Cloudflare R2 raw-content offload | empty / empty / empty / `sentinel-raw` |
 | `Digest__PublicBaseUrl` / `__ConfidenceFloor` / `__Ntfy__*` | Digest URL prefix, narrative floor, ntfy push | `http://localhost:5091` / `0.5` / see options |
 | `MacroSignalIdentityCatalog__Categories` | SecMaster category allowlist for alias warmup | `["macro","rate"]` |

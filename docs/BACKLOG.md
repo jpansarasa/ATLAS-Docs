@@ -985,14 +985,22 @@ verdict above it will not be.
 **THE 55 ARE ON A DELETION CLOCK — that is now the intended ending, and a later re-check returning 0 is the decision
 executing, not a missing measurement.**
 `StaleContentPrunerService` runs its passes once per host start and pass 1 calls
-`repo.DeleteChildlessOlderThanAsync(cutoff, ...)` (`StaleContentPrunerService.cs:83`, pass 2 at `:100`) with
-`cutoff = UtcNow - MaxArticleAgeDays` (30 days, the
-banner at `:73` says "full 30-day raw_content retention", `ExtractionOptions.cs:588` default, overridden nowhere in
-`/opt/ai-inference/compose.yaml`). The predicate is `CollectedAt < cutoff && !r.Observations.Any()`
-(`RawContentRepository.cs:106-111`) — these 55 have no extraction children, so they qualify: collected
-2026-07-19 -> 2026-07-24, they become deletable **2026-08-18 -> 2026-08-23** and vanish at the first
-SentinelCollector restart after that. Because the pruner only runs in `StartAsync`, a long-lived container can hold
-them well past the window; 55 on a re-check means "no restart yet", not "decision reversed".
+`repo.DeleteChildlessOlderThanAsync(cutoff, ...)` (`StaleContentPrunerService.cs:95`, pass 2 at `:112`) with
+`cutoff = UtcNow - RawRetentionDays`. The predicate is `CollectedAt < cutoff && !r.Observations.Any()`
+(`RawContentRepository.cs:106-111`) — these 55 have no extraction children, so they qualify.
+**The clock moved, so the date below is not the one this entry was written with.**
+Retention was 30 days when the deletion date was computed here (deletable 2026-08-18 -> 2026-08-23), because
+`MaxArticleAgeDays` answered both "how long do we keep raw content" and "how old may an article be and still be
+worth extracting". Those split 2026-08-26: retention is now `ExtractionOptions.RawRetentionDays`
+(`ExtractionOptions.cs:608`, default 180, pinned `Extraction__RawRetentionDays=180` in the compose template), and
+`MaxArticleAgeDays` (`:590`, still 30) governs extraction eligibility only.
+Collected 2026-07-19 -> 2026-07-24, the 55 now become deletable **2027-01-15 -> 2027-01-20**, at the first
+SentinelCollector restart after that.
+**Whether they still exist is unresolved and cheap to check:** the old 30-day window elapsed 2026-08-18 -> 08-23,
+before the split shipped, so any host restart in that window already deleted them. The re-check below distinguishes
+the two endings — a non-zero count means they survived to the longer window, zero means the old clock ran out first.
+Either is the decision executing. Because the pruner only runs in `StartAsync`, a long-lived container holds them
+past any window; 55 on a re-check means "no restart yet", not "decision reversed".
 Re-check (psql is SELECT-only):
 `SELECT count(*), min(collected_at), max(collected_at), count(*) FILTER (WHERE retry_count=0) FROM
 sentinel.raw_content WHERE processing_error LIKE '%circuit is now open%';` — returned
@@ -1011,7 +1019,7 @@ banner is LogInformation" and "prod has no record any worker started"; both were
 sent the next reader looking for a precedent that was two files away. Corrected 2026-08-15.
 The 10 still at `LogInformation` (measured over the 16 classes deriving from `BackgroundService`/`IHostedService`):
 `ReExtractBackgroundService.cs:119-122`, `ExtractionProcessor.cs:50`, `MirrorSearchWorker.cs:79`,
-`ResolutionWorker.cs:51`, `StaleContentPrunerService.cs:73`, `RssFeedCollectorWorker.cs:31`, `EdgeSyncWorker.cs:27`,
+`ResolutionWorker.cs:51`, `StaleContentPrunerService.cs:85`, `RssFeedCollectorWorker.cs:31`, `EdgeSyncWorker.cs:27`,
 `SearxngCollectionScheduler.cs:60`, `ValidationEventConsumerWorker.cs:35`, `ValidationQueryExecutorWorker.cs:27`
 — plus ReExtract's disabled-by-flag banner (`:93-95`) and its stop banner (`:183`). The remaining 4 emit no startup
 banner at all, which is the same blind spot wearing a different shape and should get one.

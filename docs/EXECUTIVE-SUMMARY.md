@@ -42,7 +42,7 @@ Full detail: [MATRIX.md](./MATRIX.md).
 SentinelCollector turns headlines into matrix input and human-readable digests:
 
 - **Ingestion**: DB-managed RSS feeds + scheduled SearXNG queries -> Cloudflare edge worker ->
-  `raw_content` (30-day retention guard).
+  `raw_content` (180-day retention; articles older than 30 days are not extracted).
 - **Extraction**: GPU vLLM JSON Chain-of-Density (`Qwen2.5-32B-Instruct-AWQ`,
   `response_format=json_schema`), continuous streaming at 8 concurrent articles; a
   deterministic sidecar parses and span-verifies every emitted block (12-25% of articles

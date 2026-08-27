@@ -126,7 +126,9 @@ Detail in `SentinelCollector/README.md`; the matrix-facing half in [MATRIX.md](.
    schedule: 09:30/12:00/16:00/22:00 + 07:00 daily, Mondays weekly) submit URLs to the
    Cloudflare edge worker; `EdgeSyncWorker` polls results back every 30s into
    `sentinel.raw_content` (payloads on disk under `/opt/ai-inference/raw-data/sentinel/`).
-   A 30-day age guard prunes at startup and gates per-article.
+   Two separate windows: the startup pruner retains raw content for 180 days
+   (`Extraction__RawRetentionDays`), while a 30-day per-article age guard
+   (`Extraction__MaxArticleAgeDays`) refuses stale articles at extraction.
 2. **Extraction** (production = **GPU JSON-CoD**, `Extraction__Backend=VllmJson`):
    prompt+schema from host mount `/prompts/cod/` (hot-reloaded) -> vLLM
    `response_format=json_schema` -> truncation salvage (brace-depth recovery; distinguishes
@@ -216,8 +218,9 @@ no retry on generation). Any RAG failure degrades to deterministic-tier candidat
 - **atlas_data sentinel schema**: `raw_content`, `extracted_observations` (+ `_shadow`),
   `events`, `mirror_attempts`, `digest_reports`, `rss_feeds`, `search_queries`, `validation_*`,
   `retention_policies`
-  (0 rows — unused mechanism; pruning is app-managed via the 30-day raw_content age guard +
-  startup pruner, §5).
+  (0 rows — unused mechanism; pruning is app-managed by the startup pruner on a 180-day
+  `Extraction__RawRetentionDays` window, §5. Distinct from the 30-day `MaxArticleAgeDays`
+  extraction age guard, which refuses stale articles and never deletes a row).
 - **Hypertables** — exactly five: `nasdaq_observations`, `alphavantage_observations`,
   `macro_observations`, `matrix_cells`, `sector_regimes`. Everything else (including
   `fred_observations`, `finnhub_quotes`) is a plain table. No Timescale retention policies
