@@ -234,6 +234,195 @@ Closes when `refs_populated` is a material share of `total` on cells written aft
 `total` grows continuously — read `refs_populated` and `prov_reaches_article` as the claim, not the
 absolute row count.
 
+**S5 (`docs/proposals/extraction-identity-implementation.md` §5) is DONE, and the 240,353 bound DOES
+tighten: D-18's mechanism can only reach 1,111 pre-fix cells, and 242 of them carry a
+positively-identified corruption signature.** MEASURED 2026-08-26 on `public.matrix_cells`, 288,467
+rows (D-18 fixed by `3bae398a`, 2026-08-13 00:56 UTC). This supersedes an earlier reading of this
+same entry that called the bound un-tightenable; that reading was not wrong about its own method
+(see DO NOT RETRY below), it just never asked which cells the mechanism can physically reach.
+
+`created_at` **240,353** cells created before the fix vs `evaluated_at` **241,519** evaluated before
+it. **Use `created_at`** — 1,166 cells carry a pre-fix `evaluated_at` but a post-fix `created_at`:
+evaluated FOR a pre-fix date but COMPUTED after the fix, on clean data, so the `evaluated_at` split
+over-counts by that many. `evaluated_at` is the nominal date being evaluated, not when the row was
+computed: `created_at` postdates it by more than a day on 26,205 rows (9.09%, avg 5.38 days, max
+210.0 days), spread across 86 distinct creation days from 2026-05-30 — a continuous rolling
+recompute, not one backfill burst. 240,353 remains the correct COARSE upper bound over the whole
+table, and it is still not an attribution.
+
+**THE NARROWING, and it is structural rather than statistical: D-18 corrupted the `ObservationCache`,
+and only ONE of the projector's two magnitude paths reads that cache.** `ObservationCellProjector`
+computes a cell's magnitude as `isNews ? {the :sig: decay sum} : EvaluateHardMagnitudeAsync(...)`
+(`ThresholdEngine/src/Workers/ObservationCellProjector.cs:686-688`), and only the second arm compiles
+and runs the pattern's `signalExpression` against the cache — the code comment states it outright:
+"News groups NEVER use SignalExpression." So a news-path cell cannot consume a polluted cache value
+no matter how corrupt the cache was. Three nested populations, each measured:
+
+| population | pre-fix cells | what it is |
+|---|---|---|
+| whole table | **240,353** | every cell that existed while the bug was live (coarse upper bound) |
+| hard-data path | **5,929** | cells whose magnitude came from `signalExpression` + `ObservationCache` |
+| reads a polluted mnemonic | **1,111** | of those, the patterns whose expression reads a series Sentinel actually published under |
+| carries the ±3 signature | **242** | of those, the identified floor (below) |
+
+The hard-data restriction is corroborated in the data, not only in the code: **zero** cells with
+`abs(signal) = 3.0` exist on any `sentinel` (280,423 cells) or `ofr` (3,487) row — all 418 exact
+clamps in the table sit on the 4,334 `fred` rows — and 99.71% of `sentinel` rows in
+`public.macro_observations` carry the `:sig:` news infix (43,516 of 43,644).
+
+**THE FLOOR: 242 cells, 9 patterns, `created_at` 2026-06-25..2026-08-12.** Detector is
+`abs(signal) = 3.0` EXACTLY (the `SignalUtilities.ClampSignal` bound,
+`ThresholdEngine/src/Services/PatternEvaluationService.cs:344`) on a pattern whose `signalExpression`
+reads a polluted mnemonic and whose clamping stops when that mnemonic's junk stops:
+`ust-10y-yield` 77 · `oil-price` 33 · `dxy-dollar-index` 33 · `cpi-headline-yoy` 22 · `cpi-core-yoy`
+22 · `pce-headline-yoy` 22 · `industrial-production` 11 · `nonfarm-payrolls` 11 · `fed-funds-rate` 11
+(all `:fred`). **This is 242 cells MATCHING A SIGNATURE, not 242 cells PROVEN damaged** — read that
+before citing it. True damage is in `[242, 1111]` on the mechanism's own path, still inside
+`[0, 240353]` for the table as a whole.
+
+**Numerical-coincidence trap, flagged deliberately: the superseded reading of this entry also
+reported "242 rows", from `signal <= -2.9` across the whole table. THEY ARE DIFFERENT SETS that
+happen to have the same count.** The old 242 spans 7 patterns and includes the three non-attributable
+ones below; the new 242 spans 9, includes `+3` clamps the old detector could not see, and excludes
+all three. The overlap is 88 cells. Do not treat one as confirming the other.
+
+**Why the 242 are attributable at all: the published values, read directly, not inferred from a
+before/after shift.** `sentinel.events` stores every `SeriesCollected` payload, so what Sentinel put
+under each first-party key is recoverable. It is not marginal noise — DGS10 was published as 8, 18,
+20, 22, 28, 50, 55, 60, 67, 100 and 125000000000 against a real 10y yield of ~4.4-4.7%; DCOILWTICO
+ranges -1,934,000 to 1e9; DTWEXBGS's maximum published value is `20230729`, a DATE. `ust-10y-yield`
+clamps at `+3` only when DGS10 >= 5.5, which real data never reached in the window, and its clamp
+burst runs 2026-07-23..2026-08-12 — the exact span of the junk DGS10 publications. The same
+arithmetic-impossibility test passes for the other eight.
+
+**The controls behave as controls should — three patterns clamp in BOTH eras and are excluded.**
+`repo-liquidity-stress:fred` clamps on 10 of 10 batches across both eras: `-WLRRAL/75000` against a
+level in the millions is permanent formula saturation, and Sentinel's last WLRRAL publication was
+2026-05-01, 3.5 months before the fix. `um-consumer-sentiment:fred` needs UMCSENT <= 55 for its `-3`,
+which real consumer sentiment genuinely reaches. `gdp-real:fred` still clamps 2026-08-26. None is
+attributable to D-18 and none is counted.
+
+**FOUR CORRECTIONS to the naive version of this measurement, each of which alone would have produced
+a wrong answer:**
+1. **`abs(signal) >= 2.9` is NOT a clamp detector.** `EvaluateHardMagnitudeAsync` falls back to the
+   raw, UNCLAMPED mean when the expression throws (`ObservationCellProjector.cs:826-839`), so
+   `>= 2.9` sweeps in raw means: `continuing-jobless-claims` at 1,777,000, `initial-jobless-claims`
+   at 225,000, `cpi-headline-yoy:fred` at 3.779246. 143 cells counted as "clamped" by that detector
+   are unclamped fallbacks. Use `= 3.0`.
+2. **The single largest row of the naive table is off-mechanism entirely.**
+   `obs:cpi-headline-yoy:sentinel` (110 "clamped" pre / 0 post) is news-path, so it never touched the
+   cache — and all 110 are `> 3.0`, i.e. not clamps either. It is disqualified twice over.
+3. **"Stops dead at the fix boundary" is false for 5 of 12 patterns.** `industrial-production` last
+   clamps 2026-07-17, `dxy-dollar-index` 2026-07-21, `pce-headline-yoy` 2026-07-30, `fed-funds-rate`
+   2026-08-04, `nonfarm-payrolls` 2026-08-07. They stop when their OWN mnemonic's junk stops, which
+   fits better and still supports the mechanism — INDPRO's last Sentinel publication and
+   `industrial-production`'s only clamp are the SAME DAY, 2026-07-17, 27 days before the fix.
+4. **The `created_at` split has almost no statistical power and is not what carries this claim.**
+   Post-fix eras are 1-3 projection batches (11 sectors each) for 10 of the 12 clamping patterns;
+   `oil-price` is 0-of-2 post-fix batches, p≈0.44. Only `ust-10y-yield` has any power (39 pre / 10
+   post batches) and even it is p≈0.13 on batch counts alone. The claim rests on the published values
+   and the arithmetic impossibility, NOT on the before/after counts.
+
+**D-18's card named SIX polluted mnemonics; the measured set is THIRTY-SEVEN, and the six were a
+truncated top of a list, not a scope.** *Re-measured 2026-08-26; this supersedes the "FIFTEEN" figure
+first recorded here, which was itself an undercount and is withdrawn by its own author.* D-18's own
+30-day window (2026-07-13 .. 2026-08-12) reproduces five of its six counts exactly (DGS10 42,
+DCOILWTICO 36, UNRATE 30, PAYEMS 29, ICSA 26; CPIAUCSL 98 vs its 96, window-boundary jitter) but
+contains **37** distinct bare first-party keys -- not six, and not fifteen. The fifteen omitted the
+third-largest key in the window outright: **DEXJPUS, 37 events, 0.1 .. 1.17e13**, ahead of
+DCOILWTICO. The full window list with per-key event counts now lives in the D-18 card. 33 of the 37
+published at least one value outside a 2x band of that series' own real 2026 FRED range, and **151**
+distinct first-party keys carry 3,630 events across all history before the 2026-08-13 cutover. The
+list was cut and nothing marked it as cut -- that unmarked truncation, not the specific count, is the
+defect, and the card now states that the set is measured and open. This is load-bearing: the
+obvious test of this entry's claim, "does the pattern read one of the six mnemonics D-18 names",
+FALSELY REFUTES it — 5 of the 9 floor patterns (`dxy-dollar-index`, `cpi-core-yoy`,
+`pce-headline-yoy`, `fed-funds-rate`, `industrial-production`) read a polluted mnemonic that is not
+on D-18's six. A truncated list in a card became a wrong answer in a measurement that trusted it.
+
+**Nothing else changed at the boundary.** The only `ThresholdEngine/**` commit between 2026-08-05 and
+2026-08-20 is `3bae398a` itself, and it touches one file (`PatternMnemonicFormatValidator.cs`). No
+pattern config under `ThresholdEngine/config/patterns/**` was edited in the window, so no threshold,
+formula or clamp bound moved across the split.
+
+**WHAT THIS SAMPLE STRUCTURALLY CANNOT CONTAIN, and every item biases the floor DOWNWARD:**
+- damage that did not reach the clamp. A polluted value moving a signal from 0.3 to 1.7 is real
+  corruption with NO signature. Only saturation is visible, so 242 is a floor of a floor
+- cells since recomputed. The projector heals on rewrite, so a damaged cell recomputed post-fix on
+  clean data no longer carries the signature — 26,205 rows show a recompute lag, so this is not
+  hypothetical
+- raw-mean fallback cells, which are also corrupted (the expression threw) but carry no clamp
+- the 0.29% residual: 128 `sentinel` rows in `macro_observations` lack the `:sig:` infix, so a group
+  made entirely of them would take the hard-data path. The hard-data population is measured at 5,929
+  as `source_collector IN ('fred','ofr')`; that residual is not excluded by measurement, only bounded
+- anything about collision loss, which has no fix date and is still happening
+- per-cell provenance, which does not exist at all (see the entry above this one)
+
+**DO NOT RETRY (1/2): mean-signal-shift attribution across the fix boundary.** Refuted by its own
+control and still refuted; this round did not resurrect it. The projector evaluates hard-data
+patterns' `signalExpression` against the same `ObservationCache` D-18 corrupted
+(`ObservationCellProjector.EvaluateHardMagnitudeAsync`), so comparing a pattern's mean `signal`
+before/after the fix looked plausible. `obs:oil-price:sentinel` shifts -0.137 -> +1.301 (**+1.437**)
+across `created_at='2026-08-13'`. But SentinelCollector/AGENT_README.md D-18 names `natural-gas-price`
+as its CLEAN control (Sentinel has never published `DHHNGSP`), and `obs:natural-gas-price:sentinel`
+shifts **+0.694** over the same boundary — smaller, same direction, on a series the corruption never
+touched. Others shift further in the OPPOSITE direction: `obs:fed-funds-rate:sentinel` **-2.185**,
+`obs:dxy-dollar-index:sentinel` **-1.515**. A method that moves the clean control almost as much as
+the implicated series is measuring period effects. It also fails for a second reason now visible:
+every pattern it tested was `:sentinel`, i.e. news-path, which never reads the corrupted cache at all.
+
+**DO NOT RETRY (2/2): tightening the bound with a before/after COUNT on any clamp-like threshold.**
+Attempted this round and it does not carry weight in either direction — post-fix eras are 1-3 batches
+for 10 of 12 patterns (§correction 4). The narrowing that DID work is structural (which path can
+reach the cache) plus direct (what values Sentinel published), and both are re-runnable below. A
+future round that re-derives 240,353 -> 1,111 by that route is repeating settled work, not extending
+it; the open question is disposition, not measurement.
+
+No backfill or recompute recommendation follows from this entry — disposition stays a human decision
+(`extraction-identity-implementation.md` §6.2).
+
+Re-check (SELECT-only, `atlas_data`):
+  the three nested populations —
+  `SELECT count(*) FILTER (WHERE created_at < '2026-08-13') AS coarse_bound,
+     count(*) FILTER (WHERE created_at < '2026-08-13'
+       AND source_collector IN ('fred','ofr')) AS hard_data_path
+   FROM public.matrix_cells;`
+  the 242-cell floor —
+  `SELECT pattern_id, signal, count(*), min(created_at)::date, max(created_at)::date
+   FROM public.matrix_cells
+   WHERE abs(signal) = 3.0 AND created_at < '2026-08-13'
+     AND pattern_id IN ('obs:ust-10y-yield:fred','obs:oil-price:fred','obs:dxy-dollar-index:fred',
+       'obs:cpi-headline-yoy:fred','obs:cpi-core-yoy:fred','obs:pce-headline-yoy:fred',
+       'obs:industrial-production:fred','obs:nonfarm-payrolls:fred','obs:fed-funds-rate:fred')
+   GROUP BY 1,2 ORDER BY 3 DESC;`
+  the excluded both-era clampers, which must STAY non-zero post-fix for the exclusion to hold —
+  `SELECT pattern_id, count(*) FILTER (WHERE created_at >= '2026-08-13') AS post_fix_clamps
+   FROM public.matrix_cells WHERE abs(signal) = 3.0
+     AND pattern_id IN ('obs:repo-liquidity-stress:fred','obs:um-consumer-sentiment:fred',
+       'obs:gdp-real:fred') GROUP BY 1;`
+  what Sentinel actually published under first-party keys (the direct evidence) -- the first-party
+  side is DERIVED, never a frozen IN-list: the earlier hardcoded 15 mnemonics missed 22 of the 37 keys
+  actually in the window, which is the same truncation defect this entry is about. The series key is
+  nested at `payload->'seriesCollected'->>'seriesId'`; `payload->>'seriesId'` matches NOTHING and
+  reads as a clean zero --
+  `WITH first_party AS (
+     SELECT DISTINCT "SeriesId" AS k FROM public.fred_observations
+     UNION SELECT DISTINCT "SeriesId" FROM public.series_configs
+     UNION SELECT DISTINCT series_id FROM public.alphavantage_series
+     UNION SELECT DISTINCT series_id FROM public.nasdaq_series
+     UNION SELECT DISTINCT mnemonic FROM public.ofr_hfm_series
+     UNION SELECT DISTINCT mnemonic FROM public.ofr_stfm_series
+     UNION SELECT DISTINCT series_id FROM public.finnhub_series)
+   SELECT e.payload->'seriesCollected'->>'seriesId' AS mnemonic, count(*),
+     min((dp->>'value')::numeric) AS min_v, max((dp->>'value')::numeric) AS max_v,
+     max(e.occurred_at)::date AS last_pub
+   FROM sentinel.events e
+   JOIN first_party fp ON fp.k = e.payload->'seriesCollected'->>'seriesId'
+   CROSS JOIN LATERAL jsonb_array_elements(e.payload->'seriesCollected'->'dataPoints') dp
+   GROUP BY 1 ORDER BY 2 DESC;`
+Closes only on disposition. `last_pub` must stay <= 2026-08-12 for every mnemonic — a later date means
+the D-18 egress guard has regressed and the corruption is live again.
+
 **D-23's thin-draw gate can never deny, because `.Bind()` APPENDS to a non-empty list default.**
 `SearxngIssuerProbeOptions.Engines` initialises to `["duckduckgo", "bing"]`
 (`SentinelCollector/src/Configuration/SearxngIssuerProbeOptions.cs:72`) and `appsettings.json:75` configures the

@@ -360,19 +360,19 @@ GROUP BY 1 ORDER BY 2 DESC;
 
 ---
 
-## 5. S5 -- bound historical matrix damage BY TIME  [read-only, parallel, anytime]
+## 5. S5 -- bound historical matrix damage BY TIME  [read-only, parallel, anytime]  **STATUS: DONE (2026-08-26)**
 
 **Template:** `recon-measurement`. Read-only. **No branch, no code.**
 
 **The provenance method this story originally specified does not exist. Do not attempt it.**
 An earlier draft asked for the share of `matrix_cells` whose
 `contributing_observation_refs` / `source_provenance` chain reaches a corrupted observation.
-Measured 2026-08-26 against `public.matrix_cells` (287,763 rows):
+Measured 2026-08-26 against `public.matrix_cells` (288,412 rows):
 
 | column | rows populated | share |
 |---|---|---|
 | `contributing_observation_refs` | **0** | 0% |
-| `source_provenance` | 223 | 0.08% |
+| `source_provenance` | 223 | 0.077% |
 | `source_provenance->>'rawContentId'` non-null | **0 of those 223** | 0% |
 
 There is no populated join path from a matrix cell back to the observations that produced it.
@@ -381,34 +381,111 @@ Dispatched as originally written this story returns a false near-0% "corrupted" 
 The empty chain is a defect in its own right and larger than this story -- it is filed under
 `docs/BACKLOG.md` §KNOWN DEFECTS with its own re-check.
 
-**The question S5 CAN answer, singular:** how many `matrix_cells` rows were evaluated before
-D-18 shipped, and how many after?
+**The question S5 was scoped to answer was "how many cells existed before D-18 shipped" -- and
+the answer to the question actually worth asking is narrower than that by two orders of
+magnitude.** The coarse time bound comes first because it is still the honest ceiling over the
+whole table, then the narrowing that survived adversarial review on 2026-08-26.
+
+The first draft split on `evaluated_at`. That was wrong: `evaluated_at` is the nominal date being
+evaluated, not when the row was computed. `created_at` is the true write/projection timestamp,
+and it disagrees with `evaluated_at` on 1,166 rows (evaluated for a pre-fix date but computed
+post-fix, on clean data) and postdates it by more than a day on 26,205 rows (9.09%, avg 5.38
+days, max 210 days) -- a continuous rolling recompute since 2026-05-30, not one backfill burst.
 
 ```sql
-SELECT count(*) FILTER (WHERE evaluated_at <  '2026-08-13') AS before_d18,
-       count(*) FILTER (WHERE evaluated_at >= '2026-08-13') AS on_or_after_d18,
-       count(*) AS total
+SELECT count(*) AS total,
+       count(*) FILTER (WHERE created_at  < '2026-08-13') AS created_before_fix,
+       count(*) FILTER (WHERE evaluated_at < '2026-08-13') AS evaluated_before_fix,
+       count(*) FILTER (WHERE evaluated_at < '2026-08-13' AND created_at >= '2026-08-13')
+         AS eval_pre_created_post
 FROM public.matrix_cells;
 ```
 
-Measured 2026-08-26: **241,508 before / 46,255 on-or-after / 287,763 total.** These move as the
+Measured 2026-08-26: **240,353 created before the fix** (`created_at`, the correct discriminator)
+vs 241,519 evaluated before it (`evaluated_at`, superseded) / 288,467 total. These move as the
 projector keeps writing; re-run rather than quoting them.
 
-**THIS IS A COARSE UPPER BOUND, NOT AN ATTRIBUTION.** State it in exactly those words in the
-report. The 241,508 figure is *every cell evaluated before the fix date*, not the cells that
-consumed a corrupted value. It cannot distinguish a cell that read a bare-mnemonic Sentinel
-value from one that read a correct FRED vintage, and it says nothing at all about collision
-loss, which has no fix date and is still happening. The true corrupted share is somewhere in
-`[0, 241508]` and this story cannot narrow it further. A number reported without that sentence
-attached will be read as an attribution and will drive the §6.2 decision wrongly.
+**THIS IS A COARSE UPPER BOUND, NOT AN ATTRIBUTION. 240,353 is every cell that EXISTED while the
+bug was live, not cells PROVEN to have consumed a bad value.** State it in exactly those words in
+any report. A number reported without that sentence attached will be read as an attribution and
+will drive the §6.2 decision wrongly. It says nothing at all about collision loss, which has no
+fix date and is still happening.
 
-**What the sample structurally cannot contain**, to be stated before concluding:
+**THE BOUND DOES NARROW, structurally rather than statistically.** D-18 corrupted the
+`ObservationCache`, and only one of the projector's two magnitude paths reads that cache:
+`isNews ? {the :sig: decay sum} : EvaluateHardMagnitudeAsync(...)`
+(`ThresholdEngine/src/Workers/ObservationCellProjector.cs:686-688`, whose own comment reads "News
+groups NEVER use SignalExpression"). A news-path cell therefore cannot consume a polluted cache
+value however corrupt the cache was. Three nested populations, all measured 2026-08-26:
+
+| population | pre-fix cells | what it is |
+|---|---|---|
+| whole table | **240,353** | every cell alive while the bug was live (coarse ceiling) |
+| hard-data path | **5,929** | magnitude came from `signalExpression` + `ObservationCache` |
+| reads a polluted mnemonic | **1,111** | of those, patterns reading a series Sentinel published under |
+| carries the ±3 signature | **242** | of those, the identified floor |
+
+Corroborated in data as well as code: **zero** cells at `abs(signal) = 3.0` exist on any
+`sentinel` (280,423) or `ofr` (3,487) row -- all 418 exact clamps sit on the 4,334 `fred` rows --
+and 99.71% of `sentinel` rows in `public.macro_observations` carry the `:sig:` news infix.
+
+**True damage is in `[242, 1111]` on the mechanism's own path. 242 is cells MATCHING A SIGNATURE,
+not cells PROVEN damaged** -- that sentence travels with the number exactly like the one above.
+The floor spans 9 patterns, `created_at` 2026-06-25..2026-08-12, detected with `abs(signal) = 3.0`
+EXACTLY (the `SignalUtilities.ClampSignal` bound,
+`ThresholdEngine/src/Services/PatternEvaluationService.cs:344`). Full enumeration, the direct
+published-value evidence that makes the clamps arithmetically impossible from real data, the three
+both-era clampers excluded as controls, and every re-check query live in `docs/BACKLOG.md`
+§KNOWN DEFECTS (search "S5 (`docs/proposals/...`) is DONE") rather than being duplicated here.
+
+**Four traps this measurement fell into and had to be corrected out of** -- any one of them alone
+flips the answer, and all four are recorded in full in the BACKLOG entry:
+
+1. `abs(signal) >= 2.9` is not a clamp detector. The projector falls back to the raw, UNCLAMPED
+   mean when an expression throws (`ObservationCellProjector.cs:826-839`), so that threshold
+   sweeps in raw means of 1,777,000 and 225,000. Use `= 3.0`.
+2. The largest row of the naive result (`obs:cpi-headline-yoy:sentinel`, 110 pre / 0 post) is
+   news-path AND all 110 are `> 3.0`. Disqualified twice: wrong path, and not clamps.
+3. "Stops dead at the fix boundary" is false for 5 of 12 patterns. They stop when their OWN
+   mnemonic's junk stops -- INDPRO's last Sentinel publication and `industrial-production`'s only
+   clamp are the same day, 2026-07-17, 27 days before the fix.
+4. **D-18's card named six polluted mnemonics; the measured set is thirty-seven.** *Re-measured
+   2026-08-26 -- supersedes the "fifteen" recorded in the first pass of this section, which was
+   itself an undercount.* D-18's own 30-day window holds 37 distinct bare first-party keys, not six
+   and not fifteen; the fifteen missed DEXJPUS (37 events, third-largest in the window, ahead of
+   DCOILWTICO). The list was cut with nothing marking it as cut. Testing this story's claim against
+   those six FALSELY REFUTES it, because 5 of the 9 floor patterns read a polluted mnemonic outside
+   D-18's list. The card now records the window list as MEASURED and OPEN, so the next reader does
+   not treat it as a scope.
+
+**What the sample structurally cannot contain**, to be stated before concluding -- every item
+biases the floor DOWNWARD:
 
 - no per-cell record of which observations fed it (the table above)
-- cells are written by the WS3 projector only; anything a different writer would have produced
-  is not in this population at all
-- `evaluated_at` is the projection timestamp, not the observation's extraction time, so a cell
-  evaluated after 2026-08-13 may still have read a pre-D-18 value out of the cache
+- damage that never reached the clamp: a polluted value moving a signal 0.3 -> 1.7 is real
+  corruption with no signature. Only saturation is visible, so 242 is a floor of a floor
+- cells since recomputed. The projector heals on rewrite, and 26,205 rows show a recompute lag,
+  so a damaged cell recomputed post-fix on clean data no longer carries the signature
+- raw-mean fallback cells, also corrupted (the expression threw) but carrying no clamp
+- a 0.29% residual: 128 `sentinel` rows lack the `:sig:` infix, so a group made entirely of them
+  would take the hard-data path. The 5,929 figure bounds that residual, it does not exclude it
+- cells are written by the WS3 projector only -- confirmed 2026-08-26: 100% of `pattern_id`
+  values fall under the `obs:` or `sentinel:` prefixes it writes, zero from any third writer
+- `evaluated_at` is the nominal date, not the computation time (see the `created_at` correction)
+
+**Two methods are closed; do not re-attempt either.** (1) Mean-signal-shift attribution across the
+fix boundary, refuted by its own control -- `obs:natural-gas-price:sentinel`, D-18's named CLEAN
+series, shifts +0.694 where the implicated `obs:oil-price:sentinel` shifts +1.437, and unrelated
+patterns shift further in the opposite direction (`obs:fed-funds-rate:sentinel` -2.185,
+`obs:dxy-dollar-index:sentinel` -1.515). It fails for a second reason now visible: every pattern
+it tested was `:sentinel`, i.e. news-path, which never reads the corrupted cache. (2) Tightening
+the bound with a before/after COUNT on any clamp-like threshold -- post-fix eras are 1-3
+projection batches for 10 of 12 clamping patterns, so the split has almost no power and does not
+carry the claim in either direction. What worked was structural (which path reaches the cache)
+plus direct (what values Sentinel actually published, recoverable from `sentinel.events`).
+
+**S5 is closed as a measurement.** The remaining question is disposition, not a tighter number,
+and disposition is §6.2's human decision.
 
 **Constraints for the brief -- restate verbatim:**
 
