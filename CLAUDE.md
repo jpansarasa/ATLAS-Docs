@@ -132,6 +132,10 @@ TABLES: news obs sentinel.extracted_observations | raw_content · matrix feed pu
 MIGRATIONS [HARD_STOP]:
   ✗ NEVER hand-write a migration .cs # missing Designer.cs -> EF records it in __EFMigrationsHistory, schema unchanged
   ✓ nerdctl compose exec -T {svc}-dev sh -c "cd /workspace/{Svc}/src && dotnet ef migrations add {Name} --output-dir Data/Migrations"
+    `--context {Svc}DbContext` is REQUIRED where the project reference graph pulls in a SECOND DbContext
+      -- measured 2026-08-27: SentinelCollector references MacroSubstrate, so MacroSubstrateDbContext is in
+      scope and the bare form above fails as ambiguous. The service having one DbContext of its OWN is not
+      the test; what `dotnet ef` sees across every referenced project is.
     `--project src/Data` is WRONG and was documented here for months: NO service has a src/Data project (verified —
       zero */src/Data/*.csproj in the tree). Each service is ONE csproj at {Svc}/src/ with Data/ as a FOLDER, so that
       form resolves to {Svc}/src/src/Data and dies with MSB1009, after creating a stray src/src/obj to clean up.
