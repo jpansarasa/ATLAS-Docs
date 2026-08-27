@@ -30,6 +30,16 @@ regenerated in the PR that fixes it. `state` below is that verdict.
   extracted inside that window, so this column is what the v2 path owed these
   rows and did not emit — it is not a count of rows in `sentinel.events`.
 
+Every observation row also carries `claim_kind` and `polarity`, and both are
+**null on every row of this corpus** — these articles were extracted before the
+columns existed. That zero is asserted
+(`GoldenCorpusIdentityTests.should_still_record_no_claim_kind_on_any_published_row`)
+so the first rebuild against labelled production rows moves a recorded value
+instead of silently gaining a field. There is no per-fixture *expected* claim
+kind and there cannot be one from this source: kinds live on CoD CLAIM blocks,
+which are never persisted, so any number here would be one this repo wrote
+rather than one production produced.
+
 ## The corpus is committed because it cannot be rebuilt later
 
 `StaleContentPrunerService` enforces a **30-day** `raw_content` retention. Measured

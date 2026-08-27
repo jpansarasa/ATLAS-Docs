@@ -2140,7 +2140,8 @@ Re-check (psql is SELECT-only):
 
 **THE GOLDEN CORPUS PROVES ITS ASSERTIONS READ THE FIXTURE; NOTHING PROVES THEY WOULD CATCH A
 CHANGE TO THE PUBLISHER.** Those are different guarantees and the corpus only measures one of them.
-Measured 2026-08-26 on `GoldenCorpusIdentityTests` (68 cases under `DisplayName~GoldenCorpus`): the
+Measured 2026-08-26 on `GoldenCorpusIdentityTests` (68 cases under `DisplayName~GoldenCorpus`; 70 from
+2026-08-27, the claim-atom census and its control): the
 two committed mutation controls break a FIXTURE -- give every row of `collision-151480-walmart` its
 own symbol, force every row of `separating-150183-slug-fallback` onto one -- and require the
 matching verdict to complain by name. That is fixture mutation. No control mutates
@@ -2156,6 +2157,33 @@ Re-check (run it, it is two minutes, and revert the edit afterwards):
   `nerdctl compose exec -T sentinel-collector-dev sh -c "cd /workspace/SentinelCollector/tests/SentinelCollector.UnitTests && dotnet test --filter 'DisplayName~GoldenCorpus'"`
   # expected: every separating case and every baseline case REDs; record the survivors, they are
   # the assertions that do not depend on the publisher at all
+
+**`claim_kind` SHIPS WITH ITS COVERAGE UNMEASURED — the columns exist, the subject join is proven in
+unit tests, and NOTHING says what share of production rows will actually carry a value.** Measured
+2026-08-27: 0 of 744,631 `sentinel.extracted_observations` rows carry a claim kind, because the
+column did not exist until the S3 claim-kind persistence PR (branch
+`fix/sentinel-claimkind-persistence`). The share that WILL carry one cannot be measured before
+deploy and is not a matter of trying harder: CoD CLAIM blocks are never persisted anywhere, so
+there is no stored corpus to replay the join over, and the golden corpus is drawn from
+`extracted_observations` and therefore inherits the same blindness. The failure mode is silent by
+construction — a column that is always NULL reads exactly like a column nobody queries, which is
+the shape of defect the whole identity epic is about. Fix: read the counter after the first full
+collection cycle post-deploy and record the split here.
+Re-check:
+  `sum by (outcome) (increase(sentinel_dsl_adapter_claim_atom_total[24h]))` — three outcomes,
+  `attached|ambiguous|none`, one increment per emitted NUM row, so the sum is directly comparable
+  to `sentinel_dsl_adapter_row_decision_total`. Anchor the eval instant to an actual `date -u`.
+  # `attached` at or near 0 over a day of v2 traffic (1,179.2 articles/day at the 2026-08-12
+  #   volume anchor) means the subject join finds nothing and the columns are decorative
+  # a high `ambiguous` share is a finding about the DATA, not a reason to loosen the join: it says
+  #   articles routinely make several kinds of claim about one issuer, and per-SUBJECT scoping is
+  #   what should be reconsidered — first-wins would only hide it
+  # `none` dominating on a source whose articles do carry claims points at the join key, the raw
+  #   entity name both producers copy, drifting between the two arrays -- but read it WITH
+  #   `sum by (reason) (increase(sentinel_dsl_adapter_claim_atom_refused_total[24h]))` first: a
+  #   claim_kind too wide for the 40-char column is refused at the adapter and its rows land in
+  #   `none` like any other, so producer drift and join drift are the same reading on the first
+  #   counter alone. Non-zero `kind_too_long` is a PRODUCER finding, not a join one
 
 **THE SENTINEL RAW-DATA STORE IS A 30-DAY ROLLING WINDOW, NOT AN ARCHIVE — so any corpus drawn
 from it is a snapshot that cannot be re-drawn, and a plan that treats it as a queryable history is
