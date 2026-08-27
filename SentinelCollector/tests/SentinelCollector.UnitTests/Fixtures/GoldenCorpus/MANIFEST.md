@@ -22,10 +22,13 @@ regenerated in the PR that fixes it. `state` below is that verdict.
   `EventPublisher.CreateSeriesCollectedEvent`. **measurements > keys means
   ThresholdEngine's `ObservationCache`, keyed on `SeriesId` alone, kept the last
   write and dropped the rest.**
-- **sector events** — distinct `(atlas_sector_code, symbol)` pairs clearing the v1
-  sector gate. Production has published **zero** sector events since 2026-05-17
-  (verified in `sentinel.events`); `RunV2ProductionAsync` never calls
-  `CreateSectorEvent`.
+- **sector events** — distinct `(atlas_sector_code, symbol)` pairs clearing the
+  sector gate, which BOTH pipelines now apply term for term (D-24). Production
+  published **zero** of them between 2026-05-17 and the D-24 port (verified in
+  `sentinel.events`): `RunV2ProductionAsync` did not call `CreateSectorEvent`,
+  and every source with published rows was on v2. Every article below was
+  extracted inside that window, so this column is what the v2 path owed these
+  rows and did not emit — it is not a count of rows in `sentinel.events`.
 
 ## The corpus is committed because it cannot be rebuilt later
 

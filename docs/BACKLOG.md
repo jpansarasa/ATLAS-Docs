@@ -520,8 +520,8 @@ below. The numerator's cause and size change as well.
   (`TryExactCandidateMatchAsync` co-mention rejection, `exact_rejected_name`), `:521` and `:538`
   (`TryHybridResolveAsync` guard rejections).
 - `ExtractionProcessor.cs` never calls `DeterministicResolver` — **zero** grep hits — and its own two
-  `status="resolved"` emissions (`SentinelCollector/src/Workers/ExtractionProcessor.cs:1209` `ticker_in_quote`,
-  `:1327` `cove_*`) have not fired in prod for 30 days. Those two cite the `status` label line, one BELOW their
+  `status="resolved"` emissions (`SentinelCollector/src/Workers/ExtractionProcessor.cs:1211` `ticker_in_quote`,
+  `:1329` `cove_*`) have not fired in prod for 30 days. Those two cite the `status` label line, one BELOW their
   `.Add(`; the `DeterministicResolver` citations above cite the `.Add(1,` line itself. Both land inside the correct
   emission block — do not "fix" either to match the other. A sixth site outside the resolver,
   `SentinelCollector/src/Workers/ReExtractResolutionAdapter.cs:190`, emits only `comention_rejected`.
@@ -1172,7 +1172,7 @@ timeout-exhausted, 1 prompt-too-large. (11,576 rows have no extraction at all, b
 `processed_at` set with `processing_error IS NULL` — processed cleanly, zero observations, which is normal.)
 The 55 are the finding: collected **2026-07-19T17:14:25Z -> 2026-07-24T11:00:06Z**, `retry_count = 0` for all 55,
 `processed_at IS NULL` for all 55. They were never retried ONCE. Cause is a classification gap, not exhaustion:
-`SentinelCollector/src/Workers/ExtractionProcessor.cs:981-987` treats only `TimeoutException`,
+`SentinelCollector/src/Workers/ExtractionProcessor.cs:983-989` treats only `TimeoutException`,
 `TaskCanceledException` wrapping one, and `HttpRequestException` with null/5xx/429/408 as transient. Polly's
 `BrokenCircuitException` matches none, so a circuit-open failure took the PERMANENT branch on the FIRST attempt
 (`:1003`) without incrementing `RetryCount`. Contrast the 5 timeout orphans, all at `retry_count = 3` (`MaxRetries`) —
@@ -1836,7 +1836,7 @@ compares with a strict `>` (`deployment/artifacts/monitoring/alerts/thresholdeng
 
 **The publish gate, and why a plausible symbol does not survive it.** The gate is
 `o.InstrumentId.HasValue && o.ResolutionConfidence >= 0.8f && o.Certainty is Definite or Expected`
-(`SentinelCollector/src/Workers/ExtractionProcessor.cs:848` v1, `:1986` v2). **`Symbol` is not in the predicate**, so
+(`SentinelCollector/src/Workers/ExtractionProcessor.cs:848` v1, `:1991` v2). **`Symbol` is not in the predicate**, so
 a row carrying a plausible symbol and no instrument is dropped without a trace on the symbol axis. Nor is
 `"InstrumentId": null` inside `candidate_symbols_json` the defect: **0 of 3,650,818** candidates all-time carry a
 non-null value there, including every candidate on every row that published successfully. That field is the
