@@ -2047,6 +2047,95 @@ exactly this shape (file on disk, no row). Not chased further this round.
 Re-check: `sudo find /opt/ai-inference/raw-data/sentinel/rss/2026/04/23 -type f | wc -l` (1168) against
 `SELECT count(*) FROM sentinel.raw_content WHERE raw_file_path LIKE '%rss/2026/04/23%'` (0).
 
+**A `raw_content` ROW WITH EVEN ONE `extracted_observations` CHILD CAN NEVER BE PRUNED, AT ANY
+`RawRetentionDays` SETTING — the cohort is unreachable by construction, not by policy, and raising or
+lowering the setting cannot fix it.** `StaleContentPrunerService` runs two FK-safe passes: pass 1
+(`StaleContentPrunerService.cs:95`) deletes rows past the cutoff only `WHERE CollectedAt < cutoff AND
+!r.Observations.Any()` (`RawContentRepository.cs:107-108`); pass 2 (`StaleContentPrunerService.cs:112`)
+nulls `raw_file_path` on the rows pass 1 skipped — `CollectedAt < cutoff AND RawFilePath != null AND
+r.Observations.Any()` (`RawContentRepository.cs:144-146`) — keeping the row and its children intact.
+Once pass 2 has run once on a row there is nothing left for EITHER pass to do to it: pass 1's predicate
+permanently excludes any row with a child, and pass 2 only ever fires once per row (`raw_file_path` is
+already null the second time). Moving the cutoff changes which rows are OLD ENOUGH; it never changes
+which rows HAVE CHILDREN, so no `RawRetentionDays` value reaches this cohort.
+
+**Scope: "can never be pruned" is true of the pruner, not of the whole system.**
+`/admin/reprocess` (`AdminEndpoints.cs:224-230`, wired, real) deletes a row's `extracted_observations`
+children scoped to `ReviewStatus.Pending AND QuarantinedAt IS NULL`. Deleting a row's last Pending,
+non-quarantined child makes it childless, which unlocks it for pass 1 on the NEXT host start — a
+narrow, real exception to the absolute above. Measured 2026-08-27: of the 4,980 rows' children,
+review-status is Approved 36,570 / AutoClosed 18,567 / Rejected 55 / Skipped 3 — **zero Pending**, so
+the exception does not apply to this cohort today. It does not apply, but it exists; the phrasing
+above doesn't scope it out.
+
+**Measured 2026-08-27**, raising `RawRetentionDays` 30 -> 180 and restarting the container: 0 rows
+deleted.
+  `SELECT count(*) FROM sentinel.raw_content WHERE collected_at < now() - interval '180 days';` ->
+    **4,980** (all rows past the live cutoff)
+  `SELECT count(*) FROM sentinel.raw_content r WHERE r.collected_at < now() - interval '180 days' AND
+    NOT EXISTS (SELECT 1 FROM sentinel.extracted_observations o WHERE o.raw_content_id = r.id);` ->
+    **0** (pass-1-eligible: childless)
+  `SELECT count(*) FROM sentinel.raw_content r WHERE r.collected_at < now() - interval '180 days' AND
+    r.raw_file_path IS NOT NULL AND EXISTS (SELECT 1 FROM sentinel.extracted_observations o WHERE
+    o.raw_content_id = r.id);` -> **0** (pass-2-eligible: has children, file-path still set)
+All 4,980 have children (nothing for pass 1) and all 4,980 already carry `raw_file_path IS NULL`
+(nothing for pass 2 — their HTML was freed on an earlier host start). An INSTANT query against
+`sentinel_extraction_error_total{source="prune"}` (Prometheus, datasource `bf2ya9fqus268c`) at
+2026-08-27T11:15:44Z returns no series — but that is evidence about THIS restart, not about pass 1
+overall: `StaleContentPrunerService.cs:98` (`if (deleted > 0)`) emits the counter only when the
+CURRENT run's pass 1 deletes at least one row, and this run found 0 (`pass1_eligible=0`, above). A
+30-day RANGE query on the same series is non-empty and repeatedly stepping — from single digits up
+to **3405**, last sampled 2026-08-27T02:31:15Z (~9h before the empty instant read) and gone from the
+series by ~02:40Z, consistent with a restart landing between those two timestamps. Pass 1 is
+demonstrably active; only children-bearing rows are untouched.
+
+**The trap, named because it just cost a round: an empty INSTANT query on a cumulative counter is
+not evidence the counter never fired — range-query it before concluding absence.**
+
+**Severity: not urgent, and this should not read as a fire.** The bytes that matter are already
+reclaimed — pass 2 freed the on-disk HTML for all 4,980 rows, and the HTML is the bulk of the storage
+(see the `sata-bulk/raw-data` measurement above, ~4 GB physical/month). What accumulates here is
+`raw_content` ROWS plus their `extracted_observations` children — narrow rows, no blobs — at whatever
+rate articles get extracted and then age past 180 days. Comparatively small, and slow.
+
+**What it invalidated.** The deploy brief that predicted ~315 deletions from this restart was wrong,
+and the mistake is worth naming so the next prune isn't sized the same way: it counted rows PAST THE
+CUTOFF and treated that as the deletion estimate, when pass 1 only ever deletes the CHILDLESS subset
+of that count. At the 180-day cutoff those two counts are 4,980 and 0 — not close, and no amount of
+retention-setting tuning brings them together. Size a prune's expected deletions with the childless
+query above; a plain past-cutoff count is not a deletion estimate.
+
+**A separate "377" figure from the same day does not belong to this measurement — conflating the two
+was this round's near-miss.** This file already carries a "**377** `age_cutoff`" figure (the
+`BrokenCircuitException` entry, above). Reproduced here: `SELECT count(*) FROM sentinel.raw_content
+WHERE processing_error LIKE 'age_cutoff:%';` -> **377**, exactly. But that predicate is
+`ExtractionProcessor`'s per-article skip marker for `MaxArticleAgeDays` (extraction eligibility,
+currently 30 days) — a different setting, a different column, and a different service than
+`StaleContentPrunerService`'s `RawRetentionDays` prune cutoff (180 days) measured above. Both 377 and
+4,980 are real numbers; neither substitutes for the other, and an early pass at this entry used 377 as
+if it were the prune-candidate count before this re-check caught it.
+
+**Still open, already tracked above, and unrelated to this mechanism: the 1,168-file `rss/2026/04/23`
+orphan will never be reclaimed either.** Reproduced 2026-08-27: 584 `.html` + 584 `.meta.json` =
+**1,168** files on disk; `SELECT count(*) FROM sentinel.raw_content WHERE raw_file_path LIKE
+'/opt/ai-inference/raw-data/sentinel/rss/2026/04/23/%';` -> **0**. Confirmed not a pruning artifact
+this round: 292 `raw_content` rows exist for that date with `source='rss'` (322 total that day; the
+other 30 are `source='searxng-content'`), ~126.5 days old — well past the PRIOR 30-day
+`RawRetentionDays` setting (see "Measured 2026-08-27, raising `RawRetentionDays` 30 -> 180" above).
+Pass 2 already nulled all 292 `raw_file_path`s under that earlier 30-day cutoff, long before today's
+change widened the live cutoff to 180 days; they are not "unreached yet" by the current setting, they
+were already reached by the prior one, and pass 2 fires at most once per row so the wider cutoff has
+nothing left to do here. These files were never referenced by any row, not referenced-then-nulled. See the entry above for the
+write-path race hypothesis; not re-investigated here.
+
+Re-check (psql is SELECT-only):
+  `SELECT count(*) FROM sentinel.raw_content WHERE collected_at < now() - interval '180 days';`
+  `SELECT count(*) FROM sentinel.raw_content r WHERE r.collected_at < now() - interval '180 days' AND
+    NOT EXISTS (SELECT 1 FROM sentinel.extracted_observations o WHERE o.raw_content_id = r.id);`
+  `SELECT count(*) FROM sentinel.raw_content r WHERE r.collected_at < now() - interval '180 days' AND
+    r.raw_file_path IS NOT NULL AND EXISTS (SELECT 1 FROM sentinel.extracted_observations o WHERE
+    o.raw_content_id = r.id);`
+
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
 **THE GOLDEN CORPUS PROVES ITS ASSERTIONS READ THE FIXTURE; NOTHING PROVES THEY WOULD CATCH A
