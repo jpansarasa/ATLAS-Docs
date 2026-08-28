@@ -38,7 +38,7 @@ Operator + research scripts for Sentinel's extraction pipeline. Mix of one-shot 
 | `dryrun_v7_prompt.py` | v7 prompt dry-run for Phase 1.1 acceptance measurement. |
 | `test_acceptance_criteria.py` | Smoke checks for the pinned LLM extraction acceptance criteria. |
 | `shadow_diff_report.py` | Sentinel v2 shadow-mode parity + lift report. |
-| `build_golden_corpus.py` | **The one script here whose OUTPUT is committed and read by the xUnit suite** (the suite never invokes it). Builds `tests/SentinelCollector.UnitTests/Fixtures/GoldenCorpus/` from `corpus.spec.json` — raw file plus every landed observation per article. Rebuild after the identity work moves a baseline; `--check` verifies the committed corpus against a fresh build and writes nothing. Raw files are pruned at 30 days, so an article ages out of rebuild while its fixture stays valid. |
+| `build_golden_corpus.py` | **The one script here whose OUTPUT is committed and read by the xUnit suite** (the suite never invokes it). Builds `tests/SentinelCollector.UnitTests/Fixtures/GoldenCorpus/` from `corpus.spec.json` — raw file plus every landed observation per article. Rebuild after the identity work moves a baseline. `--check` writes nothing and returns TWO named verdicts: **CORPUS DRIFT** (the committed corpus disagrees with itself — hermetic, no database, **exits 1**) and **PRODUCTION MOVED** (the live rows a fixture recorded have since changed — advisory, **exits 0**). Production rows mutate retroactively as the resolver re-resolves, and raw files prune at 30 days, so the second verdict goes dirty on its own while the fixture stays valid; never rebuild to quiet it. `--write-manifest` refreshes MANIFEST.md from the committed fixtures alone. |
 
 ### Audit / triage / cross-check
 

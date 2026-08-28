@@ -25,7 +25,7 @@ S5 matrix damage  ─┘
 
 S1 ──> S2  port sector publish to v2        (S1's metric is S2's proof)
 S0 ──> S3  carry ClaimKind + Polarity       (corpus is S3's proof)
-S3 ──> S4  identity key redesign            (BLOCKED: key insufficient + scope decision, §6.1)
+S3 ──> S4  identity key redesign            (PARKED 2026-08-27 by the user, §6.1 -- do not dispatch)
 
 S2 ⇄ S3   SAME FILE: SentinelCollector/src/Workers/ExtractionProcessor.cs
 ```
@@ -38,8 +38,9 @@ use `SENTINEL:SECTOR:` through value-independent counts, and the matrix path is 
 derivation, and §6.1 below for the consequence. S1/S2 (an event kind lost in production for 102
 days) and S0/S3 (an atom discarded on every article) are the live losses; S4 buys down a latent one.
 
-**S4 does not start without a human decision.** See §6.1 -- and note that the decision is no longer
-the cutover question this plan originally escalated, which was withdrawn on measurement.
+**S4 IS PARKED. The decision was taken 2026-08-27 and the answer was "park".** Do not dispatch it,
+and do not re-derive its measurements -- §6.1 carries them, `docs/BACKLOG.md` PARKED EPICS carries
+them with the trip conditions that would un-park it. S0/S1/S2/S3/S5 are unaffected.
 
 **S2 and S3 edit the same file and the dependency arrows do not say so.** They have no logical
 dependency -- S2 is gated on S1, S3 on S0 -- so the graph reads as "run them in parallel", and
@@ -523,11 +524,47 @@ and disposition is §6.2's human decision.
 
 ---
 
-## 6. Blocked -- human decision required before dispatch
+## 6. Human decisions -- 6.1 TAKEN (parked 2026-08-27), 6.2 still open
 
-### 6.1 S4, identity key redesign (R2)  [last of the stories, and blocked on scope, not cutover]
+### 6.1 S4, identity key redesign (R2)  [PARKED 2026-08-27 -- decision taken, not awaiting one]
 
-The fix is to key the series on **(instrument, claim kind, unit)** rather than instrument alone.
+**Status: PARKED on the user's decision, 2026-08-27.** The scope question below was put to the user
+as "expand S4 to cover extraction, or park R2 with the measurement recorded". The answer was **park**.
+Nothing in this section is dispatchable; it is retained because the measurements are what a
+re-proposal has to meet. The durable record, with the trip conditions that would un-park it and the
+command that reads each one, is in `docs/BACKLOG.md` under PARKED EPICS.
+
+Two things changed on re-measurement 2026-08-27, and the second one matters to anyone reading the
+table below:
+
+- **the key's survival rate is 75.7%, not the ~45% quoted around this work.** Adding the normalised
+  unit to `(raw_content_id, instrument_id)` leaves 12,084 of 15,959 colliding rows still colliding,
+  in 3,500 surviving sub-groups (count rows, not groups -- one group can split into two colliding
+  sub-groups). The "~45% insufficient" figure appears only as a back-reference in
+  PR #997's body and no query here derives it; it is retired.
+- **`period` is carried by no source on the v2/DSL path, and the only two sources that still carry
+  it publish nothing.** Re-measured 2026-08-28: of the six sources with rows in the last 30 days,
+  `tsa-checkpoint` (15,001) and `rss-fallback` (11) carry a `period` and publish **0**; `rss`,
+  `rss-mirror`, `searxng-content` and `challenger-rss` publish and carry **0**. Those first two are
+  exactly the sources absent from `Extraction__V2EnabledSources`. `rss` itself fell from 56.6%
+  populated in April to 0 from June, on the month `dsl_block_id` took the source. Only 582 of 21,569
+  published-with-instrument rows (2.70%) carry one, none extracted since 2026-06-30.
+  TWO EARLIER FRAMINGS OF THIS ARE RETIRED -- "the axis is not extracted" (wrong about the table
+  total, right about every live source) and "it is extracted and then lost before publish" (wrong:
+  the volume is one non-publishing source, so there is no publish-side loss to find). Do not inherit
+  either. docs/BACKLOG.md carries the breakdown and the code read that would settle the mechanism;
+  a revived story starts from that read, not from another query.
+
+**The revival path is not a key redesign.** It is making CoD emit a per-measurement claim reference
+so `numbers[]` and `claims[]` can be joined -- a model/prompt/schema change. `cod_json_schema_v1.json`
+sets `"additionalProperties": false` on both item schemas (`:56`, `:103`) and on the envelope (`:3`),
+so the reference cannot be added without changing the schema, and the only join either array offers
+today is the subject name (PR #997, which shipped `claim_kind` and found the join missing). Until
+that exists there is no discriminator to key on.
+
+The rest of this section is the evidence as it stood, unchanged.
+
+The fix was to key the series on **(instrument, claim kind, unit)** rather than instrument alone.
 
 **That key does not do the job, and the design story has to start there.** Measured 2026-08-26
 over published rows carrying an instrument -- 20,800 rows, 3,598 colliding groups:
@@ -646,5 +683,10 @@ Copy verbatim; these are the ones this codebase has been bitten by.
 | `claim_kind` populated | column absent | populated, queryable |
 | loaded patterns reading a `SENTINEL:NUM:` key | 0 of 71 | re-check before S4 is scheduled |
 | colliding groups whose members share one `unit` | 70.0% (2,517/3,598) | falls after S4, or S4 shipped partial |
+
+**The two S4 rows have no "after" any more -- S4 is PARKED (§6.1).** They are standing measurements,
+not pending targets; re-measured 2026-08-27 they read 74.0% (15,959/21,569) and 69.5% (2,545/3,660).
+Read the `SENTINEL:NUM:` row as a trip condition rather than a pre-flight check: it going non-zero is
+one of the four things that un-parks the story.
 
 A green run is not proof. Every row above ships with a control that fails when its fix is removed.

@@ -51,6 +51,41 @@ fixtures stay valid: they carry the observations and the prose, and only
 `build_golden_corpus.py` needs the original. Widening the corpus means selecting
 RECENT articles, never reaching further back.
 
+## Production rows mutate retroactively, so this corpus is an archive
+
+The observation rows below are what production held on the day each fixture was
+built, and those rows keep moving afterwards. The resolver re-resolves: a
+correction NULLs `instrument_id` while preserving the old value in
+`OriginalInstrumentId`, which changes the series key every affected row mints.
+Measured 2026-08-28 — one day after a `--check` run recorded the corpus clean —
+that had already happened to five of these thirty articles
+(`collision-151362-rss-mirror`, `collision-152410-three-keys`,
+`mixedunit-151174-walmart`, `mixedunit-151434-walmart`,
+`mixedunit-151468-six-classes`): 208 rows, every one now `NoResolution`, four of
+them articles whose live rows no longer collapse at all. This is a standing
+property of the corpus, not an incident — expect it on any fixture, at any time.
+
+`--check` therefore reports two independent verdicts, and only the first is a
+defect in this corpus:
+
+- **CORPUS DRIFT** — the committed corpus disagrees with itself: a fixture no
+  longer derives its own recorded baseline, `corpus.spec.json` no longer matches
+  the committed rows, the fixture set and the spec disagree, or this file was
+  hand-edited. Reads committed files only, no database. **Exits 1.**
+- **PRODUCTION MOVED** — the live database no longer holds the rows a fixture
+  recorded. **Exits 0, deliberately.** Nothing it reports can break the corpus:
+  the suite reads only the committed JSON and never opens a connection. It also
+  goes permanently dirty once the raw files prune, so failing on it would make a
+  clean run impossible by design — and a check that can never be clean is one
+  nobody reads.
+
+Never rebuild to make a check pass. A rebuild replaces the key counts these
+tripwires assert with today's, which converts an open defect into a green
+dashboard — the exact failure this corpus exists to refuse. Rebuild only on a
+deliberate decision to re-baseline, and move `GoldenCorpusLoader.ExpectedRedCount`
+in the same commit. To refresh only this file after editing the prose above, use
+`--write-manifest`, which reads the committed fixtures and no database.
+
 ## Corpus
 
 | fixture | bucket | raw_content_id | source | published | measurements | keys today | sector events | state | what it proves |

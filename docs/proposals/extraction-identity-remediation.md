@@ -262,7 +262,19 @@ This signal never existed, which is worse: 102 days of silence read as health.
 
 Effort: small. Risk: low. This is a missed port with a written intent.
 
-### R2 -- identity = measurement, not entity  [largest EFFORT, smallest LIVE exposure; needs design]
+### R2 -- identity = measurement, not entity  [PARKED 2026-08-27 on the user's decision]
+
+**PARKED, and the thesis is not what parked it.** 5.1 (replacement) question 2 was put to the user --
+expand the story to cover extraction, or park R2 with the measurement recorded -- and the answer was
+**park**. The identity claim still holds and still reproduces (74.0% of published rows carrying an
+instrument sit in a colliding group, re-measured 2026-08-27). What is missing is a discriminator: the
+proposed key separates 24% of the colliding ROWS, and `claim_kind` -- now a real column, PR #997 -- turns
+out not to discriminate inside one article about one issuer, because `cod_json_schema_v1.json` emits
+`numbers[]` and `claims[]` as sibling arrays with no reference between them and
+`"additionalProperties": false` on both. The revival path is therefore a CoD change (emit a
+per-measurement claim reference), not a key redesign. `docs/BACKLOG.md` PARKED EPICS carries the full
+measurement set and the four trip conditions that would un-park it, each with its re-check command.
+Everything below is retained as the evidence a re-proposal must meet.
 
 Not a patch. Sequenced behind R3 because the key must contain the atom.
 
@@ -391,11 +403,18 @@ on the cheapest decision in it.
    surface alone is small, testable, and independent of the identity model. R2 is the correct fix
    for the general case; this is the question of whether the general case needs to be fixed NOW.
 2. **Does S4's scope expand to extraction, or does R2 park until it can be solved whole?**
-   The proposed key leaves ~70% of collisions intact because `period` is populated on 2.80% of rows
-   (see R2). Solving it properly means extracting the period/metric, which is Sentinel-side work
-   this plan does not currently contain. The two legal answers are "expand S4" or "park R2 with the
-   measurement recorded" -- **shipping the partial key and calling identity fixed is not one of
-   them**, because every acceptance check would read green.
+   **ANSWERED 2026-08-27: PARK.** The user's decision, taken against the measurement below.
+   The proposed key leaves ~70% of colliding GROUPS intact -- re-measured at the row level,
+   12,084 of 15,959 colliding rows (75.7%) survive it -- because `period` is populated on 2.70% of
+   the published-with-instrument population and `claim_kind` does not discriminate within one
+   article about one issuer (PR #997: `numbers[]` and `claims[]` are sibling arrays with no
+   reference between them). Solving it properly means making CoD emit a per-measurement claim
+   reference, which is extraction work this plan does not contain. Shipping the partial key was
+   never a third option -- every acceptance check would have read green.
+   The park is recorded in `docs/BACKLOG.md` PARKED EPICS with four trip conditions and the command
+   that reads each: a loaded pattern naming a `SENTINEL:NUM:` key, `baltic-freight-recession` being
+   enabled, the resolver minting `CHALLENGER_JOB_CUTS` or `TRUFLATION_CPI`, or the golden corpus
+   tripwires moving. None is tripped as of 2026-08-27.
 
 The D-18 supersession requirement in R2 is UNCHANGED by this withdrawal: it is a design-intent
 gate, not a cutover-risk one, and it still stands whatever is decided above.
@@ -421,6 +440,10 @@ Re-run, expect movement:
 | sector events in a collection cycle | 0 (102 days) | > 0 |
 | loaded patterns reading a `SENTINEL:NUM:` key | 0 of 71 | **re-check before R2 is scheduled** |
 | colliding groups whose members share one `unit` | 70.0% | falls after R2, or R2 shipped partial |
+
+**R2 is PARKED (2026-08-27), so its rows here are standing measurements, not pending targets** --
+re-measured that day, 74.0% colliding share and 69.5% shared-unit groups. The latent-risk controls
+below are now trip conditions: see `docs/BACKLOG.md` PARKED EPICS for all four and their commands.
 
 The last two rows are the latent-risk controls. The first goes non-zero the moment someone adds a
 pattern naming a Sentinel numeric key or enables `baltic-freight-recession`, which is what converts

@@ -2136,6 +2136,125 @@ Re-check (psql is SELECT-only):
     r.raw_file_path IS NOT NULL AND EXISTS (SELECT 1 FROM sentinel.extracted_observations o WHERE
     o.raw_content_id = r.id);`
 
+**`period` IS EXTRACTED BY ONLY TWO SOURCES, AND NEITHER OF THEM PUBLISHES ANYTHING -- EVERY
+LIVE-PUBLISHING SOURCE IS AT ZERO. THIS FINDING HAS BEEN WRONG TWICE; THIS IS ITS THIRD STATEMENT.**
+
+The correction chain, kept visible so the next reader does not re-derive a retired middle step:
+1. RETIRED -- **"`period` is not extracted."** Retired on a whole-table count: 125,351 of 748,317
+   rows carry one (16.8%).
+2. RETIRED 2026-08-28 -- **"`period` IS extracted at volume (13-14k rows/month) and is LOST between
+   extraction and publish."** This is what this entry said until now, and it is also wrong. That
+   volume is one source that publishes nothing. There is no clearing to find, because the rows that
+   would have to be cleared never enter the publish population at all.
+3. CURRENT -- **the v2/DSL extraction path carries no `period` on any source, and the only two
+   sources that still carry one are the two the v2 cutover never covered. Neither publishes.**
+Note that retiring (1) was itself an over-correction: "not extracted" was right about every
+live-publishing source and wrong only about the table total.
+
+MEASURED 2026-08-28 on `sentinel.extracted_observations`, last 30 days, every source with rows:
+
+| source | rows | with `period` | published | in `Extraction__V2EnabledSources` |
+|---|---|---|---|---|
+| `rss` | 167,868 | **0** | 46,260 | yes |
+| `tsa-checkpoint` | 15,001 | **15,001** | **0** | **no** |
+| `rss-mirror` | 10,489 | **0** | 3,242 | yes |
+| `searxng-content` | 9,866 | **0** | 1,833 | yes |
+| `challenger-rss` | 476 | **0** | 12 | yes |
+| `rss-fallback` | 11 | **11** | **0** | **no** |
+
+The split is exact. The two sources carrying a `period` are precisely the two NOT listed in
+`Extraction__V2EnabledSources` (`/opt/ai-inference/compose.yaml:1140-1151` -- READ ONLY, never edit
+it; twelve entries: `rss`, `rss-mirror`, `searxng-content`, `challenger-rss`, and eight `fed-*`).
+They are also the only two whose rows carry no `dsl_block_id`. The eight `fed-*` entries are v2 but
+DORMANT -- last row anywhere 2026-06-04, none in the window -- so they are zero-of-zero and are not
+confirming instances; do not count them as such.
+  `SELECT source, count(*) total,
+     count(*) FILTER (WHERE nullif(btrim(period),'') IS NOT NULL) with_period,
+     count(*) FILTER (WHERE published_at IS NOT NULL) published,
+     count(*) FILTER (WHERE metadata ? 'dsl_block_id') dsl_tagged
+   FROM sentinel.extracted_observations WHERE extracted_at >= now() - interval '30 days'
+   GROUP BY 1 ORDER BY 2 DESC;`
+
+**One source across the v2 cutover is the strongest form of this, and it removes the cross-source
+confound the earlier correlation carried.** `rss` alone, by month -- `dsl_block_id` appears in May
+and owns the source by June, and `period` goes to zero on the same boundary:
+
+| month | `rss` rows | with `period` | DSL-tagged |
+|---|---|---|---|
+| 2026-04 | 37,367 | 21,132 (56.6%) | 0 |
+| 2026-05 | 88,566 | 19,214 | 9,404 |
+| 2026-06 | 177,630 | **0** | 177,630 |
+| 2026-07 | 138,623 | **0** | 138,623 |
+| 2026-08 | 152,424 | **0** | 152,424 |
+
+One source, one collector, one publish path, before and after.
+  `SELECT to_char(date_trunc('month',extracted_at),'YYYY-MM') mon, count(*) total,
+     count(*) FILTER (WHERE nullif(btrim(period),'') IS NOT NULL) with_period,
+     count(*) FILTER (WHERE metadata ? 'dsl_block_id') dsl_tagged
+   FROM sentinel.extracted_observations WHERE source='rss' GROUP BY 1 ORDER BY 1;`
+
+The whole-table DSL correlation, re-measured: since 2026-06-01, DSL-tagged rows carry `period` on
+**0 of 534,655**; non-DSL rows on **48,519 of 48,634 (99.8%)**. (0/526,733 and 48,042/48,157 on
+2026-08-27 -- both sides simply grew.)
+  `SELECT (metadata ? 'dsl_block_id') AS is_dsl, count(*) total,
+     count(*) FILTER (WHERE nullif(btrim(period),'') IS NOT NULL) with_period
+   FROM sentinel.extracted_observations WHERE extracted_at >= '2026-06-01' GROUP BY 1;`
+
+**THE MONTHLY TABLE IS STILL TRUE AND IT IS NOT A DECAY.** Measured 2026-08-27, re-measured
+2026-08-28:
+
+| month | rows with period | of those, published |
+|---|---|---|
+| 2026-05 | 48,010 | 510 |
+| 2026-06 | 20,464 | 5 |
+| 2026-07 | 13,884 | **0** |
+| 2026-08 | 14,171 | **0** |
+
+2026-05 through 2026-07 are closed; 2026-08 is partial and still accruing (13,694 through the 27th,
+14,171 through the 28th). Read both columns correctly:
+- the 13-14k/month is almost entirely `tsa-checkpoint` -- 15,001 of the 15,012 period-bearing rows
+  in the last 30 days, leaving 11 from every other source combined;
+- the **0** in the published column is that source publishing NOTHING AT ALL -- its last
+  `published_at` is 2026-02-07 00:06:11+00, 729 rows lifetime (KNOWN DEFECTS, above). It is not
+  period-bearing rows being filtered at a publish gate, and there is no publish-side effect to find;
+- the fall from 48,010 is the v1 sources being cut over to v2, not an extractor degrading.
+The last `extracted_at` on any published, period-bearing row is **2026-06-30 14:40:17+00** -- the
+cutover, not a gate closing.
+  `SELECT max(extracted_at) FROM sentinel.extracted_observations
+   WHERE nullif(btrim(period),'') IS NOT NULL AND published_at IS NOT NULL;`
+
+**ALSO RETIRED: "the field is cleared between extraction and publish."** Separating it was named as
+requiring a write-path read. It does not: it needs a publish population containing period-bearing
+rows to clear, and there is none. Nothing further should be spent hunting a nulling write.
+
+**THE LEAD, NOW MORE SPECIFIC -- AND ONE GREP ALREADY KILLS THE NAIVE FORM OF IT.** On the CoD path
+this is a MISSING-FIELD question, not a lost-value question. Two facts, neither of which is a
+mechanism:
+- `SentinelCollector/src/cod-prompts/cod_json_schema_v1.json` contains no `period` anywhere. Its
+  `numbers[]` items are `(context, source_entity, source_text, unit, value)`, and
+  `"additionalProperties": false` is set on the item schemas and the envelope (recorded above), so
+  there is no field for the model to emit one into.
+- BUT `SentinelCollector/src/Services/V2ExtractionPipeline.cs:191` DOES assign
+  `Period = extraction.Period`. "The v2 adapter forgot to map the field" is therefore already false,
+  and anyone repeating it has not run the grep. What fills `extraction.Period` on the CoD path is
+  the open question.
+WHAT WOULD SETTLE IT IS A CODE READ, NOT ANOTHER QUERY: read `V2ExtractionPipeline.cs` and
+`GpuJsonExtractionService.cs` against the v1 assignment at `Workers/ExtractionProcessor.cs:698` --
+the only other `Period =` site in the service -- and establish what populates the field on each path.
+NOBODY HAS READ THAT CODE. Do not assert a mechanism from this entry.
+
+Cross-reference: this is the concrete lead for reviving R2/S4 (PARKED EPICS, below), and it is a
+better lead than when it was written. R2's premise was that a `period` axis needs a MODEL change --
+teaching CoD to emit something it never has. The measurement now says `rss` went from 56.6%
+populated to 0% across one pipeline cutover, so `period` may be a capability v1 HAD and the v2 path
+does not carry -- a bug fix, cheaper than the change R2 proposed. That is a lead, not a finding: the
+CoD schema genuinely has no `period` field, so restoring it may still be a schema-plus-prompt change
+rather than a one-line repair. The code read above is what decides which, and it is the next step.
+
+**Severity: a lead, not a fire.** This does not touch any published VALUE -- it affects only the
+availability of a discriminator, R2/S4 is parked, and nothing currently reads `period` on the live
+path. Worth someone's next hour, not an incident.
+
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
 **THE GOLDEN CORPUS PROVES ITS ASSERTIONS READ THE FIXTURE; NOTHING PROVES THEY WOULD CATCH A
@@ -2990,6 +3109,133 @@ system measures economic significance rather than coverage volume. Phases 1 / 2a
   1986. First gate is establishing a realized-sector-return series.
 - **Classifier sign-fix is parked** — do not ship it off the energy anecdote; an n=6 peek showed news directionally
   right, but it needs a real backtest N. `commercial-paper-stress` de-flagged in the interim (#733).
+
+**R2 / S4 -- observation identity key redesign -- PARKED on the user's decision, 2026-08-27.** The
+thesis holds, and it is not what parked the work: an observation's identity is the entity MENTIONED,
+not the measurement TAKEN. Re-measured 2026-08-27, **15,959 of 21,569 published observations carrying
+an instrument (74.0%) sit in a colliding `(raw_content_id, instrument_id)` group** -- 3,660 colliding
+groups of 9,270. `ObservationCache.AddObservation`
+(`ThresholdEngine/src/Data/ObservationCache.cs:47`) truncates both `date` and `asOf` to `.Date`, so
+same-day claimants collapse onto one exact key and the `BinarySearch` hit overwrites in place at
+`:59`; the survivor is deterministically the LAST published, not an arbitrary one. What parked it is
+that the proposed key cannot separate them and the harm is not yet live. Anyone re-proposing
+`(instrument, claim_kind, unit)` meets these numbers first.
+
+EVERY AXIS OF THE PROPOSED KEY FAILED A MEASUREMENT.
+- `claim_kind` cannot discriminate within one article about one issuer. `cod_json_schema_v1.json`
+  emits `numbers[]` (`source_text`, `value`, `unit`, `context`, `source_entity`) and `claims[]`
+  (`claim_kind`, `subject`, `predicate`, `object`, `polarity`) as SIBLING arrays with no reference
+  between them, and `"additionalProperties": false` on both item schemas (`:56`, `:103`) and on the
+  envelope (`:3`) makes adding one structurally impossible without a schema change. The only join
+  either producer offers is the subject name. Confirmed independently by PR #997, which shipped the
+  columns and found the join absent -- that PR's own coverage debt is recorded above (`claim_kind`
+  SHIPS WITH ITS COVERAGE UNMEASURED).
+- `period` is populated on **582 of those 21,569 published-with-instrument rows (2.70%)**, and not
+  one has been extracted since **2026-06-30**. THE REASON IS THE V2/DSL CUTOVER, and this bullet has
+  carried two retired explanations before this one. It is NOT "the extractor does not do periods"
+  (125,351 of 748,317 rows overall carry one, 16.8%) and it is NOT "extracted then lost before
+  publish" -- re-measured 2026-08-28, only TWO sources extract a `period` at all in the last 30 days,
+  `tsa-checkpoint` (15,001) and `rss-fallback` (11), and those are exactly the two sources absent
+  from `Extraction__V2EnabledSources`. Neither publishes anything -- `tsa-checkpoint` has published
+  nothing since 2026-02-07 (entry above). Every live-publishing source (`rss`, `rss-mirror`,
+  `searxng-content`, `challenger-rss`) is on the v2 path and is at **zero**. `rss` itself went from
+  21,132 of 37,367 rows (56.6%) in April to 0 from June, on the month `dsl_block_id` took the source.
+  So the discriminator is not merely rare in the colliding population -- the pipeline that FEEDS that
+  population does not carry it at all. Full breakdown, the retirement of both earlier framings, and
+  the code read that would settle the mechanism: KNOWN DEFECTS, above.
+    `SELECT source, count(*) FILTER (WHERE nullif(btrim(period),'') IS NOT NULL) with_period,
+       count(*) FILTER (WHERE published_at IS NOT NULL) published
+       FROM sentinel.extracted_observations
+      WHERE extracted_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC;`
+    # 2026-08-28: tsa-checkpoint 15001/0, rss-fallback 11/0, all four v2 sources 0/publishing
+- `unit` is unnormalised, so keying on the raw string FALSE-separates one measurement into several
+  series. Over published rows: `PCT` 31,467 vs `percent` 2,605, `COUNT` 9,310 vs `count` 2,209,
+  `INDEX` 525 vs `index` 256, `USD` 32,351 alongside `million_USD` / `billion_USD` / `thousand_USD`.
+  Normalising costs separation rather than buying it: colliding groups sharing one unit rise from 2,545 / 3,660 (69.5%) raw to
+  2,596 / 3,660 (70.9%) once case and magnitude prefixes are collapsed.
+- **THE KEY'S MEASURED SURVIVAL RATE IS 75.7%, AND THE "~45% INSUFFICIENT" FIGURE IS RETIRED.** Adding
+  the normalised unit to `(raw_content_id, instrument_id)` still leaves 3,500 colliding sub-groups,
+  holding **12,084 of the 15,959 colliding rows (75.7%)** -- one colliding group can split into two
+  colliding sub-groups, so count the ROWS, not the groups. The ~45% figure appears only as a
+  back-reference in PR #997's body; no query in either proposal doc derives it, and it understates the
+  insufficiency by a factor of ~1.7. Quote 75.7% with the query below, or re-measure -- do not requote
+  45%.
+
+AND THE HARM IS LATENT, NOT ACTIVE -- which is what makes parking legitimate rather than a deferral of
+live corruption. Re-verified 2026-08-27:
+- **zero of ThresholdEngine's 71 loaded patterns read a `SENTINEL:NUM:` key** (`list_patterns`
+  `enabled_only=false` returns 71 of 71 enabled). Three of the 72 repo pattern files name any Sentinel
+  key at all, and all three use `SENTINEL:SECTOR:` through value-independent counts.
+- **the matrix path cannot collide across articles**: 16,540 `public.macro_observations` rows in 30
+  days carry the `{raw_content_id}:sig:{slug}` infix and all 16,540 `source_id` values are distinct.
+- **the live exception is BDIY, and its trigger is still unpulled**: 163 rows, 160 published, still
+  publishing 2026-08-27 under a bare `OwnedSeries` key; its only reader `baltic-freight-recession` is
+  `"enabled": false` and is the one repo pattern file of 72 absent from TE's loaded set. The two
+  `OwnedSeries` keys that DO have loaded readers -- `CHALLENGER_JOB_CUTS` and `TRUFLATION_CPI` -- have
+  never carried a Sentinel row. `ADP_EMPLOYMENT` has 9 rows, last extracted 2026-05-18.
+- **a share of these collisions is mis-resolution, which no key can fix** -- different entities filed
+  under one instrument id, sampled at ~19% (6 of 32 groups) with the machine proxy re-measuring
+  136 / 3,660 (3.72%) today. See the mis-resolution entry above; the lever there is the resolver
+  (#988), not the key.
+
+THE REVIVAL PATH IS NOT A KEY REDESIGN. It is **make CoD emit a per-measurement claim reference** so
+`numbers[]` and `claims[]` can be joined -- a model / prompt / schema change, not a storage one.
+Without that discriminator there is nothing to key ON, and any key shipped in the meantime reads as a
+fix while separating 24% of the colliding rows, which is the seam-reports-success failure the whole identity plan
+exists to stop. D-18 (`SentinelCollector/AGENT_README.md`) still governs the guard site at
+`SentinelCollector/src/Publishers/EventPublisher.cs:105-112`; a revived story names `supersedes D-18`
+or stops.
+
+WHAT UN-PARKS IT -- four trip conditions, each with the command that reads it. None is tripped as of
+2026-08-27.
+1. A LOADED pattern names a `SENTINEL:NUM:` key.
+   `grep -rl 'SENTINEL:NUM:' ThresholdEngine/config/patterns --include='*.json' | wc -l`   # expect 0
+   AND `list_patterns(enabled_only=false)` -- check BOTH: the grep misses a pattern loaded from
+   outside the repo dir, and the loaded set misses a file that is present but not loaded.
+2. `baltic-freight-recession` becomes enabled, arming the one bare key Sentinel actually publishes.
+   `python3 -c "import json;print(json.load(open('ThresholdEngine/config/patterns/recession/baltic-freight-recession.json'))['enabled'])"`   # expect False
+   AND confirm it is still absent from `list_patterns(enabled_only=false)` -- the file's flag and TE's
+   loaded set are two different facts, and it is absence from the loaded set that keeps it inert.
+3. The resolver starts minting an `OwnedSeries` key that a loaded pattern reads. This is a resolver
+   OUTCOME, not a design decision, and #988 raising resolution success is exactly what could trip it.
+   `SELECT "Symbol", count(*), count(*) FILTER (WHERE published_at IS NOT NULL) AS published,
+      max(extracted_at)::date FROM sentinel.extracted_observations
+    WHERE "Symbol" IN ('CHALLENGER_JOB_CUTS','TRUFLATION_CPI') GROUP BY 1;`
+   # expect 0 rows returned; either symbol appearing converts this defect from latent to live
+4. The golden corpus tripwires move. The 15 collision cases assert the key count production produces
+   TODAY, so the suite is GREEN while the defect holds still and REDs when the shape changes. THE
+   DOTNET RUN IS THE TRIPWIRE; `--check` certifies the corpus that run reads, and trips nothing.
+   `nerdctl compose exec -T sentinel-collector-dev sh -c "cd /workspace/SentinelCollector/tests/SentinelCollector.UnitTests && dotnet test --filter 'DisplayName~GoldenCorpus'"`
+   # expect green, 70 tests, with all 15 collision cases asserted STILL collapsing. A FAILING
+   # `should_still_collapse_distinct_measurements_while_the_identity_defect_is_open` IS this condition
+   # tripping: the fix has landed, regenerate the fixture and drop ExpectedRedCount. `DisplayName~` is
+   # required -- `Name~` matches zero tests and still exits 0 (CLAUDE.md DEPLOYMENT).
+   `python3 SentinelCollector/scripts/build_golden_corpus.py --check`   # expect "corpus intact", exit 0
+   # Two named verdicts, and only the first is a defect. CORPUS DRIFT (exit 1) = the committed corpus
+   # disagrees with itself, someone hand-edited a fixture, the spec or MANIFEST.md, and the dotnet run
+   # above is asserting against a corpus nobody vouches for. PRODUCTION MOVED (exit 0) is EXPECTED and
+   # is NOT this trip condition: the resolver re-resolves retroactively, so the live rows behind a
+   # fixture move on their own. Measured 2026-08-28, one day after this line last read clean, 7 of 30
+   # fixtures had moved and 5 no longer collapse live -- 208 rows NULLed to `NoResolution` with the old
+   # ids kept in `OriginalInstrumentId`. NEVER rebuild to quiet it: a rebuild overwrites the very key
+   # counts these tripwires assert with today's.
+
+Re-check the population and the key's survival (SELECT-only):
+  `WITH pub AS (SELECT raw_content_id, instrument_id,
+                 regexp_replace(lower(coalesce(nullif(btrim(unit),''),'(null)')),
+                                '^(million|billion|thousand|trillion)_','') AS unit_class
+               FROM sentinel.extracted_observations
+               WHERE published_at IS NOT NULL AND instrument_id IS NOT NULL),
+        grp AS (SELECT raw_content_id, instrument_id, count(*) c FROM pub GROUP BY 1,2),
+        keyed AS (SELECT raw_content_id, instrument_id, unit_class, count(*) c FROM pub GROUP BY 1,2,3)
+   SELECT (SELECT count(*) FROM pub) AS pub_rows,
+          (SELECT sum(c) FROM grp WHERE c>1) AS colliding_rows,
+          (SELECT count(*) FROM grp WHERE c>1) AS colliding_groups,
+          (SELECT sum(c) FROM keyed WHERE c>1) AS rows_surviving_the_unit_key;`
+  # 2026-08-27 returned 21569 | 15959 | 3660 | 12084
+  `SELECT count(*) FILTER (WHERE nullif(btrim(period),'') IS NOT NULL) AS with_period, count(*)
+     FROM sentinel.extracted_observations WHERE published_at IS NOT NULL AND instrument_id IS NOT NULL;`
+  # 2026-08-27 returned 582 | 21569
 
 ## PRACTICE NOTES [cheap checks that were skipped three times or more]
 
