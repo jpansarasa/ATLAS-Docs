@@ -2257,6 +2257,27 @@ path. Worth someone's next hour, not an incident.
 
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
+### containerd exporter never reports an OOM kill (worked around, not fixed) [2026-08-30]
+`container_memory_oom_total` is exported as a GAUGE read from the live cgroup's `memory.events`,
+so a restart tears the cgroup down and the value returns to 0. It is therefore incapable of
+reporting the event it is named for.
+
+MEASUREMENT, re-checkable: `max_over_time(container_memory_oom_total[7d])` is 0 for EVERY series,
+across two real spacy-ner OOM kills (2026-08-24, 2026-08-28) and one induced deliberately at
+2026-08-30T13:24:15Z, at a 15s scrape interval with a 20m lookback. If this entry is still true,
+that query still returns 0 everywhere after a kill you can see in `dmesg -T | grep -i "out of
+memory"`.
+
+WORKED AROUND in #1000 by `ContainerRestarted`, which detects the CPU-counter reset a restarted
+cgroup produces (`resets(container_cpu_usage_usec_microseconds[15m]) > 0`). That covers the
+restart, NOT the distinction between an OOM kill and any other in-place restart -- an operator
+still has to read dmesg to tell them apart, and a container with `restart: no` that stays dead
+produces no reset at all and so is invisible to both rules.
+
+CLOSE THIS by finding a signal that reports the kill itself: a newer containerd exporter that
+emits a monotonic counter, a node-exporter textfile collector fed from the kernel log, or a small
+systemd unit tailing `dmesg`. Do not close it by pointing at `ContainerRestarted`.
+
 **THE GOLDEN CORPUS PROVES ITS ASSERTIONS READ THE FIXTURE; NOTHING PROVES THEY WOULD CATCH A
 CHANGE TO THE PUBLISHER.** Those are different guarantees and the corpus only measures one of them.
 Measured 2026-08-26 on `GoldenCorpusIdentityTests` (68 cases under `DisplayName~GoldenCorpus`; 70 from
