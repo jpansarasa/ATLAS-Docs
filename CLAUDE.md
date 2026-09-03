@@ -238,6 +238,22 @@ INFERENCE_TOPOLOGY: vLLM(GPU) + llama.cpp(CPU) # ollama fully retired 2026-06-11
   CPU: llama-server(DSL/GBNF rollback) | llama-cpu-rag(SecMaster RAG) | llama-cpu-embed(bge-m3)
   ✗ propose ollama # no container/engine remains; GGUF blobs live in the frozen ollama-format store, ro-mounted
 GPU_OOM: restart vLLM first; never downgrade the model or reduce context
+VLLM_OBSERVABILITY: metrics = DIRECT prometheus scrape job="vllm" (vllm-server:8000) | traces = OTLP -> otel-collector:4317 -> Tempo
+  ✗ look for a vllm series under job="otel-collector" # vLLM has NO OTLP METRIC exporter, only traces; the
+    metric side is its own native /metrics endpoint and reaches Prometheus by scrape, not by push
+  ✗ vllm:gpu_cache_usage_perc # does NOT exist on 0.19 — every published vLLM dashboard and example rule uses
+    it, and a rule written against it is silent forever and reads exactly like a healthy engine.
+    The real name is vllm:kv_cache_usage_perc. Verify any vllm: name against the live endpoint before using it.
+  ✗ ship the traces flag without OTEL_SERVICE_NAME # vLLM never sets service.name, so spans land in Tempo
+    as the literal `unknown_service` — the mechanism works and the spans are unfindable
+  rules deployment/artifacts/monitoring/alerts/vllm.yml (tests deployment/tests/alerts/vllm_test.yml) |
+    dashboard uid vllm-inference | VllmServerDown dwell 10m is HEADROOM over a cold model load, not a
+    derived number (78s measured warm 2026-09-01; ~170s budgeted in deploy.yml) — a dwell under the real
+    load time pages on every scoped deploy and on the GPU_OOM remedy above
+  DEPLOY TAKES TWO RUNS, and the second one costs a GPU reload:
+    metrics+rules+dashboard -> `--tags monitoring --skip-tags always` # no restart of anything
+    traces flag             -> `--tags vllm-server --skip-tags build -e "scoped_restart=true scoped_services=vllm-server"`
+                               # recreates vllm-server = ~4min GPU reload; needs a deliberate window
 
 ## SERVICES [monorepo]
 collectors: FredCollector, AlphaVantageCollector, NasdaqCollector, FinnhubCollector, OfrCollector, SentinelCollector
