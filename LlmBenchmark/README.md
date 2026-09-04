@@ -1,10 +1,25 @@
 # LlmBenchmark
 
-C# xUnit harness that measures Sentinel LLM extraction quality (CoVe / CoD / epistemic markers) against a golden dataset, using a llama.cpp server as the inference backend.
+Two harnesses for measuring Sentinel LLM extraction quality:
+
+- **C# xUnit** (this directory) — CoVe / CoD / epistemic-marker tracks against a golden dataset, driven through **vLLM or llama.cpp** using SentinelCollector's own clients. Produces `BENCHMARKS.md`.
+- **Python** (`scripts/`) — the 18 pinned acceptance-criteria metrics against an eval substrate, driven through any **OpenAI-compatible** engine (vLLM, SGLang, llama.cpp `/v1`) by `run_model.py`. Every run records the engine build, so a number can be told to be stale.
 
 ## Overview
 
-LlmBenchmark is the GPU-extraction track's accuracy gate for ATLAS Sentinel. It exercises the exact production code paths in `SentinelCollector` (`ChainOfVerification`, `ChainOfDensity`, the same `src/prompts` directory) against a pinned golden dataset and emits per-entry + aggregate scores (precision / recall / F1, timing, epistemic-marker recall). It is **not** a service: no container, no ports, no deployment — it runs inside the `SentinelCollector` devcontainer via `dotnet test`. The current leaderboard lives in `BENCHMARKS.md`; the Python LoRA-acceptance harness for vLLM-served Sentinel models lives in `scripts/` (separately documented).
+LlmBenchmark is the GPU-extraction track's accuracy gate for ATLAS Sentinel. It exercises the exact production code paths in `SentinelCollector` (`ChainOfVerification`, `ChainOfDensity`, the same `src/prompts` directory) against a pinned golden dataset and emits per-entry + aggregate scores (precision / recall / F1, timing, epistemic-marker recall). It is **not** a service: no container, no ports, no deployment — it runs inside the `SentinelCollector` devcontainer via `dotnet test`. The current leaderboard lives in `BENCHMARKS.md`.
+
+> **The C# track drives production's own LLM clients.** `LlmFixture` builds `VllmClient` or
+> `LlamaServerClient` — the two `ILlmClient` implementations SentinelCollector's DI builds — from a
+> real `ExtractionOptions`, selected on the same `InferenceBackend` value production selects on. So
+> engine choice, seed, completion budget, stop tokens and client-side chat templating are identical
+> to production by construction. It previously carried a third `ILlmClient` behind an adapter that
+> dropped `seed`, `maxTokensOverride`, `keepAlive` and `timeout`; that client posted to llama.cpp's
+> `/completion` for plain generation and to `/v1/chat/completions` for structured output, where it
+> hardcoded `model: "default"` and `max_tokens: -1`.
+>
+> Use the Python track in [`scripts/`](scripts/README.md) for SGLang, for any other
+> OpenAI-compatible engine, or when you need a scorecard that records the engine build.
 
 ## Architecture
 
@@ -16,12 +31,12 @@ flowchart LR
     end
 
     subgraph LlmBenchmark
-        FX[LlmFixture<br/>llama.cpp client]
+        FX[LlmFixture<br/>VllmClient or LlamaServerClient]
         BM[Benchmarks/<br/>CoVe + CoD + Epistemic tests]
         SC[Metrics/<br/>scorers + report]
     end
 
-    LC[llama.cpp server]
+    EN[vLLM server<br/>or llama.cpp server]
 
     subgraph Outputs
         RJ[Results/benchmark_results_*.json]
@@ -30,19 +45,19 @@ flowchart LR
 
     GD --> BM
     PR --> BM
-    FX --> LC
+    FX --> EN
     BM --> SC
     SC --> RJ
     RJ -.curated.-> LD
 ```
 
-`LlmFixture` health-checks the llama.cpp server and constructs `ChainOfVerification` / `ChainOfDensity` against the production prompt directory. The served model is pinned at the llama.cpp server's start, so the fixture's `LoadModelAsync` / `UnloadModelAsync` are no-ops kept only for test bookkeeping. Each test runs all golden entries, scores them, and writes a per-run JSON report.
+`LlmFixture` health-checks the configured backend through that backend's own client and constructs `ChainOfVerification` / `ChainOfDensity` against the production prompt directory, sharing one `ExtractionOptions` instance between client and pipeline. Both engines pin their model at server start, so the fixture's `LoadModelAsync` / `UnloadModelAsync` are no-ops kept only for test bookkeeping. Each test runs all golden entries, scores them, and writes a per-run JSON report.
 
 ## Features
 
 - **Three benchmark tracks**: CoVe extraction (`ExtractionAccuracyTests`), CoD summarization (`CoDAccuracyTests`), epistemic-marker JSON extraction (`EpistemicMarkerTests`)
 - **Quick-screen mode**: 2-entry / 5-min-per-entry / F1 ≥ 40% gate before committing to a full run
-- **Single backend**: llama.cpp server — model pinned at server start, no in-process swapping
+- **Production clients, both engines**: `VllmClient` / `LlamaServerClient` chosen by `BENCHMARK_BACKEND` — model pinned at server start, no in-process swapping
 - **Production prompts**: reads from `SentinelCollector/src/prompts` — no test-local copies to drift
 - **Per-entry JSON reports**: written to `Results/` with full score breakdown + timing stats
 - **Convenience scripts**: single run, sequential full run, quick screen, tokens/sec validator
@@ -56,6 +71,7 @@ xUnit traits used to filter runs via `--filter`:
 | `Category` | `LlmBenchmark` | All extraction + CoD tests (full run) |
 | `Category` | `QuickBenchmark` | `QuickBenchmark_ScreenModel` only |
 | `Category` | `EpistemicBenchmark` | `EpistemicMarkerTests` only |
+| `Category` | `Offline` | `LlmFixtureClientTests` — needs no inference backend; run by `compile.sh` |
 | `Strategy` | `CoVe` | `ExtractionAccuracyTests` |
 | `Strategy` | `CoD` | `CoDAccuracyTests` |
 
@@ -65,11 +81,18 @@ Driven by environment variables read by `BenchmarkConfiguration.Default`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLAMA_SERVER_ENDPOINT` | llama.cpp server base URL (the only backend) | `http://localhost:8080` |
-| `LLAMA_CHAT_TEMPLATE` | Chat template applied client-side; `{0}`/`{prompt}` placeholder. Empty string → prompt sent raw | Qwen2.5 ChatML (`<\|im_start\|>user\n{0}<\|im_end\|>\n<\|im_start\|>assistant\n`) |
-| `LLAMA_STOP_TOKENS` | Comma-separated stop tokens | `<\|im_end\|>,<\|endoftext\|>` |
+| `BENCHMARK_BACKEND` | `InferenceBackend` value — `VllmServer`/`VllmJson` drive vLLM, `LlamaServer`/`LlamaServerDsl` drive llama.cpp. Same enum and same split as `Extraction:Backend` | `VllmServer` |
+| `VLLM_ENDPOINT` | vLLM base URL, used when the backend is a vLLM one | `http://localhost:8000` |
+| `LLAMA_SERVER_ENDPOINT` | llama.cpp base URL, used when the backend is a llama.cpp one | `http://localhost:8080` |
+| `BENCHMARK_MODEL` | Model name sent in the request body. vLLM rejects a name it is not serving; llama.cpp ignores it | `Qwen/Qwen2.5-32B-Instruct-AWQ` (what compose serves) |
+| `BENCHMARK_CHAT_TEMPLATE` | Chat template applied client-side, `{0}` placeholder. Empty → prompt sent raw | Qwen2.5 ChatML (`<\|im_start\|>user\n{0}<\|im_end\|>\n<\|im_start\|>assistant\n`) |
+| `BENCHMARK_STOP_TOKENS` | Comma-separated stop tokens | `<\|im_end\|>,<\|endoftext\|>` |
+| `BENCHMARK_THINKING` | `Disabled` or `Enabled` — whether the served model may emit a reasoning block | `Disabled` |
+| `BENCHMARK_THINKING_SUFFIX` | Text appended after the chat template when thinking is `Disabled`. Model-family specific; set it only for a model that actually reasons | empty |
 
-JSON-schema-constrained decoding is disabled by default (`BenchmarkConfiguration.UseLlamaCppJsonSchema = false`) because strict grammar constraints lower extraction accuracy; it is a code-level flag, not env-driven.
+The three `run-*.sh` wrappers pin `BENCHMARK_BACKEND=LlamaServer`: they health-check `llama-server`, so an unpinned run would pass that check and then benchmark whatever answers the vLLM endpoint. All three also REFUSE a contradicting `BENCHMARK_BACKEND` rather than overriding it in silence — the gate and its known-bad control live in `benchmark-result.sh`, sourced by each.
+
+Structured decoding is not a benchmark flag any more. Both production clients constrain structured calls (vLLM `response_format=json_schema`, llama.cpp `json_schema`), and completion budget is `ExtractionOptions.MaxCompletionTokens` (16384) against a 32K context — the same guard production enforces, where the replaced client sent `max_tokens: -1`.
 
 ### Thresholds (hard-coded in test classes)
 
@@ -95,11 +118,10 @@ LlmBenchmark/
 │   ├── ExtractionAccuracyTests.cs   # CoVe: full + quick + debug
 │   ├── CoDAccuracyTests.cs          # CoD summarization tests
 │   ├── EpistemicMarkerTests.cs      # JSON marker-parse tests
-│   └── LlmFixture.cs                # Backend health-check + client factory
-├── Infrastructure/             # Config + client adapters
-│   ├── BenchmarkConfiguration.cs    # Env-var driven config
-│   ├── BenchmarkLlamaServerClient.cs
-│   ├── BenchmarkLlmClientAdapter.cs
+│   ├── LlmFixtureClientTests.cs     # Category=Offline: seed/backend/model wire guards
+│   └── LlmFixture.cs                # Backend health-check + production-client factory
+├── Infrastructure/             # Config + prompt providers
+│   ├── BenchmarkConfiguration.cs    # Env-var driven config -> ExtractionOptions
 │   ├── TestPromptProvider.cs
 │   └── TestDensityPromptProvider.cs
 ├── GoldenDataset/              # Dataset loader + entry record
@@ -122,7 +144,9 @@ LlmBenchmark/
 
 ## Running Benchmarks
 
-The harness builds against `SentinelCollector`, so it runs inside the `SentinelCollector` devcontainer. The `run-benchmarks.sh` wrapper brings the devcontainer up/down and runs the tests against an already-running llama.cpp server (it does **not** start an inference backend). Point it at your server with `LLAMA_SERVER_ENDPOINT` (default: the `llama-server` container). The served model is whatever the llama.cpp server was started with.
+The harness builds against `SentinelCollector`, so it runs inside the `SentinelCollector` devcontainer. No script starts an inference backend — point the harness at one that is already running.
+
+The three `run-*.sh` wrappers are llama.cpp runners: they check `llama-server`'s health, pin `BENCHMARK_BACKEND=LlamaServer`, and refuse a `BENCHMARK_BACKEND` naming any other engine (case-insensitively, matching `ParseEnumOrThrow`). For a vLLM run, set the environment yourself and invoke `dotnet test` in the devcontainer (see **vLLM run** below). The served model is whatever the engine was started with, and `BENCHMARK_MODEL` must name it for vLLM.
 
 ### Quick benchmark (2-entry screen)
 
@@ -143,11 +167,25 @@ LLAMA_SERVER_ENDPOINT=http://my-llama-host:8080 ./run-benchmarks.sh
 ./run-benchmarks.sh --filter "Category=LlmBenchmark"
 ```
 
-### Debug shortcut
+### vLLM run
+
+All three `run-*.sh` wrappers are the llama.cpp arm: they health-check `llama-server`, pin
+`BENCHMARK_BACKEND=LlamaServer` for the run and forward no host variable, so they refuse a
+contradicting `BENCHMARK_BACKEND` rather than filing a llama.cpp number under another engine.
+The vLLM arm sets the variable on the container the tests run in:
 
 ```bash
-./run-benchmarks.sh --debug          # equivalent to --filter "Category=Debug"
+cd ../SentinelCollector/.devcontainer   # from LlmBenchmark/, where "Quick benchmark" above leaves you
+sudo nerdctl compose up -d
+sudo nerdctl compose exec -T \
+    -e BENCHMARK_BACKEND=VllmServer \
+    -e VLLM_ENDPOINT=http://vllm-server:8000 \
+    -e BENCHMARK_MODEL=Qwen/Qwen2.5-32B-Instruct-AWQ \
+    sentinel-collector-dev \
+    dotnet test /workspace/LlmBenchmark/LlmBenchmark.csproj --filter "Category=QuickBenchmark"
 ```
+
+`BENCHMARK_MODEL` must be a name the vLLM server is serving; it answers an unknown one with HTTP 400.
 
 ### Other scripts
 
@@ -162,9 +200,11 @@ LLAMA_SERVER_ENDPOINT=http://my-llama-host:8080 ./run-benchmarks.sh
 The benchmark is a normal C# test project — same `compile.sh` flow as any ATLAS service:
 
 ```bash
-SentinelCollector/.devcontainer/compile.sh           # build + tests (no benchmarks run unless filtered in)
+SentinelCollector/.devcontainer/compile.sh           # build + tests, incl. this project's Category=Offline tests
 SentinelCollector/.devcontainer/compile.sh --no-test # build only
 ```
+
+`compile.sh` runs `--filter Category=Offline` here — the `LlmFixtureClientTests` wire guards, which need no inference backend. The scored benchmark tracks still need an engine and are never run by `compile.sh`.
 
 ## Outputs
 

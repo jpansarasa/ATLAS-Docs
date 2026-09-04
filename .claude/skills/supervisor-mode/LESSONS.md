@@ -120,8 +120,29 @@ L8 Repair citations LAST, and treat every fact-shaped claim as a citation.
     out-of-range only, so a citation drifted onto a comment, a brace or an unrelated task reads GREEN, and ranges are
     blank-checked at the START only. Every instance found was found by READING the entry. Two were wrong the DAY THEY
     WERE WRITTEN, off by 4 lines — citations ship broken, they do not only rot.
+  THE COUNT CAN IMPROVE WHILE THE CITATION GETS WORSE -- so compare the SET, never the DIRECTION [2026-09-04, #1002,
+    third instance in ONE PR]: the PR added 8 lines above a card's DECISIONS block, moving D-18 from :85 to :93. Two
+    docs cite `:84`. On main `:84` was BLANK and the tool FLAGGED it; on head it lands on D-13 and the tool went
+    QUIET. Baseline, and re-derive it rather than quoting this line -- `mapfile -d '' F < <(git ls-files -z '*.md')`
+    then `python3 scripts/verify-citations.py --quiet "${F[@]}"`, once per pristine checkout: 474 citations /
+    30 cannot-land at base c761e7b4, 483 / 29 at 91ec2319. ANCHOR THE PAIR TO ITS TWO SHAS; a sweep figure with no
+    sha attached is the rot itself, and every figure here moves with the next doc edit. The cannot-land count FELL
+    BY ONE while that citation became WRONG, and a citation pointing at the WRONG D-entry is worse than one
+    pointing at nothing -- it reads as valid to every later reader. CLAUDE.md TOOL_UPKEEP already mandates a
+    pristine-baseline comparison; this is the case that defeats a careless one, because "cannot-land went down"
+    reads as an improvement. DIFF THE SET of unresolved citations, and treat any citation LEAVING that set as
+    suspect until you have read where it now lands. AND THIS LESSON'S OWN BASELINE SHIPPED WRONG, as head 487,
+    and survived a review round saying so: 487 was true the day it was measured and dead 65 seconds before it
+    was committed here, because the commit immediately preceding removed four citations by re-anchoring them to
+    symbols and nobody re-swept. It had already been copied into two other documents by then. A count captured
+    BEFORE an edit and written AFTER it is a citation by any other name and rots on the same clock -- which is
+    why the command that produces it now sits beside it. Same round: a targeted repair fixed the one citation it
+    noticed (D-4) and swept none of the file's other consumers -- L9's naming failure, inside the commit whose
+    own subject line names this class.
   GRADUATES: when the tool resolves a citation to the NAMED CONSTRUCT rather than a live line, and a hook runs it on
-    changed files. Until then this is judgement, not tooling.
+    changed files. Until then this is judgement, not tooling. IN PROGRESS 2026-09-04 (#1002 round 4): making it assert
+    that a `D-n` citation lands on a line CONTAINING that `D-n`, with a wrong-entry fixture as its known-bad control.
+    That graduates the D-entry class ONLY -- non-D-entry content drift stays judgement.
 
 L9 A fix round fixes exactly what you NAME and adds what you did NOT ask for. Brief the class, ban the framing.
   EVIDENCE: 2026-08-13, two PRs, seven rounds. NAMING: a reviewer named 3 stale citations; the round fixed 3 and left 3.

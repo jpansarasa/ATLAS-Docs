@@ -325,7 +325,7 @@ theory that today's matrix numbers are wrong because of it.
   (`GUARD SentinelSeriesKey.ForNumeric applied @ src/Publishers/EventPublisher.cs:112`).
   D-18 opens, verbatim: *"D-18 sentinel-series-key-ownership: INTENT a series key belongs to
   whoever MEASURED the number, and Sentinel is on BOTH sides of that line."* The full entry is
-  ~2,000 words at `SentinelCollector/AGENT_README.md:84` -- **read it in full before designing**;
+  ~2,000 words at `SentinelCollector/AGENT_README.md:93` -- **read it in full before designing**;
   it is heavily guard-tested and it shipped 2026-08-13 on measured production breakage.
   Per CLAUDE.md INTENT_FIDELITY: a brief that contradicts a D-entry without a NAMED supersession
   is a **STOP-and-escalate**, not an agent decision -- never route around it, never obey a stale

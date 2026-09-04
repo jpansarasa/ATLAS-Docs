@@ -231,13 +231,61 @@ ANTI: ✗ batch maintenance into its own phase # that is regrinding, after month
       ✗ ship a tool whose docstring claims coverage it does not have # the defect, moved into the tool
 
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]
-MODEL_SIZE: >=30B # RLM needs coding ability. ✓ qwen2.5:32b-instruct, qwen3:32b ✗ 7b/8b/14b
+MODEL_ACCEPTANCE [replaces the old `MODEL_SIZE >= 30B`] [HARD_STOP]:
+  ✗ never swap the extraction model on a size, a benchmark from elsewhere, or a publisher's claim
+  ✓ a candidate ships only with a SCORECARD from LlmBenchmark that BEATS the incumbent's, produced
+    by scripts/run_model.py on PRODUCTION'S PROMPT PATH (--endpoint-mode completions --prompt-file
+    cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...) and scored by
+    scripts/eval_harness.py -- WHICH NO TOOL CAN PRODUCE TODAY, so this rule currently blocks EVERY
+    candidate and that is the honest state, not an invitation to reason around it. Pointed at those
+    files the runner scores `aggregate_f1: null` with `schema_invalid` equal to the record count:
+    the instrument cannot read CoD output, and nothing is wrong with the model. What diverges, what
+    it costs and what closing it means: docs/BACKLOG.md MEASUREMENT DEBT, "`run_model.py
+    --prompt-file` cannot score production's CoD path". Closing THAT entry is the precondition for
+    a model swap -- do not weaken this line instead.
+  rationale: the 30B floor was a PROXY for "does not collapse on this task", written because small
+    models kept getting swapped in for VRAM headroom and scored terribly. A proxy invites the wrong
+    argument -- whether 27B is close enough to 30 -- when the harness can answer the real question
+    directly. Measured 2026-09-04 on the substrate's task: a 27B model beat our 32B incumbent by a
+    wide margin, so the proxy would have BLOCKED an upgrade on a number that was never the point --
+    and note that the measurement clearing the proxy is NOT itself acceptance evidence, per the
+    last line of this block.
+  measured baselines, aggregate_f1 on the v6.2 substrate (see LlmBenchmark/eval-substrate/*.json).
+    EVERY figure NAMES ITS ENGINE, because a bare number does not identify a run: the challenger's
+    label spans 0.694-0.764 across five scorecards in one diff -- a wider range than the 0.051
+    fp8-KV effect the BACKLOG devotes a table to -- and the bare `0.763` that used to sit here was
+    the vLLM 0.28.0 run this file BLOCKS three sections below, not production's:
+    Qwen2.5-32B-AWQ       0.443 @ vllm-0.19.0 fp8_e5m2 KV (production) | 0.494 @ vllm-0.19.0 unquantized KV
+    Qwen3.8-27B-AWQ-INT4  0.764 @ vllm-0.19.0 | 0.7634 @ vllm-0.28.0 [BLOCKED engine]
+                          | 0.7629 @ vllm-0.28.0 + MTP speculative decode -- F1 unchanged, wall
+                            clock -30% # FOUR digits on these two deliberately: both round to
+                            0.763, so a three-digit row does not say WHICH scorecard it came
+                            from, which is the same defect the engine labels were added to fix
+                          | 0.744 NVFP4 @ vllm-0.28.0 | 0.694 @ vllm-0.19.0, the model card's own sampling
+                          -- and NOT on production's prompt path, so not yet acceptance evidence
+  ✗ a scorecard from the substrate's own 16 instruction blocks is NOT acceptance evidence # that is
+    a task production does not run; it was the gap that made every earlier comparison inconclusive
 CONTEXT: 32K required # ✗ reducing it breaks full-document decomposition and causes context rot
+PROMPT_HYGIENE [HARD_STOP]:
+  ✗ never version a prompt in its FILENAME # no cod_json_final_final_v3.txt. git is the history
+  ✓ edit the prompt in place; the diff, the commit message and the scorecard carry the story
+  a prompt that is no longer referenced by code or compose is DELETED, not renamed or parked
 INFERENCE_TOPOLOGY: vLLM(GPU) + llama.cpp(CPU) # ollama fully retired 2026-06-11
   GPU: vllm-server (Qwen2.5-32B-AWQ; continuous batching — no per-slot NUM_PARALLEL tuning)
   CPU: llama-server(DSL/GBNF rollback) | llama-cpu-rag(SecMaster RAG) | llama-cpu-embed(bge-m3)
   ✗ propose ollama # no container/engine remains; GGUF blobs live in the frozen ollama-format store, ro-mounted
 GPU_OOM: restart vLLM first; never downgrade the model or reduce context
+VLLM_UPGRADE [HARD_STOP before bumping vllm_image]:
+  ✗ carry `--kv-cache-dtype fp8_e5m2` past 0.19 # measured 2026-09-04: 0.28.0 starts fine, serves ONE request,
+    then faults under concurrent decode (CUDA illegal memory access) and stays 503. Isolated to the KV DTYPE at
+    matched context and concurrency -- not sm_120, not structured output, not CUDA graphs (--enforce-eager still
+    crashes), not a dependency (our flashinfer is NEWER than the one in the sibling bug vllm#41651).
+    `--kv-cache-dtype fp8_e4m3` is the one-flag fix: 0 errors at concurrency 6, output matched known-good at n=18.
+  rationale: vLLM benchmarks FP8 KV as FA3-on-Hopper and FlashInfer-on-B200(SM100), documents e4m3 only, and
+    never mentions SM120 or e5m2 -- our config is outside the tested matrix on all three axes. It works on
+    0.19.0; nobody upstream validates it.
+  ✓ before ANY engine bump: run the levers in docs/BACKLOG.md, then re-measure BOTH models on the substrate
+    (LlmBenchmark/scripts/run_model.py) -- an engine change is a silent quality change until scored
 VLLM_OBSERVABILITY: metrics = DIRECT prometheus scrape job="vllm" (vllm-server:8000) | traces = OTLP -> otel-collector:4317 -> Tempo
   ✗ look for a vllm series under job="otel-collector" # vLLM has NO OTLP METRIC exporter, only traces; the
     metric side is its own native /metrics endpoint and reaches Prometheus by scrape, not by push

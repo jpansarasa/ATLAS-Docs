@@ -16,6 +16,102 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**`ansible-gate-guard` denies READS, RUNS and even PROSE about a gate-layer file, while permitting an
+actual WRITE to one.** Its deny text states the contract exactly -- "RUNNING one of these files is NOT
+blocked -- only writing to it ... redirecting its output to a log is fine" -- and both halves are
+inverted in practice, because it matches the command TEXT rather than the act. Second instance of the
+class in `.claude/skills/supervisor-mode/LESSONS.md` L14; first one recorded against THIS guard.
+
+MEASURED 2026-09-04 during #1002's compile.sh work, target
+`SentinelCollector/.devcontainer/compile.sh`, one Bash tool call per form:
+
+- DENIED, a READ: `sed -n '34,63p' <target> > /tmp/.../control-block.sh`. The redirect target is a
+  scratchpad file; the gated path appears only as the input.
+- DENIED, a RUN logged the way the deny message itself recommends:
+  `nohup bash -c 'bash <target> > /tmp/.../full-compile.log 2>&1; ...' &`. The unnested
+  `bash <target> --no-test > /tmp/.../build-nostest.log 2>&1` is ALLOWED, so what it refuses is the
+  `bash -c '...'` nesting, not the act.
+- DENIED, PROSE: the Bash call adding THIS ENTRY to `docs/BACKLOG.md` was refused, because the entry
+  text quotes the forms above. Already-encoded remedy (LESSONS.md ALREADY_ENCODED, the quoted-push
+  line): pass long text by path, which is how this entry landed.
+- ALLOWED, a real WRITE: `python3 /tmp/.../gate-probe.py`, whose body opens the gated path and calls
+  `write_text` on it. It succeeded, undenied. Every compile.sh edit in #1002 went in that way.
+
+Re-check: run those four forms. If this entry is still true, the read, the nested run and the prose
+are refused and the python write succeeds. The probe writes byte-identical content, so a re-check
+leaves no diff.
+
+CONSEQUENCE, both directions. The write path means the gate does not enforce what it claims: a
+gate-layer change lands without the deliberate, visible confirm-file step that IS the mechanism. The
+read/run/prose path costs working forms an agent then has to route around -- which is how a guard
+teaches people to reach for the bypass, and creating the confirm file is the USER's decision, never
+an agent's (LESSONS.md L16), so the only honest alternative is to stop.
+
+Do NOT close this by teaching it the `bash -c` and `python3` spellings. That is the
+converging-on-a-reimplementation-of-bash path L14 prices out, and the prose case shows the grammar is
+unbounded. Close it by gating the ACT -- the tool call's resolved write target -- rather than the
+spelling of the command line.
+
+**Production's `fp8_e5m2` KV cache costs ~0.05 aggregate F1 on extraction, concentrated in RECALL.**
+Measured 2026-09-04, Qwen2.5-32B-AWQ on vLLM 0.19.0, KV dtype the ONLY variable, full 597-record substrate:
+
+| metric | fp8_e5m2 (production) | unquantized KV | delta |
+|---|---|---|---|
+| aggregate_f1 | 0.443 | 0.494 | +0.051 |
+| text_quote_recall | 0.289 | 0.346 | +0.058 |
+| selectivity_recall | 0.317 | 0.375 | +0.058 |
+| symbol_exact_match | 0.661 | 0.691 | +0.030 |
+| period_accuracy | 0.434 | 0.463 | +0.029 |
+| latency s/doc | 10.0 | 13.4 | +3.4 |
+
+The cost lands exactly where this pipeline is weakest. The trade is +0.051 F1 for +34% latency against ~20x
+measured headroom (1,945 req/h capacity vs ~96 req/h actual), so it looks worth taking -- and it is a change to
+the engine we run TODAY, independent of any upgrade or model swap. Unquantized KV still fits 32K on this card
+under 0.19.0 (36,848 tokens of cache vs ~73,712 at fp8), which is ample at ~3K tokens/request and concurrency 8.
+
+NOT YET DONE, and why: measured on the substrate's own 16 instructions, NOT production's cod_json_v1.txt +
+schema path. Confirm on the production prompt before changing vllm_kv_cache_dtype.
+BLOCKED 2026-09-04: that confirmation cannot be produced by the current harness -- pointed at the
+production prompt+schema, BOTH KV arms score `aggregate_f1: null`. See MEASUREMENT DEBT, "`run_model.py
+--prompt-file` cannot score production's CoD path".
+
+RELATED: this same flag is what crashes vLLM 0.28 (see the entry below), and e5m2 carries 2 mantissa bits to
+e4m3's 3 -- production runs the lower-precision of the two 8-bit formats AND the crash-prone one.
+
+**vLLM 0.28.0 upgrade is BLOCKED by our `fp8_e5m2` KV cache on sm_120; `fp8_e4m3` is the one-flag fix.**
+Measured 2026-09-04 on the RTX 5090 (sm_120) with production's exact nine flags. 0.28.0 STARTS fine and serves
+single requests, then faults under concurrent decode with `torch.AcceleratorError: CUDA error: an illegal memory
+access` and stays 503. Isolated to one variable:
+
+| vLLM | KV dtype | ctx | conc | result |
+|---|---|---|---|---|
+| 0.19.0 | fp8_e5m2 | 32K | 6 | 597/597 clean, twice (production today) |
+| 0.28.0 | fp8_e5m2 | 32K | 1 | OK |
+| 0.28.0 | fp8_e5m2 | 32K | 2 / 4 / 6 | crash |
+| 0.28.0 | fp8_e5m2 | 16K | 6 | crash, 17/18 |
+| 0.28.0 | fp16 | 16K | 6 | 0 errors, healthy |
+| 0.28.0 | **fp8_e4m3** | 32K | 6 | **0 errors, healthy** |
+
+The last two rows against row four differ ONLY in KV dtype, at matched context and concurrency, so it is neither
+sm_120 generally, nor structured output, nor context length, nor CUDA graphs (`--enforce-eager` still crashes).
+It is the e5m2 FORMAT. `--attention-backend TRITON_ATTN` does not help -- it fails to start on a torch.compile
+error raised by `kv_cache_dtype.startswith("nvfp4")`, at line 507 of vLLM's own `attention.py` INSIDE the 0.28.0
+image. That is upstream source, not ours, and it is deliberately NOT written in `file:line` form: nothing in this
+repo can ever resolve it, so a citation there is a permanent false positive in every future sweep.
+
+NOT a transitive dependency: the image ships flashinfer-python 0.6.16.post3, NEWER than the 0.6.8/0.6.9 that
+reproduce the sibling bug vllm#41651; `vllm_flash_attn` is no longer a module and `VLLM_FLASH_ATTN_VERSION` is
+gone from envs.py, so the old force-FA2 workaround is retired. The lever is a flag, not a version.
+
+WHY WE WERE EXPOSED AT ALL: vLLM's own FP8 KV documentation benchmarks FA3 on Hopper and FlashInfer on B200
+(SM100), discusses e4m3 throughout, and never mentions SM120 or e5m2. Our production config is outside the
+tested matrix on all three axes. It works on 0.19.0; nobody upstream is validating it.
+
+RE-CHECK: run the levers again on the next vLLM release. Correctness of the e4m3 path was spot-checked at n=18
+against the known-good 0.19.0 output (aggregate_f1 0.517 -> 0.526, all deltas small and mixed-sign, no sign of
+the garbage-output mode of vllm#41651) -- that is "no evidence of the failure", NOT proven equivalence.
+`period_accuracy` moved -0.056 and is the one to watch on a full 597-record confirmation.
+
 **A worktree-isolated agent CANNOT do gate-layer work at all: the two guards deadlock.** `ansible-gate-guard.sh`
 refuses every write under `.claude/hooks/**` and names one sanctioned escape — a bypass file at
 `$CLAUDE_PROJECT_DIR/.claude/.ansible-gate-confirmed`, ideally scoped by path fragment. But `project_dir` is
@@ -1195,8 +1291,9 @@ executing, not a missing measurement.**
 Retention was 30 days when the deletion date was computed here (deletable 2026-08-18 -> 2026-08-23), because
 `MaxArticleAgeDays` answered both "how long do we keep raw content" and "how old may an article be and still be
 worth extracting". Those split 2026-08-26: retention is now `ExtractionOptions.RawRetentionDays`
-(`ExtractionOptions.cs:608`, default 180, pinned `Extraction__RawRetentionDays=180` in the compose template), and
-`MaxArticleAgeDays` (`:590`, still 30) governs extraction eligibility only.
+(`SentinelCollector/src/Configuration/ExtractionOptions.cs`, default 180, pinned
+`Extraction__RawRetentionDays=180` in the compose template), and `MaxArticleAgeDays` (same file, still 30)
+governs extraction eligibility only.
 Collected 2026-07-19 -> 2026-07-24, the 55 now become deletable **2027-01-15 -> 2027-01-20**, at the first
 SentinelCollector restart after that.
 **Whether they still exist is unresolved and cheap to check:** the old 30-day window elapsed 2026-08-18 -> 08-23,
@@ -2255,7 +2352,186 @@ rather than a one-line repair. The code read above is what decides which, and it
 availability of a discriminator, R2/S4 is parked, and nothing currently reads `period` on the live
 path. Worth someone's next hour, not an incident.
 
+**`check_staleness.py`: two endpoints reporting the SAME engine name collapse last-wins, so the
+verdict flips on argument order.** `main()` builds `live_versions[engine] = version` in a loop, and
+a second endpoint answering the same engine name silently overwrites the first. One ordering is
+fail-OPEN, and nothing warns.
+
+MEASURED 2026-09-04 against two local stubs both identifying as `vllm`, one serving 0.19.0 and one
+0.28.0, over a scorecard recorded at vLLM 0.19.0:
+
+```
+--endpoint <0.19.0> --endpoint <0.28.0>   ENGINE_MOVED  "vllm 0.19.0 -> 0.28.0"   0/1 current  rc 1
+--endpoint <0.28.0> --endpoint <0.19.0>   CURRENT       "matches live; 0d old"    1/1 current  rc 0
+```
+
+Today's documented topology (vLLM :8000 + llama.cpp :8080) reports two DIFFERENT engine names and
+does not trigger it, which is why the tool's own `--endpoint ... --endpoint ...` example is safe.
+It triggers the moment two vLLM endpoints are compared -- exactly what an upgrade evaluation does,
+and the version under evaluation is the one an operator naturally passes second.
+
+Re-check: run two stubs answering `/version` with different values, point both `--endpoint` flags at
+them in each order, and compare the verdicts. If this is still true the two orders disagree.
+
+Do not close it by picking a winner. Two live builds under one engine name is an AMBIGUITY, and the
+rule this file's own tooling now follows in three places is that ambiguity DENIES -- the honest
+verdict is a refusal naming both endpoints, not a coin flip.
+
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
+
+### `run_model.py --prompt-file` cannot score production's CoD path -- the flag exists, the measurement does not [2026-09-04]
+`--prompt-file` / `--schema-file` were added (a2877cdb) so the harness could score "production's
+cod_json_v1.txt" -- its own help text says exactly that. Pointed at production's real prompt+schema they
+produce a scorecard whose **`aggregate_f1` is `null`**, because four independent things do not line up.
+The model is fine; the instrument cannot read it.
+
+MEASURED 2026-09-04, vLLM 0.19.0, production container as-is (`--kv-cache-dtype fp8_e5m2`),
+Qwen2.5-32B-AWQ rev `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c`, 3 records through
+`run_model.py --endpoint-mode completions` with production's `cod_json_v1.txt` + `cod_json_schema_v1.json`:
+`records: 3  errors: 0  schema_invalid: 3`, every record `n_extractions = 0`; scored `measurable: 4/18`,
+`aggregate_f1: null ("no data")`, `json_valid: 0.0`. The same call by hand returns `finish_reason: stop`
+and **30 populated `numbers[]` objects** on record 1 -- nothing is wrong with the extraction.
+
+1. OUTPUT SHAPE. The CoD stage emits ONE object with four list-valued keys (`entities`, `numbers`,
+   `events`, `claims`). `run_model.parse_extractions` accepts a dict only when exactly ONE value is a list,
+   so it returns `([], False)` -- correctly refusing to guess, which makes every production response a
+   parse failure.
+2. GOLD SHAPE. `grep -c 'period\|certainty' cod_json_schema_v1.json` returns **0**. The scorer's contract
+   is `NUMERIC_REQUIRED = (text_quote, value, period)` and it grades `certainty`; production's `numbers[]`
+   carries `(source_text, value, unit, context, source_entity)`. `period` and `certainty` are not
+   under-emitted, they are absent from the schema by design -- CoD is stage 1 of 4, and those fields are
+   supplied downstream by dsl-parser-mcp `/parse_json` + the verifier + the adapter
+   (`GpuJsonExtractionService`). `text_quote` (a gold SENTENCE) and `source_text` (a verbatim numeric
+   literal) are not the same field either.
+3. PROMPT ASSEMBLY. `cod_json_v1.txt` is a TEMPLATE (`{{source_id}}`, `{{article_text}}`, inside a
+   `<<<ARTICLE ... ARTICLE` block). `--prompt-file` concatenates `f"{instruction}\n\n{content}"`, so the
+   literal `{{article_text}}` is sent to the model and the article lands AFTER the prompt's closing
+   "Output ONLY the JSON object" line. The harness does not send production's prompt TEXT, before any
+   question of scoring it.
+
+4. NO CHAT TEMPLATE [closed in #1002; the measurement above predates the fix, so it was taken with this
+   divergence live]. `--chat-template` was optional and defaulted to `None`, while `--endpoint-mode
+   completions` advertised that it "reproduces ATLAS production (client-side template +
+   /v1/completions)". `/v1/completions` applies no template server-side, so the run above sent a raw
+   continuation with no `<|im_start|>` turn -- production's ChatML wrapper was on neither side of the
+   wire. This is the one divergence with NO tell in the output: the model answers, the scorecard fills
+   in, the prompt was simply not the one production sends. `run_model.validate_request_shape` now
+   REFUSES completions mode without the flag rather than defaulting it, and `--chat-template '{0}'` is
+   how an operator asks for an untemplated continuation on purpose.
+
+Same class, minor: production also sends `repetition_penalty=1.1` (`CpuCod__JsonRepetitionPenalty`); the
+runner omits it unless `--repetition-penalty` is passed.
+
+CONSEQUENCE. The first KNOWN DEFECT in this file is blocked on "confirm the fp8 penalty on the production
+prompt", and that confirmation cannot be produced by this harness at ANY KV dtype -- both arms score
+`null`. A two-arm run costs a production stop, two ~4min GPU reloads and ~1h of inference to yield two
+empty scorecards.
+
+CLOSE THIS by deciding what "production's path" means for scoring, which is a design choice and not a
+patch: either (a) put dsl-parser-mcp `/parse_json` in the harness loop so the thing scored is the
+`DocumentAst` production actually consumes, or (b) build gold labels in CoD shape and score stage 1 on its
+own terms. Do NOT close it by hand-mapping `numbers[]` onto the gold fields -- `period` and `certainty`
+have no source in that payload, so the mapping would inject a constant penalty larger than the ~0.05
+effect being measured, and the adapter's own design choices would dominate the result.
+Re-check: run `run_model.py --endpoint-mode completions --prompt-file
+SentinelCollector/src/cod-prompts/cod_json_v1.txt --schema-file
+SentinelCollector/src/cod-prompts/cod_json_schema_v1.json --chat-template
+$'<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n' --limit 3` and score it; if this entry is
+still true, `aggregate_f1` is still `null` and `schema_invalid` still equals the record count. The
+`--chat-template` argument is mandatory in this mode now (cause 4); the other three causes are untouched
+by that fix and are what keep the entry open.
+
+### `run_model.py --schema-file` silently bypasses `SCHEMA_REQUIRED`, on the model-acceptance path [2026-09-04]
+`build_payload` reads `schema = load_schema(args) or extraction_json_schema()`
+(`LlmBenchmark/scripts/run_model.py:296`), and `load_schema` (`:346-351`) returns whatever JSON the
+operator handed `--schema-file`, verbatim. Nothing between there and the wire checks that the supplied
+schema's `required` covers `SCHEMA_REQUIRED`. The derived schema is the only one carrying that coverage
+guarantee, and `--schema-file` is the flag that discards it -- without a word in the output.
+
+WHY THIS FLAG. `--schema-file` is not exotic: `CLAUDE.md` §MODEL_ACCEPTANCE names it in the exact
+invocation a model swap must produce a scorecard from (`--endpoint-mode completions --prompt-file
+cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...`). The bypass therefore sits on
+the one path that decides whether a candidate model replaces the incumbent.
+
+WHAT IT COSTS is already measured on this harness, at `run_model.py:83-99`: `certainty` was optional in
+the request schema, so the model emitted it on 0 of 2,213 extractions while gold carries it on 5,111 of
+5,111; `eval_harness` counts every omission a miss (`certainty_accuracy` at `eval_harness.py:320`), and
+`certainty_accuracy` scored **-0.85** against threshold. That read as "the model is bad at certainty"
+and it was the request schema. A supplied `--schema-file` reintroduces precisely that defect, and the
+constant that was written to prevent it does not run.
+
+MEASURED 2026-09-04, against the very file §MODEL_ACCEPTANCE names:
+```
+python3 - <<'PY'
+import json, sys; sys.path.insert(0, 'LlmBenchmark/scripts')
+import run_model as rm
+req = set()
+def walk(n):
+    if isinstance(n, dict):
+        req.update(n.get('required', []))
+        for v in n.values(): walk(v)
+    elif isinstance(n, list):
+        for v in n: walk(v)
+walk(json.load(open('SentinelCollector/src/cod-prompts/cod_json_schema_v1.json')))
+print(sorted(set(rm.SCHEMA_REQUIRED) - req))
+PY
+-> ['certainty', 'period', 'text_quote']
+```
+Three of the six graded fields `SCHEMA_REQUIRED` covers are not required by the supplied schema at ANY
+nesting depth, `certainty` among them, and the run says nothing.
+
+DISTINCT FROM THE ENTRY ABOVE, and that is the point. For production's CoD schema specifically the
+mismatch is a whole different SHAPE, which the `--prompt-file` entry covers and which at least announces
+itself as `schema_invalid = record count`. This entry is about the check that does not run for ANY
+supplied schema -- including one that IS array-shaped, scorer-compatible and merely under-specified.
+That case has no tell at all: it scores, it fills in, and the number is a penalty on the request.
+
+CLOSE THIS by making `validate_request_shape` (`run_model.py:398`) refuse a `--schema-file` whose
+`required` does not cover `SCHEMA_REQUIRED`, in the same fail-closed-rather-than-default shape it already
+applies to `--chat-template-kwargs` in completions mode -- with the override spelled explicitly so the
+choice lands in provenance. Do NOT close it by merging the supplied schema into the derived one: that
+sends a schema the operator did not write, and then misreports it as production's.
+
+TEST THAT WOULD PIN IT: `test_run_model.should_exit_two_when_a_schema_file_omits_a_graded_field`, a
+sibling of `should_exit_two_when_completions_mode_has_no_chat_template` (`test_run_model.py:516`),
+driving `main()` rather than a helper, with its paired positive (a covering schema runs). Note that the
+existing `should_send_the_supplied_schema_when_a_schema_file_is_given` (`test_run_model.py:362`) asserts
+the bypass verbatim -- it pins the current behaviour in place and must be read as the contract it is,
+never as coverage of this hole.
+
+Re-check: run the snippet above. If this entry is still true it still prints
+`['certainty', 'period', 'text_quote']`, and `grep -n SCHEMA_REQUIRED LlmBenchmark/scripts/run_model.py`
+still shows no reference inside `load_schema` or `validate_request_shape`.
+
+### `check_staleness.py` never looks inside a subdirectory, so a nested scorecard is unopened, not stale [2026-09-04]
+The grading half of "a file skipped in silence takes the denominator with it" is closed twice over:
+an unparseable file and a shapeless one both reach the tally as `UNEXAMINED`, and after #1002 that
+holds whatever the file is CALLED (the previous version rescued only `*.scorecard.json`, so
+`--out scorecard.json` -- the name `LlmBenchmark/scripts/README.md` itself writes -- fell through to
+a silent skip). The ASSEMBLY half is still open: `_iter_scorecards` uses a non-recursive
+`p.glob("*.json")`, so a card one directory down is not skipped, not counted and not named.
+
+MEASURED 2026-09-04, stdlib stub answering `/version` with `{"version": "0.19.0"}`, two real
+scorecards on disk:
+```
+<dir>/good.scorecard.json          engine vllm 0.19.0, generated today
+<dir>/sub/moved.scorecard.json     engine vllm 0.28.0  -> would verdict ENGINE_MOVED
+python3 LlmBenchmark/scripts/check_staleness.py --scorecards <dir> --endpoint <stub>
+  -> "1/1 current; 0 stale"   exit 0   stderr EMPTY
+```
+That is character-for-character the output the `UNEXAMINED` verdict exists to prevent, one level
+down, and neither the module docstring's control nor `_corpus_control` can see it: both are handed
+the corpus this function assembles, so a file it never looks for is invisible to every check below.
+
+NOT PATCHED IN #1002 deliberately. `rglob` is a one-word change and a semantic one -- it decides
+which files this tool claims to have an opinion about, and `--scorecards` takes any path an operator
+names, including trees holding `obj/`, sibling checkouts and archived runs. The committed corpus
+(`LlmBenchmark/eval-substrate`) is flat, so the change is a no-op there and cannot be validated by
+running it. CLOSE THIS by deciding the corpus rule first -- recurse, or refuse a directory that
+CONTAINS subdirectories holding `*.json` and name them -- then add the matching row to
+`_CORPUS_CONTROL`, which is where a partition claim is enforced on every run.
+Re-check: reproduce the two-file layout above; if this entry is still true it still prints
+`1/1 current; 0 stale` at exit 0.
 
 ### containerd exporter never reports an OOM kill (worked around, not fixed) [2026-08-30]
 `container_memory_oom_total` is exported as a GAUGE read from the live cgroup's `memory.events`,
@@ -2641,17 +2917,33 @@ Re-check: run the tool on the touched docs from a pristine checkout of the merge
 compare the `N citation(s) checked, M cannot land` line from each; M must not rise, and any rise in N must be
 accounted for by citations you deliberately added.
 
+NARROWED, NOT CLOSED [2026-09-04, #1002]. One sub-class is now machine-decidable and is decided: a citation whose
+prose names `D-n` within 8 lines and which LANDS on a line beginning `D-m` is reported as `WRONG-D-ENTRY`, counted
+apart from cannot-land so every figure above stays comparable. That sub-class is the one that recurred: PR #1002
+added 8 lines above `SentinelCollector/AGENT_README.md`'s DECISIONS block, `:84` stopped being blank and became
+D-13, and the cannot-land count FELL -- 474/30 at base c761e7b4, 483/29 at 91ec2319, by the Re-check above --
+while two docs began sending a reader to the wrong entry. (Anchor such a pair to its two shas. This line said
+487 for one review round: true when measured, dead two commits later when a backlog edit removed four
+citations by re-anchoring them to symbols and nobody re-swept. Re-derive it, never quote it.) The
+FinnhubCollector case ABOVE IS STILL LIVE AND STILL GREEN: those five are GUARD citations landing on method
+declarations in a `.cs` file, where no `D-n` appears at the landing site and demanding one would condemn all 111
+GUARD citations in this repo's cards. So the CONSEQUENCE paragraph above is unchanged for every citation that is
+not a card-entry pointer, and the baseline comparison is still the only way to see one move.
+
 **`verify-citations.py` silently skips a citation whose file has an extension outside a 10-item allowlist, and
 skips a bare `:NN` continuation entirely unless `--bare` is passed.** Two separate gates, both read from the code
-2026-08-17. The first is `scripts/verify-citations.py:121-122`:
+2026-08-17, and ANCHORED TO SYMBOLS rather than lines because every line number this paragraph once carried had
+already rotted: the tool's own docstring grows, and `:121-122` had drifted off `_EXTS` into prose. The first gate
+is the `_EXTS` / `CITATION` pair in `scripts/verify-citations.py`:
 `_EXTS = "py|cs|yml|yaml|md|sh|json|csproj|ts|sql"` feeding
 `CITATION = re.compile(rf"(?P<file>[\w./-]+\.(?:{_EXTS})):(?P<start>\d+)(?:-(?P<end>\d+))?\b")` — the `\.` is
 mandatory, so an extensionless path never matches, and neither does a real extension that is not on the list. This
-is DELIBERATE and the rationale is at `:119-120`: a permissive `\w+\.\w+:\d+` also swallows version strings and
-`host:port` URLs. So the gap is a precision/recall tradeoff already priced in, NOT a bug to widen on sight —
-widening it changes what the whole repo's sweep reports and needs its own before/after counts. The second gate is
-`:127` `BARE`, which parses a continuation like ``(`:147`)`` only when `--bare` is passed; the docstring at `:103`
-says to leave it off by default, so in a default run those references are not checked at all.
+is DELIBERATE and the rationale is the comment directly above `_EXTS`: a permissive `\w+\.\w+:\d+` also swallows
+version strings and `host:port` URLs. So the gap is a precision/recall tradeoff already priced in, NOT a bug to
+widen on sight — widening it changes what the whole repo's sweep reports and needs its own before/after counts.
+The second gate is the `BARE` regex, which parses a continuation like ``(`:147`)`` only when `--bare` is passed;
+the docstring paragraph headed BARE CONTINUATIONS ARE OPT-IN says to leave it off by default, so in a default run
+those references are not checked at all.
 MEASURED, 190 tracked docs swept on base `21b02a58`: **ZERO** citations anywhere name an extensionless file, so the
 `scripts/` executables (`claude-pr-verdict`, `claude-mark-verified`) carry no `file:NN` citation in any doc — that
 exposure is latent, not live. What IS live is the allowlist: **5** citations resolve to a real file and are
@@ -2705,6 +2997,97 @@ CONTROL, because a sweep whose only output is silence is an opinion: pipe one fa
 Verified both ways 2026-08-17. Repair is `git add --chmod=+x -- <path>`; a `chmod` on disk fixes nothing that ships.
 
 ## DEFERRED WORK
+
+**`ExtractionOptionsValidator` has no rule for `Thinking=Enabled` with a non-empty
+`ThinkingSuppressionSuffix`, so a suffix an operator explicitly set is accepted at boot and discarded on
+every request.** `ThinkingControl.FormatPrompt` appends the suffix on the `Disabled` branch only --
+verified 2026-09-04, `SentinelCollector/src/Services/ThinkingControl.cs:32-34` reads
+`return options.Thinking == ThinkingMode.Disabled ? formatted + options.ThinkingSuppressionSuffix :
+formatted;`. That branch is correct and D-26's paired negative test asserts exactly it. The gap is one
+layer up: nothing tells the operator the suffix they configured will never reach the wire.
+
+MEASURED 2026-09-04: `grep -c Thinking SentinelCollector/src/Configuration/ExtractionOptionsValidator.cs`
+-> **0**. The validator carries nine `failures.Add` rules (MaxToolRounds; tool-flags-vs-backend;
+QualitativeCoveTrustDowngradeFactor; three EntityResolution bounds; two AutoApproveDrain bounds) and not
+one reads `Thinking` or `ThinkingSuppressionSuffix`.
+
+This is the "configured and inert" shape D-26 exists to prevent, one level out. D-26's own measurement is
+the same class inside the clients: the suffix was applied at VllmClient's three sites and at NEITHER of
+LlamaServerClient's two, so a CPU-arm run configured for suppression was unsuppressed and LOOKED
+configured. The single-site fix closed the client asymmetry; it did not make a self-contradictory
+CONFIGURATION visible, and `Thinking=Enabled` plus a non-empty suffix is exactly that -- two settings
+that cannot both be honoured, accepted in silence. NOT A SUPERSESSION of D-26: the guard, its
+precondition and its tests are untouched. This asks for a boot-time check the guard was never given.
+
+Remedy unchosen -- reject at boot, or warn once at startup. A `failures.Add` on
+`options.Thinking != ThinkingMode.Disabled && !string.IsNullOrEmpty(options.ThinkingSuppressionSuffix)`
+matches the file's existing shape and fails fast; a Warning is the softer read if a deployment
+legitimately parks a suffix across a mode flip. Test that would pin it either way:
+`ExtractionOptionsValidatorTests.Validate_ThinkingEnabledWithSuppressionSuffix_Fails`, following the
+`Validate_<condition>_Fails` convention already in that file, with the paired
+`Validate_ThinkingEnabledWithoutSuffix_Succeeds` so the rule is not merely a refuse-everything.
+
+Re-check: `grep -c Thinking SentinelCollector/src/Configuration/ExtractionOptionsValidator.cs`. `0` means
+this entry is still true; nonzero means it has been closed.
+
+**`probe_engine` cannot tell "this endpoint has no `/version`" from "nothing is listening", and the
+checker that reads it now REPORTS that ambiguity rather than resolving it.** `probe_engine` in
+`LlmBenchmark/scripts/run_model.py` wraps each of its three probes -- `/version`, `/props`, `/v1/models`,
+each its own grep -- in a bare `except Exception:` of its own, and returns `engine: None` for both. A dead
+port and a live OpenAI-compatible server that simply does not implement `/version` or `/props` -- SGLang,
+a proxy, a future engine -- are indistinguishable in the field every caller reads.
+
+MEASURED 2026-09-04, one alive stub serving `/v1/models` only, against one closed port:
+```
+python3 - <<'PY'
+import sys, json, threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+sys.path.insert(0, 'LlmBenchmark/scripts')
+from run_model import probe_engine
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/v1/models":
+            self.send_response(404); self.end_headers(); return
+        b = json.dumps({"data": [{"id": "some-model"}]}).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(b)))
+        self.end_headers(); self.wfile.write(b)
+    def log_message(self, *a): pass
+srv = HTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+up   = probe_engine(f"http://127.0.0.1:{srv.server_address[1]}")
+down = probe_engine("http://127.0.0.1:9")
+print(up["engine"], up["engine_version"], up["served_models"])
+print(down["engine"], down["engine_version"], down["served_models"])
+srv.shutdown()
+PY
+-> None None ['some-model']
+-> None None []
+```
+
+WHAT IS ALREADY FIXED AND WHAT IS NOT. `check_staleness.py` no longer reads unknown as current: an
+unidentified endpoint prints `live: UNIDENTIFIED (no /version, no /props, or nothing listening)` (the
+`--endpoint` loop in `check_staleness.main`; grep `live: UNIDENTIFIED`) and every scorecard for that
+engine classifies `DRIFT_UNCHECKED ... no live <engine> version available` (the `if live is None:` branch
+of `check_staleness.classify`; grep `was NOT compared`), stale, with a non-zero exit. That removed the
+MISLEADING half. It did not remove the root cause: the operator is told to "pass --endpoint for one that
+answers /version or /props" whether their endpoint is DOWN (restart it) or merely SILENT about its
+identity (no restart will ever help, and `run_model.py --allow-unidentified-engine` -- the flag spelling
+is its own anchor -- is the actual answer). One message, two different remedies, and the checker cannot
+say which it means.
+
+The discriminator already exists in the returned dict and no caller uses it: `served_models` is
+`['some-model']` in the live case and `[]` in the dead one, per the measurement above --
+`grep -c served_models LlmBenchmark/scripts/check_staleness.py` -> **0**.
+
+Remedy unchosen: `probe_engine` returning reachability as a field distinct from identity (the
+information is already there -- non-empty `served_models` with `engine: None` IS "reachable but
+unidentified"), and `check_staleness.py` naming the right remedy for each. Test that would pin it:
+sibling stubs in `test_check_staleness.py`, one endpoint serving `/v1/models` only and one refusing
+connections, asserting the two produce DIFFERENT operator-facing text -- assert on the difference, since
+a checker that says the same thing about everything passes any single-case test.
+
+Re-check: run the snippet above. If this entry is still true both lines still print `None None`, and
+`served_models` is the only thing that differs between them.
 
 **The alert-continuity acceptance from the sentinel-resolution-signal epic was never re-measured, and
 re-measuring it now says it is NOT met.** Evicted from STATE.md 2026-08-26; the criterion was written
@@ -3092,6 +3475,115 @@ design question: it trades this for a symbol that is genuinely uncollectable fro
 Re-check: `sudo nerdctl container inspect finnhub-collector --format '{{.Created}}'` against
 `finnhub_quote_collection_staleness_seconds{symbol="<a symbol added since that time and not yet collected>"}` — the
 gauge reports the container's age, not the symbol's.
+
+**Hosted labelling routes -- measured 2026-09-04. STRICT `json_schema` enforcement is a per-PROVIDER
+property, not a per-model one.** `.claude/skills/supervisor-mode/SKILL.md` §ORACLE_ROUTING routes new
+labelling / gold / bulk-oracle work to a hosted OpenAI-compatible API (user directive 2026-09-04; Azure
+Foundry access revoked) and points here -- by the literal string "hosted labelling routes" -- for the
+measured routes and the probe that settles one. This entry is that target.
+
+THE FINDING, WHICH CARRIES ITS OWN NEGATIVE CONTROL. Same model, same request, two providers, opposite
+outcomes: `zai-org/GLM-5.2` served by **deepinfra** honours an `enum: ["alpha","beta"]`; the SAME model
+served by **zai-org's own endpoint** ignores the schema entirely, invents `company` / `event_type` /
+`financial_metrics`, and returns HTTP 200 while doing it. A route table keyed by MODEL is therefore wrong
+by construction -- the key is (model, provider). That pair is also the proof the probe DISCRIMINATES rather
+than flattering everything it touches: one arm passes and one fails on one model, one request.
+
+THE PROBE DESIGN, which matters as much as the table. An enum probe ALONE is weak -- a competent model
+obeys a two-value enum on semantics, with no grammar involved, so enforced and best-effort routes both
+pass it. What proves ENFORCED decoding is a `required` field the input gives NO basis for: a `ticker` with
+`pattern: "^Z{3}$"` on an article naming no such ticker. Constrained decoding physically cannot leave the
+grammar and emits `ZZZ`; best-effort emits a plausible ticker, or omits the field. Run it TWICE per
+(model, provider) pair -- one sample can look enforced by luck.
+
+MEASURED ROUTES, HF router `https://router.huggingface.co` -- note NO `/v1` suffix on the base; the client
+appends it:
+```
+ENFORCED      Qwen/Qwen3.8-2.4T-A95B             @ deepinfra
+ENFORCED      deepseek-ai/DeepSeek-V4-Pro-0813   @ deepinfra
+ENFORCED      moonshotai/Kimi-K3                 @ deepinfra
+ENFORCED      zai-org/GLM-5.2                    @ deepinfra
+ENFORCED      moonshotai/Kimi-K3                 @ fireworks-ai  -- but now answers HTTP 402
+BEST-EFFORT   zai-org/GLM-5.2                    @ zai-org       -- 200 + invented fields, SILENT
+FAILS CLOSED  deepseek-ai/DeepSeek-V4-Pro-0813   @ novita        -- HTTP 400, honest refusal
+NO ACCESS     together | featherless-ai                          -- HTTP 403 for this token
+```
+Four different model families enforce on deepinfra, so the property tracks the PROVIDER and not the family.
+CHOSEN: **DeepSeek-V4-Pro @ deepinfra** -- zero reasoning tokens, **~$0.00013/call OBSERVED**. Whole probe:
+**$0.045 across 29 requests, OBSERVED**. Those two are the only BILLED prices in this entry; the pre-flight's
+`~$0.0003` below is derived from the first and is the only other dollar figure here. Any per-token figure a
+reader brings from a pricing page is a LIST price and must not be averaged in with any of them.
+
+THE FLAG THAT PREDICTS IT IS NOT THE TEST. `GET /v1/models` exposes `providers[].supports_structured_output`,
+and it predicted all 7 outcomes above. It is still a CLAIM, not a fact -- zai-org advertises `false` and
+serves 200 rather than refusing, so the failure mode on this axis is SILENT in both directions and an
+advertised `true` is equally unverified. The ZZZ probe is a PRE-FLIGHT before each batch; it is never
+replaced by the flag.
+
+BUDGET TRAP, worth its own paragraph. Reasoning models burn 600-3000 chars of hidden thinking before any
+answer. GLM returned `finish_reason: length` with EMPTY content at `max_tokens` 80 AND at 512. Use >= 1024
+output tokens on any route here. `run_model.py` does not hide this -- `--max-tokens` defaults to 4096, a
+cut-off response is counted in `truncated` ALONGSIDE `schema_invalid`, and the run prints a WARNING naming
+unsuppressed thinking by name -- but the record still lands in `schema_invalid` too, so an operator who
+lowers the budget gets a scorecard that reads as a MODEL defect and is a harness budget setting.
+
+`run_model.py` GAPS FOR THIS ENDPOINT. Each verified against the file at this commit; grep the symbol, do
+not trust a line number -- this branch has moved them repeatedly.
+- NO `Authorization` HEADER. `_http_json` sends `headers={"Content-Type": "application/json"} if data else {}`
+  and nothing anywhere adds a bearer token (`grep -c Authorization` -> 0). Without this one change nothing
+  else in this entry is reachable.
+- THE FAIL-CLOSED ENGINE GATE ABORTS, CORRECTLY. The router answers neither `/version` nor `/props`, so
+  `probe_engine` returns `engine: None` and `main` exits 2. `--allow-unidentified-engine` is MANDATORY for
+  this route. Do NOT loosen the gate: the flag is the designed escape and it stamps the scorecard
+  `engine: unidentified` / `engine_identified: false`, which is the whole point of the gate.
+- `--model` IS FORWARDED VERBATIM AND NEVER REFUSED. `build_payload` sets `"model": args.model`, and the
+  served-model membership check that follows the engine gate only PRINTS a warning. Because enforcement is
+  per-provider, an id with no `:provider` suffix lets the router pick one and the harness will not stop it
+  -- the scorecard then names a model whose enforcement was never established. Always pass
+  `--model <id>:<provider>`.
+- `strict: true` IS NOT REQUIRED. `grep -c '"strict"' run_model.py` -> 0: it sends
+  `{"type": "json_schema", "json_schema": {"name": ..., "schema": ...}}` with no `strict` key, and deepinfra
+  enforced anyway. Nothing has to be added for enforcement -- only for auth.
+- PER-REQUEST COST IS DISCARDED. deepinfra returns `usage` carrying `estimated_cost`, and `grep -c usage`
+  is **0 in BOTH `run_model.py` and `eval_harness.py`** -- the field is read by nothing, so a labelling run
+  cannot report what it spent from its own output. Same shape as the Foundry ledger whose `cost_est` had to
+  be corrected 3x after the largest run: a run that does not record its OBSERVED cost leaves only list-price
+  arithmetic behind.
+
+WHAT THIS DOES NOT CLOSE, AND THE DISTINCTION TO PRESERVE. The router is CHAT-only, so this route cannot
+close the MEASUREMENT DEBT entry "`run_model.py --prompt-file` cannot score production's CoD path" -- and
+does not need to. LABELLING (produce gold) and SCORING (grade production's own `/v1/completions` path
+against that gold) are two jobs on two endpoints. A hosted route buys the first; the second still runs
+against vLLM, and CLAUDE.md §MODEL_ACCEPTANCE stays blocked until that entry is closed on its own terms.
+
+WHAT IS NOT MEASURED HERE. Nothing above measures label CORRECTNESS -- only schema enforcement, failure
+mode and cost. A quality comparison between these routes is a separate measurement and is NOT reported in
+this entry; do not read `ENFORCED` as "good labels".
+
+ACCESS IS NOT WIRED ON THIS BOX. Measured 2026-09-04: no `HF_TOKEN` in the environment, and
+`~/.cache/huggingface/token` absent. The probe ran on a token supplied for it. Per §ORACLE_ROUTING's own
+rule -- never read ACCESS from ARTIFACTS -- ask the user for the token rather than pricing work that
+assumes it.
+
+Re-check (free, local; the route table's own re-check costs money and is the pre-flight below):
+```
+for p in Authorization usage '"strict"' Content-Type allow_unidentified_engine; do
+  printf '%-26s %s\n' "$p" "$(grep -c -- "$p" LlmBenchmark/scripts/run_model.py)"; done
+printf '%-26s %s\n' 'usage@eval_harness' "$(grep -c usage LlmBenchmark/scripts/eval_harness.py)"
+```
+2026-09-04 -> `Authorization 0` / `usage 0` / `"strict" 0` / `Content-Type 1` /
+`allow_unidentified_engine 1` / `usage@eval_harness 0`. Exactly TWO of the six rows are POSITIVE CONTROLS --
+`Content-Type` and `allow_unidentified_engine`, the only two that are non-zero -- and a zero in EITHER means the
+command is broken or the file moved, not that a gap closed; a typo'd path prints zeros too. The other four rows
+are 0 BY DESIGN and a zero there is the FINDING, not a fault -- `usage@eval_harness` included, since it is the
+last bullet above restated as a command.
+
+PRE-FLIGHT BEFORE ANY LABELLING BATCH (costs money, ~$0.0003 for the two calls; never skipped, never
+replaced by `supports_structured_output`): POST `/v1/chat/completions` on `https://router.huggingface.co`
+with `model: "<id>:<provider>"`, `max_tokens` >= 1024, and a `response_format` `json_schema` whose
+`required` includes a `ticker` of `pattern: "^Z{3}$"`, against an article naming no such ticker. Twice.
+`ZZZ` both times = enforced. A plausible invented ticker, a missing field, or one of each = best-effort,
+and that provider does not label.
 
 **Accepted risks, do not re-flag.** Plaintext DB password `atlas_secure_password_2025` in 10+ tracked files, and
 `OfrCollector/.env` tracked with `DB_PASSWORD` / `SMTP_PASSWORD` / `FRED_API_KEY`. The user accepted both

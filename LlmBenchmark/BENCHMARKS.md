@@ -2,6 +2,41 @@
 
 Tracking LLM extraction accuracy across models for ATLAS sentinel extraction.
 
+> ## READ THIS BEFORE CITING A NUMBER BELOW
+>
+> **These figures are stale, and two of them describe software this box no longer runs.**
+> Measured 2026-09-03:
+>
+> | | |
+> |---|---|
+> | llama.cpp this box **runs** | build **10603** (image built 2026-08-24) |
+> | Newest llama.cpp figure in this table | **2026-04-03** |
+> | Engines compared in "Backend Comparison" below | llama.cpp vs **Ollama** — retired 2026-06-11 |
+> | vLLM (the engine that serves **production** extraction) | never scored in this table |
+>
+> Five months of llama.cpp development sit between the best number here (64.6% F1) and the
+> binary actually installed, so "llama.cpp scores 64.6%" is not a statement about our
+> llama.cpp. Nothing in a result file recorded an engine build, which is why none of that
+> was visible from the results themselves.
+>
+> **This table cannot answer "which engine should we use".** It compares one engine we still
+> run against one we deleted, on data from before either moved. For a current, engine-attributed
+> number use the Python track — [`scripts/`](scripts/README.md) — whose `run_model.py` drives
+> any OpenAI-compatible engine (vLLM, SGLang, llama.cpp `/v1`), records the engine build in
+> every scorecard, and **refuses to emit a result it cannot attribute**. `check_staleness.py`
+> compares a scorecard's recorded build against what is live now.
+>
+> The C# harness below can now drive vLLM as well: it builds SentinelCollector's own
+> `VllmClient`/`LlamaServerClient` from a real `ExtractionOptions`. **Every row in this table
+> predates that**, and no row was produced by a client this repo still contains. The llama.cpp
+> rows came from the replaced `BenchmarkLlamaServerClient`, which posted to `/completion` for
+> plain generation and to `/v1/chat/completions` for structured output — hardcoding
+> `model: "default"` and `max_tokens: -1` on that second endpoint — and dropped the seed on
+> both, so none of those numbers is seed-reproducible or on production's completion budget.
+> The seven `Ollama` rows — half of the fourteen-row table, the other seven being llama.cpp —
+> are older still: Ollama was retired 2026-06-11 and no engine remains to reproduce them on.
+> Read this leaderboard as history, not as a comparison.
+
 ## Current Leaderboard (Quick Benchmark - 2 Test Cases)
 
 | Model | Backend | F1 | census_retail | fed_fomc | Mean Time | Date |
@@ -65,20 +100,47 @@ Pass criteria: F1 >= 40% AND mean time < 300s per entry
 
 ## Running Benchmarks
 
+`run-benchmarks.sh` takes `--filter` and nothing else — any other flag exits 1. It documented
+`--backend llamacpp` and `--model` for months after both were removed, on a backend (Ollama)
+retired 2026-06-11, and a `--debug` shortcut that set `--filter Category=Debug` against a trait
+no test carries. The model is whatever the server has loaded, because both engines pin theirs at
+server start.
+
+**All three `run-*.sh` wrappers are the llama.cpp arm and only the llama.cpp arm.** They
+health-check `llama-server` and pin `BENCHMARK_BACKEND=LlamaServer` for the run, forwarding no
+host variable — so `BENCHMARK_BACKEND=VllmServer ./run-benchmarks.sh` used to run llama.cpp and
+file the number under a vLLM banner. All three now refuse that invocation and print the vLLM
+form below; the refusal is case-insensitive, matching `ParseEnumOrThrow`, so `llamaserver` names
+this arm and is accepted rather than refused with a consequence that cannot happen to it.
+
 ```bash
 cd LlmBenchmark
 
-# Ollama backend (default)
+# QuickBenchmark screen against the running llama.cpp server (2 entries)
 ./run-benchmarks.sh
 
-# Ollama with specific model
-./run-benchmarks.sh --model "qwen3:30b-instruct"
+# Full extraction run
+./run-benchmarks.sh --filter "Category=LlmBenchmark"
 
-# llama.cpp backend (requires llama-server running)
-./run-benchmarks.sh --backend llamacpp
+# The vLLM arm: same harness, production's default backend. NOT run-benchmarks.sh --
+# the variable has to reach the container the tests run in. (LlmBenchmark/README.md, "vLLM run")
+cd ../SentinelCollector/.devcontainer
+sudo nerdctl compose up -d
+sudo nerdctl compose exec -T \
+    -e BENCHMARK_BACKEND=VllmServer \
+    -e VLLM_ENDPOINT=http://vllm-server:8000 \
+    -e BENCHMARK_MODEL=Qwen/Qwen2.5-32B-Instruct-AWQ \
+    sentinel-collector-dev \
+    dotnet test /workspace/LlmBenchmark/LlmBenchmark.csproj --filter "Category=QuickBenchmark"
 ```
 
-Results displayed in test output. Full benchmark logs in `/tmp/benchmark_*.txt`.
+An unrecognised `BENCHMARK_BACKEND` is now REFUSED rather than defaulted away — `llamacpp`,
+`llama` and `LlamaCpp` all used to fall through to vLLM silently and file the numbers under a
+llama.cpp banner.
+
+To compare models, restart the server with each candidate and re-run. Results are displayed in
+the test output; `run-all-benchmarks.sh` and `run-top5-benchmark.sh` write timestamped logs
+beside themselves.
 
 ## Hardware
 

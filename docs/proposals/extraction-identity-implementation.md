@@ -626,7 +626,7 @@ paraphrased into a brief:
 > D-18 sentinel-series-key-ownership: INTENT a series key belongs to whoever MEASURED the number,
 > and Sentinel is on BOTH sides of that line.
 
-The full entry runs ~2,000 words at `SentinelCollector/AGENT_README.md:84`. **Whoever authors the
+The full entry runs ~2,000 words at `SentinelCollector/AGENT_README.md:93`. **Whoever authors the
 S4 spec reads it end to end first.** It shipped 2026-08-13 against measured production breakage,
 it is heavily guard-tested, and it turns on a polarity ("is this a series Sentinel OWNS?" rather
 than "does this key collide?") that a naive re-key would silently invert.

@@ -753,7 +753,7 @@ extraction.
 
 **The mandatory consequence.** An unmonitored fail-open silently reverts to the junk flood the
 moment the classifier dies — precisely the 4-day silent outage that started this work
-(`SecMaster/AGENT_README.md:55`: "a call that never lands leaves the resolver ledger idle, not
+(`SecMaster/AGENT_README.md:61`: "a call that never lands leaves the resolver ledger idle, not
 alarming"). So fail-open is only acceptable with:
 
 1. **Metric.** `sentinel_entity_type_classified_total{type, outcome}` where `outcome ∈

@@ -88,13 +88,43 @@ WAKE_LISTENER [event-driven, not cron-poll — idle ticks = context rot + per-ti
   the exact command, and why the jq filter and reconnect loop are load-bearing:
     references/wake-machinery.md
 
-ORACLE_ROUTING: Azure_Foundry # /home/james/.azure-foundry-keys
-  gold | architecture: claude-opus-4-7
-  cross-check: claude-opus-4-6
-  bulk | impl: claude-sonnet-4-6
-  smoke | triage: claude-haiku-4-5
-  cap: 500K tpm client-side
-  ledger: /opt/ai-inference/training-data/azure-oracle-ledger.jsonl
+ORACLE_ROUTING [DEAD as of 2026-09-04 -- Azure Foundry access REVOKED, user-confirmed]:
+  ✗ never route new spend to Azure Foundry # the instance is unreachable, not merely disfavoured
+  ✗ never read ACCESS from ARTIFACTS. On 2026-09-04 a recon agent priced a Foundry re-run at
+    "~$2.49, re-runnable" from three signals: a key file present, the anthropic SDK importing clean,
+    prompts on disk. Access was ALREADY revoked. Presence is not wiring; the only proof is a call,
+    and a paid call is not a probe to spend blind -- ASK THE USER whether an endpoint is still live
+    before pricing work that assumes it. (The key file has since been removed too, so today even
+    the weak signal is gone. Verify with `ls`, not from this line -- an earlier revision of this
+    very bullet asserted the file "still EXISTS" without running one, which is the failure the
+    bullet exists to prevent, committed inside the bullet itself.)
+  ✓ new labelling | gold | bulk oracle work -> hosted OpenAI-compatible API, user directive
+    2026-09-04: "I'd rather spend money on deepseek or glm than to go back to foundry" + "calling an
+    API of a hosted model, not running it locally ... at pennies per inference". Flagship tier.
+    The capability that decides between routes is STRICT json_schema enforcement vs best-effort
+    json_object -- accepting the parameter is NOT enforcing it, and enforcement is a per-PROVIDER
+    property. Measured routes and the probe that settles one: docs/BACKLOG.md, "hosted labelling
+    routes".
+    LlmBenchmark/scripts/run_model.py is engine-agnostic by construction and is the client to reuse.
+    It has FOUR gaps for a hosted router, not one -- measured, and the count matters because an
+    earlier revision of this line said "its only gap is the Authorization header". (1) That header
+    is the BLOCKING gap. (2) `--allow-unidentified-engine` is MANDATORY: the router answers neither
+    /version nor /props, so probe_engine hard-exits 2 -- use the flag, never loosen the gate, whose
+    comment cites a five-month llama.cpp drift. (3) The `:provider` suffix on --model is a
+    correctness risk the harness only WARNS about, and since enforcement is per-PROVIDER the wrong
+    provider silently unenforces the schema. (4) `usage` is discarded entirely, so `estimated_cost`
+    -- the observed per-request figure -- is thrown away.
+    NOT a gap, listed because an earlier revision miscounted it as one: `strict:true` is not
+    required; deepinfra enforced without it (measured).
+  ARTIFACTS THAT SURVIVE the revocation, still usable, cost nothing: the v7 labelling output at
+    /opt/ai-inference/training-data/v7-labeled-opus47-*.jsonl (9,720 articles, claude-opus-4-7,
+    2026-04-24) and the ledger at /opt/ai-inference/training-data/azure-oracle-ledger.jsonl.
+    ✗ the ledger's per-record cost field is `cost_est` (22,026 rows; there is NO `cost_usd` key --
+      that one belongs to the v7 labelling file named above, and conflating them sends a reader
+      grepping for a field that does not exist). `cost_est` is NOT reliable: the client shipped with
+      Anthropic LIST prices and was corrected to the Foundry rate AFTER the largest run, so early
+      entries overstate by exactly 3x. Measured 2026-09-04: recorded $1,346.53 across 23 runs,
+      actual ~$483.49. Verify before quoting any historical spend.
 
 WAKEUP_STEP_0: on ANY wake (monitor event | task-notification | user turn) -> ntfy.poll_new(atlas-claude-reply) BEFORE routine work; verify WAKE_LISTENER armed (re-arm if dead)
 FAILURE: bad subagent result -> fix prompt + dispatch fresh, never SendMessage(failed agent)
