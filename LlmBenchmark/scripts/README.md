@@ -7,9 +7,9 @@ Python harness scripts for the Sentinel extraction-LoRA acceptance-criteria pipe
 | Script | Purpose |
 |---|---|
 | `build_eval_substrate.py` | Deterministically builds the evaluation substrate (positives + negatives) for the Sentinel extraction acceptance-criteria harness. Writes the merged substrate plus a sidecar `criteria.json` documenting construction. Substrate itself is ~10 MB (10,185,438 bytes, measured 2026-09-04) and lives under `/opt/ai-inference/training-data/eval-substrates/` (not committed). |
-| `run_model.py` | Drives a substrate through any **OpenAI-compatible** endpoint (vLLM, SGLang, llama.cpp `/v1`) and emits the predictions JSONL `eval_harness.py --predictions` consumes, plus a provenance sidecar recording the engine build. Stdlib only. |
+| `run_model.py` | Drives a substrate through any **OpenAI-compatible** endpoint (vLLM, SGLang, llama.cpp `/v1`) and emits the predictions JSONL `eval_harness.py --predictions` consumes, plus a provenance sidecar recording the engine build. Takes the same **`--task`** as the scorer and must agree with it: `cove` (default) keeps the extraction array under `predicted_extractions`, `cod` keeps production's stage-1 object under `prediction`. Stdlib only. |
 | `eval_harness.py` | Scores predictions against an eval substrate, on **either of two tasks** (`--task`). `cove` (default): the 18 pinned metrics over the v6.2 substrate's own `{text_quote, value, period, certainty}` shape — a task production does not run. `cod`: production's CoD stage-1 shape `{article_type, entities, numbers, events, claims}`. Both scorers are pure functions (no vLLM / GPU / network — unit-testable); they score `--predictions`, or `--mock` gold-tautology predictions. It does **not** call a model — that is `run_model.py`'s job, and keeping them apart is what keeps the scorer offline-testable. |
-| `test_run_model.py` | Unit tests over the runner: strict parsing (never salvage), the outbound payload, and engine identification. Fully offline — the HTTP boundary is stubbed. |
+| `test_run_model.py` | Unit tests over the runner: strict parsing (never salvage), the outbound payload, engine identification, and that a CoD response is **kept** under the key the scorer reads — the contract test imports `eval_harness._cod_object` and asserts the join rather than restating the key. Fully offline — the HTTP boundary is stubbed. |
 | `test_eval_harness.py` | Unit tests over both scorers, the scorecard builder and the control arms. Fully offline. One guard test per metric, each constructing the wrong-pairing case; the CoD alignment-key test asserts the OLD key scores 1.0 on it, so the trap it replaces is measured rather than asserted. |
 | `check_staleness.py` | Grades the committed scorecards against what is running now: engine build, attribution, age. **One verdict is a pass** (`CURRENT`) and it requires a live comparison actually to have happened — with no reachable `--endpoint` every scorecard is `DRIFT_UNCHECKED` and the exit code is non-zero. Runs a known-bad control over its own classifier first and aborts (exit 3) if that control fails — the control uses its OWN fixed threshold, never `--max-age-days`. A file it cannot examine (unparseable, or parsing with no scorecard shape) is graded `UNEXAMINED` and COUNTED **whatever it is called**, because a file skipped in silence takes the denominator with it; the ONLY files it passes over are the named sidecars `*.criteria.json` and `*.provenance.json`. Not recursive, and that gap is open -- a card in a SUBDIRECTORY is never looked for (docs/BACKLOG.md MEASUREMENT DEBT). |
 | `select_cod_gold_corpus.py` | Resolves the 40-article CoD gold corpus out of the substrate from a hand-written selection table, each row carrying why that article is in the set. Keyed on `(source_file, source_index)` and REFUSES a duplicate key -- the index alone is not unique, the substrate concatenates two builds that each number from zero. `--verify` re-resolves and compares content hashes against the committed corpus, so the set is fixed at selection. Stdlib only. |
@@ -39,14 +39,30 @@ python3 LlmBenchmark/scripts/run_model.py \
 #     `:provider` suffix is then the only attribution the scorecard can carry, which is why
 #     the runner REFUSES a router model without one. Strict-schema enforcement is a
 #     per-provider property: unpinned, the router picks, and it need not pick twice alike.
+#     --task cod is REQUIRED to keep a CoD response: production's prompt returns one
+#     OBJECT, the default `cove` reader expects an ARRAY, and without the flag the runner
+#     writes `predicted_extractions: []` for every record and still exits 0.
+#
+#     THIS ROUTE CANNOT PRODUCE MODEL_ACCEPTANCE EVIDENCE, and the reason is not the
+#     unidentified engine. Measured 2026-09-05: router.huggingface.co answers 404 to
+#     /v1/completions, so `--endpoint-mode completions` -- production's own wire shape,
+#     client-side template and all -- is unavailable there and the run falls back to the
+#     chat endpoint, which is a DIFFERENT code path from the one production runs. The
+#     scorecard says so on its own: `acceptance_evidence.production_prompt_path: false`.
+#     Use this route to compare candidates without a GPU reload; take acceptance evidence
+#     on a local engine that serves /v1/completions.
+#     Also measured: concurrency 12 drew 504s from the router on 11 of 12 calls. Keep
+#     --concurrency low here; the default 8 is tuned for a local engine, not a gateway.
 python3 LlmBenchmark/scripts/run_model.py \
     --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
     --endpoint https://router.huggingface.co \
     --api-key-file ~/.hf-inference \
     --model Qwen/Qwen3.8-27B:deepinfra \
     --allow-unidentified-engine \
+    --task cod \
     --prompt-file SentinelCollector/src/cod-prompts/cod_json_v1.txt \
     --schema-file SentinelCollector/src/cod-prompts/cod_json_schema_v1.json \
+    --max-tokens 8192 \
     --out /tmp/preds.jsonl
 
 # 3. Grade it. --adapter-meta carries the engine build into the scorecard.
@@ -88,21 +104,53 @@ that object on its own terms, against
 ratified**; the ratified CoVe file is deliberately untouched because eight committed
 scorecards cite it as their provenance).
 
+**`--task cod` is a flag on BOTH halves, and they do not check each other.** The runner
+decides which shape it KEEPS and under which key (`prediction` for CoD,
+`predicted_extractions` for CoVe); the scorer decides which key it READS. A mismatch is
+not an error on either side — the scorer simply finds nothing under the key it reads and
+reports a model that extracted nothing. `provenance.task` records the runner's half, so
+`--adapter-meta` is what lets a reader catch the disagreement afterwards.
+
 ```bash
-# With gold. Gold rows are {source_file, source_index, gold: {...CoD object...}},
-# JSONL or a JSON list; only records carrying BOTH gold and a prediction are scored, and
-# `coverage` in the scorecard says how many that was.
+# 1. PRODUCE CoD predictions. Without --task cod this writes `predicted_extractions: []`
+#    for every record and exits 0 -- the request is right, the response is discarded.
+#    --task cod REFUSES to run without --prompt-file and --schema-file (or
+#    --no-structured-output): it changes only how the RESPONSE is parsed, so left alone
+#    the request still carries the substrate's CoVe instruction and the array-shaped
+#    default schema, and the model would comply and score zero.
+#    --max-tokens 8192 is a floor, not a default: a CoD object over a long article does not
+#    fit in the 4096 this runner defaults to, and a cut-off response fails json.loads, lands
+#    in schema_invalid and reads as bad JSON discipline rather than as a budget finding.
+#    Check `truncated` in the run summary, which counts it separately for that reason.
+python3 LlmBenchmark/scripts/run_model.py --task cod \
+    --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
+    --endpoint http://localhost:8000 --model Qwen/Qwen2.5-32B-Instruct-AWQ \
+    --endpoint-mode completions \
+    --prompt-file SentinelCollector/src/cod-prompts/cod_json_v1.txt \
+    --schema-file SentinelCollector/src/cod-prompts/cod_json_schema_v1.json \
+    --chat-template $'<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n' \
+    --max-tokens 8192 --out /tmp/preds.jsonl
+
+# 2a. SCORE, with gold. Gold rows are {source_file, source_index, gold: {...CoD object...}},
+#     JSONL or a JSON list; only records carrying BOTH gold and a prediction are scored,
+#     and `coverage` in the scorecard says how many that was.
 python3 LlmBenchmark/scripts/eval_harness.py --task cod \
     --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
     --cod-gold /path/to/cod-gold.jsonl \
     --predictions /tmp/preds.jsonl \
+    --adapter-meta /tmp/preds.jsonl.provenance.json \
     --out /tmp/cod-scorecard.json
 
-# WITHOUT gold. Still worth running: the self-consistency metrics need none, and
-# every gold-dependent metric reports null with a reason rather than 0.0.
+# 2b. SCORE, WITHOUT gold. Still worth running: the self-consistency metrics need none, and
+#     every gold-dependent metric reports null with a reason rather than 0.0.
 python3 LlmBenchmark/scripts/eval_harness.py --task cod \
-    --substrate <substrate> --predictions /tmp/preds.jsonl --out /tmp/card.json
+    --substrate <substrate> --predictions /tmp/preds.jsonl \
+    --adapter-meta /tmp/preds.jsonl.provenance.json --out /tmp/card.json
 ```
+
+A `--limit`ed run writes `<out>.substrate.json` holding exactly those N records — score
+against **that** file, not the full substrate, or the join drops every record the run
+never made.
 
 ### The alignment key, and why it is not `source_text`
 
@@ -135,7 +183,12 @@ only to break ties between candidates that already agree on identity (a guidance
 
 Measured 2026-09-05, Qwen2.5-32B-AWQ @ vLLM 0.19.0 on production's CoD request shape, all
 597 substrate articles: unshuffled `numbers_f1` **0.9993**, shuffled `numbers_f1` **0.0106**
-(`FLOOR_OK`). The mock arm's own scorecard passed 22 of 24 measurable metrics — and both
+(`FLOOR_OK`). *Provenance of that corpus, stated because it is a caveat on the numbers and
+not on the scorer:* it predates `run_model.py --task cod`, so the predictions file it was
+taken over came from a one-off generator that is **not** in this repo. The scorer is
+unaffected — those are its numbers over a corpus it was handed — but re-deriving them from
+the repo alone means re-running step 1 above, which is a full 597-article GPU run.
+The mock arm's own scorecard passed 22 of 24 measurable metrics — and both
 failures were `json_valid` and `source_entity_referential_integrity`, the metrics that need
 no gold and so cannot be flattered by feeding it back.
 
