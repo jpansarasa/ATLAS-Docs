@@ -144,6 +144,26 @@ L8 Repair citations LAST, and treat every fact-shaped claim as a citation.
     that a `D-n` citation lands on a line CONTAINING that `D-n`, with a wrong-entry fixture as its known-bad control.
     That graduates the D-entry class ONLY -- non-D-entry content drift stays judgement.
 
+L8b A MUTATION HARNESS CAN TEST A STALE BUILD, AND THAT SCORES MUTANTS AS KILLED [2026-09-05, #1004].
+  EVIDENCE: an agent's throwaway harness restored files with `mv backup file`. That restores CONTENT but
+    rewinds MTIME below the already-built mutant DLL, so MSBuild skipped the rebuild and every later run
+    silently exercised the FIRST mutant's binary. It surfaced as a confident, reproducible "your fix is
+    broken" -- logs showed the guard running and logging its tag while the row read back untagged. The
+    agent chased it to evidence rather than editing code, and confirmed by mtime plus a DLL string check.
+  WHY IT MATTERS MORE THAN THE INCIDENT: it failed LOUDLY, which is the lucky direction. The identical
+    defect while testing the UNMUTATED tree scores every mutant KILLED without compiling one, and a
+    mutation matrix is precisely the instrument we trust when we distrust a green suite. Same round, the
+    reviewer found THREE of six recorder sites had been GREEN under mutation all along -- so an
+    unverified matrix is not hypothetical here, it had already happened.
+  APPLIES: any mutate-build-test loop, and any restore that uses `mv`, `cp -p`, `git stash pop` or a
+    tarball -- every one of which can hand the compiler an mtime older than its own output.
+  RULE: `touch` the file after BOTH the mutate and the restore, or force the build. Then prove the loop
+    itself: after restoring, the suite must be GREEN before the next mutant (the agent's own re-run
+    checked this), and at least one mutant must be verified to have actually COMPILED -- a DLL string
+    check or a build-log line, never the test result alone. The test result is the thing under suspicion.
+  GENERALISES [[feedback_verification_tools_fail_toward_success]]: the harness is a tool, so it needs its
+    own known-bad control. Here that control is "mutate, and confirm the binary changed".
+
 L9 A fix round fixes exactly what you NAME and adds what you did NOT ask for. Brief the class, ban the framing.
   EVIDENCE: 2026-08-13, two PRs, seven rounds. NAMING: a reviewer named 3 stale citations; the round fixed 3 and left 3.
     Named 3 more; found 6 — the two worst in neither list, incl. an INTERFACE CONTRACT declaring "does not throw" for a
