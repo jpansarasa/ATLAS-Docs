@@ -8,9 +8,9 @@ Python harness scripts for the Sentinel extraction-LoRA acceptance-criteria pipe
 |---|---|
 | `build_eval_substrate.py` | Deterministically builds the evaluation substrate (positives + negatives) for the Sentinel extraction acceptance-criteria harness. Writes the merged substrate plus a sidecar `criteria.json` documenting construction. Substrate itself is ~10 MB (10,185,438 bytes, measured 2026-09-04) and lives under `/opt/ai-inference/training-data/eval-substrates/` (not committed). |
 | `run_model.py` | Drives a substrate through any **OpenAI-compatible** endpoint (vLLM, SGLang, llama.cpp `/v1`) and emits the predictions JSONL `eval_harness.py --predictions` consumes, plus a provenance sidecar recording the engine build. Stdlib only. |
-| `eval_harness.py` | Computes the 18 pinned acceptance-criteria metrics against an eval substrate. `score_predictions(gold, pred)` is a pure function (no vLLM / GPU / network — unit-testable); it scores `--predictions` from `run_model.py`, or `--mock` gold-tautology predictions for harness verification. It does **not** call a model — that is `run_model.py`'s job, and keeping them apart is what keeps the scorer offline-testable. |
+| `eval_harness.py` | Scores predictions against an eval substrate, on **either of two tasks** (`--task`). `cove` (default): the 18 pinned metrics over the v6.2 substrate's own `{text_quote, value, period, certainty}` shape — a task production does not run. `cod`: production's CoD stage-1 shape `{article_type, entities, numbers, events, claims}`. Both scorers are pure functions (no vLLM / GPU / network — unit-testable); they score `--predictions`, or `--mock` gold-tautology predictions. It does **not** call a model — that is `run_model.py`'s job, and keeping them apart is what keeps the scorer offline-testable. |
 | `test_run_model.py` | Unit tests over the runner: strict parsing (never salvage), the outbound payload, and engine identification. Fully offline — the HTTP boundary is stubbed. |
-| `test_eval_harness.py` | Unit tests over `score_predictions` and the substrate-construction logic. Fully offline. |
+| `test_eval_harness.py` | Unit tests over both scorers, the scorecard builder and the control arms. Fully offline. One guard test per metric, each constructing the wrong-pairing case; the CoD alignment-key test asserts the OLD key scores 1.0 on it, so the trap it replaces is measured rather than asserted. |
 | `check_staleness.py` | Grades the committed scorecards against what is running now: engine build, attribution, age. **One verdict is a pass** (`CURRENT`) and it requires a live comparison actually to have happened — with no reachable `--endpoint` every scorecard is `DRIFT_UNCHECKED` and the exit code is non-zero. Runs a known-bad control over its own classifier first and aborts (exit 3) if that control fails — the control uses its OWN fixed threshold, never `--max-age-days`. A file it cannot examine (unparseable, or parsing with no scorecard shape) is graded `UNEXAMINED` and COUNTED **whatever it is called**, because a file skipped in silence takes the denominator with it; the ONLY files it passes over are the named sidecars `*.criteria.json` and `*.provenance.json`. Not recursive, and that gap is open -- a card in a SUBDIRECTORY is never looked for (docs/BACKLOG.md MEASUREMENT DEBT). |
 | `test_check_staleness.py` | Unit tests over the staleness classifier, its self-check, and `main()`'s exit code. Fully offline. |
 
@@ -73,6 +73,77 @@ python3 LlmBenchmark/scripts/test_eval_harness.py
 python3 LlmBenchmark/scripts/test_run_model.py
 python3 LlmBenchmark/scripts/test_check_staleness.py
 ```
+
+## Scoring production's CoD stage 1 (`--task cod`)
+
+The default `cove` task grades the substrate's own numeric shape. **Production does not emit
+that shape.** CoD stage 1 emits one object with four list-valued keys, defined by
+`SentinelCollector/src/cod-prompts/cod_json_schema_v1.json`, and `period` / `certainty` /
+`text_quote` are not in it — they arrive from later pipeline stages. `--task cod` scores
+that object on its own terms, against
+`LlmBenchmark/eval-substrate/cod-stage1.criteria.json` (**provisional, not
+ratified**; the ratified CoVe file is deliberately untouched because eight committed
+scorecards cite it as their provenance).
+
+```bash
+# With gold. Gold rows are {source_file, source_index, gold: {...CoD object...}},
+# JSONL or a JSON list; only records carrying BOTH gold and a prediction are scored, and
+# `coverage` in the scorecard says how many that was.
+python3 LlmBenchmark/scripts/eval_harness.py --task cod \
+    --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
+    --cod-gold /path/to/cod-gold.jsonl \
+    --predictions /tmp/preds.jsonl \
+    --out /tmp/cod-scorecard.json
+
+# WITHOUT gold. Still worth running: the self-consistency metrics need none, and
+# every gold-dependent metric reports null with a reason rather than 0.0.
+python3 LlmBenchmark/scripts/eval_harness.py --task cod \
+    --substrate <substrate> --predictions /tmp/preds.jsonl --out /tmp/card.json
+```
+
+### The alignment key, and why it is not `source_text`
+
+The CoVe scorer aligns a prediction to gold on `text_quote` — a verbatim sentence, long
+enough to identify *which* fact is meant. CoD's nearest field, `source_text`, is a 1–3 token
+numeric literal: two unrelated figures both written `"$15"` overlap perfectly, and every
+per-field accuracy downstream inherits that wrong pairing. `value` fails the same way (both
+normalize to `15`).
+
+A CoD number's identity is instead **what it measures and who owns it** — `context` and
+`source_entity`, the two fields the prompt itself defines that way, both `required` by the
+schema so keying on them penalizes a model that omits them. A pair is a candidate only if it
+clears *both* floors independently (0.5 each); the mean only ranks among candidates. `value`
+and `unit` are deliberately **out** of the key — anything in the key reads 1.0 by
+construction, and value accuracy is the number a model swap turns on. Value equality is used
+only to break ties between candidates that already agree on identity (a guidance range).
+
+### The two control arms
+
+- **`--mock` is a CEILING that cannot fail.** It feeds gold back as the prediction, so a
+  perfect column says the plumbing ran and nothing else. The scorecard says so in
+  `mode_note` and records `controls.mock_ceiling.verdict = NOT_A_CONTROL`.
+- **`controls.shuffled_gold` is the arm that can fail**, and it runs on *every* invocation
+  of either task. Each prediction is scored against gold from a different article (rotation
+  by `n//2`, never by 1 — adjacent substrate records are near-duplicates). Its expected
+  floor is near zero and is known **without trusting the gold or the model**, so a
+  respectable number there means the scorer is broken by construction. `FLOOR_BREACHED` is
+  the verdict; a corpus of near-duplicate articles reads the same way, which is why the note
+  names both causes.
+
+Measured 2026-09-05, Qwen2.5-32B-AWQ @ vLLM 0.19.0 on production's CoD request shape, all
+597 substrate articles: unshuffled `numbers_f1` **0.9993**, shuffled `numbers_f1` **0.0106**
+(`FLOOR_OK`). The mock arm's own scorecard passed 22 of 24 measurable metrics — and both
+failures were `json_valid` and `source_entity_referential_integrity`, the metrics that need
+no gold and so cannot be flattered by feeding it back.
+
+**The tautology ceiling is not 1.0, and that is a finding rather than a rounding error.**
+`events_f1` ceils at 0.9405 and `claims_f1` at 0.9838. The schema's `required` is satisfied
+by `""`, so the model emits events with a blank `subject` and claims with a blank `object`;
+an item whose identity fields are blank cannot align with *anything*, including a perfect
+copy of itself, and scores as a false positive **and** a false negative. That penalty is
+invisible and reads as a missed fact, so it is published as
+`diagnostics.identityless_predicted_items` — measured `{events: 150/2520, claims: 38/2351,
+numbers: 5/7045, entities: 0/5527}`, which accounts for each ceiling exactly.
 
 ## Why the runner records the engine build
 

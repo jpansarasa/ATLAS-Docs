@@ -2083,17 +2083,30 @@ Qwen2.5-32B-AWQ rev `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c`, 3 records throug
 `aggregate_f1: null ("no data")`, `json_valid: 0.0`. The same call by hand returns `finish_reason: stop`
 and **30 populated `numbers[]` objects** on record 1 -- nothing is wrong with the extraction.
 
-1. OUTPUT SHAPE. The CoD stage emits ONE object with four list-valued keys (`entities`, `numbers`,
-   `events`, `claims`). `run_model.parse_extractions` accepts a dict only when exactly ONE value is a list,
-   so it returns `([], False)` -- correctly refusing to guess, which makes every production response a
-   parse failure.
-2. GOLD SHAPE. `grep -c 'period\|certainty' cod_json_schema_v1.json` returns **0**. The scorer's contract
+1. OUTPUT SHAPE [OPEN -- and it is now the ONLY thing keeping this entry open]. The CoD stage emits ONE
+   object with four list-valued keys (`entities`, `numbers`, `events`, `claims`).
+   `run_model.parse_extractions` accepts a dict only when exactly ONE value is a list, so it returns
+   `([], False)` -- correctly refusing to guess, which makes every production response a parse failure.
+   `run_one` then writes `predicted_extractions: []` and DISCARDS the response text, so the committed
+   tooling cannot produce a CoD corpus at all, whatever scores it. The 597-article measurement below was
+   therefore taken with a throwaway generator, not with `run_model.py`, and is not reproducible from the
+   repo until this cause is closed.
+2. GOLD SHAPE [CLOSED on the SCORING side 2026-09-05; the RUNNER still cannot feed it, see cause 1].
+   `grep -c 'period\|certainty' cod_json_schema_v1.json` returns **0**. The scorer's contract
    is `NUMERIC_REQUIRED = (text_quote, value, period)` and it grades `certainty`; production's `numbers[]`
    carries `(source_text, value, unit, context, source_entity)`. `period` and `certainty` are not
    under-emitted, they are absent from the schema by design -- CoD is stage 1 of 4, and those fields are
    supplied downstream by dsl-parser-mcp `/parse_json` + the verifier + the adapter
    (`GpuJsonExtractionService`). `text_quote` (a gold SENTENCE) and `source_text` (a verbatim numeric
    literal) are not the same field either.
+   `eval_harness.py --task cod` now grades the CoD object on its OWN terms against
+   `LlmBenchmark/eval-substrate/cod-stage1.criteria.json` (PROVISIONAL, `ratified_by: null`),
+   and the four fields above are reported `null` with a reason rather than synthesised -- which is what
+   the CLOSE THIS paragraph below forbids doing to them. The alignment key is `(context, source_entity)`
+   with independent floors, NOT `source_text`: that field is a 1-3 token literal, so two unrelated
+   figures both written `"$15"` align perfectly on it and every per-field accuracy inherits the wrong
+   pairing. `value` is out of the key for the same reason plus one more -- anything in the key reads 1.0
+   by construction, and value accuracy is the number a model swap turns on.
 3. PROMPT ASSEMBLY [CLOSED; the measurement above predates the fix, so it was taken with this
    divergence live]. `cod_json_v1.txt` is a TEMPLATE (`{{source_id}}`, `{{article_text}}`, inside a
    `<<<ARTICLE ... ARTICLE` block). `--prompt-file` concatenated `f"{instruction}\n\n{content}"`, so the
@@ -2134,14 +2147,52 @@ patch: either (a) put dsl-parser-mcp `/parse_json` in the harness loop so the th
 own terms. Do NOT close it by hand-mapping `numbers[]` onto the gold fields -- `period` and `certainty`
 have no source in that payload, so the mapping would inject a constant penalty larger than the ~0.05
 effect being measured, and the adapter's own design choices would dominate the result.
+ROUTE (b) IS NOW HALF BUILT: the SCORER exists (cause 2, `--task cod`), the GOLD does not, and the RUNNER
+cannot feed it (cause 1). All three are required; a scorer with nothing to score closes nothing.
 Re-check: run `run_model.py --endpoint-mode completions --prompt-file
 SentinelCollector/src/cod-prompts/cod_json_v1.txt --schema-file
 SentinelCollector/src/cod-prompts/cod_json_schema_v1.json --chat-template
 $'<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n' --limit 3` and score it; if this entry is
 still true, `aggregate_f1` is still `null` and `schema_invalid` still equals the record count. The
-`--chat-template` argument is mandatory in this mode now (cause 4). Causes 3 and 4 are CLOSED; causes 1
-and 2 -- OUTPUT SHAPE and GOLD SHAPE -- are untouched by either fix and are what keep the entry open,
-and neither is a patch: both are the design choice this entry's CLOSE THIS paragraph describes.
+`--chat-template` argument is mandatory in this mode now (cause 4). Causes 2, 3 and 4 are CLOSED; cause 1
+-- OUTPUT SHAPE -- is untouched by any of those fixes and is what keeps the entry open. Note the re-check
+above scores on `--task cove` (the default) and will keep reporting `null` for as long as cause 1 stands,
+whatever the CoD scorer can do: the runner hands it an empty list, and an empty list is a shape the CoD
+scorer is never even offered.
+
+WHAT THE CoD SCORER MEASURED ON ITS OWN, WITH NO GOLD [2026-09-05]. Two of its metrics need none, and
+they are the only CoD numbers that exist today. Qwen2.5-32B-AWQ rev `5c7cb76a...` @ vLLM 0.19.0 on
+production's exact request shape (client-side ChatML -> `/v1/completions`, `cod_json_v1.txt` +
+`cod_json_schema_v1.json`, temperature 0, seed 42, repetition_penalty 1.1, max_tokens 4096, production's
+stop tokens), all 597 substrate articles:
+
+| number | value | reading |
+|---|---|---|
+| `source_entity_referential_integrity` | **0.9472** | 2,799 of 2,955 non-empty anchors. 156 name an entity the same response never emitted. Bar 0.95; FAILS by 0.0028. |
+| `source_entity_empty_rate` | **0.5806** | 4,090 of 7,045 predicted numbers carry `""`. Legal (a macro print owns no entity) and REQUIRED READING beside the row above -- integrity is scored on the other 42%, and a model that blanked every anchor would score 1.0 on an empty denominator. |
+| `number_source_text_verbatim_rate` | 0.9709 | 6,840 of 7,045 literals appear verbatim (whitespace-normalized) in the article. Bar 0.90; passes. |
+| `json_valid` | 0.9849 | 588 of 597 parse and satisfy the schema. All 9 failures are `finish_reason: length` at 4,096 completion tokens -- the loop-guard cap, NOT JSON discipline. Production salvages partial JSON there; the harness deliberately does not. Bar 1.00; FAILS. |
+| `per_document_mean_latency_seconds` | 19.64 | concurrency 6 against the live production engine. Bar 300; passes. |
+| shuffled-gold control, `numbers_f1` | 0.0106 | every prediction scored against a DIFFERENT article's facts, against 0.9993 unshuffled on the same corpus. Near zero is the floor this arm exists to establish, and it is known without trusting the gold or the model. |
+| `identityless_predicted_items` | events **150**/2520, claims **38**/2351, numbers 5/7045, entities 0/5527 | items whose identity fields are BLANK. The schema's `required` is satisfied by `""`, so the model emits events with no `subject` and claims with no `object`; such an item cannot align with anything, including a perfect copy of itself, and scores as a false positive AND a false negative. This is what puts the tautology ceiling below 1.0 (`events_f1` 0.9405, `claims_f1` 0.9838) and it accounts for each one exactly. A gold labeller will hit the same wall -- an event with no subject cannot be labelled either. |
+
+The integrity figure is the honest one to act on: the CoD prompt calls `source_entity` the
+entity-resolution anchor and says a name absent from `entities[]` is "worse than none at all", so those
+156 are anchors that resolve against nothing. It needs no gold and no labelling budget to re-check.
+NOT MEASURED HERE: whether the extractions are CORRECT. Every number above is either self-consistency or
+schema conformance. Recall in particular is unmeasured and unmeasurable without gold -- do not read
+`0.9709` or `0.9472` as extraction quality.
+
+Re-check (needs a CoD corpus, which per cause 1 today means a generator outside the repo):
+```
+python3 LlmBenchmark/scripts/eval_harness.py --task cod --substrate <substrate> \
+  --predictions <cod-preds.jsonl> --out /tmp/cod.json
+python3 -c "import json;d=json.load(open('/tmp/cod.json'));\
+print(d['metrics']['source_entity_referential_integrity']['value'],\
+d['diagnostics']['source_entity_empty_rate']['value'],d['controls']['shuffled_gold']['value'])"
+```
+A shuffled-gold value that is NOT near zero is the finding, not the model's: it means the alignment key
+stopped discriminating, or the corpus went near-duplicate.
 
 BUDGET THE RE-CHECK ABOVE FOR MORE THAN 4096 COMPLETION TOKENS. Measured 2026-09-05, Qwen3.8-27B via
 the HF router (deepinfra), production's CoD prompt now correctly substituted, 2 substrate records at
