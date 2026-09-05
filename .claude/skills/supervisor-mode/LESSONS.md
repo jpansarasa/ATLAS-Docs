@@ -41,14 +41,30 @@ GRADUATE_CHECK per entry, and it is what makes GRADUATES more than a sentence: a
   verdict, so rc 124/126/127 (timeout, not-executable, command-not-found) is reported as a BROKEN CHECK and blocks.
   A refusal is a PROMPT FOR JUDGEMENT, not an auto-delete: promote the lesson and remove it, or re-run with
   `--evicted` once you have recorded why not.
-  TWO of these key on an artifact's NAME (L11 `check-*coverage`, L15 `*corpus*`) because their criteria are about a
-  tool that does not exist yet and has no other observable. Both fail toward not-graduated; when you build the
-  tool, name it so, or rewrite the line in the same PR.
+  ONE of these keys on an artifact's NAME (L15 `*corpus*`) because its criterion is about a tool that does not
+  exist yet and has no other observable. It fails toward not-graduated; when you build the tool, name it so, or
+  rewrite the line in the same PR. L11 used to key on a name too and now reads the file's non-comment content.
+  MATCH THE ARTIFACT, NEVER THE PROSE ABOUT IT — the failure this block exists to stop, and it is not
+  hypothetical: L8's second half was `grep -rq verify-citations .claude/hooks/`, standing for "and a hook runs the
+  tool". That directory holds executables AND `mark-verified.log`, an append-only audit file whose rows are prose
+  an AGENT writes about its own work, so the only match in it was a row citing "verify-citations 492/27" and the
+  gate reported GRADUATED on its first real run against main. A tool's own bookkeeping satisfied the check for
+  the tool being wired. So, when you write a predicate:
+    ✓ scan FILES, not directories — and where a directory is unavoidable, restrict it to what the clause means
+      (`-perm -u+x` for "a hook", `--include='*.yml'` for "a rule")
+    ✓ exclude comment lines (`grep -v '^[[:space:]]*#'`) when the clause says the artifact DOES something —
+      a string in a comment is prose too, and this is the whole of L8b's weakness
+    ✓ require the WIRING where being wired is the point: a hook nobody registered in `.claude/settings.json`
+      never runs, so it is not "a hook runs it"
+    ✗ never end a listing pipeline with `xargs -r grep -q` — empty input makes `xargs -r` exit 0, which the gate
+      reads as GRADUATED. Terminate with `| grep -q .`, as L4 and L8 do
   THESE LINES EXECUTE. LESSONS.md is executable input to the reset gate — the same trust boundary as the script
   itself, which anyone who can edit this file can also edit.
-  Measured 2026-09-05 at c32354f7: 0 of the 13 predicates pass. Treat that as suspicious, not as reassurance — it
-  was checked entry by entry, and L8 is genuinely HALF met (`wrong_d_entry` shipped in #1002; no hook runs the tool
-  on changed files), which is why its predicate is the AND its own GRADUATES clause states.
+  Measured 2026-09-05 on fix/graduate-check-matches-artifacts: 0 of the 14 predicates pass. Treat that as
+  suspicious, not as reassurance — it was checked entry by entry, and L8 is genuinely HALF met (`wrong_d_entry`
+  shipped in #1002; no hook runs the tool on changed files), which is why its predicate is the AND its own
+  GRADUATES clause states. The count was written as 13 here while the file held 14 entries, in the file whose
+  purpose is now accuracy.
 
 ## ALREADY_ENCODED [go there, never restate here]
 Every line NAMES the mechanism that enforces it now, so removing that mechanism removes a visible pointer
@@ -127,7 +143,7 @@ L4 Prune the finished agent's worktree BEFORE dispatching the next agent onto th
     held branches, and require every dispatch to release its branch leaving nothing staged.
   GRADUATES: when a pre-dispatch check lands in the templates or a hook AND it checks `diff --cached`, not merely which
     branch is held.
-  GRADUATE_CHECK: grep -rl -- '--cached' .claude/hooks .claude/skills/supervisor-mode/templates | xargs -r grep -l 'worktree list' | grep -q .
+  GRADUATE_CHECK: { find .claude/hooks -type f -perm -u+x; find .claude/skills/supervisor-mode/templates -type f -name '*.md'; } | xargs -r grep -l -- '--cached' | xargs -r grep -l 'worktree list' | grep -q .
 
 L8 Repair citations LAST, and treat every fact-shaped claim as a citation.
   EVIDENCE: 2026-08-12/13, one PR chain. Round 2 repaired ONE line citation and broke FOURTEEN (its own edits shifted
@@ -166,7 +182,7 @@ L8 Repair citations LAST, and treat every fact-shaped claim as a citation.
     changed files. Until then this is judgement, not tooling. IN PROGRESS 2026-09-04 (#1002 round 4): making it assert
     that a `D-n` citation lands on a line CONTAINING that `D-n`, with a wrong-entry fixture as its known-bad control.
     That graduates the D-entry class ONLY -- non-D-entry content drift stays judgement.
-  GRADUATE_CHECK: grep -q WRONG-D-ENTRY scripts/verify-citations.py && grep -rq verify-citations .claude/hooks/
+  GRADUATE_CHECK: H=$(find .claude/hooks -type f -perm -u+x -exec grep -l '^[^#]*verify-citations' {} +); grep -q WRONG-D-ENTRY scripts/verify-citations.py && [ -n "$H" ] && printf '%s\n' "$H" | sed 's|.*/||' | grep -qFf - .claude/settings.json
 
 L8b A MUTATION HARNESS CAN TEST A STALE BUILD, AND THAT SCORES MUTANTS AS KILLED [2026-09-05, #1004].
   EVIDENCE: an agent's throwaway harness restored files with `mv backup file`. That restores CONTENT but
@@ -192,7 +208,7 @@ L8b A MUTATION HARNESS CAN TEST A STALE BUILD, AND THAT SCORES MUTANTS AS KILLED
     "did it actually compile" check rides on the tool rather than on whoever remembers. Every instance
     so far has been a throwaway script rewritten from scratch, which is why the same defect can recur
     with nobody having ignored the rule.
-  GRADUATE_CHECK: test -f scripts/mutate-verify.sh && grep -q 'cmp\|sha256\|strings' scripts/mutate-verify.sh
+  GRADUATE_CHECK: test -x scripts/mutate-verify.sh && grep -v '^[[:space:]]*#' scripts/mutate-verify.sh | grep -qwE 'cmp|strings|sha256[a-z]*'
     -- scope, stated because the check is weaker than the clause: it can only see that the helper exists
     and compares the artifact somehow. It cannot tell whether agents USE it, which is the half that
     actually retires this lesson. Tighten it when a dispatch template names the helper.
@@ -223,7 +239,7 @@ L10 Run the build AFTER the final commit. The marker keys to the TREE.
   RULE: final commit, THEN `compile.sh`, then report the attested tree hash and check it equals `HEAD^{tree}`.
     # one line in the brief; it removes a whole re-verification round
   GRADUATES: when the dispatch templates carry the ordering and the report asks for the tree hash.
-  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -q 'tree hash' $T/implementation-fix.md $T/story-implementation.md && grep -qiE 'after the final commit|final commit, THEN' $T/implementation-fix.md $T/story-implementation.md
+  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -q 'tree hash' $T/implementation-fix.md && grep -q 'tree hash' $T/story-implementation.md && grep -qiE 'after the final commit|final commit, THEN' $T/implementation-fix.md $T/story-implementation.md
 
 L11 An alert rule is unproven until a test asserts it FIRES. Green promtool says only that it did not crash.
   EVIDENCE: 2026-08-14, second occurrence of the same class. `SentinelLowResolutionRate` stepped over 6h at 5m:
@@ -245,7 +261,7 @@ L11 An alert rule is unproven until a test asserts it FIRES. Green promtool says
   GRADUATES: when the alert-rules CI step fails any rule file containing an `alert:` with no positive assertion
     naming it — a coverage checker beside `check-matchers.py`, which already resolves alertname literals and so
     already holds both halves of the join.
-  GRADUATE_CHECK: grep -qE 'check-[a-z-]*coverage' deployment/tests/alerts/run.sh
+  GRADUATE_CHECK: grep -v '^[[:space:]]*#' deployment/tests/alerts/run.sh | grep -qE 'check-[a-z-]*coverage'
 
 L13 An instrument that dies silently scores its silence as a PASS.
   OCCURRENCES: five in one session, 2026-08-15 — and the `awk` one fired TWICE, the second time while writing the
@@ -316,7 +332,7 @@ L15 A "nothing loosened" claim is scoped to its author's imagination. Fixing the
     corpus SIZE and the sentence "this number is only as good as this corpus" in the report.
   GRADUATES: when an adversarial corpus is generated from the guard's own rule table rather than by hand, so the
     spellings come from the code instead of from whoever is feeling thorough today.
-  GRADUATE_CHECK: ls .claude/hooks/test/ | grep -qi corpus
+  GRADUATE_CHECK: find .claude/hooks/test -type f -perm -u+x -iname '*corpus*' | grep -q .
 
 L16 A guard that gates writes to ITSELF cannot be repaired by the isolation we default to.
   OCCURRENCES: PR #970, PR #974. Recorded once in `docs/BACKLOG.md` as a one-off; it is not one.
@@ -334,7 +350,7 @@ L16 A guard that gates writes to ITSELF cannot be repaired by the isolation we d
     around it, and it is the supervisor who is least able to see that difference in the moment.
   GRADUATES: when a gate-layer dispatch either resolves its own project_dir or is REFUSED AT DISPATCH, so the
     deadlock costs a turn instead of an agent-hour.
-  GRADUATE_CHECK: grep -q show-toplevel .claude/hooks/ansible-gate-guard.sh || grep -qi gate-layer .claude/hooks/design-intent-dispatch-guard.sh
+  GRADUATE_CHECK: grep -v '^[[:space:]]*#' .claude/hooks/ansible-gate-guard.sh | grep -q show-toplevel || grep -v '^[[:space:]]*#' .claude/hooks/design-intent-dispatch-guard.sh | grep -qi gate-layer
 
 L17 An alert that fires by ACCIDENT is not coverage, and coverage cannot be enumerated from the alerts that exist.
 OCCURRENCES: GeminiResolverNotResolving (CLAUDE.md §OBSERVABILITY) worked only because rejected calls consumed cap
@@ -351,7 +367,7 @@ RULE: enumerate coverage from the DATA side, never from the alert list — for t
   structurally blind to absence, so reading it can only ever confirm what already fires.
 GRADUATES: delete this when every series in D-18's owned-series list has a freshness metric independent of whether
   any pattern references it — checkable by grepping the metric name per series and getting a non-empty result for all.
-GRADUATE_CHECK: for s in ADP_EMPLOYMENT BDIY CHALLENGER_JOB_CUTS INDEED_POSTINGS REDBOOK_SALES TRUFLATION_CPI; do grep -rq "$s" deployment/artifacts/monitoring/ || exit 1; done
+GRADUATE_CHECK: for s in ADP_EMPLOYMENT BDIY CHALLENGER_JOB_CUTS INDEED_POSTINGS REDBOOK_SALES TRUFLATION_CPI; do grep -rhv '^[[:space:]]*#' --include='*.yml' deployment/artifacts/monitoring/alerts/ | grep -q "$s" || exit 1; done
 
 L18 A command that reports its own limit, warning or truncation has ANSWERED you; theorising past that line is
   inventing evidence. Five instances in one session, all mine, all where the output carried its own disqualifier.
