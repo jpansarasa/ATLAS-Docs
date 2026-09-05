@@ -2169,7 +2169,7 @@ stop tokens), all 597 substrate articles:
 | number | value | reading |
 |---|---|---|
 | `source_entity_referential_integrity` | **0.9472** | 2,799 of 2,955 non-empty anchors. 156 name an entity the same response never emitted. Bar 0.95; FAILS by 0.0028. |
-| `source_entity_empty_rate` | **0.5806** | 4,090 of 7,045 predicted numbers carry `""`. Legal (a macro print owns no entity) and REQUIRED READING beside the row above -- integrity is scored on the other 42%, and a model that blanked every anchor would score 1.0 on an empty denominator. |
+| `source_entity_empty_rate` | **0.5806** | 4,090 of 7,045 predicted numbers carry `""`. Legal (a macro print owns no entity) and REQUIRED READING beside the row above -- integrity is scored on the other 2,955, 42%, so the row above alone cannot be told from 0.9472-over-everything. (An earlier version of this cell said a model blanking every anchor "would score 1.0 on an empty denominator". False: the metric returns null with a reason -- see `cod-stage1.criteria.json`'s `not_the_reason`.) |
 | `number_source_text_verbatim_rate` | 0.9709 | 6,840 of 7,045 literals appear verbatim (whitespace-normalized) in the article. Bar 0.90; passes. |
 | `json_valid` | 0.9849 | 588 of 597 parse and satisfy the schema. All 9 failures are `finish_reason: length` at 4,096 completion tokens -- the loop-guard cap, NOT JSON discipline. Production salvages partial JSON there; the harness deliberately does not. Bar 1.00; FAILS. |
 | `per_document_mean_latency_seconds` | 19.64 | concurrency 6 against the live production engine. Bar 300; passes. |
@@ -2370,6 +2370,33 @@ never as coverage of this hole.
 Re-check: run the snippet above. If this entry is still true it still prints
 `['certainty', 'period', 'text_quote']`, and `grep -n SCHEMA_REQUIRED LlmBenchmark/scripts/run_model.py`
 still shows no reference inside `load_schema` or `validate_request_shape`.
+
+### A well-formed 2xx envelope whose content is not an answer still passes silently [2026-09-05]
+`choice_content` now refuses an envelope with no usable choice, so a provider outage reaches
+`call_errors` and the fail-closed gate. Three shapes still do not, each landing in `schema_invalid`
+at rc 0: the provider's error text delivered AS the completion; `finish_reason: content_filter`
+(counted in `finish_reasons`, gated on by nothing); and a `stop` carrying
+`completion_tokens: 0`. Class: an outage indistinguishable from a null result once it wears a
+valid envelope. The last two close by gating on those fields; the first cannot without
+pattern-matching content, which is the salvage-parse this harness refuses.
+```
+python3 - <<'PY'
+import sys, argparse; sys.path.insert(0, 'LlmBenchmark/scripts'); import run_model as rm
+A = argparse.Namespace(model='m', temperature=0.0, seed=42, top_p=None, top_k=None, min_p=None,
+    presence_penalty=None, repetition_penalty=None, max_tokens=64, chat_template_kwargs=None,
+    no_structured_output=False, endpoint='http://x', timeout=5.0, endpoint_mode='chat',
+    task='cod', prompt_file=None, schema_file=None, chat_template=None, stop=None)
+R = {'source_file': 'f', 'source_index': 0, 'instruction': 'S', 'input': {'content': 'C'}}
+for name, content, fr in (('error_as_text', 'Error: rate limited (429)', 'stop'),
+                          ('content_filter', '', 'content_filter'),
+                          ('zero_tokens', '', 'stop')):
+    rm._http_json = lambda *a, _c=content, _f=fr, **k: {
+        'choices': [{'message': {'content': _c}, 'finish_reason': _f}],
+        'usage': {'completion_tokens': 0}}
+    print(name, 'recorded as a call error:', 'error' in rm.run_one(R, A))
+PY
+-> all three print False while this entry is true
+```
 
 ### `run_model.py` cannot reproduce production's sampling -- there is no `--seed` [2026-09-04]
 Production pins `seed=42`: `ExtractionOptions.V2Seed` -> `GpuJsonExtractionService` ->

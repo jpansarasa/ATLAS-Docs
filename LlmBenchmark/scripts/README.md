@@ -132,11 +132,13 @@ python3 LlmBenchmark/scripts/run_model.py --task cod \
     --max-tokens 8192 --out /tmp/preds.jsonl
 
 # 2a. SCORE, with gold. Gold rows are {source_file, source_index, gold: {...CoD object...}},
-#     JSONL or a JSON list; only records carrying BOTH gold and a prediction are scored,
-#     and `coverage` in the scorecard says how many that was.
+#     as JSONL, a JSON list, or a build_cod_gold.py artifact carrying them under `articles`
+#     — which is what the committed gold file below is, and it is read directly. Only
+#     records carrying BOTH gold and a prediction are scored, and `coverage` in the
+#     scorecard says how many that was.
 python3 LlmBenchmark/scripts/eval_harness.py --task cod \
     --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
-    --cod-gold /path/to/cod-gold.jsonl \
+    --cod-gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json \
     --predictions /tmp/preds.jsonl \
     --adapter-meta /tmp/preds.jsonl.provenance.json \
     --out /tmp/cod-scorecard.json
