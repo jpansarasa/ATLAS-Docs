@@ -2465,11 +2465,18 @@ and **30 populated `numbers[]` objects** on record 1 -- nothing is wrong with th
    supplied downstream by dsl-parser-mcp `/parse_json` + the verifier + the adapter
    (`GpuJsonExtractionService`). `text_quote` (a gold SENTENCE) and `source_text` (a verbatim numeric
    literal) are not the same field either.
-3. PROMPT ASSEMBLY. `cod_json_v1.txt` is a TEMPLATE (`{{source_id}}`, `{{article_text}}`, inside a
-   `<<<ARTICLE ... ARTICLE` block). `--prompt-file` concatenates `f"{instruction}\n\n{content}"`, so the
-   literal `{{article_text}}` is sent to the model and the article lands AFTER the prompt's closing
-   "Output ONLY the JSON object" line. The harness does not send production's prompt TEXT, before any
-   question of scoring it.
+3. PROMPT ASSEMBLY [CLOSED; the measurement above predates the fix, so it was taken with this
+   divergence live]. `cod_json_v1.txt` is a TEMPLATE (`{{source_id}}`, `{{article_text}}`, inside a
+   `<<<ARTICLE ... ARTICLE` block). `--prompt-file` concatenated `f"{instruction}\n\n{content}"`, so the
+   literal `{{article_text}}` was sent to the model and the article landed AFTER the prompt's closing
+   "Output ONLY the JSON object" line. The harness did not send production's prompt TEXT, before any
+   question of scoring it. `run_model.render_prompt` now mirrors
+   `GpuJsonExtractionService.BuildPrompt` (str.replace, article then source_id,
+   `{{published_at}}` blanked), and provenance records `request_shape.prompt_assembly`.
+   Measured on substrate record 0 with production's real prompt, after the fix:
+   `<<<ARTICLE`@5092 -> article@5103 -> "Output ONLY"@7755, no `{{` surviving, ONE chat
+   message rather than two (a substituted template already holds the document, so the
+   old system/user split sent the article twice).
 
 4. NO CHAT TEMPLATE [closed in #1002; the measurement above predates the fix, so it was taken with this
    divergence live]. `--chat-template` was optional and defaulted to `None`, while `--endpoint-mode
@@ -2482,7 +2489,10 @@ and **30 populated `numbers[]` objects** on record 1 -- nothing is wrong with th
    how an operator asks for an untemplated continuation on purpose.
 
 Same class, minor: production also sends `repetition_penalty=1.1` (`CpuCod__JsonRepetitionPenalty`); the
-runner omits it unless `--repetition-penalty` is passed.
+runner omits it unless `--repetition-penalty` is passed. It also sends `seed=42`
+(`ExtractionOptions.V2Seed`), which the runner sent NOT AT ALL until `--seed` was added -- so no
+scorecard on disk was taken at production's seed, and each of them implied a reproducibility nobody had
+established.
 
 CONSEQUENCE. The first KNOWN DEFECT in this file is blocked on "confirm the fp8 penalty on the production
 prompt", and that confirmation cannot be produced by this harness at ANY KV dtype -- both arms score
@@ -2500,12 +2510,22 @@ SentinelCollector/src/cod-prompts/cod_json_v1.txt --schema-file
 SentinelCollector/src/cod-prompts/cod_json_schema_v1.json --chat-template
 $'<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n' --limit 3` and score it; if this entry is
 still true, `aggregate_f1` is still `null` and `schema_invalid` still equals the record count. The
-`--chat-template` argument is mandatory in this mode now (cause 4); the other three causes are untouched
-by that fix and are what keep the entry open.
+`--chat-template` argument is mandatory in this mode now (cause 4). Causes 3 and 4 are CLOSED; causes 1
+and 2 -- OUTPUT SHAPE and GOLD SHAPE -- are untouched by either fix and are what keep the entry open,
+and neither is a patch: both are the design choice this entry's CLOSE THIS paragraph describes.
+
+BUDGET THE RE-CHECK ABOVE FOR MORE THAN 4096 COMPLETION TOKENS. Measured 2026-09-05, Qwen3.8-27B via
+the HF router (deepinfra), production's CoD prompt now correctly substituted, 2 substrate records at
+`--max-tokens 2048`: `truncated: 2`, `finish_reason: length` on both, `completion_tokens: 4096` -- i.e.
+both records spent the entire budget and were cut off. A third record at 6000 was still generating when
+the router returned 504. Truncated responses land in `schema_invalid`, so a run budgeted too low
+reproduces this entry's headline symptom (`schema_invalid` == record count) for a reason that has
+nothing to do with causes 1 and 2 -- and the runner's own default is 4096. Read `truncated` and
+`finish_reasons` in the provenance before concluding anything from `schema_invalid`.
 
 ### `run_model.py --schema-file` silently bypasses `SCHEMA_REQUIRED`, on the model-acceptance path [2026-09-04]
 `build_payload` reads `schema = load_schema(args) or extraction_json_schema()`
-(`LlmBenchmark/scripts/run_model.py:296`), and `load_schema` (`:346-351`) returns whatever JSON the
+(`LlmBenchmark/scripts/run_model.py:348`), and `load_schema` (`:400-405`) returns whatever JSON the
 operator handed `--schema-file`, verbatim. Nothing between there and the wire checks that the supplied
 schema's `required` covers `SCHEMA_REQUIRED`. The derived schema is the only one carrying that coverage
 guarantee, and `--schema-file` is the flag that discards it -- without a word in the output.
@@ -2515,7 +2535,7 @@ invocation a model swap must produce a scorecard from (`--endpoint-mode completi
 cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...`). The bypass therefore sits on
 the one path that decides whether a candidate model replaces the incumbent.
 
-WHAT IT COSTS is already measured on this harness, at `run_model.py:83-99`: `certainty` was optional in
+WHAT IT COSTS is already measured on this harness, at `run_model.py:90-106`: `certainty` was optional in
 the request schema, so the model emitted it on 0 of 2,213 extractions while gold carries it on 5,111 of
 5,111; `eval_harness` counts every omission a miss (`certainty_accuracy` at `eval_harness.py:320`), and
 `certainty_accuracy` scored **-0.85** against threshold. That read as "the model is bad at certainty"
@@ -2548,16 +2568,16 @@ itself as `schema_invalid = record count`. This entry is about the check that do
 supplied schema -- including one that IS array-shaped, scorer-compatible and merely under-specified.
 That case has no tell at all: it scores, it fills in, and the number is a penalty on the request.
 
-CLOSE THIS by making `validate_request_shape` (`run_model.py:398`) refuse a `--schema-file` whose
+CLOSE THIS by making `validate_request_shape` (`run_model.py:518`) refuse a `--schema-file` whose
 `required` does not cover `SCHEMA_REQUIRED`, in the same fail-closed-rather-than-default shape it already
 applies to `--chat-template-kwargs` in completions mode -- with the override spelled explicitly so the
 choice lands in provenance. Do NOT close it by merging the supplied schema into the derived one: that
 sends a schema the operator did not write, and then misreports it as production's.
 
 TEST THAT WOULD PIN IT: `test_run_model.should_exit_two_when_a_schema_file_omits_a_graded_field`, a
-sibling of `should_exit_two_when_completions_mode_has_no_chat_template` (`test_run_model.py:516`),
+sibling of `should_exit_two_when_completions_mode_has_no_chat_template` (`test_run_model.py:680`),
 driving `main()` rather than a helper, with its paired positive (a covering schema runs). Note that the
-existing `should_send_the_supplied_schema_when_a_schema_file_is_given` (`test_run_model.py:362`) asserts
+existing `should_send_the_supplied_schema_when_a_schema_file_is_given` (`test_run_model.py:386`) asserts
 the bypass verbatim -- it pins the current behaviour in place and must be read as the contract it is,
 never as coverage of this hole.
 

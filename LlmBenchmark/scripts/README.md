@@ -28,6 +28,24 @@ python3 LlmBenchmark/scripts/run_model.py \
     --model Qwen/Qwen2.5-32B-Instruct-AWQ \
     --out /tmp/preds.jsonl
 
+# 2b. Same runner, HOSTED endpoint -- how a candidate is scored without a GPU reload.
+#     --api-key-file takes a PATH, never the token: a token on a command line is in the
+#     shell history, in ps output and in every transcript. It is never written to provenance.
+#     A router is UNIDENTIFIABLE by construction (it does not expose the provider's engine
+#     build), so --allow-unidentified-engine is required and honest there -- and the
+#     `:provider` suffix is then the only attribution the scorecard can carry, which is why
+#     the runner REFUSES a router model without one. Strict-schema enforcement is a
+#     per-provider property: unpinned, the router picks, and it need not pick twice alike.
+python3 LlmBenchmark/scripts/run_model.py \
+    --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
+    --endpoint https://router.huggingface.co \
+    --api-key-file ~/.hf-inference \
+    --model Qwen/Qwen3.8-27B:deepinfra \
+    --allow-unidentified-engine \
+    --prompt-file SentinelCollector/src/cod-prompts/cod_json_v1.txt \
+    --schema-file SentinelCollector/src/cod-prompts/cod_json_schema_v1.json \
+    --out /tmp/preds.jsonl
+
 # 3. Grade it. --adapter-meta carries the engine build into the scorecard.
 python3 LlmBenchmark/scripts/eval_harness.py \
     --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
@@ -73,6 +91,25 @@ and when it *cannot* (no endpoint given, the endpoint did not answer, or the sco
 an engine but not a build) it says so with a stale verdict and a non-zero exit. Unknown is
 not current: the first version of that file reported 7/8 `CURRENT` and exit 0 on an
 invocation with no `--endpoint` at all, having compared nothing.
+
+A **multi-provider router stays unidentified on purpose**, and the override is not a
+loophole there. Measured 2026-09-05, `router.huggingface.co` answers 404 to both identity
+probes and 200 to `/v1/models` with 138 entries, each carrying a `providers[]` array. The
+engine that runs the weights is the *provider's*, whose build the router does not expose —
+so the run is unattributable in exactly the sense the gate exists for, and the `:provider`
+pin is what supplies the attribution instead (recorded as `provenance.provider`). That is
+why the runner refuses a router model with no pin rather than warning about it: the same
+`/v1/models` response that makes a bare id *look* valid is the one proving the router will
+choose for you.
+
+## What the run cost
+
+`usage` is captured per record and summed into `provenance.usage` — token counts plus
+`estimated_cost` where the provider reports one (deepinfra does). Cost is `null`, never
+`0.0`, when nothing reported a price: a provider that does not price and a run that was
+free are different facts, and `calls > 0 AND cost == $0` reads as free until the bill
+arrives. `cost_reported_by` says how many records actually carried a price, and
+`cost_per_record` divides by those rather than by the record count.
 
 ## See Also
 
