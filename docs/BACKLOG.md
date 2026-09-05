@@ -2422,6 +2422,23 @@ Do not close it by picking a winner. Two live builds under one engine name is an
 rule this file's own tooling now follows in three places is that ambiguity DENIES -- the honest
 verdict is a refusal naming both endpoints, not a coin flip.
 
+**Production's CoD prompt carries two defects no labeller can work around.** In
+`SentinelCollector/src/cod-prompts/cod_json_v1.txt`, which is what production runs: (a) `:36` "the
+normalized numeric as a string" conflicts with `:59` "Emit each distinct numeric value ONCE" when one
+magnitude appears with opposite signs -- dedup is keyed on the VALUE, not on (value, context,
+source_entity); (b) nothing excludes clock times, quarter ordinals or bare years, and all three
+bake-off labellers extracted at least one, so this is the prompt's SILENCE, not one model's judgement.
+Do NOT fix it blind: a prompt change is a quality change and the harness cannot score production's CoD
+path -- see MEASUREMENT DEBT, "`run_model.py --prompt-file` cannot score production's CoD path".
+Re-check:
+```
+P=SentinelCollector/src/cod-prompts/cod_json_v1.txt
+grep -n 'distinct numeric value ONCE\|normalized numeric as a string' $P
+grep -c -iE 'clock|ordinal|bare year|exclude|not a fact' $P
+```
+2026-09-04 -> lines `36` and `59` match; exclusion-word count `0`. A NON-ZERO second figure means an
+exclusion rule landed and (b) is closed.
+
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
 ### `run_model.py --prompt-file` cannot score production's CoD path -- the flag exists, the measurement does not [2026-09-04]
@@ -2548,6 +2565,27 @@ Re-check: run the snippet above. If this entry is still true it still prints
 `['certainty', 'period', 'text_quote']`, and `grep -n SCHEMA_REQUIRED LlmBenchmark/scripts/run_model.py`
 still shows no reference inside `load_schema` or `validate_request_shape`.
 
+### `run_model.py` cannot reproduce production's sampling -- there is no `--seed` [2026-09-04]
+Production pins `seed=42`: `ExtractionOptions.V2Seed` -> `GpuJsonExtractionService` ->
+`VllmClient.VllmCompletionRequest.Seed`, whose XML doc states seed plus temperature 0 makes identical
+prompts emit byte-identical output. The harness has no `--seed` flag and `build_payload` never sets
+the key, so every scorecard records `temperature: 0.0` and NO seed -- implying a determinism the runs
+do not have. Two nearby divergences: `--stop` exists but defaults to none while production always
+sends `ExtractionOptions.StopTokens`; and `--min-p` forwards `min_p` into the vLLM payload though
+`VllmCompletionRequest` has no such field (`ExtractionOptions.MinP` is documented "llama.cpp min_p"
+and only `LlamaServerClient` sends it).
+Re-check (grep the symbols, never a line number -- this file's citations have rotted before):
+```
+grep -c seed LlmBenchmark/scripts/run_model.py
+grep -rn V2Seed SentinelCollector/src/Configuration/ExtractionOptions.cs \
+  SentinelCollector/src/Services/GpuJsonExtractionService.cs
+python3 -c "import json;print(sorted(json.load(open('LlmBenchmark/eval-substrate/qwen25-32b-awq-vllm-20260903.scorecard.json'))['adapter_metadata']['sampling']))"
+```
+2026-09-04 -> `0` / `V2Seed { get; set; } = 42` plus `seed: _extractionOptions.V2Seed` /
+`['chat_template_kwargs', 'max_tokens', 'min_p', 'presence_penalty', 'repetition_penalty',
+'structured_output', 'temperature', 'top_k', 'top_p']` -- no `seed` key. A non-zero first line means
+the flag landed.
+
 ### `check_staleness.py` never looks inside a subdirectory, so a nested scorecard is unopened, not stale [2026-09-04]
 The grading half of "a file skipped in silence takes the denominator with it" is closed twice over:
 an unparseable file and a shapeless one both reach the tally as `UNEXAMINED`, and after #1002 that
@@ -2577,6 +2615,30 @@ CONTAINS subdirectories holding `*.json` and name them -- then add the matching 
 `_CORPUS_CONTROL`, which is where a partition claim is enforced on every run.
 Re-check: reproduce the two-file layout above; if this entry is still true it still prints
 `1/1 current; 0 stale` at exit 0.
+
+### The Azure oracle ledger overstates spend -- exactly 3.0x on the largest run, 2.79x overall [2026-09-04]
+`SentinelCollector/scripts/azure_oracle_client.py` shipped with Anthropic LIST prices (15/75) and was
+corrected to Foundry's (5/25) at `e38f0c56`, 2026-05-02 -- a week AFTER the largest run. Pre-fix rows
+are exactly 3x high and post-fix rows are correct, so the ledger is a MIXTURE and no blanket divisor
+repairs it. The per-record key is `cost_est`; `cost_usd` belongs to `v7-labeled-opus47-*.jsonl`, where
+9,715 of 9,720 rows are off by exactly 3.0000 ($1,288.73 recorded vs $429.72 actual). Foundry is
+unreachable, but this file is our only record of past spend and new estimates anchor to it -- rescale
+before quoting either.
+Re-check (read-only, no DB):
+```
+python3 - <<'PY'
+import json,collections
+F={"claude-opus-4-7":(5,25),"claude-opus-4-6":(5,25),"claude-sonnet-4-6":(1,5),"claude-haiku-4-5":(.25,1.25)}
+r=[json.loads(l) for l in open("/opt/ai-inference/training-data/azure-oracle-ledger.jsonl") if l.strip()]
+a=lambda x:x["input_tokens"]/1e6*F[x["model"]][0]+x["output_tokens"]/1e6*F[x["model"]][1]
+print("rows",len(r),"recorded",round(sum(float(x["cost_est"]) for x in r),2),"actual",round(sum(a(x) for x in r),2))
+print(collections.Counter(round(float(x["cost_est"])/a(x),4) for x in r if a(x)).most_common(4))
+PY
+```
+2026-09-04 -> `rows 22026 recorded 1346.53 actual 483.49` and
+`[(1.0, 12292), (3.0, 9730), (3.1828, 3), (2.8061, 1)]`. The 1.0 bucket IS the mixture. Outliers are
+accounted for, not defects: 3.1828 = 3 haiku rows (0.80/4.00 -> 0.25/1.25, rounded); 2.8061 = one
+aggregate row carrying `calls: 70`, not a per-call record.
 
 ### containerd exporter never reports an OOM kill (worked around, not fixed) [2026-08-30]
 `container_memory_oom_total` is exported as a GAUGE read from the live cgroup's `memory.events`,
@@ -3664,6 +3726,20 @@ with `model: "<id>:<provider>"`, `max_tokens` >= 1024, and a `response_format` `
 `required` includes a `ticker` of `pattern: "^Z{3}$"`, against an article naming no such ticker. Twice.
 `ZZZ` both times = enforced. A plausible invented ticker, a missing field, or one of each = best-effort,
 and that provider does not label.
+
+**Labeller quality at n=5 through production's CoD prompt+schema, 2026-09-04.** Routes/enforcement:
+"hosted labelling routes" above. DeepSeek-V4-Pro@deepinfra found ZERO facts the other two did not, but
+missed 6 incl. a headline `$90/oz`: under-extraction, zero junk. Kimi-K3 MANUFACTURES facts ('third
+quarter'->3, '20:49 ET'->"20:49"), half its barren-article extractions fabricated; 4/5 non-streamed
+calls 504'd (120.1s); `reasoning_tokens: 0` is false (23,150 chars in `delta.reasoning_content`);
+non-deterministic at temp 0. Opus 5 degrades `source_entity`, the resolution anchor, to a metric label
+at 33%. Winner's worst: `$35.69` bound to January where the article says December -- wrong period,
+silent series corruption. CAVEATS: n=5 is not a ranking; the recall denominator is a regex proxy
+over-counting clock times and years; 4/5 were macro/market-wrap, so re-measure the 33% on
+earnings/analyst-action first.
+Re-check: the artifacts live only in `/tmp` (non-durable -- expect them gone). Re-running is ~$1.32 /
+32 requests (5 substrate articles x 3 labellers) after the ZZZ pre-flight above; until then these
+figures ARE the record.
 
 **Accepted risks, do not re-flag.** Plaintext DB password `atlas_secure_password_2025` in 10+ tracked files, and
 `OfrCollector/.env` tracked with `DB_PASSWORD` / `SMTP_PASSWORD` / `FRED_API_KEY`. The user accepted both
