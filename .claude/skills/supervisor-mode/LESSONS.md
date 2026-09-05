@@ -29,6 +29,26 @@ FORMAT per entry: the lesson in one line / OCCURRENCES the instances that earned
   GRADUATES IS NOT OPTIONAL and must be CHECKABLE — name the observable state that retires the entry, so a later
   session can test it. An entry with no exit condition is permanent by construction, which is how this file stops
   shrinking. # measured 2026-08-17: three of five new entries had none
+GRADUATE_CHECK per entry, and it is what makes GRADUATES more than a sentence: a SHELL PREDICATE, run from the repo
+  ROOT, that EXITS 0 WHEN THE LESSON HAS GRADUATED. Copy-pastable as written — no variables the runner supplies.
+  `GRADUATE_CHECK: none — judgement` is the legal honest value for a criterion no predicate can express, the way a
+  service card writes `DECISIONS: none`. Spell it; silence is a finding, not an abstention.
+  `scripts/new-epic.sh` RUNS every one at each epic boundary and REFUSES the reset while any exits 0, naming the
+  lesson and printing its GRADUATES clause. That is the out-flow this section described for months and never had:
+  13 of 14 entries already carried a GRADUATES clause and not one had ever been tested.
+  FAIL DIRECTION: a predicate whose files moved goes non-zero, so the lesson is RETAINED, never silently deleted —
+  over-retention is the cheap error. The expensive one is a check that CANNOT RUN, which is silence wearing a
+  verdict, so rc 124/126/127 (timeout, not-executable, command-not-found) is reported as a BROKEN CHECK and blocks.
+  A refusal is a PROMPT FOR JUDGEMENT, not an auto-delete: promote the lesson and remove it, or re-run with
+  `--evicted` once you have recorded why not.
+  TWO of these key on an artifact's NAME (L11 `check-*coverage`, L15 `*corpus*`) because their criteria are about a
+  tool that does not exist yet and has no other observable. Both fail toward not-graduated; when you build the
+  tool, name it so, or rewrite the line in the same PR.
+  THESE LINES EXECUTE. LESSONS.md is executable input to the reset gate — the same trust boundary as the script
+  itself, which anyone who can edit this file can also edit.
+  Measured 2026-09-05 at c32354f7: 0 of the 13 predicates pass. Treat that as suspicious, not as reassurance — it
+  was checked entry by entry, and L8 is genuinely HALF met (`wrong_d_entry` shipped in #1002; no hook runs the tool
+  on changed files), which is why its predicate is the AND its own GRADUATES clause states.
 
 ## ALREADY_ENCODED [go there, never restate here]
 Every line NAMES the mechanism that enforces it now, so removing that mechanism removes a visible pointer
@@ -69,6 +89,7 @@ L1 Brief a MECHANISM as a hypothesis, never as a specification.
     # a brief stated as fact is obeyed, and a wrong fact is obeyed into code
   GRADUATES: when `templates/implementation-fix.md` widens "every measured number" to "every measured number, cited
     line, root cause and severity".
+  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -qi 'cited line' $T/implementation-fix.md && grep -qi 'root cause' $T/implementation-fix.md && grep -qi severity $T/implementation-fix.md
 
 L2 A CORRECTION is a claim. Verify it before amplifying it.
   EVIDENCE: 2026-08-13, and this entry EXISTED and did not fire. A reviewer called "the console bounds the token figure
@@ -90,6 +111,7 @@ L2 A CORRECTION is a claim. Verify it before amplifying it.
     start. Chained refutations converge on noise unless someone RE-DERIVES the quantity instead of adjudicating the
     previous opinion.
   GRADUATES: when `templates/claim-verification.md` names corrections as in-scope AND carries the restate-the-subject step.
+  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -qi correction $T/claim-verification.md && grep -qiE 'restate[^.]*subject|name its subject' $T/claim-verification.md
 
 L4 Prune the finished agent's worktree BEFORE dispatching the next agent onto that branch.
   EVIDENCE: 2026-08-07/08 fix-round branches were repeatedly still held by the worktree of the agent that had finished
@@ -105,6 +127,7 @@ L4 Prune the finished agent's worktree BEFORE dispatching the next agent onto th
     held branches, and require every dispatch to release its branch leaving nothing staged.
   GRADUATES: when a pre-dispatch check lands in the templates or a hook AND it checks `diff --cached`, not merely which
     branch is held.
+  GRADUATE_CHECK: grep -rl -- '--cached' .claude/hooks .claude/skills/supervisor-mode/templates | xargs -r grep -l 'worktree list' | grep -q .
 
 L8 Repair citations LAST, and treat every fact-shaped claim as a citation.
   EVIDENCE: 2026-08-12/13, one PR chain. Round 2 repaired ONE line citation and broke FOURTEEN (its own edits shifted
@@ -143,6 +166,7 @@ L8 Repair citations LAST, and treat every fact-shaped claim as a citation.
     changed files. Until then this is judgement, not tooling. IN PROGRESS 2026-09-04 (#1002 round 4): making it assert
     that a `D-n` citation lands on a line CONTAINING that `D-n`, with a wrong-entry fixture as its known-bad control.
     That graduates the D-entry class ONLY -- non-D-entry content drift stays judgement.
+  GRADUATE_CHECK: grep -q WRONG-D-ENTRY scripts/verify-citations.py && grep -rq verify-citations .claude/hooks/
 
 L8b A MUTATION HARNESS CAN TEST A STALE BUILD, AND THAT SCORES MUTANTS AS KILLED [2026-09-05, #1004].
   EVIDENCE: an agent's throwaway harness restored files with `mv backup file`. That restores CONTENT but
@@ -163,6 +187,15 @@ L8b A MUTATION HARNESS CAN TEST A STALE BUILD, AND THAT SCORES MUTANTS AS KILLED
     check or a build-log line, never the test result alone. The test result is the thing under suspicion.
   GENERALISES [[feedback_verification_tools_fail_toward_success]]: the harness is a tool, so it needs its
     own known-bad control. Here that control is "mutate, and confirm the binary changed".
+  GRADUATES: when a SHARED mutation helper exists that agents invoke instead of hand-rolling a harness
+    per round, and that helper itself asserts the built artifact CHANGED after the mutate -- so the
+    "did it actually compile" check rides on the tool rather than on whoever remembers. Every instance
+    so far has been a throwaway script rewritten from scratch, which is why the same defect can recur
+    with nobody having ignored the rule.
+  GRADUATE_CHECK: test -f scripts/mutate-verify.sh && grep -q 'cmp\|sha256\|strings' scripts/mutate-verify.sh
+    -- scope, stated because the check is weaker than the clause: it can only see that the helper exists
+    and compares the artifact somehow. It cannot tell whether agents USE it, which is the half that
+    actually retires this lesson. Tighten it when a dispatch template names the helper.
 
 L9 A fix round fixes exactly what you NAME and adds what you did NOT ask for. Brief the class, ban the framing.
   EVIDENCE: 2026-08-13, two PRs, seven rounds. NAMING: a reviewer named 3 stale citations; the round fixed 3 and left 3.
@@ -180,6 +213,7 @@ L9 A fix round fixes exactly what you NAME and adds what you did NOT ask for. Br
     row were a series this count is wrong" and left it open; one SELECT settled it and CHANGED THE ANSWER (16 -> 17).
     If one query closes it, close it and report.
   GRADUATES: when `templates/implementation-fix.md` carries a "state the class, report the count first, add nothing" stanza.
+  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -qi 'report the count' $T/implementation-fix.md && grep -qi 'add nothing' $T/implementation-fix.md
 
 L10 Run the build AFTER the final commit. The marker keys to the TREE.
   EVIDENCE: 2026-08-13, twice in one evening. An agent edited, compiled green, then committed the card and its INTENT
@@ -189,6 +223,7 @@ L10 Run the build AFTER the final commit. The marker keys to the TREE.
   RULE: final commit, THEN `compile.sh`, then report the attested tree hash and check it equals `HEAD^{tree}`.
     # one line in the brief; it removes a whole re-verification round
   GRADUATES: when the dispatch templates carry the ordering and the report asks for the tree hash.
+  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -q 'tree hash' $T/implementation-fix.md $T/story-implementation.md && grep -qiE 'after the final commit|final commit, THEN' $T/implementation-fix.md $T/story-implementation.md
 
 L11 An alert rule is unproven until a test asserts it FIRES. Green promtool says only that it did not crash.
   EVIDENCE: 2026-08-14, second occurrence of the same class. `SentinelLowResolutionRate` stepped over 6h at 5m:
@@ -210,6 +245,7 @@ L11 An alert rule is unproven until a test asserts it FIRES. Green promtool says
   GRADUATES: when the alert-rules CI step fails any rule file containing an `alert:` with no positive assertion
     naming it — a coverage checker beside `check-matchers.py`, which already resolves alertname literals and so
     already holds both halves of the join.
+  GRADUATE_CHECK: grep -qE 'check-[a-z-]*coverage' deployment/tests/alerts/run.sh
 
 L13 An instrument that dies silently scores its silence as a PASS.
   OCCURRENCES: five in one session, 2026-08-15 — and the `awk` one fired TWICE, the second time while writing the
@@ -230,6 +266,7 @@ L13 An instrument that dies silently scores its silence as a PASS.
   GRADUATES: when `templates/recon-measurement.md` carries those checks as a TRAJECTORY step, so a measurement brief
     cannot omit them — grep that file for `rc 127`, which returns nothing today (the file exists, the checks do
     not, so an empty result is not-yet-graduated rather than wrong-file).
+  GRADUATE_CHECK: grep -q 'rc 127' .claude/skills/supervisor-mode/templates/recon-measurement.md
 
 L14 A guard that matches TEXT instead of ACTS inherits the whole grammar — and every round attacks the NEWEST
   mechanism, so the oldest defect is never re-attacked.
@@ -253,6 +290,7 @@ L14 A guard that matches TEXT instead of ACTS inherits the whole grammar — and
     branch's own commits") and item 16 requires the over-denial count REPORTED beside the bypass count — grep that
     file for `bisect`, which returns NOTHING today: item 18 describes the check ("Check WHEN a surviving defect was
     introduced") without ever naming the act, so an empty grep means not-yet-graduated, not wrong-file.
+  GRADUATE_CHECK: grep -q bisect .claude/skills/guard-change/SKILL.md && grep -qi 'over-denial count' .claude/skills/guard-change/SKILL.md
 
 L15 A "nothing loosened" claim is scoped to its author's imagination. Fixing the BASELINE is necessary and not
   sufficient.
@@ -278,6 +316,7 @@ L15 A "nothing loosened" claim is scoped to its author's imagination. Fixing the
     corpus SIZE and the sentence "this number is only as good as this corpus" in the report.
   GRADUATES: when an adversarial corpus is generated from the guard's own rule table rather than by hand, so the
     spellings come from the code instead of from whoever is feeling thorough today.
+  GRADUATE_CHECK: ls .claude/hooks/test/ | grep -qi corpus
 
 L16 A guard that gates writes to ITSELF cannot be repaired by the isolation we default to.
   OCCURRENCES: PR #970, PR #974. Recorded once in `docs/BACKLOG.md` as a one-off; it is not one.
@@ -295,6 +334,7 @@ L16 A guard that gates writes to ITSELF cannot be repaired by the isolation we d
     around it, and it is the supervisor who is least able to see that difference in the moment.
   GRADUATES: when a gate-layer dispatch either resolves its own project_dir or is REFUSED AT DISPATCH, so the
     deadlock costs a turn instead of an agent-hour.
+  GRADUATE_CHECK: grep -q show-toplevel .claude/hooks/ansible-gate-guard.sh || grep -qi gate-layer .claude/hooks/design-intent-dispatch-guard.sh
 
 L17 An alert that fires by ACCIDENT is not coverage, and coverage cannot be enumerated from the alerts that exist.
 OCCURRENCES: GeminiResolverNotResolving (CLAUDE.md §OBSERVABILITY) worked only because rejected calls consumed cap
@@ -311,6 +351,7 @@ RULE: enumerate coverage from the DATA side, never from the alert list — for t
   structurally blind to absence, so reading it can only ever confirm what already fires.
 GRADUATES: delete this when every series in D-18's owned-series list has a freshness metric independent of whether
   any pattern references it — checkable by grepping the metric name per series and getting a non-empty result for all.
+GRADUATE_CHECK: for s in ADP_EMPLOYMENT BDIY CHALLENGER_JOB_CUTS INDEED_POSTINGS REDBOOK_SALES TRUFLATION_CPI; do grep -rq "$s" deployment/artifacts/monitoring/ || exit 1; done
 
 L18 A command that reports its own limit, warning or truncation has ANSWERED you; theorising past that line is
   inventing evidence. Five instances in one session, all mine, all where the output carried its own disqualifier.
@@ -334,6 +375,7 @@ RULE: before interpreting a result, read its own boundary markers — did it war
 GRADUATES: delete when a claim-verification brief requires quoting the command's full output header/footer (limits,
   warnings, echoed args) beside any figure it reports — checkable by grepping templates/claim-verification.md for
   that requirement and finding it.
+GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -qiE 'echoed|truncat' $T/claim-verification.md && grep -qiE 'limit you passed|full output' $T/claim-verification.md
 
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, line number or severity as settled fact
@@ -351,3 +393,5 @@ never dispatch gate-layer work worktree-isolated, and never create the confirm f
 never interpret a result whose row count EQUALS the limit you passed, or whose output carried a
   warning you did not read — the instrument has already told you the answer is not an answer
 never add an entry here that a template, hook or checklist already enforces
+never add an entry without a GRADUATE_CHECK — `none — judgement` is an answer, an absent line is not,
+  and `scripts/new-epic.sh` refuses the next epic reset over either that or a check that now PASSES

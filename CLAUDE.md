@@ -34,6 +34,17 @@ STATE.md [supervisor-owned, repo root]: DISPOSABLE working memory for the epic i
     It greps four of the WRITE_GATE's five bans plus migrated headings; the fifth ("anything that
     outlives this epic") is judgement and CANNOT be grepped, so a clean audit is not a certificate
     that eviction is done. Guards: scripts/tests/new-epic-selftest.sh
+  THE SAME RESET ALSO AUDITS `.claude/skills/supervisor-mode/LESSONS.md`, and this is the OUT-FLOW that
+    file was designed with and never had: every lesson carries a `GRADUATE_CHECK:` shell predicate that
+    exits 0 once its own `GRADUATES:` clause is satisfied. The reset REFUSES while any passes -- promote
+    that lesson into a CLAUDE.md rule, a skill or a hook and DELETE it, or record why not. It also
+    refuses on SILENCE: a lesson with neither a check nor an explicit `none -- judgement` blocks, the
+    way a service card must say `DECISIONS: none` rather than omit the block. `--evicted` overrides
+    BOTH audits deliberately -- graduating a lesson is the same act as evicting a STATE line, and a
+    second flag is one more thing to remember, which is the failure being fixed.
+    rationale: a store with an in-flow and no out-flow becomes a diary. Measured 2026-09-05 across
+    THREE of them -- STATE.md at 293 lines, docs/BACKLOG.md at 3,849 with 21 STALE entries reading as
+    live, and LESSONS.md with 13 of 14 exit criteria written and never once run.
   UNSEARCHABLE: untracked + gitignored, and `grep -r` honours .gitignore — a repo-wide search silently
     misses it. Read it by explicit path; never report "not found in the repo" without that check.
   ✗ never commit | push | PR it

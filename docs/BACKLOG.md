@@ -3906,6 +3906,17 @@ Re-check the population and the key's survival (SELECT-only):
      FROM sentinel.extracted_observations WHERE published_at IS NOT NULL AND instrument_id IS NOT NULL;`
   # 2026-08-27 returned 582 | 21569
 
+**Claude Code function hooks — PARKED, not adopted [2026-09-05].** TypeScript in-process plugin
+middleware: typed events, `next()` composition, `deny`, argument rewriting, `$.ui.ask`,
+`$.model.classify`, `$.store` (cross-session). Unreleased — proposal #91870, flag
+`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, runtime in build 2.1.260; this box runs 2.1.261. Parked
+because composition is strictly serial (their figure: 8x300ms, ~640ms parallel vs ~2.4s chained)
+and our 18 scripts / 36 registrations, mostly PreToolUse, fire on every tool call. Revisit for the
+JUDGEMENT half of memory hygiene (`$.model.classify`), which shell cannot do.
+Source: https://claudefa.st/blog/tools/hooks/function-hooks
+Re-check: `claude --version` past 2.1.261 with the flag shipped; `ls .claude/hooks/*.sh|wc -l` (18),
+`grep -c '"command"' .claude/settings.json` (36).
+
 ## PRACTICE NOTES [cheap checks that were skipped three times or more]
 
 **A defect found in a branch is not a defect on main.** Three fail-opens in one session were reported as live on
