@@ -600,24 +600,24 @@ CORRECTS THE ENTRY ABOVE, which named the wrong resolver and understated the mag
 break the dwell — and its 2026-08-14 zero-fire count is correct for the window it measured. What does NOT stand is
 the generalisation drawn from it: "cannot fire" / "never holds the dwell" is falsified by the five firing episodes
 below. The numerator's cause and size change as well.
-- The live leg is `DeterministicResolver`, called at `SentinelCollector/src/Services/V2ExtractionPipeline.cs:77`.
-  Its only consumer is `BuildObservationFromV2Result` (`SentinelCollector/src/Services/V2ExtractionPipeline.cs:172-235`),
+- The live leg is `DeterministicResolver`, called at `SentinelCollector/src/Services/V2ExtractionPipeline.cs:78`.
+  Its only consumer is `BuildObservationFromV2Result` (`SentinelCollector/src/Services/V2ExtractionPipeline.cs:173-242`),
   an `internal static` PURE BUILDER — it does NOT touch the database. It sets `instrument_id` and
   `resolution_state` on an in-memory `ExtractedObservation` (`UpdateResolution` / `SetResolutionState`), returns it
-  into `observations` at `SentinelCollector/src/Services/V2ExtractionPipeline.cs:97`, and the row reaches
+  into `observations` at `SentinelCollector/src/Services/V2ExtractionPipeline.cs:98`, and the row reaches
   `ExtractionProcessor` on `V2PipelineResult` to be persisted downstream. It calls
   `SentinelMeter.SecMasterResolutionCounter.Add` for **no** outcome — neither success nor failure; the whole file
   has **zero** call sites (`grep -c SecMasterResolutionCounter` = 0). That is the whole defect: the resolution
   OUTCOME is decided here and metered nowhere, so nothing between the decision and the persist is counted.
 - Inside `DeterministicResolver` the counter has FIVE emission sites and exactly one carries `status="resolved"`:
-  `SentinelCollector/src/Services/DeterministicResolver.cs:449` (`TryExactCandidateMatchAsync` success,
+  `SentinelCollector/src/Services/DeterministicResolver.cs:485` (`TryExactCandidateMatchAsync` success,
   `llm_candidate_exact`). The other four are refusals or non-resolutions — `:253` (`LiftSector`; ONE site whose
   status is a ternary over `no_subject_match` / `matched_no_sector`, always `resolution_state="no_sector"`), `:437`
   (`TryExactCandidateMatchAsync` co-mention rejection, `exact_rejected_name`), `:521` and `:538`
   (`TryHybridResolveAsync` guard rejections).
 - `ExtractionProcessor.cs` never calls `DeterministicResolver` — **zero** grep hits — and its own two
-  `status="resolved"` emissions (`SentinelCollector/src/Workers/ExtractionProcessor.cs:1211` `ticker_in_quote`,
-  `:1329` `cove_*`) have not fired in prod for 30 days. Those two cite the `status` label line, one BELOW their
+  `status="resolved"` emissions (`SentinelCollector/src/Workers/ExtractionProcessor.cs:1376` `ticker_in_quote`,
+  `:1419` `cove_*`) have not fired in prod for 30 days. Those two cite the `status` label line, one BELOW their
   `.Add(`; the `DeterministicResolver` citations above cite the `.Add(1,` line itself. Both land inside the correct
   emission block — do not "fix" either to match the other. A sixth site outside the resolver,
   `SentinelCollector/src/Workers/ReExtractResolutionAdapter.cs:190`, emits only `comention_rejected`.
@@ -717,9 +717,9 @@ investigation into the extraction path instead of the writer. Read `OriginalReso
 `ticker_in_quote` 6,702, `cove_FuzzySql` 235) are readings of that same post-erasure column and carry the same caveat.
 A SECOND column carries the same circularity, and it is a distinct trap: the value Rule 1 gates on is never PERSISTED
 (`extracted_observations.resolution_confidence` holds the resolver OUTCOME's value —
-`DeterministicResolver.cs:324-328`), so that column cannot answer what Rule 1 received, and querying it is circular.
+`DeterministicResolver.cs:360-364`), so that column cannot answer what Rule 1 received, and querying it is circular.
 It is observable, just not in the DB: PR #963 added `sentinel_resolver_rule1_input_confidence` ("ResolutionConfidence
-as received by Rule 1", `SentinelMeter.cs:1625-1627`, recorded at `DeterministicResolver.cs:346`), which is the only
+as received by Rule 1", `SentinelMeter.cs:1625-1627`, recorded at `DeterministicResolver.cs:382`), which is the only
 thing that sees the input value — and is where the 0.850 reading below comes from.
 Not to be re-derived: the `ExtractionSchemaV2 required[]` hypothesis was DISPROVEN by probing vLLM with the shipped
 schema, which emitted `resolution_confidence` non-null 5/5.
@@ -797,7 +797,7 @@ windows: 136 in-window rows, of which `Dow Jones`|`Dow_Jones`|`DIA` **77** and `
 = **91 attaching**, plus 45 that attached nothing. The slug's endpoint response is indeed `RagSynthesis` with a null
 `instrumentId` — but the endpoint is not the outcome: it returns hypothesis `DIA`, and
 `TryHybridResolveAsync`'s materialisation branch looks that up (`GetInstrumentBySymbolAsync`,
-`DeterministicResolver.cs:505`) and attaches it. `DIA` is the catalog's quote stub, literally named "DIA (Quote)";
+`DeterministicResolver.cs:541`) and attaches it. `DIA` is the catalog's quote stub, literally named "DIA (Quote)";
 `DOW` is `DOW INC`, the chemicals company (`MATERIALS`, NAICS 325211), which is the RAG candidate list's top entry at
 0.730. So one slug produces three different outcomes — `DIA`, `DOW`, nothing — and the pair still IMPROVES, because
 the Name resolves deterministically to `DJIA` ("Dow Jones Industrial Average", `FuzzySql` 0.9), the index the surface
@@ -808,7 +808,7 @@ landed on `S` (SentinelOne) and 528 on `SP500` off the SAME slug, which is the n
 Follow-up, NOT decided here: an exact-symbol-first leg at Rule 1 would keep `INTC`, but nothing measures what it
 would cost — it is a new ungated exact path and would need D-8's subject-overlap companion, which is its own PR.
 NOT DONE and deliberately so: `SubjectNameNormalizer.SharedTokenCount` scores 0 for all four bad pairs above and is
-already invoked at `DeterministicResolver.cs:430` and `:509`. "Never on this branch" was the wrong compression and
+already invoked at `DeterministicResolver.cs:466` and `:509`. "Never on this branch" was the wrong compression and
 is corrected here to match D-22 in the card: `:430` is D-8's leg, which Rule 1 never reaches. `:509` IS reachable
 from Rule 1 — it sits on the RagSynthesis hypothesis-materialisation branch inside `TryHybridResolveAsync`, which
 the id-less Rule 1 leg calls — but a DTO already carrying an instrument id bypasses it, and the whole guard is
@@ -817,7 +817,7 @@ The 77 `DIA` rows above went straight through it: `SharedTokenCount("Dow Jones",
 flag on they would have been refused. Adding a THIRD call behind that same disabled flag would read as protection
 that does not exist. Deciding the flag's fate is the prerequisite, and it is its own entry's worth of work.
 TWO GAPS #969 LEFT OPEN, recorded rather than fixed because both need a decision this PR is not the place for.
-(a) The `!candidate.InstrumentId.HasValue &&` exemption on the blank-Name refusal (`DeterministicResolver.cs:361`)
+(a) The `!candidate.InstrumentId.HasValue &&` exemption on the blank-Name refusal (`DeterministicResolver.cs:397`)
 has NO test. It is dead code today — 0 non-null candidate ids across 503,446 rows carrying candidates — so nothing
 exercises it, and it activates the day SecMaster's search endpoint starts returning ids: a SERVER-SIDE change with
 no compile-time signal here, on a branch whose whole point is that the two producers disagree. Same blind spot as
@@ -873,7 +873,7 @@ it.** The guard is not broken and does not need fixing — `EntityResolutionPrep
 unconditional (`const string mode = "enforce"`, `EntityResolutionPrepass.cs:396`, no flag) and live: 30d
 `sentinel_candidate_surface_filtered_total{mode="enforce"}` carries 12 reason series (institution 9,190,
 gpe_country 167). It is POSITIONED wrong. `Classify` has three production call sites — the NER-candidate prepass
-(`EntityResolutionPrepass.cs:404`), Rule 2.5's paid-Gemini leg (`DeterministicResolver.cs:604`, D-6) and its V1
+(`EntityResolutionPrepass.cs:404`), Rule 2.5's paid-Gemini leg (`DeterministicResolver.cs:640`, D-6) and its V1
 mirror (`GeminiSymbolFallbackService.cs:85`, D-12) — while the LLM-extracted `SubjectEntity` reaches
 `DeterministicResolver` through Rule 1 (`:60`) and Rule 2 (`:124`, raw `SubjectEntity` straight to hybrid resolve),
 neither of which consults it. Measured over `extracted_at` [2026-07-15, 2026-08-15) reading
@@ -924,8 +924,8 @@ account belongs with the Rule 1 entries above, not here. Either way the subject 
 wrong, so no surface filter at any position can help. By contrast `U.S.` -> `U` (2,470) and `Wall Street` -> `IEP`
 (243) are entirely `hybrid_subject`, i.e. genuinely subject-driven and in scope for a seam.
 TWO CANDIDATE SEAMS, not chosen — measure before picking. **Seam A**: hoist `Classify` out of
-`TryGeminiResolveAsync` up to `ResolveAsync` entry (~`DeterministicResolver.cs:46`). `_surfaceFilter` is already
-injected and `ResolveAsync` has one production caller (`V2ExtractionPipeline.cs:77`), so the change is small — but
+`TryGeminiResolveAsync` up to `ResolveAsync` entry (~`DeterministicResolver.cs:47`). `_surfaceFilter` is already
+injected and `ResolveAsync` has one production caller (`V2ExtractionPipeline.cs:78`), so the change is small — but
 it puts every false-positive in caveat (2) directly on the resolution path. **Seam B**:
 `DslToMergedExtractionAdapter.cs:499`, where `SubjectEntity` is born, which is where GIGO says to clean and which
 covers SecMaster, Gemini, `extracted_observations.source_entity` and the matrix in one edit (the D-15 precedent) —
@@ -1232,80 +1232,125 @@ nothing on 08-21 is the rule working, not a broken join. Recorded so that a burs
 new alerts a few days after this deploy is recognised as the pre-existing feed lag it is, and not read as the join
 misfiring. Re-check: the same gauge for those four `pattern_id`s.
 
-**The `BrokenCircuitException` classification gap is OPEN. Recovering the 55 `raw_content` rows it already orphaned
-is CLOSED as won't-do — alpha decay.** Two opposite verdicts on one finding; revised 2026-08-17, superseding the
-2026-08-15 revision that framed the whole thing as pending data loss. Every measurement below still reproduces
-(re-measured 2026-08-17) — the VERDICT moved, not the evidence.
+**The `BrokenCircuitException` classification gap is CLOSED (PR "fix: a circuit-open failure does not orphan an
+article", SentinelCollector D-27). Recovering the 55 `raw_content` rows it orphaned in 2026-07 stays CLOSED as
+won't-do — alpha decay; they pruned as decided.** The 223 rows it orphaned on 2026-09-04 were recovered by hand
+before the fix landed. Kept rather than deleted because the re-check below is the standing detector for a NEW
+orphaning event, and because the fix PROPOSED here (revised 2026-08-17) was the wrong one — see the trap below.
 
-**Won't-do: the 55 rows. Letting them prune is the DECISION, not an oversight.** Financial news alpha-decays — its
-predictive value falls off sharply with age — so re-extracting content collected 2026-07-19 -> 2026-07-24 buys close
-to nothing now that it is ~4 weeks old (measured 2026-08-17: oldest row 28d 17h, all 55 still present, all 55 still
-childless). The one-off `POST /admin/reprocess` that would recover them is deliberately NOT worth making, and the
-prune described below is the EXPECTED OUTCOME rather than a loss. **A later re-check returning 0 is this decision
-landing on schedule** — not fabrication, not an unexplained count, and not grounds to re-raise recovery.
+**What the fix actually does, and why the obvious version was wrong.** This entry used to say "Fix = add it to the
+transient set, with a guard test asserting `RetryCount` increments on a circuit-open failure". That would not have
+fixed it. `willRetry = isTransient && RetryCount < MaxRetries` with `MaxRetries = 3`: an open breaker short-circuits
+with NO HTTP call, and the frontier re-serves the same rows immediately, so a multi-hour outage burns all three
+attempts in seconds and the rows still end permanently failed — the same data loss at 3x the log volume. What
+shipped instead classifies dependency-unavailable as its own case: the row is left exactly as fetched
+(`ProcessingError` null, `RetryCount` UNCHANGED — a dependency being down is not the article's defect and may not
+spend its retry budget), the worker slot pauses the breaker's own 30s break window so the requeue cannot hot-spin,
+and the loop is terminated by the pre-existing `MaxArticleAgeDays` age gate if the dependency never returns. The
+full reasoning, both bounds, and the alert that was riding on the bug are in `SentinelCollector/AGENT_README.md`
+D-27; do not restate them here.
 
-**Open, and this is the whole of the remaining value: the classification gap itself.** It is not scoped to these 55 —
-the NEXT breaker-open event orphans whatever is in flight at the time, which is FRESH content, and fresh is exactly
-where the predictive value lives. The alpha-decay argument does not reduce this defect's importance; it INVERTS where
-that importance sits: all of it is now in preventing future orphaning, none of it in backfilling past rows. A vLLM or
-llama-server outage long enough to trip the breaker (3 consecutive failures, `DependencyInjection.cs:342`, `:359`)
-silently abandons that day's articles with no retry and no queue presence.
-**The precedent for the fix is already in-repo** — three other SentinelCollector call sites name
-`BrokenCircuitException` explicitly (`DigestNarrativeGenerator.cs:331`, `FinnhubLookupClient.cs:51`,
-`VllmClient` count-tokens per `VllmClientCountTokensTests.cs:59`); `ExtractionProcessor`'s classifier is the one that
-does not. Fix = add it to the transient set at `:967-973`, with a guard test asserting `RetryCount` increments on a
-circuit-open failure instead of taking the permanent branch.
+**Why it took a second cohort to fix: the incident's only signal was an accident of the bug.** Orphaning fired
+`sentinel_extraction_error_total{reason="other"}` and tripped `SentinelHighExtractionErrorRate`. The row-level
+signals said nothing — `sentinel_llm_error_total` stayed ~0 (an open breaker short-circuits BEFORE the HTTP call),
+and `sentinel_extraction_queue_depth` / `sentinel_extraction_frontier_lag_seconds` did NOT rise, because the rows
+left the queue the instant they were orphaned. The backlog was invisible by construction, and the ROOT cause had no
+alert of its own either — `up{job="vllm"}` returned no data during the incident (see the last paragraph). Only the
+downstream symptom alerted, and only because the bug itself was writing the errors it counted.
 
-**The measurement that re-derives all of the above** — every number below is unchanged from the 2026-08-15 revision;
-the "438 orphans" figure that originally surfaced this is a mixed predicate, so quote the 55, not the 438.
-`sentinel.raw_content` (94,799 rows) carries **440** rows with a terminal `processing_error`: 377 `age_cutoff`,
-**55** `The circuit is now open and is not allowing calls.`, 7 HttpClient-timeout, 1
-`v2_pipeline_failed: prompt_too_large_after_chunking`. The 438 was `age_cutoff` (all 377) PLUS the never-extracted
-error rows, which is why it does not reconcile against any single predicate.
-**All 377 `age_cutoff` rows DO have extraction rows** — they are a deliberate too-old refusal, not orphans. Of the 7
-timeouts, 2 were retried and succeeded. So the genuinely-abandoned set is **61**: the 55 circuit-open, 5
-timeout-exhausted, 1 prompt-too-large. (11,576 rows have no extraction at all, but 11,515 of those have
-`processed_at` set with `processing_error IS NULL` — processed cleanly, zero observations, which is normal.)
-The 55 are the finding: collected **2026-07-19T17:14:25Z -> 2026-07-24T11:00:06Z**, `retry_count = 0` for all 55,
-`processed_at IS NULL` for all 55. They were never retried ONCE. Cause is a classification gap, not exhaustion:
-`SentinelCollector/src/Workers/ExtractionProcessor.cs:983-989` treats only `TimeoutException`,
-`TaskCanceledException` wrapping one, and `HttpRequestException` with null/5xx/429/408 as transient. Polly's
-`BrokenCircuitException` matches none, so a circuit-open failure took the PERMANENT branch on the FIRST attempt
-(`:1003`) without incrementing `RetryCount`. Contrast the 5 timeout orphans, all at `retry_count = 3` (`MaxRetries`) —
-those genuinely exhausted.
-**Nothing will ever pick them up.** Every queue predicate is `ProcessedAt == null && ProcessingError == null`
-(`RawContentRepository.cs:40`, `:66`, `:186`, `IRawContentRepository.cs:14`, and the queue-depth gauge at
-`SentinelMeter.cs:423-431`); `ExtractionProcessor.cs:508` states it outright — setting `ProcessingError` exits the
-row from the queue. The only clearing path is `POST /admin/reprocess`
-(`SentinelCollector/src/Endpoints/AdminEndpoints.cs:189`), which requires an
-explicit `rawContentIds` array. No sweeper, no retry service. This is why the classification fix alone does NOT
-recover the 55 — nothing re-queues them retroactively, the reprocess call would have to be made by hand, and per the
-verdict above it will not be.
-**THE 55 ARE ON A DELETION CLOCK — that is now the intended ending, and a later re-check returning 0 is the decision
-executing, not a missing measurement.**
-`StaleContentPrunerService` runs its passes once per host start and pass 1 calls
-`repo.DeleteChildlessOlderThanAsync(cutoff, ...)` (`StaleContentPrunerService.cs:95`, pass 2 at `:112`) with
-`cutoff = UtcNow - RawRetentionDays`. The predicate is `CollectedAt < cutoff && !r.Observations.Any()`
-(`RawContentRepository.cs:106-111`) — these 55 have no extraction children, so they qualify.
-**The clock moved, so the date below is not the one this entry was written with.**
-Retention was 30 days when the deletion date was computed here (deletable 2026-08-18 -> 2026-08-23), because
-`MaxArticleAgeDays` answered both "how long do we keep raw content" and "how old may an article be and still be
-worth extracting". Those split 2026-08-26: retention is now `ExtractionOptions.RawRetentionDays`
-(`SentinelCollector/src/Configuration/ExtractionOptions.cs`, default 180, pinned
-`Extraction__RawRetentionDays=180` in the compose template), and `MaxArticleAgeDays` (same file, still 30)
-governs extraction eligibility only.
-Collected 2026-07-19 -> 2026-07-24, the 55 now become deletable **2027-01-15 -> 2027-01-20**, at the first
-SentinelCollector restart after that.
-**Whether they still exist is unresolved and cheap to check:** the old 30-day window elapsed 2026-08-18 -> 08-23,
-before the split shipped, so any host restart in that window already deleted them. The re-check below distinguishes
-the two endings — a non-zero count means they survived to the longer window, zero means the old clock ran out first.
-Either is the decision executing. Because the pruner only runs in `StartAsync`, a long-lived container holds them
-past any window; 55 on a re-check means "no restart yet", not "decision reversed".
+**The 2026-09-04 cohort: 223 rows, same predicate, all fresh.** Collected 00:06:38Z -> 16:46:56Z in two discrete
+windows (00:00-02:04Z and 13:33-16:46Z), each bracketing to the minute a window in which `vllm-server` was STOPPED
+to free the GPU for a vLLM 0.28.0 evaluation (the `vllm-028` container; the same evaluation recorded in CLAUDE.md
+VLLM_UPGRADE). Loki carried `BrokenCircuitException ---> HttpRequestException: No route to host (vllm-server:8000)`
+— the container was ABSENT, not slow. All 223 childless, `processed_at IS NULL`, `retry_count = 0`; ids
+162986..163791; sources rss 204, rss-fallback 10, rss-mirror 8, searxng-content 1. Recovered same-day by
+`POST /admin/reprocess` with the explicit id list. Rows collected 17:00Z onward processed cleanly.
+
+**Re-check (psql is SELECT-only) — read BY COHORT. The predicate matches EVERY breaker-open event ever recorded, so
+a bare total answers nothing and a bare zero is ambiguous between "pruned as decided" and "never happened".**
+
+```sql
+SELECT date_trunc('day', collected_at) AS day, count(*),
+       min(collected_at), max(collected_at),
+       count(*) FILTER (WHERE retry_count = 0) AS never_retried
+FROM sentinel.raw_content
+WHERE processing_error LIKE '%circuit is now open%'
+GROUP BY 1 ORDER BY 1;
+```
+
+- rows dated **2026-07-19..07-24** -> the original 55 survived to the 180-day window. Won't-do cohort; leave them,
+  they prune 2027-01-15..01-20 at the first SentinelCollector restart after that date.
+- rows dated **2026-09-04** -> the 223 above. They were recovered by `POST /admin/reprocess`, which CLEARS
+  `processing_error`, so they should NOT appear; if they do, the reprocess did not take.
+- **no rows in either range** -> both cohorts pruned or recovered as decided. Expected ending, not a missing
+  measurement, and not grounds to re-raise recovery.
+- rows on **ANY OTHER date** -> a REGRESSION on the numeric path, WITH one known exception named below. D-27 makes
+  it impossible there: whether the breaker is refused before the model call (row requeued) or after it (article
+  finished), neither branch writes `processing_error`. A row here means the guard was removed, bypassed, or a second
+  code path writes the breaker's message. Correlate the date against `vllm-server` availability (`journalctl -t
+  atlas-stack-watchdog`; host clock is EDT, not UTC) and read BOTH reasons —
+  `sentinel_extraction_error_total{reason="dependency_unavailable"}` and `{reason="dependency_unavailable_after_extraction"}`
+  — for the same window before concluding anything.
+- the KNOWN exception: rows whose `source` is `validation-content` (or `validation-content:sector:*`). Those take
+  the qualitative dispatch leg, whose catch writes `processing_error` for ANY exception before the article catch can
+  see it — see the entry immediately below. Bucket them out with `AND source NOT LIKE 'validation-content%'` before
+  reading the query above as a regression signal.
+
+Measured 2026-08-17: `55 | 2026-07-19T17:14:25Z | 2026-07-24T11:00:06Z | 55`.
+Measured 2026-09-04T22:27Z, before the recovery: ZERO from the 2026-07 cohort (the old 30-day clock pruned them
+first) and `223 | 2026-09-04T00:06:38Z | 2026-09-04T16:46:56Z | 223` from a same-day cohort — both halves of this
+entry landing on the same day, which is what made a bare total unreadable and is why the query above buckets.
+Measured 2026-09-04, after the recovery and on the fix branch: **0 rows**, which under the reading above is the
+expected steady state and NOT evidence the fix works — the fix is evidenced by
+`ExtractionProcessorCircuitOpenRequeueTests`, not by this query.
+
+**DEFECT, pre-existing and now the ONLY leg outside D-27's gate: the qualitative dispatch path still orphans on a
+dependency outage.** `TryDispatchQualitativeAsync`'s extract-stage catch (`SentinelCollector/src/Workers/ExtractionProcessor.cs:2748`)
+calls `MarkRawContentProcessedAsync(..., ex.Message, ...)` for EVERY exception, so a `BrokenCircuitException` writes
+`processing_error` and the row leaves the queue with nothing re-driving it — the original D-27 failure mode, on this
+one leg. It is not reachable by the gate BY CONSTRUCTION: the gate lives in the article catch, and this catch runs
+inside the `try`, so it decides before the gate is ever consulted. Found by review of PR #1004 (R2, finding M1) and
+left alone there deliberately: it changes qualitative-path behaviour, which that PR does not otherwise touch, and it
+has no test. Reachable only for `validation-content` sources, so the blast radius is the validation-query worker's
+rows, not the news frontier.
+Fix, when it is picked up: rethrow from that catch when `DependencyOutage.IsCircuitOpen(ex)` so the single gate
+decides, rather than adding a second place that answers the same question — the whole point of D-27's current shape.
 Re-check (psql is SELECT-only):
-`SELECT count(*), min(collected_at), max(collected_at), count(*) FILTER (WHERE retry_count=0) FROM
-sentinel.raw_content WHERE processing_error LIKE '%circuit is now open%';` — returned
-`55 | 2026-07-19T17:14:25Z | 2026-07-24T11:00:06Z | 55` on 2026-08-17. After the prune window an empty result means
-pruned as decided, not absent. **What stays open is the classifier, and only the classifier.**
+```sql
+SELECT count(*), min(collected_at), max(collected_at)
+FROM sentinel.raw_content
+WHERE processing_error LIKE '%circuit is now open%'
+  AND source LIKE 'validation-content%';
+```
+Measured 2026-09-05: **0 rows**, against **0** for the same predicate with the source filter removed — so the whole
+`processing_error LIKE '%circuit is now open%'` population is currently empty and this figure does NOT distinguish
+"never hit" from "hit and pruned by the 180-day retention". Read it as a BASELINE for the re-check, not as evidence
+the leg is unreachable. A non-zero count is the defect firing, and closes the "is it worth fixing" question with a
+number.
+
+**DEFECT, pre-existing and MORE reachable after D-27: `ResolutionWorker.ResolveOneAsync` wraps `secMaster.ResolveAsync`
+in `catch (HttpRequestException)` only.** During the same shared-SecMaster-breaker outage that D-27 now routes rows
+into as `resolution_state=Pending`, a `BrokenCircuitException` escapes that catch and the per-row try (which catches
+only `OperationCanceledException`), abandoning the rest of the batch each tick with NO
+`processed_total{outcome="error"}` increment — so `SentinelResolutionWorkerErrors` cannot fire and the stall is
+invisible. Rows stay Pending, which is safe and self-healing, so this is a VISIBILITY defect rather than a data one.
+Found by review of PR #1004 (R2, finding M2). Re-check: during any SecMaster outage, compare
+`sum(increase(sentinel_resolution_worker_processed_total[15m]))` against the Pending row count —
+```sql
+SELECT count(*) FROM sentinel.extracted_observations WHERE resolution_state = 'Pending';
+```
+— a Pending count that climbs while the worker counter is FLAT is this defect. Measured 2026-09-05: Pending = **0**,
+which is the healthy baseline and says nothing either way about the defect; it has NOT been observed during an
+outage, the mechanism is read from the code, and the first real SecMaster break window is what would confirm it.
+
+**The ROOT cause had no alert of its own during the incident, and now does — verified, not assumed.** #1001's vLLM
+scrape job and rules were in the repo but NOT on the box while the 223 were being orphaned, so `vllm-server` being
+absent for ~3.5h was alertable only through the downstream Sentinel symptom. They have since been deployed:
+measured on the fix branch, live `/opt/ai-inference/monitoring/prometheus.yml` carries 8 jobs INCLUDING `vllm`,
+`/opt/ai-inference/monitoring/alerts/vllm.yml` is present, and `up{job="vllm"}` returns
+`{instance="vllm-server:8000"} = 1`. Recorded because a read-only diagnostic taken at 2026-09-04T22:30Z reported
+the opposite and was already stale by the time the fix was written — re-run the three checks above rather than
+quoting either state.
 
 **10 of SentinelCollector's 16 hosted workers log their startup banner at `LogInformation`, so prod has no record
 those started — while 2 siblings already log theirs at Warning, on purpose.** Prod log level defaults to Warning,
@@ -1318,7 +1363,7 @@ filtered in prod)" — landed 2026-07-05 in #852 (`d91f1a50`). An earlier revisi
 banner is LogInformation" and "prod has no record any worker started"; both were false, and the second would have
 sent the next reader looking for a precedent that was two files away. Corrected 2026-08-15.
 The 10 still at `LogInformation` (measured over the 16 classes deriving from `BackgroundService`/`IHostedService`):
-`ReExtractBackgroundService.cs:119-122`, `ExtractionProcessor.cs:50`, `MirrorSearchWorker.cs:79`,
+`ReExtractBackgroundService.cs:119-122`, `ExtractionProcessor.cs:74`, `MirrorSearchWorker.cs:79`,
 `ResolutionWorker.cs:51`, `StaleContentPrunerService.cs:85`, `RssFeedCollectorWorker.cs:31`, `EdgeSyncWorker.cs:27`,
 `SearxngCollectionScheduler.cs:60`, `ValidationEventConsumerWorker.cs:35`, `ValidationQueryExecutorWorker.cs:27`
 — plus ReExtract's disabled-by-flag banner (`:93-95`) and its stop banner (`:183`). The remaining 4 emit no startup
@@ -1933,7 +1978,7 @@ compares with a strict `>` (`deployment/artifacts/monitoring/alerts/thresholdeng
 
 **The publish gate, and why a plausible symbol does not survive it.** The gate is
 `o.InstrumentId.HasValue && o.ResolutionConfidence >= 0.8f && o.Certainty is Definite or Expected`
-(`SentinelCollector/src/Workers/ExtractionProcessor.cs:848` v1, `:1991` v2). **`Symbol` is not in the predicate**, so
+(`SentinelCollector/src/Workers/ExtractionProcessor.cs:878` v1, `:2116` v2). **`Symbol` is not in the predicate**, so
 a row carrying a plausible symbol and no instrument is dropped without a trace on the symbol axis. Nor is
 `"InstrumentId": null` inside `candidate_symbols_json` the defect: **0 of 3,650,818** candidates all-time carry a
 non-null value there, including every candidate on every row that published successfully. That field is the
@@ -2331,12 +2376,12 @@ mechanism:
   `numbers[]` items are `(context, source_entity, source_text, unit, value)`, and
   `"additionalProperties": false` is set on the item schemas and the envelope (recorded above), so
   there is no field for the model to emit one into.
-- BUT `SentinelCollector/src/Services/V2ExtractionPipeline.cs:191` DOES assign
+- BUT `SentinelCollector/src/Services/V2ExtractionPipeline.cs:192` DOES assign
   `Period = extraction.Period`. "The v2 adapter forgot to map the field" is therefore already false,
   and anyone repeating it has not run the grep. What fills `extraction.Period` on the CoD path is
   the open question.
 WHAT WOULD SETTLE IT IS A CODE READ, NOT ANOTHER QUERY: read `V2ExtractionPipeline.cs` and
-`GpuJsonExtractionService.cs` against the v1 assignment at `Workers/ExtractionProcessor.cs:698` --
+`GpuJsonExtractionService.cs` against the v1 assignment at `Workers/ExtractionProcessor.cs:728` --
 the only other `Period =` site in the service -- and establish what populates the field on each path.
 NOBODY HAS READ THAT CODE. Do not assert a mechanism from this entry.
 
@@ -2929,6 +2974,41 @@ FinnhubCollector case ABOVE IS STILL LIVE AND STILL GREEN: those five are GUARD 
 declarations in a `.cs` file, where no `D-n` appears at the landing site and demanding one would condemn all 111
 GUARD citations in this repo's cards. So the CONSEQUENCE paragraph above is unchanged for every citation that is
 not a card-entry pointer, and the baseline comparison is still the only way to see one move.
+
+**The documented citation sweep is `.md`-ONLY, so a line shift rots citations it structurally cannot see.**
+Same shape as the `--memory` corpus gap above -- the resolver is fine, the CORPUS is wrong -- and this one is
+inside the tracked repo, so nothing signals it. The documented invocation is
+`mapfile -d '' F < <(git ls-files -z '*.md')`, and citations also live in `.py` and `.cs` COMMENTS, where the
+tool's own `_EXTS` list would happily resolve them if a sweep ever handed them over. Measured 2026-09-05 on
+PR #1004, which shifted `SentinelCollector/src/Workers/ExtractionProcessor.cs` by +10 lines above the
+dependency-outage guard and +35 below it: the `.md` sweep reported 488 checked / 27 cannot land, a set identical
+to its base's, while FOUR citations in two non-`.md` files had silently drifted onto real-but-wrong lines --
+`SentinelCollector/scripts/build_golden_corpus.py:184` (`:875-877` and `:2138-2140`) and `:195`, and
+`SentinelCollector/tests/.../GoldenCorpus/GoldenCorpusFixture.cs:172-173` (`:901-903` and `:2163-2165`), every
+one of them a two-cite pair spanning the v1 and v2 sector/instrument gates. All four were repaired in that PR and
+verified by content, not by rc. Reproduce the blind spot:
+`git ls-files -z | xargs -0 grep -nE '\w+\.cs:[0-9]' | grep -v '\.md:'` -- currently 4 sites, one of which
+(`dream/index_hooks.py:43`) is an EXAMPLE inside a regex doc comment and must never be "repaired", which is why
+this is a corpus question with a judgement in it rather than a flag to flip. Closing it means either extending
+the documented invocation and pricing in that example class, or a `--scope`-style opt-in; both change what every
+future sweep reports and need their own before/after counts, exactly as the `_EXTS` entry below says.
+
+**Nine real-but-wrong citations stand in `SentinelCollector/AGENT_README.md`, all GREEN, none of them any PR's
+debt.** The live instance of the drift class above, found by hand in review of PR #1004 and deliberately NOT
+repaired there: they sit in the `DeterministicResolver` / `ExtractionProcessor` D-entries as a -35 cluster from an
+old un-followed insertion plus -74, -30 and -4, and one is a NAMING error rather than a number --
+a GUARD reads `ResolveAsync @ src/Services/DeterministicResolver.cs:626` while `ResolveAsync` is the thin
+wrapper at `:47` and the enclosing method at the cited leg is `ResolveCoreAsync` (`:82`). Present at base
+`eb5aa3e3` with the identical offsets, and six of the nine were among the 21 AGENT_README citations that PR
+"repaired" -- i.e. shifted while already 35 lines short, which is what makes a repair sweep no evidence at all.
+LEFT ALONE ON PURPOSE: the tool reads GREEN on every one of them (they land on real lines), so a repair is a
+content-level hand audit whose result nothing can check, landing in the one file that PR was already rewriting
+heavily -- the trade CLAUDE.md TOOL_UPKEEP declines, cosmetic fixes bought with a new unverifiable claim.
+Re-check: they are invisible to `verify-citations.py` by construction; the measurement that finds them is reading
+each D-entry's GUARD prose against the symbol at the cited line. A symbol-anchored checker would decide this
+class mechanically -- `Symbol.Method @ path:line` where the landing window must mention `Method` -- but only 3
+of this card's citations use that exact form today, so the check would need the card's other citation forms
+normalised first.
 
 **`verify-citations.py` silently skips a citation whose file has an extension outside a 10-item allowlist, and
 skips a bare `:NN` continuation entirely unless `--bare` is passed.** Two separate gates, both read from the code

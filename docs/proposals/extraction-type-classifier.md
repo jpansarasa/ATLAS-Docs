@@ -465,7 +465,7 @@ bag. There are exactly three:
 
 | consumer | what it does with a null-sector entity |
 |---|---|
-| `DeterministicResolver.LiftSector` (`DeterministicResolver.cs:219`) | `.Where(e => !string.IsNullOrWhiteSpace(e.AtlasSectorCode) && …)` — **excluded** |
+| `DeterministicResolver.LiftSector` (`DeterministicResolver.cs:255`) | `.Where(e => !string.IsNullOrWhiteSpace(e.AtlasSectorCode) && …)` — **excluded** |
 | `MacroObservationRouter.DeriveArticleSector` (`MacroObservationRouter.cs:246-249`) | `if (string.IsNullOrWhiteSpace(code)) continue;` — **excluded** |
 | `ResolvedEntitiesRenderer.Render` (`ResolvedEntitiesRenderer.cs:43`) | renders one markdown row with empty Ticker / AtlasSector / NAICS — **a prompt table row** |
 

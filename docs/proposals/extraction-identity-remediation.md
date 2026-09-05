@@ -37,9 +37,9 @@ Extraction__UseV2Pipeline=true        # flipped 2026-05-16 (PR #340)
 81da1ed4 2026-05-16 ops(sentinel): ... broaden V2 sources to all (#341)
 ```
 
-- `CreateSectorEvent` has exactly ONE production call site: `ExtractionProcessor.cs:889`
-- that site is inside `ProcessSingleArticleAsync`, AFTER the v2 early return at `:599`
-- `RunV2ProductionAsync` (`:1760`) never calls it
+- `CreateSectorEvent` has exactly ONE production call site: `ExtractionProcessor.cs:919`
+- that site is inside `ProcessSingleArticleAsync`, AFTER the v2 early return at `:614`
+- `RunV2ProductionAsync` (`:1850`) never calls it
 - every August source with published rows is in `V2EnabledSources`:
   rss, searxng-content, challenger-rss, rss-mirror, fed-* (12 entries, indices 0-11)
 - the only non-v2 August sources are `tsa-checkpoint` (0 published) and `rss-fallback` (0 published)
@@ -67,7 +67,7 @@ adversarial claim-check; both errors below were the supervisor's):
 
 - `AtlasSectorCode` **is** a persisted column, added by migration
   `20260509234900_AddAtlasSectorCodeToObservation` on 2026-05-09 and populated even on the
-  v2 path (`V2ExtractionPipeline.cs:215`). The original claim came from a column enumeration
+  v2 path (`V2ExtractionPipeline.cs:216`). The original claim came from a column enumeration
   piped through `head -40` against a 47-column table -- a truncated probe read as complete.
   **Consequence: the loss is directly recoverable.** 4,324 rows since the 81da1ed4 cutover
   satisfy the sector gate as the code writes it. That is the backlog of lost sector events and
