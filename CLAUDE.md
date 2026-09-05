@@ -245,15 +245,28 @@ ANTI: ✗ batch maintenance into its own phase # that is regrinding, after month
 MODEL_ACCEPTANCE [replaces the old `MODEL_SIZE >= 30B`] [HARD_STOP]:
   ✗ never swap the extraction model on a size, a benchmark from elsewhere, or a publisher's claim
   ✓ a candidate ships only with a SCORECARD from LlmBenchmark that BEATS the incumbent's, produced
-    by scripts/run_model.py on PRODUCTION'S PROMPT PATH (--endpoint-mode completions --prompt-file
-    cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...) and scored by
-    scripts/eval_harness.py -- WHICH NO TOOL CAN PRODUCE TODAY, so this rule currently blocks EVERY
-    candidate and that is the honest state, not an invitation to reason around it. Pointed at those
-    files the runner scores `aggregate_f1: null` with `schema_invalid` equal to the record count:
-    the instrument cannot read CoD output, and nothing is wrong with the model. What diverges, what
-    it costs and what closing it means: docs/BACKLOG.md MEASUREMENT DEBT, "`run_model.py
-    --prompt-file` cannot score production's CoD path". Closing THAT entry is the precondition for
-    a model swap -- do not weaken this line instead.
+    by scripts/run_model.py on PRODUCTION'S PROMPT PATH (--task cod --endpoint-mode completions
+    --prompt-file cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...) and
+    scored by scripts/eval_harness.py --task cod --cod-gold. THAT PATH NOW RUNS END TO END. This
+    line used to say no tool could produce such a scorecard; that stopped being true at #1014, and
+    the honest state is no longer "blocked on an instrument" but "blocked on one labelling
+    decision". Measured 2026-09-05, production's engine and its real prompt+schema, the 40 gold
+    articles: `records 40  errors 0  schema_invalid 0  truncated 0`, scored 40/40 against the
+    committed gold, 24 of 29 metrics measurable, stamped `production_prompt_path: true`.
+  WHAT A SCORECARD STILL DOES NOT SETTLE -- and none of this is an invitation to reason around the bar:
+    - the criteria are PROVISIONAL (cod-stage1.criteria.json, `ratified_by: null`) and most thresholds
+      are carried from the CoVe bar unmeasured, so a `pass: true` on them is not a ratified pass
+    - the gold's four arrays do NOT weigh equally: NUMBERS and ENTITIES carry it, events are usable
+      on `subject` only, and a comparison over CLAIMS measures noise # event_kind/claim_kind are
+      free-form, so two careful human labellers score 0.302 and 0.138 against each other
+    - `source_entity` for macro series is UNDECIDED across 25% of numbers (129 of 518), and it sits
+      IN the alignment key, so a scorer silently inherits whichever answer the gold holds
+      # docs/BACKLOG.md MEASUREMENT DEBT, "The CoD gold cannot yet back a model swap"
+    ✗ a HOSTED run is NOT acceptance evidence # the labelling router is CHAT-only, production's wire
+      shape is a client-side template into /v1/completions, and eval_harness stamps
+      `production_prompt_path: false` on anything else -- scoring runs on a LOCAL engine
+    SETTLING the macro-owner question is the precondition for a model swap -- do not weaken this
+    line instead.
   rationale: the 30B floor was a PROXY for "does not collapse on this task", written because small
     models kept getting swapped in for VRAM headroom and scored terribly. A proxy invites the wrong
     argument -- whether 27B is close enough to 30 -- when the harness can answer the real question

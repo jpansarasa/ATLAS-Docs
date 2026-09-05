@@ -71,9 +71,11 @@ under 0.19.0 (36,848 tokens of cache vs ~73,712 at fp8), which is ample at ~3K t
 
 NOT YET DONE, and why: measured on the substrate's own 16 instructions, NOT production's cod_json_v1.txt +
 schema path. Confirm on the production prompt before changing vllm_kv_cache_dtype.
-BLOCKED 2026-09-04: that confirmation cannot be produced by the current harness -- pointed at the
-production prompt+schema, BOTH KV arms score `aggregate_f1: null`. See MEASUREMENT DEBT, "`run_model.py
---prompt-file` cannot score production's CoD path".
+UNBLOCKED 2026-09-05: the harness scores production's CoD path end to end now, so both KV arms CAN be
+measured on it -- `--task cod` against the 40-article gold, NOT `aggregate_f1` (a CoVe metric the CoD
+scorecard does not carry). The undecided macro-owner convention biases both arms identically, so it
+does not invalidate a within-model A/B the way it would a model swap. Cost is unchanged: a production
+stop and two ~4min GPU reloads. See MEASUREMENT DEBT, "The CoD gold cannot yet back a model swap".
 
 RELATED: this same flag is what crashes vLLM 0.28 (see the entry below), and e5m2 carries 2 mantissa bits to
 e4m3's 3 -- production runs the lower-precision of the two 8-bit formats AND the crash-prone one.
@@ -2057,8 +2059,9 @@ normalized numeric as a string" conflicts with `:59` "Emit each distinct numeric
 magnitude appears with opposite signs -- dedup is keyed on the VALUE, not on (value, context,
 source_entity); (b) nothing excludes clock times, quarter ordinals or bare years, and all three
 bake-off labellers extracted at least one, so this is the prompt's SILENCE, not one model's judgement.
-Do NOT fix it blind: a prompt change is a quality change and the harness cannot score production's CoD
-path -- see MEASUREMENT DEBT, "`run_model.py --prompt-file` cannot score production's CoD path".
+A prompt change is a quality change, so MEASURE it rather than fixing blind: the harness scores
+production's CoD path end to end now -- take the 40-article scorecard before and after any edit here.
+See MEASUREMENT DEBT, "The CoD gold cannot yet back a model swap".
 Re-check:
 ```
 P=SentinelCollector/src/cod-prompts/cod_json_v1.txt
@@ -2070,95 +2073,78 @@ exclusion rule landed and (b) is closed.
 
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
-### `run_model.py --prompt-file` cannot score production's CoD path -- the flag exists, the measurement does not [2026-09-04]
-`--prompt-file` / `--schema-file` were added (a2877cdb) so the harness could score "production's
-cod_json_v1.txt" -- its own help text says exactly that. Pointed at production's real prompt+schema they
-produce a scorecard whose **`aggregate_f1` is `null`**, because four independent things do not line up.
-The model is fine; the instrument cannot read it.
+### The CoD gold cannot yet back a model swap: `source_entity` for macro series is undecided [2026-09-05]
+Production's CoD path is scoreable END TO END. The four divergences that made every scorecard on it
+`null` are closed -- chat template (#1002), prompt assembly, scorer (#1011), runner (#1013) -- the gold
+they needed exists (#1012), and the outage-vs-null-result gate that `call_errors` depends on landed
+with it (#1014). What still stops a scorecard from DECIDING a model swap is a labelling decision, not a
+tool: the macro-owner paragraph below, which is the live blocker CLAUDE.md §MODEL_ACCEPTANCE points at.
 
-MEASURED 2026-09-04, vLLM 0.19.0, production container as-is (`--kv-cache-dtype fp8_e5m2`),
-Qwen2.5-32B-AWQ rev `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c`, 3 records through
-`run_model.py --endpoint-mode completions` with production's `cod_json_v1.txt` + `cod_json_schema_v1.json`:
-`records: 3  errors: 0  schema_invalid: 3`, every record `n_extractions = 0`; scored `measurable: 4/18`,
-`aggregate_f1: null ("no data")`, `json_valid: 0.0`. The same call by hand returns `finish_reason: stop`
-and **30 populated `numbers[]` objects** on record 1 -- nothing is wrong with the extraction.
+MEASURED 2026-09-05, the measurement that closes the path. vLLM 0.19.0, production container as-is
+(`--kv-cache-dtype fp8_e5m2`), Qwen2.5-32B-AWQ rev `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c`, the 40
+gold articles on production's own request shape (`--task cod --endpoint-mode completions`,
+`cod_json_v1.txt` + `cod_json_schema_v1.json`, client-side ChatML, `--max-tokens 8192`, temperature 0,
+seed 42, concurrency 6). NOT production's full sampling: provenance records `repetition_penalty: null`
+and `stop: null` where production sends 1.1 and `ExtractionOptions.StopTokens`, so this run is
+production's PROMPT PATH -- which is what `production_prompt_path` certifies and what §MODEL_ACCEPTANCE
+requires -- and not a byte-for-byte replay of its request. Pass `--repetition-penalty 1.1` and `--stop`
+to close that gap. Result: `records: 40  errors: 0  schema_invalid: 0  truncated: 0`, wall 134.9s. Scored
+by `eval_harness.py --task cod --cod-gold`: `scored 40/40  with_gold=40  with_prediction=40
+call_failures=0`, `measurable: 24/29  passed: 10  failed: 14  not_measurable: 5`, shuffled-gold control
+`numbers_f1` **0.0020** (FLOOR_OK), scorecard stamped `production_prompt_path: true`. The five
+not-measurable are `period`, `certainty` and `text_quote_{precision,recall}` -- absent from CoD's schema
+by design (stage 1 of 4; supplied downstream by dsl-parser-mcp `/parse_json` + the verifier + the
+adapter) and reported null WITH that reason rather than synthesised -- plus `null_precision`, which has
+no denominator because no gold record is empty.
+This entry used to lead with the same engine and the same prompt scoring `schema_invalid: 3` and
+`aggregate_f1: null` on 3 records. The instrument changed, not the model.
 
-1. OUTPUT SHAPE [OPEN -- and it is now the ONLY thing keeping this entry open]. The CoD stage emits ONE
-   object with four list-valued keys (`entities`, `numbers`, `events`, `claims`).
-   `run_model.parse_extractions` accepts a dict only when exactly ONE value is a list, so it returns
-   `([], False)` -- correctly refusing to guess, which makes every production response a parse failure.
-   `run_one` then writes `predicted_extractions: []` and DISCARDS the response text, so the committed
-   tooling cannot produce a CoD corpus at all, whatever scores it. The 597-article measurement below was
-   therefore taken with a throwaway generator, not with `run_model.py`, and is not reproducible from the
-   repo until this cause is closed.
-2. GOLD SHAPE [CLOSED on the SCORING side 2026-09-05; the RUNNER still cannot feed it, see cause 1].
-   `grep -c 'period\|certainty' cod_json_schema_v1.json` returns **0**. The scorer's contract
-   is `NUMERIC_REQUIRED = (text_quote, value, period)` and it grades `certainty`; production's `numbers[]`
-   carries `(source_text, value, unit, context, source_entity)`. `period` and `certainty` are not
-   under-emitted, they are absent from the schema by design -- CoD is stage 1 of 4, and those fields are
-   supplied downstream by dsl-parser-mcp `/parse_json` + the verifier + the adapter
-   (`GpuJsonExtractionService`). `text_quote` (a gold SENTENCE) and `source_text` (a verbatim numeric
-   literal) are not the same field either.
-   `eval_harness.py --task cod` now grades the CoD object on its OWN terms against
-   `LlmBenchmark/eval-substrate/cod-stage1.criteria.json` (PROVISIONAL, `ratified_by: null`),
-   and the four fields above are reported `null` with a reason rather than synthesised -- which is what
-   the CLOSE THIS paragraph below forbids doing to them. The alignment key is `(context, source_entity)`
-   with independent floors, NOT `source_text`: that field is a 1-3 token literal, so two unrelated
-   figures both written `"$15"` align perfectly on it and every per-field accuracy inherits the wrong
-   pairing. `value` is out of the key for the same reason plus one more -- anything in the key reads 1.0
-   by construction, and value accuracy is the number a model swap turns on.
-3. PROMPT ASSEMBLY [CLOSED; the measurement above predates the fix, so it was taken with this
-   divergence live]. `cod_json_v1.txt` is a TEMPLATE (`{{source_id}}`, `{{article_text}}`, inside a
-   `<<<ARTICLE ... ARTICLE` block). `--prompt-file` concatenated `f"{instruction}\n\n{content}"`, so the
-   literal `{{article_text}}` was sent to the model and the article landed AFTER the prompt's closing
-   "Output ONLY the JSON object" line. The harness did not send production's prompt TEXT, before any
-   question of scoring it. `run_model.render_prompt` now mirrors
-   `GpuJsonExtractionService.BuildPrompt` (str.replace, article then source_id,
-   `{{published_at}}` blanked), and provenance records `request_shape.prompt_assembly`.
-   Measured on substrate record 0 with production's real prompt, after the fix:
-   `<<<ARTICLE`@5092 -> article@5103 -> "Output ONLY"@7755, no `{{` surviving, ONE chat
-   message rather than two (a substituted template already holds the document, so the
-   old system/user split sent the article twice).
+THE 14 FAILURES ARE NOT A MODEL VERDICT, and must not be quoted as one. They land exactly where this
+gold is known weak: `claims_recall` -0.60, `events_precision` -0.55, `events_recall` -0.55,
+`claims_precision` -0.52 -- the free-form `event_kind`/`claim_kind` problem measured below, where two
+careful HUMAN labellers agree 0.302 and 0.138. Every threshold is PROVISIONAL and most are
+`basis=carried` from the ratified CoVe bar, i.e. never measured on this task. The arrays that carry the
+gold read: `number_value_accuracy` 0.925, `number_unit_accuracy` 0.920,
+`number_source_entity_exact_match` 0.915, `source_entity_referential_integrity` 0.987, `json_valid` 1.0.
 
-4. NO CHAT TEMPLATE [closed in #1002; the measurement above predates the fix, so it was taken with this
-   divergence live]. `--chat-template` was optional and defaulted to `None`, while `--endpoint-mode
-   completions` advertised that it "reproduces ATLAS production (client-side template +
-   /v1/completions)". `/v1/completions` applies no template server-side, so the run above sent a raw
-   continuation with no `<|im_start|>` turn -- production's ChatML wrapper was on neither side of the
-   wire. This is the one divergence with NO tell in the output: the model answers, the scorecard fills
-   in, the prompt was simply not the one production sends. `run_model.validate_request_shape` now
-   REFUSES completions mode without the flag rather than defaulting it, and `--chat-template '{0}'` is
-   how an operator asks for an untemplated continuation on purpose.
+THE 40-RECORD SUBSTRATE IS NOT A COMMITTED ARTIFACT, and the re-check needs it. `run_model.py
+--substrate` reads a JSON LIST; the gold's 40 articles are scattered through the 597-record v6.2
+substrate (indices 0..9504, across two source files) and `--limit` takes a PREFIX, so `--limit 40` runs
+the wrong 40 and still exits 0. Build the subset by joining on `(source_file, source_index)` -- nothing
+in the repo does it for you, which is the next small piece of debt on this path.
+Re-check:
+```
+python3 - <<'PY'
+import json
+sub = json.load(open('/opt/ai-inference/training-data/eval-substrates/v6.2-cove-plus-negatives-20260510T223757Z.json'))
+gold = json.load(open('LlmBenchmark/cod-gold/cod_stage1_gold_v1.json'))
+by = {(r['source_file'], r['source_index']): r for r in sub}
+json.dump([by[(a['source_file'], a['source_index'])] for a in gold['articles']], open('/tmp/g40.json', 'w'))
+PY
+python3 LlmBenchmark/scripts/run_model.py --task cod --endpoint-mode completions \
+  --prompt-file SentinelCollector/src/cod-prompts/cod_json_v1.txt \
+  --schema-file SentinelCollector/src/cod-prompts/cod_json_schema_v1.json \
+  --chat-template $'<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n' \
+  --max-tokens 8192 --concurrency 6 --substrate /tmp/g40.json \
+  --endpoint http://localhost:8000 --model Qwen/Qwen2.5-32B-Instruct-AWQ --out /tmp/cod-preds.jsonl
+python3 LlmBenchmark/scripts/eval_harness.py --task cod --substrate /tmp/g40.json \
+  --cod-gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json --predictions /tmp/cod-preds.jsonl \
+  --adapter-meta /tmp/cod-preds.jsonl.provenance.json --out /tmp/cod-scorecard.json
+```
+A non-zero `schema_invalid`, or `production_prompt_path: false`, means this closure regressed.
 
-Same class, minor: production also sends `repetition_penalty=1.1` (`CpuCod__JsonRepetitionPenalty`); the
-runner omits it unless `--repetition-penalty` is passed. It also sends `seed=42`
-(`ExtractionOptions.V2Seed`), which the runner sent NOT AT ALL until `--seed` was added -- so no
-scorecard on disk was taken at production's seed, and each of them implied a reproducibility nobody had
-established.
+The two sampling knobs above are `CpuCod__JsonRepetitionPenalty` and `ExtractionOptions.StopTokens`;
+`seed=42` is `ExtractionOptions.V2Seed`. What the runner does and does not reproduce of production's
+sampling has its own entry -- "still diverges from production's sampling on `--stop` and `--min-p`".
 
-CONSEQUENCE. The first KNOWN DEFECT in this file is blocked on "confirm the fp8 penalty on the production
-prompt", and that confirmation cannot be produced by this harness at ANY KV dtype -- both arms score
-`null`. A two-arm run costs a production stop, two ~4min GPU reloads and ~1h of inference to yield two
-empty scorecards.
-
-CLOSE THIS by deciding what "production's path" means for scoring, which is a design choice and not a
-patch: either (a) put dsl-parser-mcp `/parse_json` in the harness loop so the thing scored is the
-`DocumentAst` production actually consumes, or (b) build gold labels in CoD shape and score stage 1 on its
-own terms. Do NOT close it by hand-mapping `numbers[]` onto the gold fields -- `period` and `certainty`
-have no source in that payload, so the mapping would inject a constant penalty larger than the ~0.05
-effect being measured, and the adapter's own design choices would dominate the result.
-ROUTE (b) IS NOW HALF BUILT: the SCORER exists (cause 2, `--task cod`), the GOLD does not, and the RUNNER
-cannot feed it (cause 1). All three are required; a scorer with nothing to score closes nothing.
-Re-check: run `run_model.py --endpoint-mode completions --prompt-file
-SentinelCollector/src/cod-prompts/cod_json_v1.txt --schema-file
-SentinelCollector/src/cod-prompts/cod_json_schema_v1.json --chat-template
-$'<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n' --limit 3` and score it; if this entry is
-still true, `aggregate_f1` is still `null` and `schema_invalid` still equals the record count. The
-`--chat-template` argument is mandatory in this mode now (cause 4). Causes 2, 3 and 4 are CLOSED; cause 1
--- OUTPUT SHAPE -- is untouched by any of those fixes and is what keeps the entry open. Note the re-check
-above scores on `--task cove` (the default) and will keep reporting `null` for as long as cause 1 stands,
-whatever the CoD scorer can do: the runner hands it an empty list, and an empty list is a shape the CoD
-scorer is never even offered.
+DO NOT close the remaining question by hand-mapping `numbers[]` onto the CoVe gold fields -- `period`
+and `certainty` have no source in that payload, so the mapping would inject a constant penalty larger
+than the ~0.05 effect being measured, and the adapter's own design choices would dominate the result.
+The alignment key is `(context, source_entity)` with independent floors, NOT `source_text`: that field
+is a 1-3 token literal, so two unrelated figures both written `"$15"` align perfectly on it and every
+per-field accuracy inherits the wrong pairing. `value` is out of the key for the same reason plus one
+more -- anything in the key reads 1.0 by construction, and value accuracy is the number a model swap
+turns on.
 
 WHAT THE CoD SCORER MEASURED ON ITS OWN, WITH NO GOLD [2026-09-05]. Two of its metrics need none, and
 they are the only CoD numbers that exist today. Qwen2.5-32B-AWQ rev `5c7cb76a...` @ vLLM 0.19.0 on
@@ -2183,7 +2169,7 @@ NOT MEASURED HERE: whether the extractions are CORRECT. Every number above is ei
 schema conformance. Recall in particular is unmeasured and unmeasurable without gold -- do not read
 `0.9709` or `0.9472` as extraction quality.
 
-Re-check (needs a CoD corpus, which per cause 1 today means a generator outside the repo):
+Re-check (a CoD corpus now comes from `run_model.py --task cod` itself -- see the re-check above):
 ```
 python3 LlmBenchmark/scripts/eval_harness.py --task cod --substrate <substrate> \
   --predictions <cod-preds.jsonl> --out /tmp/cod.json
@@ -2194,20 +2180,14 @@ d['diagnostics']['source_entity_empty_rate']['value'],d['controls']['shuffled_go
 A shuffled-gold value that is NOT near zero is the finding, not the model's: it means the alignment key
 stopped discriminating, or the corpus went near-duplicate.
 
-GOLD SHAPE (cause 2): route (b) IS NOW TAKEN, and the entry stays open anyway. `LlmBenchmark/cod-gold/`
-holds 1,736 gold facts in CoD's own shape over 40 deliberately-chosen articles, every object validating
-against `cod_json_schema_v1.json` under jsonschema Draft 2020-12, every fact naming the labeller that
-produced it (`LlmBenchmark/scripts/build_cod_gold.py`, `verify_cod_gold.py --selftest` = 10/10 known-bad
-mutations caught -- 8 positive, 2 negative -- $3.40 measured over 96 requests). What that does NOT do is score anything: cause 1
-(`parse_extractions` returns `([], False)` on CoD's five-key object, so every production response is
-still a parse failure to this harness) is untouched, and no scorer reads the gold yet. Both are
-required before a scorecard exists, so §MODEL_ACCEPTANCE still blocks every candidate.
+THE GOLD ITSELF. `LlmBenchmark/cod-gold/` holds 1,736 gold facts in CoD's own shape over 40
+deliberately-chosen articles, every object validating against `cod_json_schema_v1.json` under
+jsonschema Draft 2020-12, every fact naming the labeller that produced it
+(`LlmBenchmark/scripts/build_cod_gold.py`, `verify_cod_gold.py --selftest` = 10/10 known-bad mutations
+caught -- 8 positive, 2 negative -- $3.40 measured over 96 requests). A scorer now reads it, on the run
+above; what it cannot yet DECIDE is the rest of this entry.
 Re-check: `python3 LlmBenchmark/scripts/verify_cod_gold.py --gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json
---corpus LlmBenchmark/cod-gold/cod_stage1_corpus_v1.json --selftest` exits 0 while the gold is intact,
-and `ls LlmBenchmark/cod-gold/*scorecard*.json` finds NOTHING while no scorer has run against it. A
-scorecard appearing there means this paragraph is stale. (Do not reach for `grep -rl cod_stage1_gold
-LlmBenchmark/scripts/*.py`: the gold path is a runtime argument, so that grep names zero files both
-before and after a scorer lands -- it was written into this entry, run once, and replaced.)
+--corpus LlmBenchmark/cod-gold/cod_stage1_corpus_v1.json --selftest` exits 0 while the gold is intact.
 
 WHAT THE GOLD DOES NOT COVER, measured on it 2026-09-05 and re-checkable from its own `controls` block:
 - `guidance` and `regulatory` have ZERO gold members out of 40. Not a labelling slip -- the cross-check
@@ -2398,26 +2378,24 @@ PY
 -> all three print False while this entry is true
 ```
 
-### `run_model.py` cannot reproduce production's sampling -- there is no `--seed` [2026-09-04]
-Production pins `seed=42`: `ExtractionOptions.V2Seed` -> `GpuJsonExtractionService` ->
-`VllmClient.VllmCompletionRequest.Seed`, whose XML doc states seed plus temperature 0 makes identical
-prompts emit byte-identical output. The harness has no `--seed` flag and `build_payload` never sets
-the key, so every scorecard records `temperature: 0.0` and NO seed -- implying a determinism the runs
-do not have. Two nearby divergences: `--stop` exists but defaults to none while production always
-sends `ExtractionOptions.StopTokens`; and `--min-p` forwards `min_p` into the vLLM payload though
+### `run_model.py` still diverges from production's sampling on `--stop` and `--min-p` [2026-09-04]
+`--seed` LANDED (measured 2026-09-05: `grep -c seed run_model.py` -> 7, the flag defaults to
+production's 42, `build_payload` sets `"seed": args.seed` and provenance records it). The eight
+scorecards in `LlmBenchmark/eval-substrate/` that PREDATE it still carry no `seed` key and still imply
+a determinism their runs did not have -- read them accordingly; nothing can retro-fit it.
+Two divergences remain: `--stop` exists but defaults to none while production always sends
+`ExtractionOptions.StopTokens`; and `--min-p` forwards `min_p` into the vLLM payload though
 `VllmCompletionRequest` has no such field (`ExtractionOptions.MinP` is documented "llama.cpp min_p"
-and only `LlamaServerClient` sends it).
+and only `LlamaServerClient` sends it) -- so a `--min-p` run records a knob the engine never read.
 Re-check (grep the symbols, never a line number -- this file's citations have rotted before):
 ```
-grep -c seed LlmBenchmark/scripts/run_model.py
-grep -rn V2Seed SentinelCollector/src/Configuration/ExtractionOptions.cs \
-  SentinelCollector/src/Services/GpuJsonExtractionService.cs
 python3 -c "import json;print(sorted(json.load(open('LlmBenchmark/eval-substrate/qwen25-32b-awq-vllm-20260903.scorecard.json'))['adapter_metadata']['sampling']))"
+grep -n 'ap.add_argument("--stop"' -A 3 LlmBenchmark/scripts/run_model.py
+grep -rn -B 7 'public float MinP' SentinelCollector/src/Configuration/ExtractionOptions.cs
 ```
-2026-09-04 -> `0` / `V2Seed { get; set; } = 42` plus `seed: _extractionOptions.V2Seed` /
-`['chat_template_kwargs', 'max_tokens', 'min_p', 'presence_penalty', 'repetition_penalty',
-'structured_output', 'temperature', 'top_k', 'top_p']` -- no `seed` key. A non-zero first line means
-the flag landed.
+2026-09-05 -> the old scorecard's sampling list still has no `seed` key; `--stop` still
+`action="append", default=None`; `MinP` still documented llama.cpp-only. A `--stop` default carrying
+production's tokens, or `min_p` dropped from the vLLM payload, closes the remaining halves.
 
 ### `check_staleness.py` never looks inside a subdirectory, so a nested scorecard is unopened, not stale [2026-09-04]
 The grading half of "a file skipped in silence takes the denominator with it" is closed twice over:
@@ -3498,11 +3476,12 @@ not trust a line number -- this branch has moved them repeatedly.
   be corrected 3x after the largest run: a run that does not record its OBSERVED cost leaves only list-price
   arithmetic behind.
 
-WHAT THIS DOES NOT CLOSE, AND THE DISTINCTION TO PRESERVE. The router is CHAT-only, so this route cannot
-close the MEASUREMENT DEBT entry "`run_model.py --prompt-file` cannot score production's CoD path" -- and
-does not need to. LABELLING (produce gold) and SCORING (grade production's own `/v1/completions` path
-against that gold) are two jobs on two endpoints. A hosted route buys the first; the second still runs
-against vLLM, and CLAUDE.md §MODEL_ACCEPTANCE stays blocked until that entry is closed on its own terms.
+THE DISTINCTION TO PRESERVE. The router is CHAT-only. LABELLING (produce gold) and SCORING (grade
+production's own `/v1/completions` path against that gold) are two jobs on two endpoints: a hosted route
+buys the first, the second runs against a LOCAL engine and always will. `eval_harness._acceptance_evidence`
+stamps `production_prompt_path: false` on anything that is not completions-mode carrying production's
+prompt, its schema and a template that actually WRAPS the prompt -- so a hosted scorecard cannot be
+acceptance evidence however good its numbers look.
 
 WHAT IS NOT MEASURED HERE. Nothing above measures label CORRECTNESS -- only schema enforcement, failure
 mode and cost. A quality comparison between these routes is a separate measurement and is NOT reported in
