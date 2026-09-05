@@ -287,6 +287,10 @@ L13 An instrument that dies silently scores its silence as a PASS.
 L14 A guard that matches TEXT instead of ACTS inherits the whole grammar — and every round attacks the NEWEST
   mechanism, so the oldest defect is never re-attacked.
   OCCURRENCES: `git-push-guard.sh` and `ansible-gate-guard.sh`, thirteen review rounds between them, 2026-08-15/17.
+    RECURRED 4x in one day, 2026-09-05, all the DESCRIPTION half and all outside any guard round -- ordinary work
+    tripping a gate by writing prose about it. No new lesson: the phenomenon is already named below. What was
+    missing was the remedy at the point of the act, so it is now in SKILL.md's commit-discipline stanza rather
+    than here. A worker hitting this needs one line in the template, not a lesson to have read.
   EVIDENCE: every round found the previous round's fix broken by a piece of bash grammar it did not model — span cut
     at metacharacters, then act-bounding, then the nesting-depth counter, then escape handling; each fix correct and
     each creating the next surface. The tell runs BOTH ways: these guards refuse a DESCRIPTION of an act (a filename

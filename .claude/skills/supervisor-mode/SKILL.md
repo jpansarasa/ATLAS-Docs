@@ -262,6 +262,13 @@ PROMPT_SHAPE (<=400w ad-hoc; template-based briefs per CONFIG TEMPLATES SIZE):
   commit discipline: per layer, not end-of-story
   worktree isolation: pass isolation: "worktree" on parent dispatch when concurrent with another code agent
   git add: explicit `git add -- <paths>`, never -A | -u | .
+  commit MESSAGE that quotes a gated path or command -> write it to a file and `git commit -F <file>`
+    # the guards match the command STRING, so a message DESCRIBING an act trips the guard for that act.
+    # Measured 2026-09-05: four occurrences in one day -- a message quoting a squash-merge with a stderr
+    # redirect, a probe naming a gate path, a verdict quoting a marker filename, a doc write naming one.
+    # Each cost one retry and each guard NAMED this remedy in its refusal; encoded here so the retry is
+    # not the way it gets learned. The phenomenon is L14's ("guards refuse a DESCRIPTION of an act"),
+    # already recorded -- this is the habit, not a new lesson.
   budget guard: ~70% burn -> commit + stash + report
   reporting: {commit_hashes, files, test_counts, deviations, blocked}
   hard rules: never push, never PR, never touch(supervisor-owned)
