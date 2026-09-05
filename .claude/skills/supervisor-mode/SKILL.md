@@ -101,8 +101,15 @@ ORACLE_ROUTING [HUGGING FACE INFERENCE, standing route as of 2026-09-05, user-co
     as PRE-FLIGHT before each batch.
   ✗ enforcement is PARTIAL even where real: Anthropic enforced `pattern` and still violated
     `maxLength`, and rejects `maxItems` outright. VALIDATE returned output; never trust "strict".
-  BUDGET [HARD_STOP -- the balance is NOT the backstop]: $19.26 remaining 2026-09-05, and the account
-    AUTO-RECHARGES below $5.00. So running out can never stop a runaway; the cap has to be OURS.
+  BUDGET [HARD_STOP]: $19.26 remaining 2026-09-05; the account AUTO-RECHARGES below $5.00, and the
+    user has set a MONTHLY LIMIT at the platform (2026-09-05: "I set a monthly limit so you can't
+    runaway spend"). That limit is a real ceiling and it bounds the BLAST RADIUS -- an earlier
+    revision of this line said running out could never stop a runaway, which was wrong once the
+    limit existed.
+    WHAT THE LIMIT DOES NOT DO, which is why the rest of this block stands: it bounds the WORST case,
+    not the WASTED case. It cannot tell a productive month from a month burnt on a broken labeller,
+    and it fires AFTER the money is gone -- the corpse-detector shape CLAUDE.md names. Auto-recharge
+    still removes the gradual brake between here and that ceiling. So the per-run cap stays ours.
     Every dispatch that spends: pre-count and PRINT the bill before the first call, hard fail-closed
     cap, prove the labeller on ~2 records before buying volume, record OBSERVED cost per record
     (deepinfra returns `usage.estimated_cost`; grep finds ZERO readers of `usage` in run_model.py or
