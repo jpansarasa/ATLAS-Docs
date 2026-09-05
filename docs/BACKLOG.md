@@ -264,32 +264,27 @@ excludes everything unpublished and everything the resolver failed on outright.
 
 THE MACHINE-CHECKABLE PROXY IS SMALLER AND MEASURES SOMETHING NARROWER, which is why the sample
 is the number to quote. Colliding groups whose members disagree on `subject_entity`:
-**144 of 3,598 (4.00%)**. That catches only the case where the article's own subject STRINGS
-differ; the worked case below has a constant `subject_entity` and is still a mis-resolution, so
-4.00% is a floor of a floor and NOT a refutation of the 19%.
+**148 of 4,110 (3.60%)** re-measured 2026-09-05, against 144 of 3,598 (4.00%) on 2026-08-26. That catches
+only the case where the article's own subject STRINGS differ; the worked case below has a CONSTANT
+`subject_entity` and is still a mis-resolution, so the proxy is a floor of a floor and NOT a refutation
+of the 19%.
 
-THE WORKED CASE, and it names the mechanism. `raw_content_id=153978`, one Mexican market-summary
-article. Instrument `35253636-94b1-4b88-848c-30982e2de7f2` is **`EWW`, the iShares MSCI Mexico ETF**
-— SecMaster `name` is the bare word **"Mexico"**, `asset_class` ETF. `subject_entity` on all four
-rows is "Mexico", `resolution_method` is `hybrid_subject`, and the four values filed under EWW are:
-  S&P/BMV IPC daily return    0.06 PCT
-  number of rising stocks      125 COUNT
-  number of declining stocks   107 COUNT
-  number of unchanged stocks    18 COUNT
-None of those is a measurement of EWW. An index level and an exchange's advance/decline breadth
-were attached to a tradeable ETF because the resolver matched a COUNTRY word to an instrument NAMED
-for the country. The same article resolves its actual equities correctly (KOFUBL.MX, FEMSA, GAP-B),
-so this is not a broken resolver — it is a resolver with no way to say "this subject is a place, not
-a security."
+THE WORKED CASE WAS RE-EXTRACTED OUT OF EXISTENCE; here is a live one, on a different resolver leg.
+`raw_content_id=153978` (the Mexican market summary filed under `EWW`) now carries `instrument_id` and
+`resolution_method` NULL on all four "Mexico" rows — the hazard the re-extraction entry below warns about,
+eating this entry's own exhibit. Re-selected 2026-09-05: `raw_content_id=160553`, 15 published rows,
+`subject_entity` "Germany" on every one, all filed under `8cc911bf-9846-4f31-a3e7-3d4d9b7161f2` = **`DAX`,
+GLOBAL X DAX GERMANY ETF**, via `llm_candidate_exact` — one of them "Brent oil closing price per barrel".
+Two siblings sit one query away: `DEXINUS` (SecMaster `name` literally "India") and `DEXCAUS` ("Canada"),
+both asset_class Currency, absorbing their country's subjects. The resolver still cannot say "this subject
+is a place, not a security", and a country-NAMED instrument is what it reaches for.
 
 THE LEVER IS #988 (resolver retries with the description), NOT R2/S4's key. And note the direction:
 #988 RAISES resolution success, which admits MORE rows into both this defect and the collision one.
 Do not read a rising resolution rate as progress here without splitting these two populations.
 
-A THIRD CONFOUND, small but real: exact-duplicate rows inflate the same groups —
-**63 of 3,598 (1.75%)** colliding groups are pure duplicates (identical description, value and
-unit). `raw_content_id=153978` carries one: instrument `750b06ec` holds each of its three
-observations twice.
+A THIRD CONFOUND, small but real: exact-duplicate rows inflate the same groups — `raw_content_id=153978`
+still shows instrument `750b06ec` holding each of its three observations twice.
 
 Re-check (SELECT-only):
   `SELECT count(*) FILTER (WHERE c>1 AND ds>1) AS multi_subject_groups,
@@ -298,15 +293,17 @@ Re-check (SELECT-only):
            count(DISTINCT coalesce(nullif(btrim(subject_entity),''),'(null)')) ds
          FROM sentinel.extracted_observations
          WHERE published_at IS NOT NULL AND instrument_id IS NOT NULL GROUP BY 1,2) g;`
-  `SELECT instrument_id, subject_entity, resolution_method, value, unit, left(description,50)
-   FROM sentinel.extracted_observations WHERE raw_content_id=153978 AND published_at IS NOT NULL
-   ORDER BY instrument_id, id;`
-  and in `atlas_secmaster`:
-  `SELECT id, symbol, name, asset_class FROM instruments
-   WHERE id='35253636-94b1-4b88-848c-30982e2de7f2';`
+  # 2026-09-05: 148 | 4110
+  and RE-SELECT an exhibit rather than trusting the one above, which can be re-extracted away too:
+  `SELECT raw_content_id, instrument_id, subject_entity, count(*) c, count(DISTINCT unit) u
+   FROM sentinel.extracted_observations
+   WHERE published_at IS NOT NULL AND instrument_id IS NOT NULL
+     AND subject_entity IN ('Mexico','Brazil','Japan','China','India','Germany','France','Canada','Australia')
+   GROUP BY 1,2,3 HAVING count(*)>1 ORDER BY c DESC LIMIT 8;`
+  then in `atlas_secmaster`: `SELECT id, symbol, name, asset_class FROM instruments WHERE id='<uuid>';`
 THE RATIOS ARE THE DURABLE CLAIM, not the absolutes — the pipeline keeps publishing. The ~19%
-sampled share is a FLOOR and the 4.00% proxy is a floor beneath it; neither is an upper bound, and
-nothing here has measured how much of the 74% collision figure is really mis-resolution.
+sampled share is a FLOOR and the 3.60% proxy is a floor beneath it; neither is an upper bound, and
+nothing here has measured how much of the collision figure is really mis-resolution.
 
 **THE MATRIX PROVENANCE CHAIN IS EMPTY: NO `matrix_cells` ROW CAN BE TRACED TO THE OBSERVATIONS
 THAT PRODUCED IT.** The schema carries two columns for exactly this — `contributing_observation_refs`
@@ -829,20 +826,22 @@ hybrid/gemini fall-throughs", which is not true of the leg #969 created (it coal
 confidence) — but a comment is not a guard. The >= 0.8f event-publish predicate reads this field, so "instrument is
 null, therefore confidence is null" is exactly the inference a consumer would make and exactly the one that is wrong.
 
-**Two unit tests fail nondeterministically on static-meter pollution, and the suite reads GREEN on a re-run.**
-Measured 2026-08-15 on `fix/rule1-resolve-on-candidate-name`, two consecutive full runs of
-`SentinelCollector/.devcontainer/compile.sh` on an identical tree: run 1 `Failed: 2, Passed: 2222`, run 2
-`Failed: 0, Passed: 2224`. The two were `ExtractionProcessorArticleEmbeddingTests.should_tag_failed_when_store_throws`
-("Expected capture.Results to contain a single item, but found {"failed", "failed"}") and
-`ExtractionProcessorStreamingTests.should_degrade_to_retry_not_host_die_when_producer_warmup_throws`. Both classes
-pass 155/155 when run alone. Mechanism: `ExtractionProcessorArticleEmbeddingTests` is in
-`[Collection("SentinelMeterStatic")]` (line 21) and `ExtractionProcessorStreamingTests` is in NO collection, so it
-runs in PARALLEL with the meter-bound classes and its measurements land in their open `MeterListener`s — the exact
-cross-pollution that collection exists to prevent. Pre-existing, NOT introduced by #969, and the dangerous half is
-the direction of the failure: a re-run turns it green, so the standing incentive is to re-run rather than to fix,
-and a REAL regression in any meter-asserting test would be indistinguishable from this. Fix is one attribute on
-`ExtractionProcessorStreamingTests`; the audit worth doing with it is which other classes emit SentinelMeter
-instruments without joining the collection.
+**THE STATIC-METER FLAKE'S ROOT CAUSE IS FIXED; what is left is two classes that never joined the collection.**
+Measured 2026-08-15: two consecutive full runs of an identical tree gave `Failed: 2, Passed: 2222` then
+`Failed: 0, Passed: 2224`. Mechanism: a global `MeterListener` filtered by meter+instrument but NOT by test,
+plus a class outside `[Collection("SentinelMeterStatic")]` running in parallel with the listening ones.
+CLOSED for every class this entry named — #947 `67396749` (2026-08-15 18:04) added the attribute to
+`ExtractionProcessorStreamingTests.cs:29` and `ExtractionProcessorTests.cs:18`, hours after the measurement.
+This entry and two duplicates deleted with it then spent three weeks saying "a re-run turns it green, so the
+standing incentive is to re-run rather than to fix" — which now sends someone holding a REAL meter regression
+to press re-run. STILL OPEN: `ExtractionProcessorV1SkipOutcomeTests` and
+`ExtractionProcessorThinContentOutcomeTests` carry no attribute, so the mechanism is intact for whatever they
+emit. Never a retry; the fix is the attribute, or a capture scoped per test.
+Re-check, run 2026-09-05 from `SentinelCollector/tests/SentinelCollector.UnitTests/Workers`:
+  `grep -L 'Collection("SentinelMeterStatic")' ExtractionProcessor*Tests.cs`
+  # prints exactly ExtractionProcessorV1SkipOutcomeTests.cs and ExtractionProcessorThinContentOutcomeTests.cs.
+  # A THIRD name appearing is a new class that skipped the collection — that is the regression to catch,
+  # and it is invisible to a suite run, which goes green ~half the time either way.
 
 **`ReExtractBackgroundService`'s overwrite is still destructive — the age floor bounds WHO it reaches, not WHAT it
 does.** The live-traffic half is CLOSED (D-21: `MinRowAgeDays` default 7 on the cohort predicate, plus the
@@ -942,43 +941,41 @@ cannot reject a well-formed noun phrase that is not a tradeable issuer, which is
 ("Birmingham Legion", "Hellenic Shipping News World", "Focus On Inflation"). Not a matrix-corruption event as of
 this measurement: recent Gemini self-seeds are legitimate issuers. Re-check with `curl :9300/health`.
 
-**The gemini-resolver daily-cap refusal is a fourth outcome that increments nothing, so refused demand has no
-metric at all.** `try_reserve_live` (`gemini-resolver-mcp/gemini_resolver/server.py:732-747`) gates dispatch on
-`if live >= daily_cap: return False` (`:744-745`). The refusal branch (`:1040-1054`) logs a WARNING (`:1050-1053`)
-and raises `HTTPException` 429 (`:1054`) — and increments nothing. `server.py` defines exactly three
-`prometheus_client` Counters: `c_ledger_live` (`:883`), `c_dispatch_rejected` (`:900`, incremented only at `:1091`
-for Google-side 401/403/429) and `c_breaker_refused` (`:905`, incremented only at `:1024` for an open breaker). A
-cap refusal increments none of them, and does not call `record_gated()` (`:952`) — that is reserved for the
-company-name gate, a different rejection class.
-MEASURED 2026-08-20: **35** cap refusals in 30 minutes (**754** in 24h), in bursts of up to **14** within a single
-second (24h to 2026-08-20T18:05Z; top per-second counts 14, 14, 12, 10, 10, and a third second also hit 10), while
-`gemini_resolver_gated_24h`, `gemini_resolver_dispatch_rejected_total` and
-`gemini_resolver_breaker_refused_total` **all read 0**. The quantity that says how much real resolution work is
-being dropped exists only as a log line.
-THE PROCESS IS BURSTY — A RE-CHECK WILL NOT LAND NEAR THESE NUMBERS. Three measurements across ~an hour gave
-**35 / 67 / 69** for the 30-minute count and **754 / 792 / 818** for the 24h count: the short window swings ~2x,
-the 24h window drifts under 10%, so compare against the 24h figure and treat the 30-minute one as an order of
-magnitude only. Re-check:
-`sudo journalctl -u gemini-resolver-mcp --since "30 min ago" | grep -c "daily call cap"` against
-`curl -s http://localhost:9300/metrics | grep -E "gated_24h|dispatch_rejected_total|breaker_refused_total"`.
-RUN BOTH HALVES. `grep -c` prints `0` and exits 1 if the log wording ever drifts, which is indistinguishable from
-"no refusals" — the `/metrics` half is what separates the two, because a real fix moves one of those counters OFF
-zero while a wording drift leaves all three at zero. The grep alone can read "fixed" when it merely stopped
-matching. (EVERY LINE CARRIES TWO TIMESTAMPS FOUR HOURS APART, AND `--utc` FIXES ONLY ONE OF THEM. `journalctl`
-prints LOCAL time here — mercury is `America/New_York` — so pass `--utc`; but the Python logger writes its own
-NAIVE LOCAL timestamp into the message body, which `--utc` does not touch. Measured 2026-08-20 with `--utc` in
-force: `Aug 20 18:05:28 mercury python[284493]: 2026-08-20 14:05:28,178 WARNING ... daily call cap 1500 reached`.
-The journal stamp on the LEFT is the UTC one; the in-message stamp on the right is still local. Quote the left.)
+**The gemini-resolver daily-cap refusal HAS a counter now, and this entry's own re-check went blind for three
+weeks without anyone noticing.** It used to read "a fourth outcome that increments nothing, so refused demand
+has no metric at all". `gemini-resolver-mcp/gemini_resolver/server.py:932-938` defines
+`c_cap_refused = Counter("gemini_resolver_cap_refused", ..., ["reason"])`, both reasons pre-created at
+`:942-943` and incremented at `:1085`. Live 2026-09-05: `gemini_resolver_cap_refused_total{reason="at_cap"}`
+**1852**, `{reason="ledger_unavailable"}` 0, the counter born 2026-09-01T10:10:32Z at the last restart. Every
+line the entry cited moved too: `try_reserve_live` is `:737-760` and returns a REASON STRING rather than
+`False`, and `record_gated` is `:725`.
+AND THE LOG WORDING CHANGED, so the re-check printed here returned 0 while 1,852 refusals were being counted —
+the exact false negative this entry warned about, arriving as a clean pass. Measured 2026-09-05:
+`journalctl -u gemini-resolver-mcp --since "24 hours ago" --utc | grep -c "daily call cap"` -> **0** (rc 1);
+the same window against the current wording, `grep -c "live reservation refused"` -> **96**. A sample line:
+`Sep 05 06:23:52 mercury python[1096089]: ... WARNING gemini_resolver.server: live reservation refused
+(at_cap), cap 1500 (= free-grounding boundary); refusing without calling Gemini`.
+RE-CHECK — run the METRIC half FIRST now that it exists, and treat the log half as the cross-check:
+  `curl -s http://localhost:9300/metrics | grep -E 'cap_refused|gated_24h|dispatch_rejected_total|breaker_refused_total'`
+  # 2026-09-05: cap_refused{at_cap} 1852.0, cap_refused{ledger_unavailable} 0.0, the other three 0.0
+  `sudo journalctl -u gemini-resolver-mcp --since "24 hours ago" --utc | grep -c "live reservation refused"`
+  # 2026-09-05: 96. If this disagrees with `increase(gemini_resolver_cap_refused_total[24h])`, the WORDING
+  #   drifted again, not the refusals — that is the only thing the log half can still tell you.
+  (EVERY LINE CARRIES TWO TIMESTAMPS FOUR HOURS APART AND `--utc` FIXES ONLY ONE. `journalctl` prints LOCAL
+  time here — mercury is `America/New_York` — so pass `--utc`; the Python logger writes its own NAIVE LOCAL
+  timestamp into the message body, which `--utc` does not touch. The journal stamp on the LEFT is the UTC one.)
 
 THE CAP ITSELF IS HOLDING — record this so nobody re-raises it. Ledger file birth **2026-08-06T16:20:51Z**
 (`/opt/ai-inference/gemini-resolver-ledger.db`; `stat` reports it as `2026-08-06 12:20:51 -0400`, and mercury is
-`America/New_York`, so read that field as local and convert). `ledger_meta.lifetime_live_calls` = **18,586** over
-**14.04 days** = **1,324/day**; every measured restart-to-restart interval is at or below 1500/day; the full UTC day
+`America/New_York`, so read that field as local and convert). `ledger_meta.lifetime_live_calls` = **38,476** over
+**29.8 days** = **~1,292/day** (re-measured 2026-09-05; it read 18,586 over 14.04 days = 1,324/day on
+2026-08-20, so the RATE is flat and the total is just the counter running). Every measured restart-to-restart
+interval is at or below 1500/day; the full UTC day
 2026-08-19 is **exactly 1500** live, against `gemini_resolver_daily_cap` 1500. The gauge is bounded by real
 enforcement, not by a display clamp.
 INTENT VIOLATION. The alert's own annotation
 (`deployment/artifacts/monitoring/alerts/gemini-resolver.yml:320`) states "A true last resort is dozens/day".
-Measured sustained volume is ~1,324/day — **15-100x the documented design intent**. This is the CLAUDE.md
+Measured sustained volume is ~1,292/day — **15-100x the documented design intent**. This is the CLAUDE.md
 INTENT_FIDELITY worked example recurring in the service it was written about: the frontier last-resort operating as
 a primary path.
 WHAT IS BEING SENT — **a FAILURE-BIASED SAMPLE**, because only failed or truncated calls log their subject at
@@ -1008,10 +1005,6 @@ error is stable, not a one-off arithmetic slip: re-running it the same way at 17
 process age = 2,799/day, while the ledger's true 14.04-day age gives 1,324/day and the cap holds. Use the data
 store's own age, never a Counter's `_created`, and cross-check against a second source.
 
-**The merge gate reads a shell redirect as a PR number.** `gh pr merge <N> --squash 2>&1` denies with "names more
-than one PR number: 2 <N>". Same redirect-parsing class the push guard already fixed; a third guard still carries it.
-Workaround until fixed: drop the redirect.
-
 **`whole_act_git` still picks its subcommand the naive way, so a git global option hides the two acts that name no
 path.** `ansible-gate-guard.sh`'s operand dispatch now finds the subcommand by SHAPE, which is what opened `git -C
 <dir> show <rev>:<gate>` and closed `git -C /opt/ai-inference checkout -- compose.yaml`. `whole_act_git` was not
@@ -1026,35 +1019,25 @@ selecting `sub`). Re-check: `git -C /tmp/r clean -fdx` must deny.
 **`SentinelExtractionDead` inhibits every sentinel warning if it fires** (`equal: ['service']`), including the
 collapse alert. 0 inhibited to date, but the coupling is undocumented anywhere else.
 
-**SentinelCollector.UnitTests parallel-isolation flake, ~50% on full runs.** Two tests fail only under xUnit
-parallelism, because a process-global `ActivityListener` catches a concurrent test's state:
-`MacroObservationRouterTests.should_count_log_and_tag_error_status_when_qualitative_substrate_write_throws` and
-`ExtractionProcessorArticleEmbeddingTests.should_tag_failed_when_store_throws`. Both PASS in isolation.
-Fix: serial `[Collection]` or a per-test-tag listener filter.
-
-**`templates/implementation-fix.md` "WHERE TO WORK" is stale, and it costs parallelism.** It still says every
-`.devcontainer` project resolves to `devcontainer` and that "no lock exists today" — both false since per-worktree
-ownership landed (`scripts/devcontainer-owner.sh` exists; 12 of 13 `compile.sh` carry `devcontainer_own`, the 13th
-being a Python syntax check with no compose). It tells dispatched agents to take NO worktree and to SEQUENCE behind
-other compiles, which also pushes concurrent agents into the shared checkout — the "different branches without
-worktrees -> COLLIDE" case. One-paragraph fix.
-
 **request-log regression-guard gap (#886).** The DiagnosticContext re-registration in AlertService, SecMaster and
 CalendarService — which preserves `UseSerilogRequestLogging` after `Host.UseSerilog` was dropped — has no
 `// INTENT` tag and no test, so a future edit deleting it silently breaks request logging at request time.
 
-**`verify-citations.py` still splits verdicts outside the card corpus.** `deployment/tests/alerts/.mutation-scratch/`
-(left behind by the repo's own documented `matrix.sh` workflow) and `.venv-bench/` each produce false UNRESOLVED.
-All three offenders — sibling worktrees, `.venv-bench`, `.mutation-scratch` — are GITIGNORED, and the documented
-reason for rejecting `git ls-files` (the tests build throwaway trees with no git repo) does not rule out READING
-`.gitignore`, which stays hermetic. Also: a missing input file crashes with a traceback and exits **1**, the tool's
-own FINDING code — the same 1-vs-2 conflation fixed in four sibling scripts, each of which got a selftest case.
-
 **Metric prefix inconsistency from a single service:** `sentinel_candidate_surface_*` vs
 `sentinelcollector_semantic_signal_*`.
 
-**Four uncorrected copies of the Finnhub transient-only claim.** `IdentifierConfirmationService.cs:361-362` is the
-highest value because it states the dead-code conclusion outright (403s reaching a catch they cannot reach).
+**TWO uncorrected copies of the Finnhub transient-only claim, not four, and neither is where this entry
+pointed.** `SecMaster/src/Configuration/EnrichmentOptions.cs:14` and
+`SecMaster/src/Services/CatalogEnrichmentBackgroundService.cs:187` both call "Finnhub 403 for foreign tickers"
+a TRANSIENT enrichment failure. A 403 is plan-uncovered and permanent, and it arrives as a NULL profile rather
+than an exception — which `SecMasterMeter.cs:243` and `SecMaster/src/Services/IFinnhubCollectorClient.cs:33`
+now both say correctly,
+so this is a finished conversion with two files left. The pointer this entry used to carry,
+`IdentifierConfirmationService.cs:361-362`, is an XML doc about cancellation and `grep -n 403` on that file
+returns ZERO: "four" was never reproducible from anything written down.
+Re-check (run 2026-09-05): `grep -rn '403' --include=*.cs SecMaster/src FinnhubCollector/src | grep -i transient`
+  -> four hits, the two SecMaster ones above plus `FinnhubApiClient.cs:29` and `:406`, which state the
+  permanent/transient split CORRECTLY and are the controls, not the debt.
 
 **#960's docs state `sum() - budget_exhausted` as "rows scored".** The true figure is
 `accepted + rejected + below_floor`. One-line fix, and it must land before anyone builds that Grafana panel.
@@ -1070,204 +1053,57 @@ emitting. The entry exists so that the first time it does, the collapse is alrea
 Fix: add the name to the same `AddView` list in `SentinelCollector/src/Program.cs` that already applies
 `confidenceBuckets` — the [0,1] boundaries suit a ratio unchanged.
 
-**A quarantined row no longer retires its SYMBOL — the index is partial (CLOSED 2026-08-15).**
-`idx_instruments_symbol` was a FULL (non-partial) unique index, so a soft-deleted row owned its symbol exactly as
-hard as an active one and no row could ever take that symbol again. Migrations `QuarantineGeminiJunkInstruments`
-and `QuarantineGeminiEquityEtfJunk` (2026-07-18) soft-deleted 91 rows to retire a junk NER-surface NAME —
-`HON`="TD Cowen", `MELI`="Amy Legate-Wolfe", `AEM`="Toronto Stock Exchange", `ANGX`="Minions & Monsters" — and
-the second migration's own header says every one of its 82 symbols "is a real, tradeable ticker", so the catalog
-became permanently unable to hold Honeywell, MercadoLibre, Agnico Eagle, Diageo, AB InBev or Mesoblast.
-FIXED by migration `ScopeSymbolUniquenessToActiveRows`: uniqueness is now scoped to `is_active = true`, so at most
-one ACTIVE row holds a symbol while any number of quarantined rows may share it. Pre-flight on prod 2026-08-15,
-both pure SELECTs: ZERO symbols have two or more active rows (so the partial index is satisfiable without moving a
-row), and ZERO of the 91 quarantined symbols is also held by an active row (so all 82 tickers are genuinely free
-rather than merely unblocked at the index). No row was repaired — this frees the SYMBOL only.
-91 IS THE QUARANTINE COUNT, NOT THE TICKER COUNT, and this entry once headlined 91 while its own body cited the
-migration's 82. Re-measured 2026-08-15, `SELECT asset_class, count(*) FROM instruments WHERE is_active=false
-GROUP BY asset_class` = Equity 74 / ETF 8 / fred_series 8 / Economic Indicator 1. So 9 of the 91 are not
-tickers at all: 8 `asset_class='fred_series'` (`NAPMII`="Asian share markets", `CONCCONF`="US",
-`WCSPOIL`="U.S. Strategic Petroleum Reserve", `MCRFPC1`="Justin Trudeau", …) plus 1 `'Economic Indicator'`
-(`GSV.NE`="2025 full year GSV"). Those 9 are the D-4 macro-junk class — a hallucinated macro label, which is a
-different defect from a retired equity ticker and wants a different disposition. Every count below is therefore
-stated over the population it actually applies to, 82 or 91, never both at once.
+**The quarantine refusals are a POLICY nobody has decided, not a constraint.** The partial index turned the
+refusal from impossible into optional: `CatalogService` and `EntityResolutionService`'s self-seed now REFUSE
+deliberately, because re-acquiring a retired ticker is a catalog-repair decision and resolution time, per
+candidate, silently, is the worst place to take it. CONSEQUENCE while it stands: `CatalogService.cs:206` drops a
+quarantined discovery item with a bare `continue`, so a CompanyName candidate loses its ticker PROPOSAL and every
+news mention of one of the 82 real tickers pays the full confirm cascade, up to the paid Gemini leg (D-1)
+(`CatalogService.cs:206-210` — the LogWarning and the `continue` it precedes). It is
+also reachable from the `search_catalog` MCP tool, outside resolution entirely. Decide per PATH, not globally: an
+operator-curated config and a collector registration are authoritative in a way a news-surface self-seed is not.
+POPULATION, because this entry once welded two numbers into one: of the 91 quarantined rows, 82 are real
+tickers and 9 are not tickers at all (the D-4 macro-junk class). Both enrichment candidate queries require an
+equity-shaped class, so those 9 sit in NEITHER pool and need their own disposition; the split is in the
+`asset_class` query below.
+`quarantined_skip` IS A FLOOR ON THE WALL-HITS, NOT A RATE: it is emitted at ONE of four self-seed skip paths
+(`EntityResolutionService.cs:1038`); silent are `:877` unconfirmed, `:901` contextFactor<=0, `:1002`
+EnableSelfSeed=false, and the `CatalogService.cs:206` drop, which carries a LogWarning and no metric at all.
+Re-check, all run 2026-09-05:
+  `sum by (result)(secmaster_entity_resolution_self_seed_total)` -> `idempotent_skip` 4625, `inserted` 126,
+    `quarantined_skip` **32**. This entry used to say that series did not exist "because the emitting code is
+    unmerged". It exists, and the `error` series (the 23505s, 22 at the time) is GONE — the index working.
+  `SELECT asset_class, count(*) FROM instruments WHERE is_active=false GROUP BY 1;` in `atlas_secmaster` ->
+    Equity 74 / ETF 8 / fred_series 8 / Economic Indicator 1, unchanged.
+  `SELECT indexname, indexdef FROM pg_indexes WHERE indexname LIKE 'idx_instruments_symbol%'
+     OR indexname LIKE 'idx_source_mappings_collector_source%';` -> `idx_instruments_symbol` is
+    `UNIQUE ... WHERE (is_active = true)`, but `idx_source_mappings_collector_source` is STILL UNIQUE on
+    `(collector, source_id)` GLOBALLY with no `is_active` predicate. A quarantined row's mapping pair is still
+    reserved and `RegistrationService.cs:391` would raise a 23505 the index change does not touch. That is
+    harmless only while quarantined rows carry no mapping (1 of 91 does, `GSV.NE`) and nothing alerts when it
+    stops being true.
 
-**The quarantine refusals are now a POLICY nobody has decided, not a constraint.** This is what the partial index
-turned from impossible into optional, and it is the live question. While the index was FULL, `CatalogService.cs`
-and `EntityResolutionService`'s self-seed had no choice: the INSERT behind a quarantined row was a guaranteed
-23505, so dropping the item / skipping the seed was the only reachable outcome. Both now REFUSE deliberately —
-the insert would succeed — because re-acquiring a retired ticker is a catalog-repair decision, and resolution
-time, per candidate, silently, is the worst place to take it. The code and its tests say so at both sites
-(`quarantined_skip`, and the discovery-cache `continue`). CONSEQUENCE while it stands: `CatalogService.cs` drops a
-quarantined discovery item with a bare `continue` and no `results.Add`, so `EntityResolutionService.cs:850`
-`result.Results.FirstOrDefault()` is null and a CompanyName candidate loses its ticker PROPOSAL — the surface
-enters the confirm cascade with nothing proposed, and every news mention of one of the 82 pays the full cascade
-(per D-1, up to the paid Gemini leg). It is also reachable from the `search_catalog` MCP tool, i.e. outside entity
-resolution entirely, where the item simply vanishes from an operator's catalog search. Deciding this means
-choosing per path, not globally: an operator-curated config (`InstrumentConfigurationWatcher`, which reactivates
-by design) and a collector registration are authoritative in a way a news-surface self-seed is not.
-Re-check: the `is_active=false` count above, plus
-`sum(secmaster_entity_resolution_self_seed_total{result="quarantined_skip"})` — which
-is a FLOOR on the wall-hits, NOT "the live rate" this entry first called it. That tag is emitted at ONE of four
-self-seed skip paths (`EntityResolutionService.cs:1038`); silent are `:877` (unconfirmed), `:901`
-(contextFactor<=0), `:1002` (EnableSelfSeed=false), and the `CatalogService.cs:206` drop above, which carries a
-LogWarning but no metric at all. Left as a floor rather than closed by emitting at `CatalogService.cs:206`,
-deliberately: that would still leave three silent paths, so the qualification is needed either way, whereas the
-emission is a new untested signal in a PR whose thesis is the pre-insert read. Measured 2026-08-15, prod carries
-three series — `idempotent_skip`=1492, `inserted`=67, `error`=22 (the 23505s this PR stops) — and NO
-`quarantined_skip`, because the emitting code is unmerged. `EntityResolutionSelfSeed` is also absent from
-`MetricWarmupHostedService`, so even after deploy an absent series cannot be read as zero. The tag VALUE is
-pinned by `EntityResolutionServiceTests.should_record_the_quarantined_skip_result_tag_when_the_symbol_is_held_by_a_quarantined_row`;
-without it this PromQL could be renamed or typo'd and ship green (the pre-fix proxy,
-`{service_name="SecMaster"} |= "Self-seed persistence failed"`, is VARIABLE, not a fixed rate: 30 lines/24h with
-ANGX 21 of them in the window ending 2026-08-14T12:00Z, 7 with ANGX 6 ending 2026-08-15T13:00Z, so a low
-post-deploy reading is that variance and not a regression). The two candidate repairs this entry once posed have
-been RESOLVED IN FAVOUR OF THE SECOND: not "reactivate with `name = symbol` and let the D-2 enrichment fill-gaps
-re-name them", but "make the unique index partial on `is_active` and let a fresh row take the symbol". The
-reactivate option was rejected on this entry's own evidence — it strands the 9 non-equity rows permanently at
-Name=Symbol (see the pool-membership split below) and reinstates the junk names the quarantine existed to remove.
-The partial index touches no row, so it carries neither hazard.
-TWO NUMBERS, NOT ONE — this entry previously welded them into a single conjunct ("all 91 satisfy Figi=null AND
-Country=null … so all 91 are in BOTH enrichment pools"), and only the first half was true. Figi=null AND
-Country=null does hold for 91 of 91 (measured 2026-08-15). Pool MEMBERSHIP is 82 of 91, because both candidate
-queries also require an equity-shaped class, `EquityAssetClasses {Equity,ETF,Stock}` —
-`OpenFigiEnrichmentBackgroundService.cs:112` (IsActive AND class AND Figi==null) and
-`CatalogEnrichmentBackgroundService.cs:96` (IsActive AND class AND (AtlasSectorCode==null OR Exchange==null OR
-Country==null)); same SELECT plus `asset_class IN ('Equity','ETF','Stock')` = 82. CONSEQUENCE, and it is the
-reason the conflation mattered: the reactivate-with-`name = symbol` repair would strand those 9 PERMANENTLY at
-Name=Symbol. The class filter keeps them out of BOTH candidate queries, so no timer ever selects them and the
-fill-gap that was supposed to re-name them never runs — the row goes active, un-named, and stays that way. The 9
-need their own disposition decided BEFORE that migration runs, not discovered after it.
-A THIRD SITE shared the same predicate mismatch and is fixed BY THE INDEX rather than at the call site.
-`RegistrationService.cs:309` is another active-only pre-insert read — `GetBySymbolAsync`, whose `IsActive` filter
-is itself load-bearing for the FRED-pollution recovery path, so it could never simply be swapped — feeding
-`AddAsync` at `:391`. A collector registering any of the 82 real tickers used to hit a guaranteed 23505 there;
-under the partial index a quarantined row cannot raise one at all, so that path now INSERTS, which is the desired
-outcome for a collector (an authoritative source, unlike a news surface). This is the payoff of fixing the
-constraint at the SOURCE rather than gating each caller: the site needed no patch.
-THAT HOLDS BY POPULATION, NOT BY CONSTRUCTION, and the distinction is what makes it re-checkable. Only
-`idx_instruments_symbol` was scoped to `is_active`; `idx_source_mappings_collector_source` is still UNIQUE on
-`(collector, source_id)` GLOBALLY, with no `is_active` predicate, so a quarantined row's source mapping still
-reserves its `(collector, source_id)` pair exactly as hard as a live one. Register the same pair again and the
-insert at `RegistrationService.cs:391` raises a 23505 the index change does not touch. It does not fire today
-because the quarantined rows almost never carry a mapping — measured 2026-08-15, `SELECT asset_class, count(*),
-count(*) FILTER (WHERE EXISTS (SELECT 1 FROM source_mappings m WHERE m.instrument_id = i.id)) FROM instruments i
-WHERE NOT i.is_active GROUP BY 1`: 1 of the 91 quarantined rows carries one (`GSV.NE`, SentinelCollector, the
-`Economic Indicator` singleton), and 0 of the 82 real tickers (Equity 74 / ETF 8) do. Re-run that query before
-relying on the claim: it turns false the moment a quarantined row acquires a mapping, and nothing alerts on it.
-Its
-`DuplicateInstrumentException` (`: Exception`, so it passes `RegisterWithRetryAsync`'s `DbUpdateException`-only
-catch at `:216`) was caught by `catch (Exception ex)` at `RegistrationService.cs:135` and surfaced as
-`Success=false`, never escaping. Re-check that it stays quiet: `{service_name="SecMaster"} |= "Failed to register"`
-read 0 over 7d before the change (measured 2026-08-15T13:00Z; the same selector unfiltered carries 12,444 lines in
-that window, so the zero is a real zero and not a dead query) — it was not firing then either, so a post-deploy
-zero confirms nothing on its own.
-Dead code at the same site, worth deleting
-whenever that policy lands: `RegistrationService.cs:313` `if (!instrument.IsActive)` sits AFTER the
-`IsActive`-filtered read, so its operator-facing "registering against INACTIVE instrument" warning is
-UNREACHABLE. Its sibling at `:258` IS live and must not be removed with it — that one reaches the instrument
-through `existingMapping.Instrument`, a different lookup with no active-only filter.
+**A pattern author's `publicationFrequencyDays` is DEAD CONFIG, discarded without a word.**
+`ThresholdEngine/src/Configuration/PatternConfigurationLoader.cs:320-322` overwrites the authored value
+unconditionally with `PublicationFrequencyDaysOverride ?? RequiredSeries.Max(frequencies)`, so only the OVERRIDE is
+honoured. Same class as WM2NS (#898/#899): publication cadence != data frequency. The ALERT consequence is gone —
+`thresholdengine.yml` now joins `thresholdengine_pattern_data_overdue_days` against
+`thresholdengine_pattern_severe_overdue_threshold_days` on `pattern_id` (landed 2026-08-17), so
+`buffett-indicator`'s healthy 162-199 peak sits under its derived 270 and pages nobody. What is left is the silent
+discard, and a SECOND consequence of the same `Max`: on a MIXED-cadence pattern a stalled MONTHLY input masks a dead
+DAILY one (`truflation-vs-cpi` judged at 90 days where its Daily series implies 14). One line, two defects — read
+both before closing either.
+Re-check: author any `publicationFrequencyDays` in a pattern JSON carrying no `PublicationFrequencyDaysOverride`,
+reload, and confirm `thresholdengine_pattern_severe_overdue_threshold_days` for it still reads
+`max(3 * SecMaster-derived freq, 14)` — the authored number must not appear anywhere.
 
-**`PatternDataSeverelyOverdue{pattern_id="buffett-indicator"}` has fired unbroken for 14 days and the feed is
-healthy — the threshold is wrong for this series' release cadence.** PENDING since **2026-07-31T18:48:11Z**
-(`ALERTS_FOR_STATE` = 1785523691 — that gauge is the PENDING start, not the firing start), and the rule carries
-`for: 24h`, so FIRING since **2026-08-01T18:48:11Z**: **14.04 days** to the 2026-08-15T19:52Z anchor.
-Prometheus scrapes every **15s** (`count_over_time(up{job="otel-collector"}[1h])` = 240, measured 2026-08-15T21:05Z),
-so `count_over_time(ALERTS{...,alertstate="firing"}[15d])` = 80,895 samples IS those 14.04 days
-(80,895 x 15s = 1,213,425 s) — sample count and timestamp arithmetic agree independently, which is what says
-continuous rather than flapping. Both figures are needed to re-check this and neither is derivable from the other
-without the 15s interval and the 24h `for` offset, so both are recorded here.
-Rule: `deployment/artifacts/monitoring/alerts/thresholdengine.yml:100-108`, `overdue_days > 120 for 24h` — a
-HARDCODED 120. Live gauges: `age_days` 226, `overdue_days` 136, `severe_overdue_threshold_days` **270**.
-**Collection is NOT broken.** `buffett-indicator` requires `NCBEILQ027S` + `GDP`; both were collected
-2026-08-15T18:00Z. The metric tracks NCBEILQ027S, whose newest observation is 2026-01-01 — exactly 226 days old —
-because FRED Z.1 simply has no newer point. Our own vintages give the real release lag: 2026-01-01 first seen
-2026-06-12 (162d), 2025-10-01 -> 2026-03-22 (172d), 2025-07-01 -> 2026-01-16 (199d). A quarterly point stays newest
-until its successor is RELEASED, i.e. until `date + 90 + lag`, so age peaks at **252-289 days** and — since
-`overdue_days = age_days - publicationFrequencyDays` and the effective frequency is the SecMaster-derived 90 —
-**peak `overdue_days` EQUALS the release lag: 162-199 every quarter in perfect health.** Even the SMALLEST observed
-lag exceeds the rule's `> 120` by 42 days, so this alert is guaranteed to fire every quarter on a healthy feed.
-136 is INSIDE the normal wait; Q1-2026 Z.1 is due ~2026-09.
-**Decision: re-threshold, do not retire and do not touch the feed.** Two independent defects, and the alert rule was
-deliberately NOT changed in the PR that recorded this. **(2) is now CLOSED and (1) is OPEN but no longer
-alert-affecting** — see the two notes appended below.
-(1) The pattern's authored `"publicationFrequencyDays": 120` is DEAD CONFIG —
-`ThresholdEngine/src/Configuration/PatternConfigurationLoader.cs:320-322` overwrites it unconditionally with
-`PublicationFrequencyDaysOverride ?? RequiredSeries.Max(frequencies)`, so only the OVERRIDE is honoured and the
-authored 120 is discarded in favour of the SecMaster-derived 90. Same class as WM2NS/#898-#899: publication cadence
-!= data frequency. buffett-indicator has NO override. Since peak `overdue = 90 + lag - override`, holding `overdue <= 120` needs
-`override >= lag - 30`, so the WORST observed lag (199d) puts the floor at **>= 169**. An earlier revision of this
-entry recommended **>= 142**, which is `lag - 30` for the 172d lag and fails against the 199d lag printed three
-lines above it — corrected 2026-08-15. **180** clears the floor with headroom and also moves
-`severe_overdue_threshold_days` to `max(3*override, 14)`. Re-derive the floor if a longer lag is ever observed.
-(2) The rule ignores the per-pattern gauge that exists FOR it. `PatternEvaluationService.cs:74-79` says
-`thresholdengine_pattern_severe_overdue_threshold_days` was emitted "so an alert can fire per-pattern ... without
-duplicating the threshold formula in PromQL (single source: PatternDataHealthEvaluator)". The rule hardcodes 120
-anyway, so for 14 days the alert has said SEVERELY OVERDUE while the service's own health evaluator does not
-(136 < 270). Fixing only (1) leaves the two surfaces free to disagree again.
-
-**(2) CLOSED 2026-08-17.** The rule now joins `thresholdengine_pattern_data_overdue_days` against
-`thresholdengine_pattern_severe_overdue_threshold_days` on `pattern_id`, so the two surfaces read one number.
-Measured over all **71** patterns publishing both gauges at 2026-08-17T11:17:04Z: `buffett-indicator` 138 vs 270
-stops firing, and **zero** patterns lose coverage (`count(overdue unless on(pattern_id) threshold)` = 0). A pattern
-whose threshold is NOT published falls back to the old literal 120 rather than dropping out of the join — the
-alternative silently un-covers it — and carries `threshold_source="fallback_literal_120"` so the degraded mode is
-visible. Guards: `deployment/tests/alerts/thresholdengine_test.yml`, 14 assertions; reverting the rule to `> 120`
-turns 5 of them RED, the buffett negative among them. Re-check: `promtool test rules ./thresholdengine_test.yml`
-after restoring the literal must FAIL.
-**(1) stays OPEN, but its alert consequence is gone.** With the join in place, the peak `overdue` of 162-199 sits
-under the derived threshold of 270, so the authored-vs-derived frequency mismatch no longer produces a false page and
-the `>= 169` override floor above is no longer needed to stop one. What remains is the trap itself: a pattern author
-writes `publicationFrequencyDays` and `PatternConfigurationLoader.cs:320-322` discards it without a word. Re-check:
-author any value in a pattern JSON with no `PublicationFrequencyDaysOverride` and confirm
-`thresholdengine_pattern_severe_overdue_threshold_days` for it still reads `max(3 * SecMaster-derived freq, 14)`.
-The SAME `Max`-over-inputs rule has a second, distinct consequence recorded in the dead-feed entry below: on a
-MIXED-cadence pattern it lets a stalled MONTHLY input mask a dead DAILY one (`truflation-vs-cpi` judged at 90 days
-where its Daily series implies 14). Same line, two defects — fix one and re-read the other before closing either.
-
-**Four more patterns are within 4 days of the same crossing**, all climbing +1/day: `challenger-layoff-surge`,
-`challenger-vs-payroll`, `sentinel-challenger-divergence` and `truflation-vs-cpi` all read **86 against a threshold
-of 90** at 2026-08-17T11:17:04Z, so they cross ~2026-08-21 unless their sources publish — but the ALERT fires
-~2026-08-23, not 08-21: the strict `>` plus `for: 24h` add two days, derived in the dead-feed entry below, so seeing
-nothing on 08-21 is the rule working, not a broken join. Recorded so that a burst of
-new alerts a few days after this deploy is recognised as the pre-existing feed lag it is, and not read as the join
-misfiring. Re-check: the same gauge for those four `pattern_id`s.
-
-**The `BrokenCircuitException` classification gap is CLOSED (PR "fix: a circuit-open failure does not orphan an
-article", SentinelCollector D-27). Recovering the 55 `raw_content` rows it orphaned in 2026-07 stays CLOSED as
-won't-do — alpha decay; they pruned as decided.** The 223 rows it orphaned on 2026-09-04 were recovered by hand
-before the fix landed. Kept rather than deleted because the re-check below is the standing detector for a NEW
-orphaning event, and because the fix PROPOSED here (revised 2026-08-17) was the wrong one — see the trap below.
-
-**What the fix actually does, and why the obvious version was wrong.** This entry used to say "Fix = add it to the
-transient set, with a guard test asserting `RetryCount` increments on a circuit-open failure". That would not have
-fixed it. `willRetry = isTransient && RetryCount < MaxRetries` with `MaxRetries = 3`: an open breaker short-circuits
-with NO HTTP call, and the frontier re-serves the same rows immediately, so a multi-hour outage burns all three
-attempts in seconds and the rows still end permanently failed — the same data loss at 3x the log volume. What
-shipped instead classifies dependency-unavailable as its own case: the row is left exactly as fetched
-(`ProcessingError` null, `RetryCount` UNCHANGED — a dependency being down is not the article's defect and may not
-spend its retry budget), the worker slot pauses the breaker's own 30s break window so the requeue cannot hot-spin,
-and the loop is terminated by the pre-existing `MaxArticleAgeDays` age gate if the dependency never returns. The
-full reasoning, both bounds, and the alert that was riding on the bug are in `SentinelCollector/AGENT_README.md`
-D-27; do not restate them here.
-
-**Why it took a second cohort to fix: the incident's only signal was an accident of the bug.** Orphaning fired
-`sentinel_extraction_error_total{reason="other"}` and tripped `SentinelHighExtractionErrorRate`. The row-level
-signals said nothing — `sentinel_llm_error_total` stayed ~0 (an open breaker short-circuits BEFORE the HTTP call),
-and `sentinel_extraction_queue_depth` / `sentinel_extraction_frontier_lag_seconds` did NOT rise, because the rows
-left the queue the instant they were orphaned. The backlog was invisible by construction, and the ROOT cause had no
-alert of its own either — `up{job="vllm"}` returned no data during the incident (see the last paragraph). Only the
-downstream symptom alerted, and only because the bug itself was writing the errors it counted.
-
-**The 2026-09-04 cohort: 223 rows, same predicate, all fresh.** Collected 00:06:38Z -> 16:46:56Z in two discrete
-windows (00:00-02:04Z and 13:33-16:46Z), each bracketing to the minute a window in which `vllm-server` was STOPPED
-to free the GPU for a vLLM 0.28.0 evaluation (the `vllm-028` container; the same evaluation recorded in CLAUDE.md
-VLLM_UPGRADE). Loki carried `BrokenCircuitException ---> HttpRequestException: No route to host (vllm-server:8000)`
-— the container was ABSENT, not slow. All 223 childless, `processed_at IS NULL`, `retry_count = 0`; ids
-162986..163791; sources rss 204, rss-fallback 10, rss-mirror 8, searxng-content 1. Recovered same-day by
-`POST /admin/reprocess` with the explicit id list. Rows collected 17:00Z onward processed cleanly.
-
-**Re-check (psql is SELECT-only) — read BY COHORT. The predicate matches EVERY breaker-open event ever recorded, so
-a bare total answers nothing and a bare zero is ambiguous between "pruned as decided" and "never happened".**
+**TRIPWIRE, green by design: a NEW `BrokenCircuitException` orphaning cohort.** The classification gap itself is
+closed (SentinelCollector D-27, `SentinelCollector/AGENT_README.md:108`) and both known cohorts are disposed of: 55
+rows orphaned 2026-07-19..07-24, left as won't-do on alpha decay; 223 rows orphaned 2026-09-04 while `vllm-server`
+was stopped for a vLLM 0.28.0 evaluation, recovered same-day by `POST /admin/reprocess`. The query is kept because
+it is the standing detector for a THIRD cohort, and because the predicate matches EVERY breaker-open event ever
+recorded — so a bare total answers nothing and a bare zero is ambiguous between "pruned or recovered as decided"
+and "never happened". Read it BY COHORT (psql is SELECT-only).
 
 ```sql
 SELECT date_trunc('day', collected_at) AS day, count(*),
@@ -1343,15 +1179,6 @@ SELECT count(*) FROM sentinel.extracted_observations WHERE resolution_state = 'P
 which is the healthy baseline and says nothing either way about the defect; it has NOT been observed during an
 outage, the mechanism is read from the code, and the first real SecMaster break window is what would confirm it.
 
-**The ROOT cause had no alert of its own during the incident, and now does — verified, not assumed.** #1001's vLLM
-scrape job and rules were in the repo but NOT on the box while the 223 were being orphaned, so `vllm-server` being
-absent for ~3.5h was alertable only through the downstream Sentinel symptom. They have since been deployed:
-measured on the fix branch, live `/opt/ai-inference/monitoring/prometheus.yml` carries 8 jobs INCLUDING `vllm`,
-`/opt/ai-inference/monitoring/alerts/vllm.yml` is present, and `up{job="vllm"}` returns
-`{instance="vllm-server:8000"} = 1`. Recorded because a read-only diagnostic taken at 2026-09-04T22:30Z reported
-the opposite and was already stale by the time the fix was written — re-run the three checks above rather than
-quoting either state.
-
 **10 of SentinelCollector's 16 hosted workers log their startup banner at `LogInformation`, so prod has no record
 those started — while 2 siblings already log theirs at Warning, on purpose.** Prod log level defaults to Warning,
 which makes an Information banner invisible — the opposite of CLAUDE.md OBSERVABILITY ("startup banners STAY
@@ -1376,255 +1203,81 @@ denominator, then the banner level per file. One-line change per worker; belongs
 deliberately not bundled with the tooling work that measured it (2026-08-15).
 
 **The merge gate refuses a cross-repository merge on the `gh pr merge` route and permits the SAME merge on the REST
-route, so the two routes now disagree about one threat.** `gh api -X PUT repos/<owner>/<repo>/pulls/<N>/merge`
-resolves against THIS checkout's verdict marker whatever owner/repo the path names: `git-push-guard.sh:2149` takes
-the number with `grep -oE '/pulls/[0-9]+/merge'` and reads neither owner nor repo. The refusal that WOULD catch it is
-at `:2305`, and the scans filling `MERGE_FOREIGN` no longer depend on `MERGE_NUMS` being empty — `5911c7a0` made the
-third of them unconditional, which is why the `--hostname` FLAG is now caught on this route. What the REST path still
-evades is different: it puts the redirect in the URL PATH, and no scan reads a path.
-Measured 2026-08-15 by driving the hook the way `.claude/hooks/test/` does — the command as JSON on stdin, an
-isolated `ATLAS_MARKER_DIR` carrying an approved-at-head verdict for #99901 and none for #99904, `gh` stubbed, a
-temp repo whose origin is `git@github.com:jpansarasa/ATLAS.git`. No merge was attempted and no repository was
-contacted. Decisions, at base `64cfe334` / `7a25d23e` / branch tip `9f6e0663`:
-`gh api -X PUT repos/attacker/evil/pulls/99901/merge` -> **allow / allow / allow**; the identical call for the
-unreviewed #99904 -> deny / deny / deny, which is what proves the number IS read and the marker consulted IS this
-repo's; `curl -X PUT https://api.github.com/repos/attacker/evil/pulls/99901/merge` -> allow / allow / allow. So the
-hole is PRE-EXISTING, on both the `gh api` and `curl` spellings, and this branch neither opened nor closed it.
-The REST route reads neither owner, repo NOR **host**, so a foreign-HOST spelling of THIS repository's own path is
-the third shape of the same hole. Re-measured 2026-08-15 at base `64cfe334` and tip
-`4f4a35d7`: `curl -X PUT https://evil.example.com/api/v3/repos/jpansarasa/ATLAS/pulls/99901/merge` -> **allow /
-allow**, and `gh api --hostname evil.example.com -X PUT repos/jpansarasa/ATLAS/pulls/99901/merge` -> **allow /
-allow**. It is the exact counterpart of the `--hostname` redirect the subcommand route DOES refuse, which makes the
-route disagreement one shape wider than the owner/repo case alone.
-**HALF of that host shape is now CLOSED, as a side effect and not a fix.** The uncut-source scan added at `5911c7a0`
-tokenizes the WHOLE command, so a `--hostname` FLAG is seen on any route, verb or no verb. Re-measured 2026-08-15 at
-`7bf200ef` / `5911c7a0`, same fixture: `gh api --hostname evil.example.com -X PUT
-repos/jpansarasa/ATLAS/pulls/99901/merge` -> **allow / deny**. The `curl` spelling is untouched — **allow / allow** —
-because curl has no `--hostname` flag and carries the host inside the URL, which nothing on this path reads. The
-owner/repo shapes are untouched too: `gh api -X PUT repos/attacker/evil/pulls/99901/merge` -> allow / allow and the
-`curl` equivalent -> allow / allow, with the unreviewed #99904 denying on both, which is what still proves the number
-IS read and the marker consulted is this repo's. So the entry NARROWS rather than closes: what remains is every REST
-shape whose redirect lives in the PATH rather than in a flag. Closing that is the same fixture job costed below.
-The subcommand route at the tip refuses five equivalents — `gh pr merge https://github.com/attacker/evil/pull/99901`,
-`-R attacker/evil`, `--repo=attacker/evil`, a pre-verb `gh -R attacker/evil pr merge`, and `--hostname
-evil.example.com` -> **deny**, reason "names a repository other than the one this checkout tracks" — where the base
-allowed four of the five (the URL positional denied there too, but on the unrelated "cannot read" cause) and
-`7a25d23e` allowed all five. The inconsistency is the risk: a merge refused as foreign on one spelling succeeds when
-written as the other.
-A SIXTH equivalent used to ALLOW, one space from a denied one, and is CLOSED as of this PR — recorded because the
-measurement is what keeps the remaining REST hole re-checkable, not as open work. `merge_scan_redirects`
-(`git-push-guard.sh`) enumerated `-R=`, `--repo=`, `--hostname=` and the spaced forms but not gh's ATTACHED
-shorthand `-Rowner/repo`, which the identity loop then discarded as an unknown boolean flag. Measured 2026-08-15 at
-tip `4f4a35d7`, same fixture as above: `gh pr merge 99901 --squash -R attacker/evil` -> **deny** but
-`gh pr merge 99901 --squash -Rattacker/evil` -> **allow**, as did `-R"attacker/evil"` (shell_split delivers it in the
-same shape) and the host-qualified `-Rgithub.evil.com/jpansarasa/ATLAS`. The PRE-VERB placement leaked too —
-`gh -Rattacker/evil pr merge 99901 --squash` -> **allow** against a spaced pre-verb **deny** — so the gap was in both
-placements, not only after the verb. gh really does bind the attached value in both: `gh pr list -Rfoo/bar --help`
-exits 0, an unknown attached short flag `-Zfoo/bar` exits 1, and `gh -Rfoo/bar pr list --help` exits 0 while a bogus
-pre-verb `-Q` exits 1. A generic `-R?*` arm closed all four, per the guard-change ETHOS "gate the ACT, not a
-spelling"; the four now DENY and the four same-repo decoys still ALLOW. Rows landed as
-`run-pr-verdict-smoke.sh` 56h-56n; deleting the arm moves **10** assertions (56h-56l, 58c, 58m, 59b, 60b, 60h). It
-was written as 5, and was 8 by the time the sentence was next read: every later block added its own attached-`-R` row
-and none of them re-measured this number. Re-measure it whenever an attached-`-R` row lands — a count quoted in one
-file and grown in another drifts on commits that never touch the sentence.
-A SEVENTH equivalent — a redirect PAST the span's cut — is also CLOSED as of this PR, and recorded for the same
-reason. The span stops at the first `|`, `;`, `&` or newline and the other scan read only the PRE-verb prefix, so a
-post-verb `-R` beyond the cut was in neither text; the truncation refusal that would have caught it fires only when
-NO PR was named, which made naming the PR the way to switch the check off. Measured 2026-08-15 at `7bf200ef` /
-`5911c7a0`, same fixture: `gh pr merge 99901 --squash --subject "a|b" -R attacker/evil` -> **allow / deny**, and 17
-shapes in total (every redirect spelling past every cut character, plus the REST route) -> **17 allow / 0 allow**,
-with 14 legitimate-merge rows allowing throughout. 13 of the 17 allowed at base `64cfe334` as well; the other four
-denied there for reasons unrelated to the redirect, and RE-DERIVED 2026-08-15 against main `67396749` that mechanism
-splits two ways rather than one: `2>&1 -R attacker/evil` (row 58n) denies with "names more than one PR number", the
-"2>-is-a-PR-number" false positive `8f547bbe` removed — but rows 58f, 58g and 58k deny with "names its PR with
-something this gate cannot read", the quote-stripping unreadable-token rule, a DIFFERENT removed check. The count of
-four was right; the single mechanism was wrong for three of them. Only 58n is therefore a REGRESSION this branch
-introduced and this PR closes: `&>/tmp/out.log -R attacker/evil` (row 58o) measures **allow on main**, so it was
-always this hole and was mislabelled a regression in both this entry and the suite. Rows `58-58q`; deleting the scan
-moves **40** assertions (28 at `e45ecaf5` before rows `60-60u` joined it, 20 before `59-59g`, 18 before `58y-58z`).
-**That seventh fix OVER-CORRECTED, and this PR closes that too.** The scan tokenized the ENTIRE command line, so an
-`-R`-shaped token belonging to a DIFFERENT command in the same invocation was attributed to the merge. Measured
-2026-08-15, same fixture, nine shapes ALLOW at `7bf200ef` and on main `67396749` and DENY at `0b28bdc0`:
-`&& grep -Rn "TODO" src/`, `&& cp -R build /tmp/out`, `&& ls -R docs`, `&& chmod -R 755 scripts`,
-`&& sort -R list.txt`, `&& rsync -R a b`, the same before the verb, `&& gh pr list --repo jpansarasa/other`, and
-`&& echo "-R attacker/evil"`. The refusal read "Names another repository: -Rn" — a flag the merge does not carry,
-with a remedy (run it from a checkout of that repository) that cannot apply to a grep. `merge_bound_to_act` cuts the
-token list at STANDALONE control-operator tokens and keeps the segment holding the act; all 17 post-cut rows survive
-because in each the cut character is quoted or attached to a word. Rows `58v-58z`; deleting the bounding moved 4 when
-those rows were written, **7** on the tree that closed the substitution hole below (`59h`, `59i`, `59j` join them) and
-**11** once the depth fix added `60p`, `60q`, `60s`, `60t`.
-**TWO SHAPES OF THAT OVER-CORRECTION WERE STILL OPEN, NOT ONE, AND `|&` IS NOW CLOSED.** Bash has a control operator
-the cut set was missing: `gh pr merge 99901 --squash |& grep -Rn TODO src/` -> **deny** at `26dcbadf`, reason "Names
-another repository: -Rn", while the same command spelled `|` allowed and both allow on main `67396749`. The set had
-been written by enumerating operators from memory, so the tenth spelling of the nine shapes above shipped refused.
-`'|&'` added to the case in `merge_bound_to_act`; row `59j`, and dropping it from the case turns that row red.
-THE REMAINING SHAPE IS AN UNQUOTED NEWLINE separating the two commands. A `gh pr merge
-99901 --squash` followed by a newline and `grep -Rn TODO src/` -> **deny** at `0b28bdc0` AND after this fix, reason
-"Names another repository: -Rn". `shell_split` treats a newline as an ordinary character, so `--squash<NL>grep` is
-ONE token and no standalone operator exists to cut at. Deliberately not fixed: quotes are consumed during
-tokenization, so a token carrying an unquoted newline cannot be told from one carrying a QUOTED newline (row 58k),
-and cutting there would drop tokens from the merge's OWN segment — a fail-OPEN, the wrong direction to trade for a
-wrong-cause deny. Re-check by putting that one command through the hook.
+route, so the two routes disagree about one threat.** `gh api -X PUT repos/<owner>/<repo>/pulls/<N>/merge` resolves
+against THIS checkout's verdict marker whatever owner, repo or HOST the path names. Eleven closed sub-shapes were
+deleted from this entry on 2026-09-05; what stays open is one thing — a redirect that lives in the URL PATH reaches
+no scan at all. Measured 2026-08-15 on a fixture with #99901 approved at head, #99904 unreviewed, `gh` stubbed and
+an isolated `ATLAS_MARKER_DIR`, nothing merged: `gh api -X PUT repos/attacker/evil/pulls/99901/merge` -> **allow**,
+the `curl` spelling -> **allow**, `curl -X PUT https://evil.example.com/api/v3/repos/jpansarasa/ATLAS/pulls/99901/merge`
+-> **allow**, while #99904 denies on every one — which is what proves the NUMBER is read and the marker consulted is
+this repo's. The subcommand route denies all five equivalents, including `--hostname`.
+Re-check WITHOUT the fixture, because the mechanism is readable and the decisions are not (run 2026-09-05):
+`grep -n '/pulls/\[0-9\]\+/merge' .claude/hooks/git-push-guard.sh` returns ONE line, `:2326`, which scrapes the
+number and nothing else; `merge_scan_redirects` (`:2131-2152`) inspects only the `-R` / `--repo` / `--hostname`
+FLAGS; the refusal that WOULD catch a foreign slug is `MERGE_FOREIGN` at `:2500-2501`. No owner, repo or host is
+read on the REST route on any tree.
+Why it is still open, and the size of the job: `repos/o/r/pulls` appears on 17 fixture lines across two suites, and
+binding the rule on the REST route flips `run-pr-verdict-smoke.sh` row 2 to deny while the chained / no-verdict rows
+stop exercising what they were written for. The fixtures must be re-pointed at this checkout's slug in the SAME
+change as the rule, or the suite goes green while testing nothing.
 
-**THE NARROWING THAT FIXED THE OVER-CORRECTION REOPENED THE ATTACK, and this PR closes that too.** A control operator
-INSIDE a command substitution is a standalone token to `shell_split` and a command boundary to nothing: the `;` in
-`$(mktemp ; true)` separates two commands inside the substitution and separates nothing in the line holding it.
-`merge_bound_to_act` cut there anyway, so the merge's OWN `-R` fell into a segment carrying no merge and was never
-scanned. Measured 2026-08-15, same fixture (#99901 approved at head, `gh` stubbed, isolated `ATLAS_MARKER_DIR`,
-`CLAUDE_PROJECT_DIR` at an empty directory, nothing merged): **twelve** shapes ALLOW at `7bf200ef`, on main
-`67396749` and at `26dcbadf`, and DENY at `0b28bdc0` where the scan was still unbounded — the narrowing lost exactly
-what the wide scan had. `gh pr merge 99901 --body-file $(mktemp ; true) -R attacker/evil` is the shortest of them;
-the axes are the four `$(…)` operators (`;`, `&`, `|`, `&&`, plus `||`), the backtick spelling, both carriers of a
-substituted value (`--body-file`, `-t`) and all five redirect spellings.
-Fix (SUPERSEDED by the depth-desync entry two paragraphs down, which replaced the `$(` counter with a `(` counter and
-added an escape arm — read both): `shell_split` records a per-token substitution depth (`SPLIT_DEPTH`, a `$(` counter plus a backtick toggle, read
-at the token's FIRST character) and `merge_bound_to_act` cuts only at depth 0. Rows `59-59g`; deleting either the
-depth test or the tokenizer's appends moves 8 at `e45ecaf5` and **20** once rows `60-60l` joined them. The two
-mutations measure the SAME number because an unset `SPLIT_DEPTH` element reads as 0 — a genuine equivalence,
-re-measured rather than carried forward.
-**The cheaper fix was measured and DECLINED, and rows `59h`/`59i` are what keep it declined.** Abandoning the
-narrowing whenever ANY token carries a substitution closes all twelve and re-breaks `&& grep -Rn TODO $(pwd)` and
-`&& cp -R $(pwd)/docs /tmp/x` — ordinary chained commands whose substitution belongs to the CHAINED command, with the
-same wrong-cause "Names another repository: -Rn". Measured: under that fix `59-59g` pass and `59h`/`59i` go red.
+**THE UNQUOTED NEWLINE IS A WRONG-CAUSE DENY, AND IT STAYS.** `shell_split` treats a newline as an ordinary
+character, so `gh pr merge 99901 --squash<NL>grep -Rn TODO src/` is ONE token run with no standalone operator for
+`merge_bound_to_act` to cut at, and the chained grep's `-Rn` is attributed to the merge. Deliberately not fixed:
+quotes are consumed during tokenization, so a token carrying an unquoted newline cannot be told from one carrying a
+QUOTED newline, and cutting there would drop tokens from the merge's OWN segment — a fail-OPEN traded for a
+wrong-cause deny, the wrong direction.
+Re-check (run 2026-09-05, command as JSON on the hook's stdin): the newline shape denies with "this merge names a
+repository other than the one this checkout tracks", while the `&&` control denies with "PR #99901 has no recorded
+review verdict" — same decision, different cause, and the CAUSE is the whole signal.
 
-**THAT DEPTH COUNTER WAS A PARTIAL MODEL OF BASH'S NESTING AND DESYNCHRONISED IN BOTH DIRECTIONS — CLOSED here.** It
-rose only on the two-character `$(`, so `<(`, `>(` and a plain `( … )` raised nothing; and it fell on every unquoted
-`)`, including one closing an arithmetic `$(( … ))` or sitting behind a backslash. Either way an operator bash reads
-as NESTED reported depth 0, `merge_bound_to_act` cut there, and the merge's OWN `-R` landed in a segment holding no
-merge. Measured 2026-08-15, same fixture (#99901 approved at head, `gh` stubbed, isolated `ATLAS_MARKER_DIR`,
-`CLAUDE_PROJECT_DIR` at an empty directory, nothing merged): the three shortest are
-`gh pr merge 99901 --squash 2> >(cat ; true) -R attacker/evil`,
-`… --body-file $(mktemp --suffix=$((1)) ; true) -R attacker/evil` and
-`… --body-file $(mktemp --suffix=x\) ; true) -R attacker/evil` — **all three ALLOW at `e45ecaf5` and DENY at
-`0b28bdc0`**, where the scan was still unbounded. Across the four operators (`;`, `&&`, `|`, `&`) and all five
-redirect spellings, **27 of 29 shapes measured ALLOW** at `e45ecaf5`; the other 2 denied through the
-unreadable-token rule, not the redirect, so they are not clean rows and are not asserted as such.
-**It defeated the REST route too**, which is row 58p's protection:
-`gh api -X PUT repos/o/r/pulls/99901/merge --input $(mktemp --suffix=$((1)) ; true) --hostname evil.example.com` and
-four siblings all **ALLOW** at `e45ecaf5`. The oracle is bash itself — a stub `gh` dumping its argv receives
-`[-R] [attacker/evil]` in every one of them.
-Fix: count EVERY unquoted, unescaped `(` as an opener (so `<(`, `>(`, `$((` and a plain subshell balance under one
-rule) and read a backslash as making the next character literal, rather than enumerating a fourth substitution
-spelling. Rows `60-60u`; the `(` line moves **9** assertions and the escape arm **6**, measured separately, with
-`60m-60o` and `60u` the controls that keep the hits from passing on their syntax rather than on the repository.
-TWO MORE CONSTRUCTS LOWER THAT COUNTER WHERE BASH DOES NOT NEST, AND ARE DELIBERATELY NOT FIXED — recorded because
-the comment at the counter claimed counting every `(` "balances all four constructs under ONE rule" and that
-enumerating a fourth spelling "would only have waited for a fifth". These are the fifth and sixth, and the comment
-is corrected in the same PR. A `${x:-)}` default value and a `case` pattern `y)` each carry a `)` bash does not
-nest, so each falls a depth it never raised; the `)` is also a token boundary here, so `${x:-)}` splits into
-`${x:-` and `}` where bash produces one word (measured 2026-08-16, same fixture as the entries above — #99901
-approved at head, `gh` stubbed, isolated `ATLAS_MARKER_DIR`, `CLAUDE_PROJECT_DIR` at an empty directory, nothing
-merged). CAPABILITY DELTA AGAINST MAIN IS ZERO on the subcommand route, which is why this is a record and not a
-fix: put either construct inside a real `$( … )` so the underflow can actually cut a span early, and all four
-shapes — `$(mktemp --suffix=${x:-)} ; true)` and `$(case $v in y) true;; esac ; true)` carrying `-R attacker/evil`,
-`--repo=`, an attached `-R` and `--hostname` — measure **deny / deny / deny** at `7c1261e1`, after the ANSI-C fix
-and on main `67396749` alike, every one through MERGE_OPAQUE ("names its PR with something this gate cannot read"):
-the same split that loses the depth leaves loose tokens no identity rule can read, and an unreadable token is
-already a refusal. Their no-redirect controls deny too, so these rows would be denying for their syntax and are NOT
-clean redirect rows. The only route that would be exposed is REST, whose own `repos/<o>/<r>/pulls/…` path is read
-for the NUMBER and never for owner or repo on ANY tree — re-measured here at `7c1261e1`, after the fix and on main:
-`gh api -X PUT repos/attacker/evil/pulls/99901/merge` -> **allow / allow / allow**, and with `--hostname github.com`
-appended -> allow / allow / allow, while the same call for the unreviewed #99904 denies on all three. That is the
-pre-existing REST gap recorded above, not a new one. Re-check: put the four `$( … )` shapes through the hook and
-read the refusal CAUSE, not just the decision — a deny through MERGE_OPAQUE is not the redirect rule firing.
-**A SECOND, OLDER HOLE FELL OUT OF THE SAME ESCAPE ARM.** An escaped `"` inside a double-quoted value toggled the
-quote state back OPEN, so the whole remainder of the line — the redirect included — was delivered as ONE quoted word
-that no scan reads: `gh pr merge 99901 --squash --subject "a\"b" -R attacker/evil` -> **allow on main `67396749`, at
-`0b28bdc0` and at `e45ecaf5`**, while gh really receives `[--subject] [a"b] [-R] [attacker/evil]`. Not this branch's
-regression; closed here because the escape arm is what fixes it. Row `60k`.
-**AND THE ESCAPED-BACKTICK OVER-CORRECTION IT INTRODUCED, one commit old, is undone.** The backtick state is a
-TOGGLE, so a single escaped backtick left every later token reporting depth 1 and no boundary was ever found:
-`gh pr merge 99901 --squash --subject a\`b && grep -Rn TODO src/` -> **deny** at `e45ecaf5` with the wrong-cause
-"Names another repository: -Rn", the eleventh spelling of the nine over-corrections above. It measures **allow on
-main `67396749` and at `26dcbadf`** — the toggle arrived with `e17bb4e1`, so `26dcbadf` predates it and the
-regression is exactly one commit wide. Rows `60s`/`60t`.
-**AND `$'…'` DEFEATED THE SAME ESCAPE ARM FROM THE OTHER SIDE — the gate approved one PR while `gh` merged another.
-CLOSED here.** The arm is skipped inside single quotes because bash has no escapes there, which is true of `'…'` and
-false of ANSI-C `$'…'`, where bash DOES honour `\'`. Reading them alike closed the quote at the escaped quote and
-reopened it at the string's real terminator, so the POSITIONAL was swallowed into the value:
-`gh pr merge --squash --subject $'a\'b' 99904` tokenized to `<--subject> <$a\b 99904>`. Nothing had been CUT (the
-span holds no `|;&`, so that refusal cannot fire) and no token was left unreadable, so control reached the
-`gh pr view` fallback and resolved the CURRENT BRANCH's PR — stderr reading "✓ PR #99901 … approved" while a stubbed
-`gh` received `[99904]`. Measured 2026-08-16, same fixture: **ALLOW** at `7c1261e1`, `0b28bdc0`, `26dcbadf`,
-`e45ecaf5` and `8f547bbe`, **DENY** at `54e0fac5`/`3bad23ad` and on main `67396749`. Bisected: `8f547bbe` opened it,
-the commit that replaced main's whole-word-integer scrape with the positional tokenizer, so main refuses it only by
-accident of the scrape that commit removed — and merging this PR takes a shape main blocks. Four spellings behaved
-identically: that one, the same with `--delete-branch` appended, `-t $'x\'y' 99904`, and the same with a quoted
-`"#99904"`. Fix: an `_ansi` flag set from the character PRECEDING the opening quote, cleared on every open and
-close, admitting the escape arm inside `$'…'` only. Rows `61-61i`; reverting the flag moves **8** assertions
-(61, 61a-61d, 61g, 61h flip to allow, 61f to deny) with the two controls `61e`/`61i` staying green.
-The CHEAPER route — deny whenever the tokenizer ends inside a quote — was measured and DECLINED. Re-derived here by
-replaying the guard's own span cut and quote tracking over each row: on the PRE-FIX tokenizer it does catch `61` and
-`61b`, but it ALSO ends mid-quote on `57k`, `58s` and `58u`, three ALLOW rows whose spans are cut mid-quote BY
-DESIGN — a `--subject "a|b"` is cut at the `|` inside the quotes — so the rule cannot tell them from the hole.
-`57j`, whose span is cut at a REAL pipe, terminates cleanly and is the control showing the flag tracks the quote
-rather than the cut.
-TWO `-R`-hiding siblings closed with it (`61g`/`61h`), both **allow on main** too, so that half is a net improvement
-over main. And ONE ORDINARY COMMAND that head AND main both refuse today starts allowing:
-`gh pr merge 99901 --squash --subject $'it\'s fine' && grep -Rn TODO src/` -> **deny / deny** before, allow after —
-the twelfth spelling of the nine over-corrections above, pinned by row `61f` so the direction cannot regress.
-THE UNQUOTED-NEWLINE over-correction recorded above is UNCHANGED by this fix, re-measured here: that command still
-**denies** at `0b28bdc0`, `26dcbadf`, `e45ecaf5` and after the fix, and **allows** on main. The escape arm does not
-touch it, which is the intent — reversing it would fail OPEN.
+**TWO CONSTRUCTS LOWER THE SUBSTITUTION-DEPTH COUNTER WHERE BASH DOES NOT NEST — RECORDED, NOT FIXED, because the
+capability delta against main is ZERO.** A `${x:-)}` default value and a `case` pattern `y)` each carry a `)` bash
+does not nest, so each falls a depth it never raised. Put either inside a real `$( … )` and the redirect still
+cannot get through: measured 2026-09-05, `gh pr merge 99901 --body-file $(mktemp --suffix=${x:-)} ; true)
+-R attacker/evil` and the `case` spelling both **deny** — but through MERGE_OPAQUE, "names its PR with something
+this gate cannot read", because the same split that loses the depth leaves loose tokens no identity rule can read.
+Their no-redirect control denies identically, so these are NOT clean redirect rows.
+Re-check by reading the refusal CAUSE, never the decision: a deny through MERGE_OPAQUE is not the redirect rule
+firing, and a fix that made it one would not change any outcome.
 
-**`ansible-gate-guard.sh` reports a write to a path it invented — sibling guard, NOT fixed here.** Observed live
-2026-08-15 four times in one session: `git show <rev>:.claude/hooks/git-push-guard.sh > /tmp/<scratch>/guard.sh`
-drew "This command writes to deployment/CI gate file(s)
-(`/home/james/ATLAS/.claude/worktrees/agent-<id>/67396749:.claude/hooks/git-push-guard.sh`)". The guard took the
-`git show` REVISION SPEC for a path and resolved it against the repo root, naming a file that does not exist and was
-never written; the actual redirect target was in `/tmp` and touched no gate file at all. A second sighting of the same
-class was reported separately, an ABSOLUTE `$C/...` argument resolved as repo-relative — so the defect is the path
-CONSTRUCTION, not the matching, and one fix covers both. Cost is a false positive that consumes a bypass
-justification: the operator is told a gate file is being
-written, so the bypass looks required when nothing gated was touched. Re-check by running any
-`git show <rev>:<tracked-path>` redirect to a `/tmp` file and reading the path the guard names.
-TWO FURTHER SPELLINGS, measured 2026-08-15 with `CLAUDE_PROJECT_DIR` at an EMPTY directory so the live bypass is out
-of the measurement. Both DENY.
-(1) An ABSOLUTE `/tmp/...` path is matched as though it were repo-relative, which BLOCKS a copy with **both ends in
-`/tmp`**: `cp /tmp/claude-1000/scratch/sandbox/.claude/hooks/git-push-guard.sh /tmp/claude-1000/scratch/probe/copy.sh`
--> **deny**, naming `/tmp/claude-1000/scratch/sandbox/.claude/hooks/git-push-guard.sh` — the cp's SOURCE, under
-`/tmp`, in the repo's gate layer only by substring. Nothing in the repo is read or written. This is worse than the
-`git show` sighting: that one only wasted a bypass justification, this one refuses work that touches no gate file at
-all, and the only remedy the message offers is a bypass.
-(2) RUNNING a gate-path script is reported as WRITING to it whenever a PREFIX WORD displaces the runner — which the
-guard's own deny message contradicts ("RUNNING one of these files is NOT blocked — only writing to it … redirecting
-its output to a log is fine"). `bash .claude/hooks/test/run-pr-verdict-smoke.sh > /tmp/out.log` -> **allow**, but
-`time bash …` -> **deny**, naming the SCRIPT, not the redirect target. Nine prefixes measured deny — `time`, `nice`,
-`timeout 60`, `stdbuf -oL`, `command`, `exec`, `ionice`, `nohup`, `xargs` — and only `env` still allows, so the
-exemption is keyed to the runner being the segment's FIRST word rather than to the act. The redirect is load-bearing:
-`time bash <script>` with no `>` allows, and so does `time bash <script> 2>&1 | tail -3`.
-Re-check: run each of the ten prefixes above with `> /tmp/out.log` and read the path the guard names.
-(3) A THIRD spelling, and the worst of the three because it makes the guard's OWN scoping mechanism unreachable:
-the gate reads gate-layer paths out of a command's CONTENT, so WRITING A SCOPE into `.ansible-gate-confirmed` is
-refused by the gate the scope exists to narrow. Observed live 2026-08-16:
-`printf '%s\n' '.claude/hooks/git-push-guard.sh' … > /home/james/ATLAS/.claude/.ansible-gate-confirmed` -> **deny**,
-naming `.claude/hooks/git-push-guard.sh` — a path that is the DATA being written, never the target; the target is
-`.ansible-gate-confirmed`, which `ansible-gate-guard.sh` deliberately does not gate. The documented spelling at its
-own comment (`printf '%s\n' .claude/hooks/ansible-gate-guard.sh > .claude/.ansible-gate-confirmed`) therefore
-cannot be run. Only the all-or-nothing `touch` survives, which is the widest bypass — the exact failure the 2026-08-07
-scoping change was added to prevent, since an unreadable or empty scope authorises the entire gate layer. Workaround
-used: write the fragments to a file elsewhere and `cp` it in, so no gate path appears in the command. Same root as
-(1) and (2) — path CONSTRUCTION over command text rather than over the resolved write target — so one fix covers all
-three. Re-check: try the documented `printf … > .claude/.ansible-gate-confirmed` and read the path the guard names.
-A FOURTH sighting of the `git show <rev>:<path>` spelling recorded above also landed 2026-08-16, on a worktree-scoped
-agent, so that one is not rare.
-(5) A FIFTH spelling, measured 2026-08-17 against the merged #974 guard (`ee1a957c`) — NOT a regression of it, and
-the first of the five to refuse a plainly READ-ONLY command. The read-verb exemption is keyed to the verb being the
-segment's FIRST WORD, so anything that displaces it — a group opener `(` or `{`, or one of the prefix words already
-recorded at (2) — lets a stdout redirect anywhere in that segment turn the command's gate-path OPERAND into the
-reported write target. TWELVE shapes DENY: `(grep -n marker git-push-guard.sh > /tmp/o.txt)` and the same read with
-`cat`, `wc -l`, `head -20`, `sed -n`, `awk`; a two-`grep` batch; a `{ …; }` brace group; a `time`-prefixed and a
-`nice`-prefixed `grep`; and the `.claude/hooks/…` and absolute spellings of the operand. NINE of twelve controls ALLOW — the same reads
-with the group opener removed, with the redirect removed, piped instead of redirected, sent to `2>` instead of
-stdout, or reading a non-gate file. (The three controls that still deny are a different shape: `sed` and `awk` are
-write-capable verbs at segment head too, and `>>` behaves as the twelve do.) With a BARE BASENAME the invented path
-is repo-root-relative — `/home/james/ATLAS/git-push-guard.sh`, which DOES NOT EXIST, the file being
-`.claude/hooks/git-push-guard.sh` — so a command merely MENTIONING a gate file's basename is refused as a write to a
-path that is not there, while nothing outside `/tmp` is read or written. Cost measured on this round: the harness
-mirror had to be re-sited twice and every probe run from a file, because naming a gate path on the command line is
-itself refused. Same root as (1)-(4) — path CONSTRUCTION over command text rather than over the resolved write
-target — so one fix still covers all five. Re-check, from the repo root; the command is itself not refused, and the
-trailing pipe keeps it valid when copied across the line break:
+**TWO CHEAPER FIXES WERE MEASURED AND DECLINED; the smoke rows that keep them declined ARE the record.**
+(i) Abandoning the substitution narrowing whenever ANY token carries a substitution closes the twelve `$(… ; …)`
+shapes and re-breaks `&& grep -Rn TODO $(pwd)` and `&& cp -R $(pwd)/docs /tmp/x` — ordinary chained commands whose
+substitution belongs to the CHAINED command, refused with the same wrong cause. Under that fix rows `59-59g` pass
+and `59h`/`59i` go red. (ii) Denying whenever the tokenizer ends inside a quote catches rows `61` and `61b` but also
+ends mid-quote on `57k`, `58s` and `58u` — three ALLOW rows whose spans are cut mid-quote BY DESIGN
+(`--subject "a|b"`), which the rule cannot tell from the hole; `57j` is the control that shows the flag tracks the
+quote rather than the cut.
+Re-check: `.claude/hooks/test/run-pr-verdict-smoke.sh` -> rc 0, 239 PASS / 0 FAIL (2026-09-05). Either fix turns the
+named rows red, which is the only reason they are named here.
+
+**`ansible-gate-guard.sh` reports a write to a path it INVENTED — three of the five spellings are fixed, two
+stand.** The root is path CONSTRUCTION over command TEXT rather than over the resolved write target, so one fix
+still covers what is left. Re-probed 2026-09-05 against the ARMED installed guard (blob `31baafbb`,
+byte-identical to this worktree's copy, `.ansible-gate-confirmed` verified absent), each command fed as JSON on
+the hook's stdin and none of them executed:
+  FIXED, and deleted from this entry rather than left standing — the entry's (1), (2) and its "fourth
+    sighting": `git show <rev>:<tracked path> > /tmp/x`, an absolute `/tmp` source merely CONTAINING the
+    gate-layer substring, and the runner-displacement `time bash <gate script> > /tmp/out.log` (with `nice`
+    and `env` alike) all now **allow**.
+  STANDS (1) — WRITING A SCOPE INTO THE BYPASS FILE is refused by the gate the scope exists to narrow, so the
+    guard's own scoping mechanism is unreachable and only the all-or-nothing `touch` survives, which is the
+    WIDEST bypass and the exact failure the 2026-08-07 scoping change was added to prevent.
+    `printf '%s\n' '.claude/hooks/git-push-guard.sh' > /home/james/ATLAS/.claude/.ansible-gate-confirmed` ->
+    **deny**, naming the path that is the DATA being written, never the target. Workaround: write the fragments
+    to a file elsewhere and `cp` it in, so no gate path appears in the command.
+  STANDS (2) — A READ VERB DISPLACED FROM SEGMENT HEAD turns its gate-path OPERAND into the reported write
+    target whenever a stdout redirect sits anywhere in the segment. `(grep -n x git-push-guard.sh > /tmp/o)` ->
+    **deny**, as do the `.claude/hooks/…` and absolute spellings of the operand, a `{ …; }` brace group and a
+    `time`-prefixed grep. Controls behave: group opener removed -> allow, redirect removed -> allow, non-gate
+    file -> allow. With a BARE BASENAME the invented path is repo-root-relative —
+    `/home/james/ATLAS/git-push-guard.sh`, which DOES NOT EXIST.
+    THE SAME CLASS BITES `cp`, which is why the DEFERRED WORK entry below needed correcting: bare
+    `cp <gate file> /tmp/x` ALLOWS, but all nine `WRAPPER_RE` prefixes
+    (`time nice timeout stdbuf command exec ionice nohup xargs`) in front of the same cp DENY, naming the SOURCE.
+Re-check, from the repo root; the command is itself not refused, and the trailing pipe keeps it valid when
+copied across the line break:
 `jq -n '{tool_input:{command:"(grep -n x git-push-guard.sh > /tmp/o)"}}' | bash .claude/hooks/ansible-gate-guard.sh |
 jq -r .hookSpecificOutput.permissionDecision` prints `deny` today. Fixed, it prints NOTHING — an allowing guard
 emits no JSON at all, so there is no `permissionDecision` to read and jq exits 0 with empty output.
@@ -1673,25 +1326,26 @@ NOT the thing it first looks like. THE MOVED-HEAD CASE IS ALREADY COVERED — do
 that comparison every branch is a deny — no marker, unreadable verdict, `blocked` verdict, unreadable head. The one
 `allow` sits after the comparison passes. Hook wired at `.claude/settings.json:87`. So a verdict recorded against a
 superseded head cannot unblock anything, and a read-side fix is already shipped.
-What IS reachable is a write-side gap. `scripts/claude-pr-verdict` calls `warn_surviving_marker` (`:147`) before
-every refusal, leaving any earlier `pr-reviewed-<N>` on disk. When the refusal is the head-mismatch one (`:195`)
+What IS reachable is a write-side gap. `scripts/claude-pr-verdict` calls `warn_surviving_marker`
+(defined `:156`, called at `:339`, `:359`, `:480`, `:494`, `:507`, `:520`, `:530`, `:548`) before every
+refusal, leaving any earlier `pr-reviewed-<N>` on disk. When the refusal is the head-mismatch one (`:525-531`)
 that is harmless: the surviving marker cannot match the current head either, so the guard denies. But the other
-refusals — missing pending record (`:166`), malformed pending (`:179`), unreadable `gh` (`:192`), invoke-then-stamp
-too fast (`:220`, the `MIN_REVIEW_SECONDS` guard, NOT a reason-length check) — can fire while a prior approve sits
-at the CURRENT head. That approve stays valid, the guard correctly honours it, and the merge proceeds even though
-the reviewer's last action was an attempted BLOCK. The auto-unlink is declined on purpose (silently deleting a prior
-verdict on an unrelated refusal destroys a legitimate record), so the fix is to invalidate or DOWNGRADE the prior
-approve when a block is attempted and refused — write side, not read side. Related in shape only to the historical
-defect where `review-pr` wrote a passing marker at INVOCATION.
-**THE SCRIPT'S OWN WARNING IS WHERE THIS DEFECT GETS MIS-DIAGNOSED, and it is armed right now.**
-`warn_surviving_marker` reads only `v verdict rest` off the marker and branches on `verdict == "approved"`; the
-recorded sha sits unparsed in `rest` and is never compared to anything. So its message body — lines 155-156 of
-`scripts/claude-pr-verdict`, written here in non-citation form for the reason the entry below gives — prints
-"an APPROVED verdict ... is still on disk and still unblocks the merge" UNCONDITIONALLY, including after the
-moved-head refusal where `git-push-guard.sh:2667` will in fact deny. The function's own header comment, lines
-144-145, states the same thing as fact. That sentence is how this entry came to assert the opposite of the code in its first
-revision — a reviewer runs the script, reads the warning, and believes it. Fix: compare the marker sha to the head
-and stay silent when they differ, or weaken the wording to "may still unblock the merge — check the head".
+refusals — missing pending record (`:496`), malformed pending (`:506`), unreadable `gh` (`:519`), unparseable
+timestamp (`:537`) and invoke-then-stamp too fast (`:541`, the `MIN_REVIEW_SECONDS` guard, NOT a reason-length
+check) — can fire while a prior approve sits at the CURRENT head. That approve stays valid, the guard correctly
+honours it, and the merge proceeds even though the reviewer's last action was an attempted BLOCK. The
+auto-unlink is declined on purpose (silently deleting a prior verdict on an unrelated refusal destroys a
+legitimate record), so the fix is to invalidate or DOWNGRADE the prior approve when a block is attempted and
+refused — write side, not read side. Related in shape only to the historical defect where `review-pr` wrote a
+passing marker at INVOCATION.
+THE SCRIPT'S OWN WARNING USED TO BE WHERE THIS GOT MIS-DIAGNOSED, AND THAT HALF IS CLOSED [verified
+2026-09-05]. This entry said `warn_surviving_marker` "reads only `v verdict rest`", never compares the sha, and
+prints "still unblocks the merge" UNCONDITIONALLY — a sentence a reviewer reads and believes. It now reads
+`v verdict msha _rest`, fetches the head on demand and prints one of THREE outcomes: still unblocks (sha ==
+head), does NOT unblock (naming both shas), or EFFECT NOT MEASURED when the head is unreadable. Its header at
+`:148-155` says so — "IT MEASURES, IT NO LONGER CLAIMS ... fixed 2026-08-17" — and records that the false
+sentence had already been briefed into an agent as a finding once. The proposed fix was taken; only the
+write-side gap above is open.
 Scope note: this is the MERGE gate (`pr-reviewed-<N>`) alone, ON THE BASH PATH. The PUSH gate is a different gate
 keyed on a TREE hash and never reads this marker. And "the read-side fix already ships" must not be read as "merges
 are gated": `.claude/hooks/git-push-guard.sh:128-145` records a KNOWN GAP, dated 2026-08-06 and deliberately left
@@ -1777,27 +1431,25 @@ guard's NAME out of the gate layer. A docstring claiming coverage it does not ha
 tool. Re-check: the two inputs above through one guard copy sited beside the hook set; they must agree, or the
 header must stop claiming they do.
 
-**`run-wiring-smoke.sh` has been RED for nine days, and the red is the suite's own stale list.** Measured
-2026-08-17 at `8d04fd33`: `bash .claude/hooks/test/run-wiring-smoke.sh` -> rc 1, 48 `PASS:` lines and exactly ONE
-`FAIL:`, reading `registered set drifted:5a6 > dream-pending-notice.sh`, ending `WIRING SMOKE: FAIL`. READ THE
-DIFF DIRECTION BEFORE ACTING ON IT — the failure text invites the opposite conclusion. The check diffs
-`EXPECTED_WIRED` against `ACTUAL_WIRED` in that order (`:72`), so a `>` line is present in ACTUAL and missing from
-EXPECTED: the hook IS registered in tracked `.claude/settings.json` (15 distinct basenames), and it is the suite's
-hardcoded list (`:63-66`, 14 names, whose pass message still says "exactly the expected 14 hooks") that never
-learned about it. The registration landed 2026-08-08 in #936; the list was last touched 2026-08-07 in #918, so the
-suite has failed on every run since. The check is doing precisely the job its comment claims — proving nothing was
-"added unnoticed" — and nobody noticed the notice.
+**`run-wiring-smoke.sh` is RED and has been since 2026-08-08, and the red is the suite's OWN stale list.**
+Re-run 2026-09-05: rc 1, **52 PASS**, exactly one FAIL reading
+`registered set drifted:6a7 > dream-pending-notice.sh`, ending `WIRING SMOKE: FAIL`. READ THE DIFF DIRECTION
+BEFORE ACTING ON IT — the failure text invites the opposite conclusion. The check diffs `EXPECTED_WIRED` against
+`ACTUAL_WIRED` in that order, so a `>` line is present in ACTUAL and missing from EXPECTED: the hook IS
+registered in tracked `.claude/settings.json:170`, and it is the suite's hardcoded list
+(`run-wiring-smoke.sh:65-72`, 16 names, whose pass message says "exactly the expected 16 hooks") that never
+learned about it. Registration landed 2026-08-08 in #936 and the list has not caught up in four weeks; every
+figure in the first draft of this entry (48 PASS, `5a6`, `:63-66`, 14 names) has since moved without the defect
+changing at all.
 
-The cost is not the one red row. The suite exits 1, so its other 48 assertions — including the marker writers must
-be 100755 IN THE INDEX rows, which exist because a 100644 shipped once and broke the merge gate — sit behind a
-failing summary, and anything gating on rc reads the whole suite as broken rather than as one stale line. A suite
-that is permanently red teaches its readers to skip it, which is the failure mode that lets the NEXT drift through.
-
-Pre-existing and independent of PR #974: all three inputs (`.claude/settings.json`, `run-wiring-smoke.sh`,
-`dream-pending-notice.sh`) are unmodified at `8d04fd33`, and the drift check reads neither file that PR touches.
-Decide the direction rather than silencing the row: either the dream notice is a wired participant and belongs in
-`EXPECTED_WIRED`, or it should not be registered at all. Re-check:
-`bash .claude/hooks/test/run-wiring-smoke.sh; echo rc=$?` — rc must be 0 and the summary `WIRING SMOKE: PASS`.
+The cost is not the one red row. The suite exits 1, so its other 52 assertions — including the marker writers
+must be 100755 IN THE INDEX rows, which exist because a 100644 shipped once and broke the merge gate — sit
+behind a failing summary, and anything gating on rc reads the whole suite as broken rather than as one stale
+line. A suite that is permanently red teaches its readers to skip it, which is the failure mode that lets the
+NEXT drift through. Decide the direction rather than silencing the row: either the dream notice is a wired
+participant and belongs in `EXPECTED_WIRED`, or it should not be registered at all.
+Re-check: `.claude/hooks/test/run-wiring-smoke.sh; echo rc=$?` — rc must be 0 and the summary
+`WIRING SMOKE: PASS`.
 
 **A write in one tool call and its execution in the NEXT are invisible to any command-string guard. ACCEPTED LIMIT,
 not an open bug — nothing in a future round can close it.** `ansible-gate-guard.sh` is a `PreToolUse` hook: it is
@@ -1822,10 +1474,6 @@ deleted and all six deny, matching `ddbaff89`. What remains open is ONE property
 recognised only where it STARTS a token. So `echo cp /tmp/evil /opt/ai-inference/compose.yaml>/tmp/run.sh` — operator
 welded to the preceding WORD — still ALLOWS, and so do the `exec` spellings `exec>/tmp/run.sh`, `\exec > /tmp/run.sh`
 and `>| /tmp/f exec` (below).
-TWO OF THE FIVE THIS ENTRY LISTED ARE NOW CLOSED and are struck rather than left standing: `> /tmp/run.sh exec`, the
-operator SPACED from its target, was round 6's blocker and now DENIES, and `eval "exec > /tmp/run.sh"` denies with it —
-the walk already strips one quote layer, so `"exec` reaches the test as `exec` (double-, single- and welded-target eval
-spellings all deny).
 
 `>| /tmp/f exec` IS DISCLOSED OPEN, AND ITS ROOT CAUSE IS UPSTREAM OF THE PREDICATE — which is why it is listed here
 rather than fixed in the round that found it. `>|` is the noclobber-override redirect and it BINDS: measured
@@ -2074,10 +1722,17 @@ integers.** Re-measured the SAME day, hours later, every figure this entry recor
 **620,351** where the `"OriginalSymbol"` paragraph below records 620,174; candidates **3,651,864** where the publish
 gate above records 3,650,818; `macro_observations` **42,739**/**39,712** against the 42,716/39,689 in the METHOD NOTE
 above; id bounds 1..**150,145** and 10,604..**714,827**. Every ratio and conclusion held — 93%, 4.8x, still
-overlapping. The
-two figures that did NOT move are the ones that are structurally exact rather than a running total: **358,398**, and
-the **0** in "0 of N". A re-check returning different integers is this note working, not a contradiction; a re-check
-changing a RATIO, or turning that 0 non-zero, is a real finding.
+overlapping.
+THE NOTE'S OWN EXAMPLE WAS WRONG, corrected 2026-09-05. It named **358,398** as one of two figures that "did NOT
+move", being structurally exact rather than a running total. Re-measured: `NoResolution` **715,102** with
+**389,483** carrying a non-null `"OriginalSymbol"` — so 358,398 moved with everything else, and the RATIO went
+57.8% -> 54.5%. Under this note's own rule that 3.3-point move is a REAL FINDING rather than drift: the
+quarantine/re-extract share of the dead population is falling. The only figure that genuinely cannot move is the
+**0** in "0 of N". A re-check returning different integers is this note working; a re-check changing a RATIO, or
+turning that 0 non-zero, is a real finding.
+Re-check (SELECT-only, run 2026-09-05):
+  `SELECT count(*) AS noresolution, count(*) FILTER (WHERE "OriginalSymbol" IS NOT NULL) AS with_original
+   FROM sentinel.extracted_observations WHERE resolution_state='NoResolution';` -> `715102 | 389483`
 THREE THINGS ARE CALLED "Symbol": (1) the COLUMN `sentinel.extracted_observations."Symbol"` — quoted, PascalCase,
 the resolved catalog symbol, NULL until resolution succeeds; (2) the KEY `"Symbol"` INSIDE `candidate_symbols_json`
 — an LLM-minted slug of the proposed entity's name (`Challenger_Gray_Christmas`), not a catalog symbol and usually
@@ -2147,32 +1802,6 @@ wrong way: the gauge steps at UTC midnight (measured, 87 -> 88 between 2026-08-1
 reads 91 on 08-22, which is the first day the strict `>` against 90 holds, and `for: 24h` puts the FIRING a day
 after that. Re-check: `thresholdengine_pattern_data_overdue_days{pattern_id="truflation-vs-cpi"}` at 300s step
 across a midnight.
-
-**`RawLayerOptions.RetentionDays: 90` IN `appsettings.json` NAMES A RETENTION POLICY THAT NOTHING
-ENFORCES.** Measured 2026-08-26 while re-verifying the 30-day-rolling-window finding below (a same-day
-pass had proposed reversing it to "raw retention is ungoverned" — it is not; that finding reproduces
-exactly against a fresh DB query and the physical files on disk, see the re-check there): `RawLayerOptions`
-(`SentinelCollector/src/Configuration/RawLayerOptions.cs`) has exactly one consumer, `RawContentService`,
-and it reads only `.BasePath` — `.RetentionDays` has zero readers anywhere in `SentinelCollector/src`. The
-retention that actually runs is a **different, appsettings-invisible** setting: `ExtractionOptions.MaxArticleAgeDays`
-(code default 30, absent from every `appsettings*.json` — there is no operator-visible knob for it at all),
-consumed by `StaleContentPrunerService` (deletes childless `raw_content` rows outright; nulls `raw_file_path`
-and calls `IFileSystem.DeleteFile` on the HTML + `.meta.json` for rows that still have `extracted_observations`
-children) and by `ExtractionProcessor`'s per-article age-cutoff skip. An operator reading `RawLayer.RetentionDays:
-90` reasonably concludes raw content lives three months; it lives one, via a knob they cannot see. Note for
-whoever re-checks this: a grep for the literal string `File.Delete` also misses the live mechanism — the delete
-runs through the injected `IFileSystem` abstraction (`DeleteOne` in `SentinelCollector/src/Data/Repositories/RawContentRepository.cs`),
-not the literal call; a pass that grepped only the literal concluded no pruner exists at all, which is false.
-Fix: wire `RawLayerOptions.RetentionDays` to actually drive the prune cutoff (retiring the invisible
-`MaxArticleAgeDays` default), or delete the dead field so `appsettings.json` stops asserting a policy nothing
-enforces. Storage is not why 30 days was chosen, if anyone weighs extending it: `sata-bulk/raw-data` reports
-5.8G live (df / zfs `REFER`) against 32.1G physical `used` (the gap is `zfs-auto-snapshot`-retained deleted
-data) at 3.67x lz4 compression (109G logical), out of 5.11T pool-available. At the lifetime average since
-collection began (`RawContentService` landed 2025-12-26, ~8 months ago) of roughly 4 GB physical/month, a
-decade of uncapped retention would land under 500 GB — under 10% of the pool.
-Re-check: `grep -n "_options\." SentinelCollector/src/Services/RawContentService.cs` (only `.BasePath`
-appears); `grep -rn "MaxArticleAgeDays" --include=*.json .` (zero hits outside its own C# default);
-`zfs get -Hp used,logicalused,compressratio,available sata-bulk/raw-data`.
 
 **1,168 FILES UNDER `rss/2026/04/23/` (PLUS 34 MORE THE SAME DAY ACROSS `searxng-content` /
 `tsa-checkpoint` / `validation-content`, AND A FEW DOZEN STRAYS FROM 2025-12-31 THROUGH 2026-07-03) HAVE
@@ -2701,50 +2330,27 @@ Re-check (run it, it is two minutes, and revert the edit afterwards):
   # expected: every separating case and every baseline case REDs; record the survivors, they are
   # the assertions that do not depend on the publisher at all
 
-**`claim_kind` SHIPS WITH ITS COVERAGE UNMEASURED — the columns exist, the subject join is proven in
-unit tests, and NOTHING says what share of production rows will actually carry a value.** Measured
-2026-08-27: 0 of 744,631 `sentinel.extracted_observations` rows carry a claim kind, because the
-column did not exist until the S3 claim-kind persistence PR (branch
-`fix/sentinel-claimkind-persistence`). The share that WILL carry one cannot be measured before
-deploy and is not a matter of trying harder: CoD CLAIM blocks are never persisted anywhere, so
-there is no stored corpus to replay the join over, and the golden corpus is drawn from
-`extracted_observations` and therefore inherits the same blindness. The failure mode is silent by
-construction — a column that is always NULL reads exactly like a column nobody queries, which is
-the shape of defect the whole identity epic is about. Fix: read the counter after the first full
-collection cycle post-deploy and record the split here.
-Re-check:
-  `sum by (outcome) (increase(sentinel_dsl_adapter_claim_atom_total[24h]))` — three outcomes,
-  `attached|ambiguous|none`, one increment per emitted NUM row, so the sum is directly comparable
-  to `sentinel_dsl_adapter_row_decision_total`. Anchor the eval instant to an actual `date -u`.
-  # `attached` at or near 0 over a day of v2 traffic (1,179.2 articles/day at the 2026-08-12
-  #   volume anchor) means the subject join finds nothing and the columns are decorative
-  # a high `ambiguous` share is a finding about the DATA, not a reason to loosen the join: it says
-  #   articles routinely make several kinds of claim about one issuer, and per-SUBJECT scoping is
-  #   what should be reconsidered — first-wins would only hide it
-  # `none` dominating on a source whose articles do carry claims points at the join key, the raw
-  #   entity name both producers copy, drifting between the two arrays -- but read it WITH
-  #   `sum by (reason) (increase(sentinel_dsl_adapter_claim_atom_refused_total[24h]))` first: a
-  #   claim_kind too wide for the 40-char column is refused at the adapter and its rows land in
-  #   `none` like any other, so producer drift and join drift are the same reading on the first
-  #   counter alone. Non-zero `kind_too_long` is a PRODUCER finding, not a join one
-
-**THE SENTINEL RAW-DATA STORE IS A 30-DAY ROLLING WINDOW, NOT AN ARCHIVE — so any corpus drawn
-from it is a snapshot that cannot be re-drawn, and a plan that treats it as a queryable history is
-planning against something that does not exist.** `extraction-identity-implementation.md` §1 sizes
-it as "59,634 files, 5.7 GB, retained since 2025-01-01" and builds story S0 on that. Measured
-2026-08-26: `StaleContentPrunerService` enforces a 30-day `raw_content` retention (its own summary
-line says so), and the oldest retained raw file on EVERY source is 2026-07-27, exactly 30 days back.
-48% of published observations (48,211 of 100,383) have a raw file at all. The consequence is
-structural, not cosmetic: every article in the golden corpus stops being regenerable within a month
-of selection, which is why those fixtures are committed rather than queried, and widening the corpus
-means selecting RECENT articles rather than reaching further back. The number that would make this
-re-checkable at a glance does not exist anywhere — there is no metric or dashboard for retained-file
-age or fixturable share, so the next person to size the store will read the directory and guess
-again.
+**THE SENTINEL RAW-DATA STORE IS A 180-DAY WINDOW, NOT AN ARCHIVE AND NOT THE 30 DAYS THIS ENTRY CLAIMED —
+so a corpus drawn from it still expires, six times slower.** `extraction-identity-implementation.md` §1 sizes
+it as "59,634 files, 5.7 GB, retained since 2025-01-01" and builds story S0 on that; that half is still wrong.
+Retention is `Extraction__RawRetentionDays=180` (`/opt/ai-inference/compose.yaml:1127`; code default 180 at
+`SentinelCollector/src/Configuration/ExtractionOptions.cs:664`), raised from 30 on 2026-08-27 — a change this
+file already recorded ("Measured 2026-08-27, raising `RawRetentionDays` 30 -> 180", in the raw-retention entry
+above) while this entry went on asserting 30, so the document contradicted itself for nine days.
+Measured 2026-09-05: the oldest retained raw file is **2026-07-27**, now today-40 and WIDENING because nothing
+has aged out since the raise, and the fixturable share moved **48% -> 56.9% (68,826 of 120,998)** — growth a
+30-day window cannot produce. The consequence is softened, not gone: fixtures are still committed rather than
+queried, but "select only RECENT articles" is no longer the right instruction. Anything back to 2026-07-27 is
+available and the first post-raise prune is due ~2027-01-23.
 Re-check:
   `SELECT source, min(collected_at)::date, max(collected_at)::date, count(*) FROM sentinel.raw_content
      WHERE raw_file_path IS NOT NULL GROUP BY 1 ORDER BY 4 DESC;`
-  # every source's min must be ~today-30; 2026-08-26 returned 2026-07-27 on all 14
+  # 2026-09-05 returned min 2026-07-27 on the four large sources and later dates on the ten small ones. Every
+  #   min must be >= today-180. A min that starts ADVANCING means the first post-raise prune ran; a min at
+  #   today-30 means the setting was reverted and this entry's original claim is true again.
+  `SELECT count(*) AS published, count(*) FILTER (WHERE r.raw_file_path IS NOT NULL) AS with_raw_file
+   FROM sentinel.extracted_observations o JOIN sentinel.raw_content r ON r.id = o.raw_content_id
+   WHERE o.published_at IS NOT NULL;`   # 2026-09-05: 120998 | 68826
 
 **THREE NAMED CANDIDATE IDs IN THE S0 SELECTION DO NOT MEAN WHAT THE PLAN SAYS, AND ALL THREE FAIL
 THE SAME WAY: THE PLAN COUNTED PUBLISHED ROWS AND THE DEFECT IS ABOUT KEYS.**
@@ -2761,7 +2367,6 @@ in the corpus (35 published, 35 keys). The corrected selection is in
 the extractor refuses to write a fixture whose declared state disagrees with the measured one.
 Re-check: run the collapse query in `MANIFEST.md`'s "keys today" column definition against those
 four ids; only 154787 may show measurements > keys.
-
 
 **The Alertmanager `warning` route's `repeat_interval` is not what paces a Grafana-managed alert, and reading it
 as such overstates the notification volume.** Alertmanager delivered **687** webhook notifications total across
@@ -2782,10 +2387,6 @@ indistinguishable from perfection. Rubric design, not plumbing.
 **`"stub"` is an unpinned cross-file contract that fails OPEN.** Writer `compare_base_vs_resolved.py:771` ->
 reader `ab_scorecard.py:129`. A writer-side rename returns `usable_nonstub` to 6 on a dead run with zero tests
 going red — the same shape as the false-green it was introduced to close.
-
-**`[24h]` is pinned only from below.** `[26h]`, `[72h]` and `[8760h]` all ship GREEN in #952's suite. A widened
-window is the MISS direction for a dead-man's switch, and the file's own banner requires a boundary pair per
-calibrated constant.
 
 **CI is advisory, not blocking** — branch protection 403s on this GitHub plan, so a red run does not stop a merge.
 
@@ -2821,26 +2422,6 @@ option value reaches it — `git -c "user.name=A<newline>B" push origin main` yi
 reordering a rule would silently change the message a blocked reviewer reads. Re-check both halves: put
 `git push origin <a real branch> # git push origin main` and the newline shape through the hook and read which
 deny answers each.
-
-**A Sentinel unit test fails spuriously, and it fails in the shape of a real regression.** Measured 2026-08-15: over
-5 consecutive full runs of the Sentinel suite on identical trees, `ExtractionProcessorArticleEmbeddingTests`
-`.should_tag_skipped_empty_when_text_blank` went red ONCE — `Expected capture.Results to contain a single item, but
-found {"failed", "skipped_empty"}` — and the same committed tree then passed 2218/2218 on the immediately following
-run. Root cause located, not guessed: exactly two test classes touch
-`sentinel_news_article_embedding_total`, and only ONE of them is collected. `ExtractionProcessorArticleEmbeddingTests`
-carries `[Collection("SentinelMeterStatic")]`; `ExtractionProcessorTests` — which reaches the same
-`TryCaptureArticleEmbeddingAsync` through the real pipeline, with no embedder configured, i.e. emitting exactly the
-leaked `"failed"` — carries NO collection attribute, so it sits in its own implicit collection and runs IN PARALLEL
-with the listening class. The capture is a global `MeterListener` filtered by meter+instrument name but NOT by test,
-so that concurrent measurement is indistinguishable from the one under assertion.
-Two candidate fixes, neither verified here: put `ExtractionProcessorTests` in the same collection (one line, but
-serialises a large class), or scope the capture per-test — a tag the test alone sets, or an assertion on the DELTA
-rather than the absolute set. Never a retry. NOT fixed in the PR that found it because flake reproduction is
-stochastic (2 in 7 runs), so a green suite would not have demonstrated the fix worked.
-Cost is not the flake, it is the DIAGNOSIS: the failure looks exactly like a real cross-test regression, and it lands
-on whoever is running the suite for an unrelated reason — here a re-extract change that touches none of this code,
-including on a DOCS-ONLY commit whose predecessor tree had just passed 2218/2218, which is what proves it
-content-independent.
 
 **16 citations in tracked `.md` cannot land, and rc 1 is therefore the corpus's steady state.** Reproduce:
 `git ls-files -z '*.md' | xargs -0 python3 scripts/verify-citations.py --quiet` — 296 checked, 17 cannot land at
@@ -3069,7 +2650,10 @@ to its base's, while FOUR citations in two non-`.md` files had silently drifted 
 `SentinelCollector/tests/.../GoldenCorpus/GoldenCorpusFixture.cs:172-173` (`:901-903` and `:2163-2165`), every
 one of them a two-cite pair spanning the v1 and v2 sector/instrument gates. All four were repaired in that PR and
 verified by content, not by rc. Reproduce the blind spot:
-`git ls-files -z | xargs -0 grep -nE '\w+\.cs:[0-9]' | grep -v '\.md:'` -- currently 4 sites, one of which
+`git ls-files -z | xargs -0 grep -nE '\w+\.cs:[0-9]' | grep -v '\.md:'` -- **53 sites across 20 files**,
+re-run 2026-09-05. This entry said "currently 4": a 13x understatement that grew with nothing going red, and
+the missed set includes `deployment/artifacts/compose.yaml.j2`, the gate-layer template this entry itself
+calls the one that bites. One of the 53
 (`dream/index_hooks.py:43`) is an EXAMPLE inside a regex doc comment and must never be "repaired", which is why
 this is a corpus question with a judgement in it rather than a flag to flip. Closing it means either extending
 the documented invocation and pricing in that example class, or a `--scope`-style opt-in; both change what every
@@ -3091,6 +2675,22 @@ each D-entry's GUARD prose against the symbol at the cited line. A symbol-anchor
 class mechanically -- `Symbol.Method @ path:line` where the landing window must mention `Method` -- but only 3
 of this card's citations use that exact form today, so the check would need the card's other citation forms
 normalised first.
+
+**~35 `file:line` citations in THIS FILE point at real-but-wrong content, and the sweep reads GREEN on all of
+them.** The live instance of the drift class above, inside `docs/BACKLOG.md` rather than a card. Measured
+2026-09-05 by a full-file audit that opened each citation: 125 resolve and every one is IN BOUNDS, while roughly
+35 land on a comment, an XML doc, a blank line or a different symbol. The largest cluster is a uniform +35-line
+drift across the `DeterministicResolver.cs` set, from #969 / #988 / #1004 all landing after the 2026-08-15
+measurements; a second pair (`/opt/ai-inference/compose.yaml:1155`, real `:1161`) appears in TWO entries at
+once. Only the citations inside entries the 2026-09-05 cleanup rewrote were repaired. The rest are LEFT ON
+PURPOSE: a repo-wide repair sweep is no evidence of anything, which the nine AGENT_README citations above
+already demonstrate — six of the nine were "repaired" while already 35 lines short.
+Re-check, and note what it CANNOT do: `python3 scripts/verify-citations.py docs/BACKLOG.md` ->
+**135 citation(s) checked, 4 cannot land** (2026-09-05, after the cleanup; 134 / 4 before it). All four are
+AMBIGUOUS-BASENAME unresolveds — `appsettings.json`, `DependencyInjection.cs`, `AdminEndpoints.cs`,
+`SeriesManagementService.cs` — and not one of them is a drifted line. The count would not move if every one of
+the 35 were repaired, nor if thirty more drifted, which is the whole point: the only finder is opening each
+citation and reading the line, so treat a fall in `cannot land` as no signal at all.
 
 **`verify-citations.py` silently skips a citation whose file has an extension outside a 10-item allowlist, and
 skips a bare `:NN` continuation entirely unless `--bare` is passed.** Two separate gates, both read from the code
@@ -3276,16 +2876,21 @@ this was first mis-called on 2026-08-26. Use `max by (...)`, and anchor `time=` 
 Disposition per alert (entry-or-retire) is unchosen. This is measurement debt, not a defect in any one
 rule.
 
-**`Extraction__GuardsEnabled=false` — AWAITING AN OWNER DECISION.** This is a deliberate experiment, not an accident:
-`/opt/ai-inference/compose.yaml:1155` carries it dated 2026-05-03, on the rationale that the Phase 4.3 client-side
-guards (token-overlap + asset-class) were defensive bandaids that had become precision sinks, with the PR-3 prose
-template plus cosine expected to disambiguate without literal-token rules. This entry records what that buys and costs
-today, and prejudges nothing. Exposure, measured live 2026-08-15T00:46Z: `/api/semantic/resolve-local?q=OpenAI`
-returned `symbol=BBAI` (BigBear.ai) WITH an instrument id, at confidence 0.85 — a private company resolving to an
-unrelated public issuer with an id attached, not a low-confidence near-miss.
-`SubjectNameNormalizer.SharedTokenCount("OpenAI", "BigBear.ai Holdings")` scores 0 and WOULD reject it; the guard
-simply does not run. So the call is a real tradeoff and belongs to the owner: re-enabling recovers this class of false
-accept and re-imposes the precision cost the experiment was set up to measure. Re-check with the same probe — it needs
+**`Extraction__GuardsEnabled=false` — AWAITING AN OWNER DECISION.** A deliberate experiment, not an accident:
+`/opt/ai-inference/compose.yaml:1161` carries it dated 2026-05-03, on the rationale that the Phase 4.3
+client-side guards (token-overlap + asset-class) were defensive bandaids that had become precision sinks, with
+the PR-3 prose template plus cosine expected to disambiguate without literal-token rules. The flag is still
+false and the decision is still open; this entry prejudges nothing.
+THE EXHIBIT IS GONE, and the entry no longer claims it. It cited a probe of 2026-08-15T00:46Z returning
+`symbol=BBAI` (BigBear.ai) WITH an instrument id at confidence 0.85 for `q=OpenAI` — a private company
+resolving to an unrelated public issuer. Re-run 2026-09-05 through the SecMaster MCP
+(`hybrid_resolve("OpenAI")`): `method=RagSynthesis`, `resolution=null`, the RAG answering `NO_MATCH`, and five
+70%-similar Business-Formations vector matches with no instrument attached. So the COST side of this tradeoff
+currently has no worked example at all — find a fresh false accept before re-arguing it in either direction,
+and do not quote the BBAI case as if it were live.
+Re-check: `hybrid_resolve` on a private-company surface (`OpenAI`, `Anthropic`, `SpaceX`) and read whether any
+returns a non-null `resolution`. `SubjectNameNormalizer.SharedTokenCount("OpenAI", "BigBear.ai Holdings")`
+scores 0 and WOULD reject that pair; the guard simply does not run. It needs
 no deploy.
 
 **17 person-named catalog rows remain in the `GeminiFallback` bucket** — 16 active all-series, plus one inactive
@@ -3357,25 +2962,22 @@ widen it to the gate rule as well 3, drop its `checkout`/`restore` condition 1. 
 
 **RECORDED, NOT CHASED — what the 498-row corpus surfaced beyond the two families it was scoped to fix.**
 None touches a HARD_STOP path, which is the only reason each was left open (2026-08-16):
-  `cp <gate file> /tmp/x` and `cat <gate file> > /tmp/x` ALLOW here and DENY on main. This is the reader/`dest_last`
-    class working as designed — the gate file is the SOURCE — but it is also **the obstruction that stopped the
-    previous review measuring deletion counts**, and it disappears the day this merges. CONFIRMED by measurement,
-    since the entry is what the next reviewer will plan around: the INSTALLED guard (`/home/james/ATLAS/.claude/
-    hooks/ansible-gate-guard.sh`, blob `c5ac440a`, identical to main) DENIES `cp <hook> /tmp/backup.sh`, so mutants
-    cannot be staged out of the layer without a bypass. Re-check by feeding that command to the installed hook.
+  `cp <gate file> /tmp/x` and `cat <gate file> > /tmp/x` ALLOW here and DENY on main. This is the
+    reader/`dest_last` class working as designed — the gate file is the SOURCE.
   `cp -T <gate file> /tmp/x` and `cp --no-target-directory <gate file> /tmp/x` ALLOW, same class, same reason.
     `--no-target-directory` is deliberately NOT a prefix of `target-directory`, so it keeps `dest_last`.
   Every finding above is a READ of a gate path. No write shape against the gate layer was left open.
-
-**`run-wiring-smoke.sh` has been RED on main since #940, and its whole job is to notice a hook being
-unwired.** Measured 2026-08-16: `WIRING SMOKE: FAIL`, one assertion, `registered set drifted: >
-dream-pending-notice.sh`. `.claude/settings.json:160` wires that hook (added by #940, merged) but the
-suite's `EXPECTED_WIRED` list at `run-wiring-smoke.sh:63-67` still names 14 hooks and its pass message
-says "exactly the expected 14". So the tool that would report "a guard got unwired" has been reporting
-FAIL for an unrelated reason, which is how that signal gets ignored. Not fixed here: bumping the list to
-15 asserts the hook SHOULD be wired, which is a judgement about #940 and not this round's to make.
-Re-check with `bash .claude/hooks/test/run-wiring-smoke.sh`; it is red on main, not on this branch's
-changes. Nothing in this repo runs these ten suites automatically (already recorded in hooks/README).
+CORRECTED 2026-09-05, and it INVERTS the sentence a reviewer would plan around. This entry asserted that the
+INSTALLED guard DENIES `cp <hook> /tmp/backup.sh` — the stated reason a previous review could not measure
+deletion counts. Probed against the armed installed guard (blob `31baafbb`): that cp **ALLOWS**, and so do
+`cp -T`, `cp --no-target-directory` and `cat <gate file> > /tmp/x`. The obstruction is gone for the bare
+spelling; plan the mutation round without a bypass. What still obstructs is the PREFIXED spelling — all nine
+`WRAPPER_RE` words (`time nice timeout stdbuf command exec ionice nohup xargs`) in front of the same cp
+**DENY**, naming the SOURCE. That is the verb-displacement class recorded as spelling (2) of the sibling-guard
+entry in KNOWN DEFECTS, not a separate finding — write the cp bare.
+Re-check: feed each shape to `.claude/hooks/ansible-gate-guard.sh` as
+`{"tool_name":"Bash","tool_input":{"command":"…"}}` on stdin and read
+`.hookSpecificOutput.permissionDecision`; an allow emits no JSON at all, so empty output IS the allow.
 
 **A harness that copies the guard into a scratch directory cannot see the bare-basename rule, and it fails GREEN.**
 `GATE_BASENAMES` is built from `$_hookdir/*.sh`, i.e. the guard's OWN directory, so a copy in a private scratch dir
@@ -3753,7 +3355,7 @@ missed 6 incl. a headline `$90/oz`: under-extraction, zero junk. Kimi-K3 MANUFAC
 quarter'->3, '20:49 ET'->"20:49"), half its barren-article extractions fabricated; 4/5 non-streamed
 calls 504'd (120.1s); `reasoning_tokens: 0` is false (23,150 chars in `delta.reasoning_content`);
 non-deterministic at temp 0. Opus 5 degrades `source_entity`, the resolution anchor, to a metric label
-at 33%. Winner's worst: `$35.69` bound to January where the article says December -- wrong period,
+at 33%. The least-bad route still errs in kind: `$35.69` bound to January where the article says December -- wrong period,
 silent series corruption. CAVEATS: n=5 is not a ranking; the recall denominator is a regex proxy
 over-counting clock times and years; 4/5 were macro/market-wrap, so re-measure the 33% on
 earnings/analyst-action first.
@@ -3788,16 +3390,35 @@ resolutions were worse than the bill. Wants shadowing before any cutover.
 grounding anchor; Sentinel news is a fast-decaying coincident perturbation weighted by benchmark STALENESS, so the
 system measures economic significance rather than coverage volume. Phases 1 / 2a / 2b are built and deployed
 (2b in shadow), #730-#736.
-- **Phase 2c cutover HELD** — embedding coverage still ramping (`missing_embedding` ~0.57) AND shadow
-  `magnitude_ratio` ~2.5, meaning dedup AMPLIFIES or sign-flips the net rather than gently compressing it.
+- **BOTH STATED BLOCKERS ARE REFUTED, AND THIS ENTRY DOES NOT UNPARK THE EPIC [2026-09-05].** The Phase 2c hold
+  rested on two numbers: embedding coverage "still ramping" (`missing_embedding` ~0.57) AND shadow
+  `magnitude_ratio` ~2.5, "meaning dedup AMPLIFIES or sign-flips the net rather than gently compressing it".
+  Measured over 7d: **0.0000479** and **1.0434**. Coverage finished ramping and dedup now compresses gently,
+  which is precisely the condition the hold was waiting for. The entry carried NO re-check, which is why it sat
+  refuted for months. Whether 2c, Phase 3 and the backtest harness resume is the USER'S decision, not an
+  agent's, and nothing here makes it.
+- **THE HEADLINE STAYS WORDED AS IT IS, DELIBERATELY.** PR #729 itself MERGED 2026-06-16T12:27:10Z — it was the
+  review surface, not a change. But `run-pr-verdict-smoke.sh` BD17/BD18 read this file's first line and assert
+  that the live backlog refuses an approve of exactly {729, 935}. Re-wording it is a GATE change with a test to
+  update in the same PR, not a docs edit — do not tidy it in passing.
 - **Phase 3** — staleness crossfade `news_weight = g(benchmark_age/cadence)` plus benchmark-anchored aggregation.
   This is the principled fix for the structural news-overweight (news MACRO cells run ~2-4x FRED magnitude and
   net-negative, which washes out sector differentiation into an over-neutral regime). Gated on 2c.
-- **Backtest harness** is the validation layer that unblocks all of #729 — shadow has no ground truth. Outcome data
-  located: `finnhub_quotes` XLE/XLF/XLV/XLK ~6.5mo, SPY/QQQ, Yahoo EOD backfill for all 11, AV WTI/BRENT/NATGAS to
-  1986. First gate is establishing a realized-sector-return series.
-- **Classifier sign-fix is parked** — do not ship it off the energy anecdote; an n=6 peek showed news directionally
-  right, but it needs a real backtest N. `commercial-paper-stress` de-flagged in the interim (#733).
+- **Backtest harness** is the validation layer that unblocks all of this — shadow has no ground truth. Outcome
+  data located: `finnhub_quotes` XLE/XLF/XLV/XLK ~6.5mo, SPY/QQQ, Yahoo EOD backfill for all 11, AV
+  WTI/BRENT/NATGAS to 1986. First gate is establishing a realized-sector-return series.
+- **Classifier sign-fix is parked** — do not ship it off the energy anecdote; an n=6 peek showed news
+  directionally right, but it needs a real backtest N. `commercial-paper-stress` de-flagged in the interim
+  (#733).
+Re-check, anchoring the eval instant to an actual `date -u` (metric prefix
+`thresholdengine_observation_projector_news_clustering_`):
+  `sum(increase(<prefix>missing_embedding_total[7d])) / sum(increase(<prefix>magnitude_ratio_count[7d]))`
+  # 2026-09-05T13:50Z -> 0.0000479, against the ~0.57 this entry held the cutover on
+  `sum(increase(<prefix>magnitude_ratio_sum[7d])) / sum(increase(<prefix>magnitude_ratio_count[7d]))`
+  # 2026-09-05T13:50Z -> 1.0434, against ~2.5. Lifetime totals 4 and 49,030, so both series are alive and the
+  #   near-zero is a real zero, not an absent series.
+  # A ratio back above ~2, or a missing-embedding share back near 0.5, RE-ARMS the original blocker. That is
+  #   the drift this entry had no way to detect, and it is why the numbers now travel with the command.
 
 **R2 / S4 -- observation identity key redesign -- PARKED on the user's decision, 2026-08-27.** The
 thesis holds, and it is not what parked the work: an observation's identity is the entity MENTIONED,
@@ -3817,8 +3438,11 @@ EVERY AXIS OF THE PROPOSED KEY FAILED A MEASUREMENT.
   between them, and `"additionalProperties": false` on both item schemas (`:56`, `:103`) and on the
   envelope (`:3`) makes adding one structurally impossible without a schema change. The only join
   either producer offers is the subject name. Confirmed independently by PR #997, which shipped the
-  columns and found the join absent -- that PR's own coverage debt is recorded above (`claim_kind`
-  SHIPS WITH ITS COVERAGE UNMEASURED).
+  columns and found the join absent. That PR's coverage debt is now DISCHARGED rather than recorded:
+  6,140 of 802,405 rows carry a `claim_kind`, 2,878 of 25,599 (11.2%) since 2026-09-02, and
+  `increase(sentinel_dsl_adapter_claim_atom_total[24h])` splits attached 547 / ambiguous 869 / none 2,935
+  (2026-09-05). A high `ambiguous` share is a finding about the DATA -- articles routinely make several kinds
+  of claim about one issuer -- not a reason to loosen the per-SUBJECT join.
 - `period` is populated on **582 of those 21,569 published-with-instrument rows (2.70%)**, and not
   one has been extracted since **2026-06-30**. THE REASON IS THE V2/DSL CUTOVER, and this bullet has
   carried two retired explanations before this one. It is NOT "the extractor does not do periods"
@@ -3943,14 +3567,11 @@ Re-check: `claude --version` past 2.1.261 with the flag shipped; `ls .claude/hoo
 main and were not. The settling check is one command — `git branch --contains` on the commit that introduced the
 line — and it was never run until a reviewer ran it.
 
-**A tool's green run is not proof.** Ask what the tool cannot see before believing it; every instrument in the
-MEASUREMENT DEBT section above reported success while blind. See CLAUDE.md TOOL_UPKEEP.
-
 **Scoped-deploy collateral is CONDITIONAL — record what actually moved, do not derive a rule.** Two runs on
 2026-08-15: the `secmaster` scoped deploy ALSO recreated `llama-cpu-rag` and `llama-cpu-embed`; the
-`sentinel-collector` one recreated nothing else. Two runs is not enough to say which services drag which
-neighbours, and a general rule written off this sample would be wrong in one direction or the other — so no rule
-goes in CLAUDE.md. The operative practice is the one that survives either explanation: after any scoped deploy,
-enumerate what actually restarted (`nerdctl container inspect` — NOT bare `inspect`, which resolves the IMAGE and
-hands back the BUILD time) and record it with the run. If a third and fourth observation agree, that is when a rule
-is earned.
+`sentinel-collector` one recreated nothing else. Two runs cannot say which services drag which neighbours, and a
+general rule written off this sample would be wrong in one direction or the other — so no rule goes in
+CLAUDE.md. The practice that survives either explanation: after any scoped deploy, enumerate what actually
+restarted and record it WITH the run. A third and fourth agreeing observation is when a rule is earned.
+Re-check: `sudo nerdctl container inspect <svc> --format '{{.Created}}'` per service — `container` is
+load-bearing (CLAUDE.md VERIFY_TRAP: bare `inspect` resolves the IMAGE and hands back the BUILD time).
