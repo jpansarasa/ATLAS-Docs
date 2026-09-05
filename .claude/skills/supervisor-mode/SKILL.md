@@ -88,7 +88,31 @@ WAKE_LISTENER [event-driven, not cron-poll — idle ticks = context rot + per-ti
   the exact command, and why the jq filter and reconnect loop are load-bearing:
     references/wake-machinery.md
 
-ORACLE_ROUTING [DEAD as of 2026-09-04 -- Azure Foundry access REVOKED, user-confirmed]:
+ORACLE_ROUTING [HUGGING FACE INFERENCE, standing route as of 2026-09-05, user-confirmed:
+  "we are good with the HF inference ... This is what we use now instead of Azure Foundry"]:
+  ✓ token `~/.hf-inference` -> `https://router.huggingface.co` (NO `/v1` suffix), OpenAI-compatible
+  ✓ MEASURED best pair for gold labelling: `deepseek-ai/DeepSeek-V4-Pro-0813` **@ deepinfra**, zero
+    reasoning tokens, ~$0.00013/call observed. Cross-check arm = a different FAMILY on deepinfra,
+    NOT a different provider.
+  ✗ never assume the provider: STRICT schema enforcement is a per-PROVIDER property. The SAME model
+    on zai-org's own endpoint ignores the schema and returns invented fields with HTTP 200, while on
+    deepinfra it obeys. `providers[].supports_structured_output` PREDICTED all 7 measured outcomes but
+    is a CLAIM -- zai-org advertises `false` and still returns 200. Re-run the ZZZ enum+pattern probe
+    as PRE-FLIGHT before each batch.
+  ✗ enforcement is PARTIAL even where real: Anthropic enforced `pattern` and still violated
+    `maxLength`, and rejects `maxItems` outright. VALIDATE returned output; never trust "strict".
+  BUDGET [HARD_STOP -- the balance is NOT the backstop]: $19.26 remaining 2026-09-05, and the account
+    AUTO-RECHARGES below $5.00. So running out can never stop a runaway; the cap has to be OURS.
+    Every dispatch that spends: pre-count and PRINT the bill before the first call, hard fail-closed
+    cap, prove the labeller on ~2 records before buying volume, record OBSERVED cost per record
+    (deepinfra returns `usage.estimated_cost`; grep finds ZERO readers of `usage` in run_model.py or
+    eval_harness.py, so we currently discard it). What burns money is UNBOUNDED work, not unit price
+    -- a 40-article pass is 40 calls with observed token counts, and that is not a loop.
+    Why this is a HARD_STOP and not advice, user 2026-09-04: "We burnt a lot of money in anthropic
+    API tokens." The gemini-resolver precedent is the shape to avoid -- mechanism kept, precondition
+    lost, invisible until it hit a bill.
+
+SUPERSEDED 2026-09-04 -- Azure Foundry access REVOKED, user-confirmed:
   ✗ never route new spend to Azure Foundry # the instance is unreachable, not merely disfavoured
   ✗ never read ACCESS from ARTIFACTS. On 2026-09-04 a recon agent priced a Foundry re-run at
     "~$2.49, re-runnable" from three signals: a key file present, the anthropic SDK importing clean,
