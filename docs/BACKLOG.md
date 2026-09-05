@@ -2194,6 +2194,112 @@ d['diagnostics']['source_entity_empty_rate']['value'],d['controls']['shuffled_go
 A shuffled-gold value that is NOT near zero is the finding, not the model's: it means the alignment key
 stopped discriminating, or the corpus went near-duplicate.
 
+GOLD SHAPE (cause 2): route (b) IS NOW TAKEN, and the entry stays open anyway. `LlmBenchmark/cod-gold/`
+holds 1,736 gold facts in CoD's own shape over 40 deliberately-chosen articles, every object validating
+against `cod_json_schema_v1.json` under jsonschema Draft 2020-12, every fact naming the labeller that
+produced it (`LlmBenchmark/scripts/build_cod_gold.py`, `verify_cod_gold.py --selftest` = 10/10 known-bad
+mutations caught -- 8 positive, 2 negative -- $3.40 measured over 96 requests). What that does NOT do is score anything: cause 1
+(`parse_extractions` returns `([], False)` on CoD's five-key object, so every production response is
+still a parse failure to this harness) is untouched, and no scorer reads the gold yet. Both are
+required before a scorecard exists, so §MODEL_ACCEPTANCE still blocks every candidate.
+Re-check: `python3 LlmBenchmark/scripts/verify_cod_gold.py --gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json
+--corpus LlmBenchmark/cod-gold/cod_stage1_corpus_v1.json --selftest` exits 0 while the gold is intact,
+and `ls LlmBenchmark/cod-gold/*scorecard*.json` finds NOTHING while no scorer has run against it. A
+scorecard appearing there means this paragraph is stale. (Do not reach for `grep -rl cod_stage1_gold
+LlmBenchmark/scripts/*.py`: the gold path is a runtime argument, so that grep names zero files both
+before and after a scorer lands -- it was written into this entry, run once, and replaced.)
+
+WHAT THE GOLD DOES NOT COVER, measured on it 2026-09-05 and re-checkable from its own `controls` block:
+- `guidance` and `regulatory` have ZERO gold members out of 40. Not a labelling slip -- the cross-check
+  confirmed the primary's `article_type` on 37 of 40, so both labellers independently place every
+  candidate elsewhere. This substrate's guidance articles are earnings articles that also guide, and its
+  regulatory articles are macro stories with a court in them. A per-class article_type figure for those
+  two values is an empty cell, not a score.
+- Inter-labeller agreement splits hard by array: numbers 0.886, entities 0.737, events 0.302, claims
+  0.138 (two independent full extractions, 8 articles). `event_kind` and `claim_kind` are free-form
+  strings with no enum -- 39 distinct event_kind and 44 distinct claim_kind values across the two
+  labellers on those 8 articles -- so two careful labellers name the same event differently and score
+  zero. Rescored on `subject` ALONE the vocabulary effect separates: events recover 0.302 -> **0.708**,
+  claims only 0.138 -> **0.356**. So for events the free-form kind is the whole problem; for claims it is
+  NOT, and the two labellers genuinely pick different claim subjects. Stated plainly: numbers (518) and
+  entities (616) are usable gold, 1,134 of 1,736 objects (65%); events are usable on `subject`+`trigger`
+  only; a model comparison run over `claims` measures noise. A scorer that weights the four arrays
+  equally reports vocabulary as model quality.
+- Three gold `numbers[].value` fields hold RANGES ("3-4", "4-5", "50-100") where the schema's contract is
+  a single normalised number. Small, real, and in the gold: `controls.control_2b_invention_sweep.detail`.
+- The recall denominator is 89 hand-counted facts across 5 of the 40 articles. It bounds those five.
+
+**ALIGNABILITY IS NOT SCHEMA-VALIDITY, and a scorer built on this gold has two decisions to make.**
+Measured 2026-09-05 on the gold's `controls.control_5_alignability`; both hazards are invisible to
+jsonschema and silent in a score.
+1. A required string field can be present and BLANK. It then aligns with nothing -- including a
+   byte-perfect copy of itself -- scoring as a false positive AND a false negative at once, and the loss
+   reads as a model miss. Production's own Qwen2.5 over 597 substrate articles emits 150 of 2,520 events
+   with a blank `subject` and 38 of 2,351 claims with a blank `object`, every one schema-valid; that is
+   what holds a gold-tautology ceiling to 0.9993 instead of 1.0. This gold carries ZERO of them, with one
+   deliberate exception: `numbers.source_entity` is blank on 32 of 518, because production's prompt
+   SPECIFIES `""` for a figure with no owner (Conference Board survey shares, national gas prices, a
+   shutdown's duration). They are KEPT -- dropping them would delete real facts and bias gold away from
+   macro prints, 13 of the 20 numbers in article 1 being ownerless. **A scorer must treat `""` as a value
+   that aligns with `""`, never as an absent identity**, or it silently zeroes 6.2% of numbers and far
+   more on the article type production sees most.
+   COUNT THE WHOLE CENSUS, NOT THE IDENTITY FIELDS. That 32 counts only the REQUIRED fields a scorer
+   aligns on. Gold holds **181** blank strings in total: 32 `numbers.source_entity`, 5 `events.object`,
+   and **144 `entities.ticker`**. The latter two are optional in the schema and outside every alignment
+   key here, so the zero-unalignable-blanks claim is unaffected -- but "the only blanks are the 27
+   source_entity ones" was wrong by 149 and is the kind of number that gets quoted forward. The 144 are
+   also an ENCODING DEVIATION: production's prompt says of `ticker` "include ONLY if the ticker is stated
+   in or directly resolvable from the article; otherwise OMIT", and these emit `""` instead. A scorer
+   doing field-level ticker comparison marks a correctly-OMITTING model wrong on all 144.
+2. The obvious alignment key COLLIDES. On `(event_kind, subject)` 47 of 247 events (19.0%) and on
+   `(claim_kind, subject)` 87 of 355 claims (24.5%) share a key with another object in the SAME article
+   -- one article states six different things about the BLS, all `labor_market_statement`. Adding the
+   discriminating field (`trigger` for events, `object` for claims, `value` for numbers) takes every
+   array to **0 collisions**. Align on the wide key; the narrow one matches arbitrarily inside those
+   groups and credits a prediction for the wrong fact.
+Re-check: `python3 LlmBenchmark/scripts/verify_cod_gold.py --gold ... --corpus ... --selftest` prints
+`10/10 controls behaved as required`; a lower number, or any `alignability:` or `anchor:` line in the
+non-selftest output, means one of these regressed.
+
+**THE SCHEMA'S STRING CAPS SHAPED THE GOLD, AND ONCE PRODUCED A KNOWINGLY-WRONG LABEL.** Measured
+2026-09-05 on the first build; the instances are fixed, the mechanism is not. `cod_json_schema_v1.json`
+caps `numbers.context` at 80 characters and `claims.object` at 120, and the builder DISCARDS a
+cross-check correction whose corrected string exceeds the cap -- disposition `not applied: would break
+schema` -- leaving the uncorrected value in gold. That is a length constraint silently winning against a
+correctness one.
+- `numbers.context` at 80: article 0's `$35.69` row said the earnings were reached **in January** where
+  the article says **In December**; January is only the release-title month, and the sibling row for the
+  same sentence said December, so one sentence was labelled two ways. The correction was dropped for
+  being **81** characters: `average hourly earnings for all employees on private nonfarm payrolls in
+  December`. It fits at 79 as `... private nonfarm payrolls, December` -- " in " -> ", " -- so this one
+  was a rewording away, and shipping the wrong month instead is the defect. The shipped string was
+  exactly 80, the only `numbers.context` in the corpus sitting at the cap.
+- `claims.object` at 120: **19 of 355 (5.4%)** sat at exactly 120, every one severed mid-phrase, one
+  shipping corrupt text -- article 522 ended `...sticky inflation andeLe` where the article reads `the
+  risk of sticky inflation and elevated asset prices`. The cross-check supplied the correct 139-char
+  string and it was discarded for length. Others truncated a labelled entity out of existence (472 ended
+  `...DDR4 and DDR` while `DDR5` is its own entity in the same file) or ended on a dangling preposition.
+  All 19 re-cut from the article to a phrase boundary; **0 claims now sit at 120**, max is 119.
+THE DETECTION HEURISTIC IS THE LENGTH HISTOGRAM: before the fix, lengths 111-119 held 22 objects between
+them and length 120 alone held 19. A cap-shaped spike is truncation, not natural phrasing. Re-check:
+`python3 -c "import json,collections;d=json.load(open('LlmBenchmark/cod-gold/cod_stage1_gold_v1.json'));
+print(collections.Counter(len(c['object']) for a in d['articles'] for c in a['gold']['claims'])[120])"`
+prints `0`; anything above ~2 means truncation is back.
+OPEN, and NOT fixable inside this gold: the caps belong to production's schema, so raising them changes
+what production emits, and no measurement yet says whether 120 costs real claim content at extraction
+time or only cost it at labelling time. Whoever raises them needs that number first.
+
+**IS A MACRO SERIES AN OWNER? 129 OF 518 NUMBERS (25%) SAY YES; THE PROMPT'S OWN EXAMPLE SAYS NO.**
+Those anchor `source_entity` to a `macro_indicator` entity ("unemployment rate", "Manufacturing
+PMI"), while `cod_json_v1.txt` reads: `On "US CPI rose 3.1%", context is "US CPI year over year"
+and source_entity is ""`. Pre-existing, unwritten, UNDECIDED -- deliberately not re-adjudicated,
+because a quarter of the number owners is not one agent's judgement call. `source_entity` sits in
+both proposed alignment keys, so a scorer silently inherits whichever answer this gold holds.
+SETTLE IT BEFORE ANY SCORER READS THIS GOLD FOR A MODEL DECISION. Re-check: `python3 -c "import json;
+d=json.load(open('LlmBenchmark/cod-gold/cod_stage1_gold_v1.json'));print(sum(1 for a in
+d['articles'] for n in a['gold']['numbers'] if {e['name']:e['ent_type'] for e in
+a['gold']['entities']}.get(n['source_entity'])=='macro_indicator'))"` prints 129.
+
 BUDGET THE RE-CHECK ABOVE FOR MORE THAN 4096 COMPLETION TOKENS. Measured 2026-09-05, Qwen3.8-27B via
 the HF router (deepinfra), production's CoD prompt now correctly substituted, 2 substrate records at
 `--max-tokens 2048`: `truncated: 2`, `finish_reason: length` on both, `completion_tokens: 4096` -- i.e.
