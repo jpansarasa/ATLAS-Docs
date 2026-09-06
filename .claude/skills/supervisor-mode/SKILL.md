@@ -22,6 +22,8 @@ doing X -> read Y, THIS turn, before acting:
     mid-thought                       -> references/brief-construction.md
   STARTING a new epic, or CLOSING the current one out
                                       -> templates/STATE-scaffold.md # evict-then-reset ritual
+  dispatching a review round, or recording a merge verdict
+                                      -> .claude/skills/review-discipline/SKILL.md # when to stop reviewing
   writing ANY dispatch brief          -> LESSONS.md # lessons agents cannot read from supervisor memory
   the mandatory brief stanzas, MERGE_GATE, TURN_BUDGET, RED_FLAGS -> stay HERE, never lazily loaded
 CARVE-OUT [without it this router orders a read two HARD_STOPs forbid]: a read of a file named in
@@ -356,6 +358,12 @@ TIER1_CLAIM_CHECK [mechanical — the DATA-vs-DIAGNOSIS rule above kept failing 
       # both outcomes are the rule working, and only the first is a catch.
     RE-ATTACK THE OLDEST, never only the newest — "attack what the last round introduced" is correct
       and leaves the ORIGINAL CHANGE permanently behind the frontier [[LESSONS.md L14]]
+      SCOPE, precisely: the round carrying the APPROVE re-attacks the oldest at FULL artifact scope,
+        always. An intermediate round that CANNOT approve — a critical still open, or >=2 rounds left
+        in budget — may be diff-scoped to the fix it is checking.
+        # review-discipline/SKILL.md FORCED_PASS. Without this clause the rule reads absolute here
+        # while REVIEW_FIX_LOOP step 6 reads qualified, and a brief written from THIS line orders the
+        # unbounded sweep the budget exists to end
     MEASURE BEFORE YOU ANCHOR — ask for the independent measurement FIRST and reveal the previous
       round's figures AFTER. Handing a low-variance reader the prior numbers anchors it to them.
       AFTER means it has WRITTEN ITS MEASUREMENT DOWN and cannot silently revise it — ordering two
@@ -383,12 +391,19 @@ POLL (atlas-claude-reply): TURN_LOOP step 1 + WAKEUP_STEP_0
 
 ## REVIEW_FIX_LOOP [PR_ready]
 AUTO_FIRE on supervisor-opened PR (no user gate):
+  0. declare the ARTIFACT CLASS and its round budget BEFORE round 1
+     -> .claude/skills/review-discipline/SKILL.md ROUND_BUDGET
   1. dispatch(review-pr + observability-review + intent-review) | parallel | background
   2. aggregate findings: {critical, important, suggestion}
   3. dispatch fix per severity | commit-as-you-go | selective pathspec
   4. push only after critical+important addressed
   5. re-run review -> verify no regression + catch new issues # brief shape: TIER1_CLAIM_CHECK RE-REVIEW
-  6. iterate until convergent -> merge -> next story
+  6. iterate INSIDE the declared budget -> merge -> next story
+     ✗ never "until convergent" — that is the unbounded loop review-discipline exists to end: a
+       careful reviewer always finds something, so convergence is not a signal that arrives.
+       At the tripwire, RE-DECLARE in writing; never merge over an open critical.
+     the round carrying the APPROVE re-attacks the OLDEST at full scope, never the fix diff
+       # RE-REVIEW above, and review-discipline FORCED_PASS for what the other rounds may scope to
 LENSES [step 1]: ONE lens per dispatch, and never the same brief for two of them — same brief
   converges and manufactures false confidence (evidence: TIER1_CLAIM_CHECK TWO REVIEWERS).
   Only `review-pr` can reach a mergeable verdict; intent-review and observability-review add
