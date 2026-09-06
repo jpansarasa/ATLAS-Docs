@@ -3302,6 +3302,52 @@ before. They are not comparable and neither converts to the other.
 already records `event_kind`/`claim_kind` as free-form, with two careful human labellers scoring
 0.302 and 0.138 against each other. Read the `numbers` and `entities` rows; treat the rest as texture.
 
+**THE FAMILY RE-QUALIFICATION [2026-09-06, numbers_f1, production's CoD path, 40 gold articles].**
+Six families that `LlmBenchmark/BENCHMARKS.md` eliminated were re-run at feasible points. Rule and
+method: `LlmBenchmark/MEASUREMENT_SPACE.md`. All rows n=3 unless noted, fp8_e4m3 KV, max_model_len
+32768, temp 0, seed 42, rep_penalty 1.1, max_tokens 4096, production's prompt and schema.
+
+| model | numbers_f1 | sd | engine | max-num-seqs / util | note |
+|---|---|---|---|---|---|
+| Gemma 4 31B QAT w4a16-ct | **0.7570** | 0.0009 | vllm-**0.28.0** | 6 / 0.90 | NOT production's engine -- see caveat |
+| Qwen3.8-27B (armC candidate) | 0.7132 | 0.0109 | vllm-0.19.0 | 16 / 0.95 | |
+| Gemma 3 27B w4a16 | 0.6220 | 0.0151 | vllm-0.19.0 | 16 / 0.95 | n=2 at time of writing; leaderboard says `0.0% FAIL` |
+| Qwen2.5-32B-AWQ (incumbent, n=5) | 0.5153 | 0.0106 | vllm-0.19.0 | 16 / 0.95 | production today |
+| Mistral-Small 24B | 0.5105 | 0.0032 | vllm-0.19.0 | 16 / 0.95 | THE CONTROL -- see below |
+| Command-R 08-2024 (current build) | 0.3178 | 0.0098 | vllm-0.19.0 | 16 / 0.95 | |
+| EXAONE 4.0 32B | 0.2218 | 0.0089 | vllm-0.19.0 | 16 / 0.95 | |
+
+**THE MISTRAL ROW IS THE ONE THAT MAKES THE OTHERS CREDIBLE.** It sits at 0.5105 against the
+incumbent's 0.5153 -- indistinguishable, 0.9x se, overlapping runs. Its leaderboard row was 52.1% on
+retired Ollama. So moving a row onto vLLM with `response_format` json_schema is NOT a universal
+uplift, and Gemma's gain is therefore not an artifact of the new harness. Without this row the whole
+sweep would be unfalsifiable.
+
+**GEMMA 4's NUMBER IS NOT YET ATTRIBUTABLE, AND IT MOVES TWO AXES, NOT ONE.** It is the only arm not
+on production's engine (0.28.0, transformers 5.15.1, torch 2.13.0+cu130) because 0.19.0 allocates
+sliding-window layers inefficiently and could not fit it -- that is an ENGINE property, not the
+architecture's, and the agent's own contrary prediction was refuted by measurement (68,892 KV tokens,
+3,070 MiB free). An engine control (incumbent on 0.28.0) is in flight. SEPARATELY, and not flagged in
+the original report: it also ran at **max-num-seqs 6 / util 0.90** against every other arm's 16 / 0.95.
+Continuous batching makes batch composition a real axis, and it is the likeliest explanation for this
+arm's sd of 0.0009 against armC's 0.0109 -- a 12x variance difference. So Gemma4-vs-armC currently
+moves engine + model + quant + concurrency. The engine control must be run at Gemma 4's OWN point, or
+the control isolates nothing.
+
+**TWO ELIMINATIONS WERE REFUTED AS FAMILY VERDICTS AND STILL SCORE POORLY, WHICH IS A DIFFERENT FACT.**
+Command-R's "35B too large for KV cache" was true of v01's no-GQA design (640 KiB/token, 8K native)
+and was recorded as a fact about the FAMILY; the current build boots at full 32K with 71,952 KV tokens
+and 6,078 MiB spare, 0 errors, 82-96s per gold set -- and then scores 0.3178. The elimination reason
+was wrong and the conclusion happens to survive. EXAONE's "can't follow extraction format" was HALF
+right, and the precise half matters: it follows the schema with 0 call errors but fails to TERMINATE
+inside production's 4,096-token budget on 8-9 of 40 articles (finish_reason `length`, stable across
+runs), which score zero. That is a budget interaction, not a schema-compliance failure.
+
+**COROBORATES `CLAUDE.md` §VLLM_UPGRADE**: this Gemma 4 arm ran 0.28.0 with `--kv-cache-dtype
+fp8_e4m3` at concurrency 6 for 3 full runs with 0 errors -- the flag that block names as the one-flag
+fix for the e5m2 fault, now exercised on a second model.
+
+
 Re-check. The predictions, the fifteen scorecards, the sidecars and the engine snapshots are under
 `/tmp/sentinel-remediation/qwen-ab/` and one `tmpwatch` ends them; the INPUTS are committed, so the
 measurement is repeatable even after that, which is what the digest table is for. One arm, five runs:
