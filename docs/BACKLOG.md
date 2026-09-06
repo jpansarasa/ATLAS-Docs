@@ -52,6 +52,60 @@ converging-on-a-reimplementation-of-bash path L14 prices out, and the prose case
 unbounded. Close it by gating the ACT -- the tool call's resolved write target -- rather than the
 spelling of the command line.
 
+**MODEL BASELINES, aggregate_f1 on the v6.2 substrate.** Moved out of CLAUDE.md §MODEL_ACCEPTANCE 2026-09-06,
+which now carries only the rule and a pointer here; scorecards are in `LlmBenchmark/eval-substrate/*.json`.
+EVERY FIGURE NAMES ITS ENGINE, because a bare number does not identify a run: the challenger's label spans
+0.694-0.764 across five scorecards in one diff -- a wider range than the 0.051 effect the "`fp8_e5m2` KV
+cache costs ~0.05 aggregate F1" entry tables -- and the bare `0.763` that sat in CLAUDE.md was a vLLM 0.28.0 run,
+the engine the "0.28.0 upgrade is BLOCKED by our `fp8_e5m2` KV cache" entry blocks, not production's.
+
+| model | aggregate_f1 | engine / config |
+|---|---|---|
+| Qwen2.5-32B-AWQ | 0.443 | vllm-0.19.0, fp8_e5m2 KV (production today) |
+| Qwen2.5-32B-AWQ | 0.494 | vllm-0.19.0, unquantized KV |
+| Qwen3.8-27B-AWQ-INT4 | 0.764 | vllm-0.19.0 |
+| Qwen3.8-27B-AWQ-INT4 | 0.7634 | vllm-0.28.0 [BLOCKED engine] |
+| Qwen3.8-27B-AWQ-INT4 | 0.7629 | vllm-0.28.0 + MTP speculative decode -- F1 unchanged, wall clock -30% |
+| Qwen3.8-27B-AWQ-INT4 | 0.744 | NVFP4 @ vllm-0.28.0 |
+| Qwen3.8-27B-AWQ-INT4 | 0.694 | vllm-0.19.0, the model card's own sampling |
+
+FOUR digits on the 0.7634 and 0.7629 rows deliberately -- both round to 0.763, so a three-digit row does not
+say WHICH scorecard it came from. Do not round them.
+
+NONE OF THIS IS ACCEPTANCE EVIDENCE. It is scored on the substrate's own 16 instruction blocks, a task
+production does not run; CLAUDE.md §MODEL_ACCEPTANCE governs, and a swap needs a CoD scorecard on production's
+prompt path. The table is also why the old `MODEL_SIZE >= 30B` floor was retired: a 27B model beats our 32B
+incumbent here, so the proxy would have BLOCKED an upgrade on a number that was never the point. That
+retirement rationale lived in CLAUDE.md justifying a rule that no longer existed; it belongs with the
+measurement that settled it.
+
+**Two docs outside CLAUDE.md still teach the retired `MODEL_SIZE >= 30B` floor.** Found 2026-09-06 while moving
+the retirement rationale into the entry above; both predate that move and neither was touched by it. The ROOT
+`README.md` asserts ">=30B-parameter models" for Sentinel extraction and links `[CLAUDE.md -> SENTINEL]` -- the
+section that RETIRED the floor -- so the pointer now leads to its own refutation; the same file also advertises
+"Sentinel sizing" as one of CLAUDE.md's conventions. `docs/SENTINEL-RLM.md` carries a `### Model Size (30B+)`
+heading, a table cell reading "30B+ required for extraction quality", and a `## Do Not` bullet forbidding
+sub-30B models. This MISLEADS rather than merely lagging: the floor was retired because it is a PROXY that
+would have BLOCKED a real upgrade -- a 27B model beats our 32B incumbent on this substrate, in the table above --
+so a reader who lands on any of these declines the upgrade the measurement favours. Cited by grep and not by
+line, because a `README.md` citation is ambiguous across this repo and would rot besides:
+`grep -c 30B README.md docs/SENTINEL-RLM.md` -> 1 and 4 on 2026-09-06. Close it by replacing each with
+MODEL_ACCEPTANCE's actual bar -- a scorecard on production's prompt path that beats the incumbent's -- not by
+deleting the numbers.
+
+**The three stores, and the numbers CLAUDE.md §WHERE_WORK_LANDS no longer carries.** Measured 2026-09-05
+(recorded by #1007) at `c32354f7`, which is the sha that reproduces them and NOT #1007's own `7a9769ed`, a
+later tree measuring 3,936: STATE.md 293 lines; docs/BACKLOG.md 3,849 lines with 21 STALE entries reading as live;
+LESSONS.md 13 of 14 exit criteria written and never once run -- that third figure survives, in LESSONS.md's own
+header, and the first two had nowhere to live until this entry. Two of the three now have an out-flow that RUNS:
+`scripts/new-epic.sh` audits STATE.md and LESSONS.md at the epic boundary and refuses the reset on a finding.
+THIS FILE HAS NONE -- its out-flow is a human closing an entry in the PR that fixes it, which is the mechanism
+that produced the 21. Re-check: `wc -l docs/BACKLOG.md` -- 4,187 with this entry in it on 2026-09-06, so 3,849
+is the dated measurement and not today's size, and the growth is the point. STATE.md was reset since (49 lines,
+2026-09-06) and lives ONLY at the repo root -- untracked, gitignored, absent from every worktree, so `wc -l` on
+it from one fails rather than reporting zero. The 21 is an AUDIT count, NOT a grep -- nothing here is labelled
+stale, which is precisely what "reading as live" means -- so re-deriving it means re-reading the entries.
+
 **Production's `fp8_e5m2` KV cache costs ~0.05 aggregate F1 on extraction, concentrated in RECALL.**
 Measured 2026-09-04, Qwen2.5-32B-AWQ on vLLM 0.19.0, KV dtype the ONLY variable, full 597-record substrate:
 
@@ -3170,9 +3224,12 @@ citations are counted inside the 94 and reported as landing, which is the entire
 as 2 standing unresolvables + 1 blank = 3, so a sweep can never have flagged more than one of the five.
 CONSEQUENCE: any edit that shifts line numbers in a cited file requires a BASELINE COMPARISON, not a green run —
 and after repairing, re-derive each cited line's content by hand, because the tool will pass whatever you write.
-Re-check: run the tool on the touched docs from a pristine checkout of the merge-base and again from the branch, and
-compare the `N citation(s) checked, M cannot land` line from each; M must not rise, and any rise in N must be
-accounted for by citations you deliberately added.
+Re-check [SUPERSEDED 2026-09-06 on the comparison, not on the consequence]: run the tool from a pristine checkout
+of the merge-base and again from the branch, and diff the LANDING TEXT of every citation. Do NOT settle for
+comparing the `N citation(s) checked, M cannot land` line: a rise in M is still a finding, but EQUALITY IS NOT A
+PASS. Two cases since prove it -- the `.md`-blind-spot entry below, where 488/27 matched its base while four
+citations drifted, and `a8a0ed5d`, where 195/496/28 matched EXACTLY while three did. CLAUDE.md TOOL_UPKEEP
+carries the rule in its current form.
 
 NARROWED, NOT CLOSED [2026-09-04, #1002]. One sub-class is now machine-decidable and is decided: a citation whose
 prose names `D-n` within 8 lines and which LANDS on a line beginning `D-m` is reported as `WRONG-D-ENTRY`, counted
@@ -3185,7 +3242,8 @@ citations by re-anchoring them to symbols and nobody re-swept. Re-derive it, nev
 FinnhubCollector case ABOVE IS STILL LIVE AND STILL GREEN: those five are GUARD citations landing on method
 declarations in a `.cs` file, where no `D-n` appears at the landing site and demanding one would condemn all 111
 GUARD citations in this repo's cards. So the CONSEQUENCE paragraph above is unchanged for every citation that is
-not a card-entry pointer, and the baseline comparison is still the only way to see one move.
+not a card-entry pointer, and a comparison against a pristine baseline is still the only way to see one move --
+on its LANDING TEXT, per the superseded Re-check above, never on the counts alone.
 
 **The documented citation sweep is `.md`-ONLY, so a line shift rots citations it structurally cannot see.**
 Same shape as the `--memory` corpus gap above -- the resolver is fine, the CORPUS is wrong -- and this one is
@@ -3857,11 +3915,13 @@ not trust a line number -- this branch has moved them repeatedly.
 - `strict: true` IS NOT REQUIRED. `grep -c '"strict"' run_model.py` -> 0: it sends
   `{"type": "json_schema", "json_schema": {"name": ..., "schema": ...}}` with no `strict` key, and deepinfra
   enforced anyway. Nothing has to be added for enforcement -- only for auth.
-- PER-REQUEST COST IS DISCARDED. deepinfra returns `usage` carrying `estimated_cost`, and `grep -c usage`
-  is **0 in BOTH `run_model.py` and `eval_harness.py`** -- the field is read by nothing, so a labelling run
-  cannot report what it spent from its own output. Same shape as the Foundry ledger whose `cost_est` had to
-  be corrected 3x after the largest run: a run that does not record its OBSERVED cost leaves only list-price
-  arithmetic behind.
+- PER-REQUEST COST WAS DISCARDED -- CLOSED at #1009 (`8dc8fca7`). `grep -c usage` WAS 0 in both
+  `run_model.py` and `eval_harness.py`. run_model.py now captures `usage` per request, `aggregate_usage`
+  sums `estimated_cost` and records how MANY records priced (`cost_reported_by`), so a partly-priced run
+  cannot understate the per-record rate by dividing across all of them, and the run prints the bill.
+  `eval_harness.py` still has zero `usage` readers and correctly so: it scores an existing scorecard and
+  makes no calls. The Foundry ledger whose `cost_est` had to be corrected 3x after the largest run is why
+  this mattered: a run that does not record its OBSERVED cost leaves only list-price arithmetic behind.
 
 THE DISTINCTION TO PRESERVE. The router is CHAT-only. LABELLING (produce gold) and SCORING (grade
 production's own `/v1/completions` path against that gold) are two jobs on two endpoints: a hosted route

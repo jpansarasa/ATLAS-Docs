@@ -770,9 +770,13 @@ and a decision word inside an 8-line window of one paragraph, and that cannot
 work here: the decision vocabulary IS the backlog's ordinary working vocabulary.
 "the work is blocked on #979 landing first", "three earlier attempts were
 rejected", "the older design in #900 was superseded by" and a fourth modelled on
-CLAUDE.md's OBSERVABILITY sentence about rejected calls and cap slots each
-refused a legitimate approve. The fourth is MODELLED, not quoted — CLAUDE.md's
-passage names no PR at all, so it could never have refused anything. What a
+the house sentence about rejected calls and cap slots each refused a legitimate
+approve. The fourth is MODELLED, not quoted — that passage names no PR at all, so
+it could never have refused anything. It lives in supervisor-mode LESSONS.md L17,
+on its OCCURRENCES line and reflowed across a break there, so grep `consumed cap`
+rather than the whole clause. CLAUDE.md §OBSERVABILITY carried it until 2026-09-06
+and now keeps the rule without the sentence, so grepping CLAUDE.md finds nothing.
+What a
 RECORDED decision looks like in that file is an ENTRY HEADLINE, so the number
 must sit inside a `**bold span**` (or on a `#` heading line) with a decision word
 in that same span or on that same line. Swept over the real file at `112449be`,

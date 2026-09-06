@@ -114,8 +114,8 @@ ORACLE_ROUTING [HUGGING FACE INFERENCE, standing route as of 2026-09-05, user-co
     still removes the gradual brake between here and that ceiling. So the per-run cap stays ours.
     Every dispatch that spends: pre-count and PRINT the bill before the first call, hard fail-closed
     cap, prove the labeller on ~2 records before buying volume, record OBSERVED cost per record
-    (deepinfra returns `usage.estimated_cost`; grep finds ZERO readers of `usage` in run_model.py or
-    eval_harness.py, so we currently discard it). What burns money is UNBOUNDED work, not unit price
+    (deepinfra returns `usage.estimated_cost`; run_model.py CONSUMES it since #1009 -- it sums the
+    per-request figure and prints the bill). What burns money is UNBOUNDED work, not unit price
     -- a 40-article pass is 40 calls with observed token counts, and that is not a loop.
     Why this is a HARD_STOP and not advice, user 2026-09-04: "We burnt a lot of money in anthropic
     API tokens." The gemini-resolver precedent is the shape to avoid -- mechanism kept, precondition
@@ -145,8 +145,8 @@ SUPERSEDED 2026-09-04 -- Azure Foundry access REVOKED, user-confirmed:
     /version nor /props, so probe_engine hard-exits 2 -- use the flag, never loosen the gate, whose
     comment cites a five-month llama.cpp drift. (3) The `:provider` suffix on --model is a
     correctness risk the harness only WARNS about, and since enforcement is per-PROVIDER the wrong
-    provider silently unenforces the schema. (4) `usage` is discarded entirely, so `estimated_cost`
-    -- the observed per-request figure -- is thrown away.
+    provider silently unenforces the schema. (4) CLOSED at #1009: `usage` WAS discarded, so the observed
+    per-request `estimated_cost` was thrown away; run_model.py now sums it and prints the bill.
     NOT a gap, listed because an earlier revision miscounted it as one: `strict:true` is not
     required; deepinfra enforced without it (measured).
   ARTIFACTS THAT SURVIVE the revocation, still usable, cost nothing: the v7 labelling output at

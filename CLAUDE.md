@@ -27,24 +27,14 @@ you found or learned X -> write it HERE, in the SAME PR as the work:
   phase | epic outcome                                      -> git tag + docs/RELEASES.md # PHASE_TAGS
   what happened                                             -> git log + the PR body # never a doc
 STATE.md [supervisor-owned, repo root]: DISPOSABLE working memory for the epic in flight.
-  reset at each epic boundary: `scripts/new-epic.sh <epic-slug>` # AUDITS the outgoing file first and
-    REFUSES the reset while it matches a banned pattern (nothing is archived or written on a refusal;
-    --evicted overrides). Only past the audit does it archive, verify with cmp, and replace.
-    `scripts/new-epic.sh --check` audits any time and writes nothing.
-    It greps four of the WRITE_GATE's five bans plus migrated headings; the fifth ("anything that
-    outlives this epic") is judgement and CANNOT be grepped, so a clean audit is not a certificate
-    that eviction is done. Guards: scripts/tests/new-epic-selftest.sh
-  THE SAME RESET ALSO AUDITS `.claude/skills/supervisor-mode/LESSONS.md`, and this is the OUT-FLOW that
-    file was designed with and never had: every lesson carries a `GRADUATE_CHECK:` shell predicate that
-    exits 0 once its own `GRADUATES:` clause is satisfied. The reset REFUSES while any passes -- promote
-    that lesson into a CLAUDE.md rule, a skill or a hook and DELETE it, or record why not. It also
-    refuses on SILENCE: a lesson with neither a check nor an explicit `none -- judgement` blocks, the
-    way a service card must say `DECISIONS: none` rather than omit the block. `--evicted` overrides
-    BOTH audits deliberately -- graduating a lesson is the same act as evicting a STATE line, and a
-    second flag is one more thing to remember, which is the failure being fixed.
-    rationale: a store with an in-flow and no out-flow becomes a diary. Measured 2026-09-05 across
-    THREE of them -- STATE.md at 293 lines, docs/BACKLOG.md at 3,849 with 21 STALE entries reading as
-    live, and LESSONS.md with 13 of 14 exit criteria written and never once run.
+  reset at each epic boundary: `scripts/new-epic.sh <epic-slug>` (`--check` audits any time and writes
+    nothing; `--evicted` overrides). It audits BOTH STATE.md and `.claude/skills/supervisor-mode/LESSONS.md`
+    and REFUSES on any finding: a lesson whose `GRADUATE_CHECK` passes must be promoted into a rule, skill or
+    hook and DELETED, or its refusal recorded. Mechanism: `--help`, the scaffold header, LESSONS.md's own
+    header. Guards: scripts/tests/new-epic-selftest.sh
+    ✗ a clean audit is NOT a certificate that eviction is done # the fifth ban is judgement, ungreppable
+    rationale: a store with an in-flow and no out-flow becomes a diary # measured 2026-09-05 on all three of
+      them -- STATE.md, docs/BACKLOG.md and LESSONS.md; all three counts are in docs/BACKLOG.md
   UNSEARCHABLE: untracked + gitignored, and `grep -r` honours .gitignore — a repo-wide search silently
     misses it. Read it by explicit path; never report "not found in the repo" without that check.
   ✗ never commit | push | PR it
@@ -147,9 +137,8 @@ MIGRATIONS [HARD_STOP]:
       -- measured 2026-08-27: SentinelCollector references MacroSubstrate, so MacroSubstrateDbContext is in
       scope and the bare form above fails as ambiguous. The service having one DbContext of its OWN is not
       the test; what `dotnet ef` sees across every referenced project is.
-    `--project src/Data` is WRONG and was documented here for months: NO service has a src/Data project (verified —
-      zero */src/Data/*.csproj in the tree). Each service is ONE csproj at {Svc}/src/ with Data/ as a FOLDER, so that
-      form resolves to {Svc}/src/src/Data and dies with MSB1009, after creating a stray src/src/obj to clean up.
+    ✗ `--project src/Data` # no service has such a PROJECT (Data/ is a FOLDER under {Svc}/src/; `git ls-files | grep -E '/src/Data/.*\.csproj$'` -> 0):
+      it resolves to {Svc}/src/src/Data and dies MSB1009, leaving a stray src/src/obj
     --output-dir is relative to the project: Data/Migrations for all but CalendarService (Migrations) and
       MacroSubstrate (its project is src/MacroSubstrate/, so cd there and use Data/Migrations).
     `dotnet tool restore` FIRST if dotnet-ef is missing # it is a local tool manifest, not a global install
@@ -189,9 +178,7 @@ card/comment NEXT TO the code, not only in a plan. Code that inherits the WHAT w
 the design's ethic.
   a privileged/expensive/EXCEPTION path (frontier last-resort, raw-DB write, host restart, --user flag) exists for a
   SPECIFIC EARNED case -> GUARD it so it cannot silently become a primary path, and WRITE the precondition at the code.
-  worked example: gemini-resolver INTENT = "the frontier call is the RARE exception, earned only when all-cheap-failed
-  on a genuinely hard entity". Code kept the mechanism (call-on-miss) and lost the precondition -> trash firehose to a
-  frontier model, invisible until it hit a bill.
+  worked example: gemini-resolver kept the mechanism (call-on-miss) and lost the precondition (earned only when all-cheap-failed) -> frontier firehose, invisible until the bill
 ENFORCE at a scarce-resource boundary ($/GPU/quota; as warranted, not dogmatic): gate(eligible-only) +
   fail-closed-cap(refuse past budget, never silent-pass) + burn-alert BEFORE depletion (never ship "calls>0 AND
   cost=$0" — that is a corpse-detector, it fires after the money is gone) + honest-health(exercise the real work path,
@@ -210,12 +197,9 @@ MECHANICS [format spec: .claude/skills/architecture-cards/CARD_TEMPLATE.md §DEC
 ## OBSERVABILITY [user scar tissue: "too many services non-functional due to lack of observability"]
 ✗ never demote a visible signal to Info+metric without a WIRED alert
 ✓ keep a VISIBLE Warning on persistent dependency-unavailability; startup banners STAY Warning # boot-loop visibility
-A SIGNAL CAN BE DEMOTED WITH NOBODY DECIDING TO DEMOTE IT: GeminiResolverNotResolving worked only because rejected
-  calls consumed cap slots, so sustained rejection tripped the approaching-cap alert — an accident, documented
-  nowhere. Fixing the cap accounting silently switched that alert off, and the partial-rejection case was then
-  missed a second time by the very round that fixed the total one.
-  -> before removing or changing a mechanism, enumerate what was OBSERVING it and pin each with a test that fires
-     on the REAL path # a signal riding on a bug dies with the fix, and the fix looks correct
+A SIGNAL CAN BE DEMOTED WITH NOBODY DECIDING TO DEMOTE IT: before removing or changing a mechanism, enumerate
+  what was OBSERVING it and pin each with a test that fires on the REAL path # a signal riding on a bug dies with
+  the fix, and the fix looks correct -- missed TWICE on GeminiResolverNotResolving, the second time by the round that fixed the first
 HEALTH IS TEMPO, NOT LOKI: prod log level defaults to Warning, so a HEALTHY container emits NOTHING — silence is the
   designed steady state, never a defect. Health = Tempo span status + Prometheus metrics; Loki carries the CONTENT
   once something is known wrong. MCP sidecars deliberately rely on parent-service telemetry.
@@ -234,11 +218,12 @@ SHARP ENOUGH, NOT RAZOR: judge a remaining defect by whether it MISLEADS (a read
 ANTI: ✗ batch maintenance into its own phase # that is regrinding, after months of dull cuts
       ✗ read a green run as proof # ask what the tool CANNOT see — verify-citations.py is content-blind, so a
         citation drifted onto a comment reads GREEN
-      ✗ check citations with a bare rc after an edit that SHIFTS LINE NUMBERS — compare counts against a
-        pristine baseline instead # measured 2026-08-17: a 6-line comment edit shifted five D-entry GUARD
-        citations by six lines each and the tool flagged ONE — the only one that landed on a blank line. The
-        other four pointed at real-but-wrong lines and read GREEN. Baseline (91 citations/2 cannot-land on
-        main vs 94/3 on the drifted tree) is what exposed it; rc alone passes, and BOTH sides are rc 1
+      ✗ check citations with a bare rc after an edit that SHIFTS LINE NUMBERS — diff the LANDING TEXT against
+        a pristine baseline, never the counts # they matched EXACTLY across the a8a0ed5d drift that put three
+        citations on real-but-wrong lines, and both sides are rc 1, this repo's steady state. Re-derive, never quote:
+        `mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-citations.py --quiet "${F[@]}"`
+        # 195 files/496 cites/28 cannot-land @ a8a0ed5d. Piping through xargs instead reports the SAME
+        # numbers at rc 123, never 1 — xargs remaps a child's rc, so the rc above is unobservable that way
       ✗ ship a tool whose docstring claims coverage it does not have # the defect, moved into the tool
 
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]
@@ -247,12 +232,9 @@ MODEL_ACCEPTANCE [replaces the old `MODEL_SIZE >= 30B`] [HARD_STOP]:
   ✓ a candidate ships only with a SCORECARD from LlmBenchmark that BEATS the incumbent's, produced
     by scripts/run_model.py on PRODUCTION'S PROMPT PATH (--task cod --endpoint-mode completions
     --prompt-file cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...) and
-    scored by scripts/eval_harness.py --task cod --cod-gold. THAT PATH NOW RUNS END TO END. This
-    line used to say no tool could produce such a scorecard; that stopped being true at #1014, and
-    the honest state is no longer "blocked on an instrument" but "blocked on one labelling
-    decision". Measured 2026-09-05, production's engine and its real prompt+schema, the 40 gold
-    articles: `records 40  errors 0  schema_invalid 0  truncated 0`, scored 40/40 against the
-    committed gold, 24 of 29 metrics measurable, stamped `production_prompt_path: true`.
+    scored by scripts/eval_harness.py --task cod --cod-gold. That path RUNS END TO END (#1014): measured
+    2026-09-05 on production's engine + its real prompt/schema, the 40 gold articles -> `records 40 errors 0
+    schema_invalid 0 truncated 0`, 40/40 scored, 24 of 29 metrics measurable, `production_prompt_path: true`.
   WHAT A SCORECARD STILL DOES NOT SETTLE -- and none of this is an invitation to reason around the bar:
     - the criteria are PROVISIONAL (cod-stage1.criteria.json, `ratified_by: null`) and most thresholds
       are carried from the CoVe bar unmeasured, so a `pass: true` on them is not a ratified pass
@@ -281,26 +263,8 @@ MODEL_ACCEPTANCE [replaces the old `MODEL_SIZE >= 30B`] [HARD_STOP]:
     the concurrency-6 arm against a ~0.05 effect.
     A DECIDED convention is not a CLEARED bar; do not read this line as one, and do not weaken it
     instead.
-  rationale: the 30B floor was a PROXY for "does not collapse on this task", written because small
-    models kept getting swapped in for VRAM headroom and scored terribly. A proxy invites the wrong
-    argument -- whether 27B is close enough to 30 -- when the harness can answer the real question
-    directly. Measured 2026-09-04 on the substrate's task: a 27B model beat our 32B incumbent by a
-    wide margin, so the proxy would have BLOCKED an upgrade on a number that was never the point --
-    and note that the measurement clearing the proxy is NOT itself acceptance evidence, per the
-    last line of this block.
-  measured baselines, aggregate_f1 on the v6.2 substrate (see LlmBenchmark/eval-substrate/*.json).
-    EVERY figure NAMES ITS ENGINE, because a bare number does not identify a run: the challenger's
-    label spans 0.694-0.764 across five scorecards in one diff -- a wider range than the 0.051
-    fp8-KV effect the BACKLOG devotes a table to -- and the bare `0.763` that used to sit here was
-    the vLLM 0.28.0 run this file BLOCKS three sections below, not production's:
-    Qwen2.5-32B-AWQ       0.443 @ vllm-0.19.0 fp8_e5m2 KV (production) | 0.494 @ vllm-0.19.0 unquantized KV
-    Qwen3.8-27B-AWQ-INT4  0.764 @ vllm-0.19.0 | 0.7634 @ vllm-0.28.0 [BLOCKED engine]
-                          | 0.7629 @ vllm-0.28.0 + MTP speculative decode -- F1 unchanged, wall
-                            clock -30% # FOUR digits on these two deliberately: both round to
-                            0.763, so a three-digit row does not say WHICH scorecard it came
-                            from, which is the same defect the engine labels were added to fix
-                          | 0.744 NVFP4 @ vllm-0.28.0 | 0.694 @ vllm-0.19.0, the model card's own sampling
-                          -- and NOT on production's prompt path, so not yet acceptance evidence
+  measured baselines [aggregate_f1, v6.2 substrate] -> docs/BACKLOG.md "MODEL BASELINES" # EVERY figure
+    NAMES ITS ENGINE: the challenger spans 0.694-0.764 across five scorecards, so a bare number is not a run
   ✗ a scorecard from the substrate's own 16 instruction blocks is NOT acceptance evidence # that is
     a task production does not run; it was the gap that made every earlier comparison inconclusive
 CONTEXT: 32K required # ✗ reducing it breaks full-document decomposition and causes context rot
