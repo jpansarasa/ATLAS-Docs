@@ -18,7 +18,7 @@ different measurement of the same thing.
 |---|------|------------------------------|----------------------------|
 | 1 | Engine + build | vLLM 0.19.0, vLLM 0.28.0, llama.cpp | YES, fail-closed (`run_model.probe_engine`) |
 | 2 | Model family + size | 9 families / 14 rows in BENCHMARKS.md; Qwen 2.5-32B, 3-30B, 3-32B, 3.8-27B, Gemma 3-27B, Gemma 4-31B, GLM-4.7-Flash, EXAONE 4.0-32B, Command-R-35B, Mistral-Small-24B, phi4-14B, deepseek-r1-32B, llama3.3-70B | YES, `model` + `model_revision` (HF cache ref) |
-| 3 | Weight quantization | AWQ, AWQ-INT4, NVFP4, (GGUF untried) | NO -- inferred from the repo NAME, which is a convention, not a field |
+| 3 | Weight quantization | see VERIFIED QUANT COORDINATES below -- the repo names are NOT the schemes | NO -- was inferred from the repo NAME, which is a convention, not a field |
 | 4 | KV cache dtype | fp8_e5m2, fp8_e4m3, unquantized | NO |
 | 5 | Context length | 15360, 32768 | NO |
 | 6 | Concurrency | `--max-num-seqs`, client parallelism | NO |
@@ -36,7 +36,7 @@ Within one model family we already measure single-axis, and those numbers held u
 
   0.443 -> 0.494   axis 4 only (fp8_e5m2 -> unquantized KV), same model, same engine.  d=+0.051
   0.764 -> 0.7634  axis 1 only (vLLM 0.19.0 -> 0.28.0).                                d=-0.0006
-  0.7634 -> 0.744  axis 3 only (AWQ-INT4 -> NVFP4) at fixed engine.                    d=-0.019
+  0.7634 -> 0.744  axis 3 only at fixed engine, but NOT the axis its labels claim -- see below. d=-0.019
   0.764 -> 0.694   axis 7 only (our sampling -> the model card's).                     d=-0.070
   0.7634 -> 0.7629 decode strategy only (+MTP speculative). F1 flat, wall clock -30%.
 
@@ -58,6 +58,37 @@ And axis 10 on its own produced three different "recall" numbers for one unchang
 0.467 (off-manifold probes), 0.775 (catalog names), 0.7916 (obs-weighted production strings).
 A population is an axis. Changing it silently is the same error as changing the KV dtype
 silently.
+
+## VERIFIED QUANT COORDINATES [read from each checkpoint's own config.json, 2026-09-06]
+
+Axis 3 was the row this file called a naming convention rather than a field. Reading the
+three checkpoints we actually serve shows the names are not merely unreliable, they are WRONG:
+
+  Qwen/Qwen2.5-32B-Instruct-AWQ        quant_method "awq", 4 bit, group_size 128,
+    [INCUMBENT]                        version gemm, zero_point true.   <- the only true AWQ
+  cyankiwi/Qwen3.8-27B-AWQ-INT4        quant_method "compressed-tensors", format
+    [CANDIDATE]                        "pack-quantized", 4 bit int, group_size 32,
+                                       asymmetric, mse observer.
+                                       INT4 is true. AWQ IS FALSE -- it is not AWQ at all.
+  unsloth/Qwen3.8-27B-NVFP4            quant_method "compressed-tensors", format
+                                       "float-quantized", with DYNAMIC FP8 INPUT ACTIVATIONS
+                                       on attention, linear_attn, lm_head and layers 56-63 MLP.
+                                       A mixed scheme, and it quantizes ACTIVATIONS, which is
+                                       a different thing from weight quantization.
+
+TWO CONSEQUENCES, both of which change how existing numbers read.
+
+1. THE ARM COMPARISON HAS A CONFOUND NOBODY NAMED. The incumbent is AWQ at group_size 128;
+   the candidate is pack-quantized INT4 at group_size 32. That is a 4x difference in
+   quantization GRANULARITY, and finer groups generally help quality -- in the candidate's
+   favour. So part of any candidate-over-incumbent delta may be the quantization recipe
+   rather than the model. This is not a reason to discount the direction (the measured fp8-KV
+   price on this task is -0.0268 against a +0.1979 gap), but it is a named axis that is still
+   moving, and it was invisible while both arms were called "AWQ".
+
+2. ANYONE READING THE BASELINES TABLE IS MISLED IN THE FLATTERING DIRECTION. "Qwen2.5-32B-AWQ
+   vs Qwen3.8-27B-AWQ-INT4" reads as two AWQ checkpoints, i.e. as an axis already controlled.
+   It never was. A name is not a coordinate.
 
 ## A FAILURE ON ANOTHER AXIS IS NOT A MODEL SCORE
 
@@ -158,7 +189,9 @@ by whoever last read it, which is the failure mode that produced the 0.067 sprea
 ## HARD STOPS
 
 ✗ never compare scorecards across model families without pinning axes 3-6 at a common point
-✗ never let the repo name stand in for the weight-quant field
+✗ never let the repo name stand in for the weight-quant field -- MEASURED: two of the three
+  checkpoints we serve are named for a quantization they do not use
+✗ never treat activation quantization as the same axis as weight quantization
 ✗ never read a within-family single-axis delta as a cross-family result
 ✗ never quote a delta from arms "not served alike" -- fix the serving, do not caveat the number
 ✗ never treat the eval population or the alignment key as a constant; they are axis 10
