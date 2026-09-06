@@ -253,10 +253,32 @@ unmeasured claim about an axis, and it lands on every number this project owns:
   candidate  Qwen3.8-27B "AWQ-INT4"          4 bit
   Gemma 3    gemma-3-27b-it-quantized.w4a16  4 bit
 
-EVERY FIGURE WE HAVE EVER PRODUCED SITS AT ONE POINT ON THE PRECISION AXIS, and we have never
-measured what that point costs. 4-bit was never chosen against an alternative; it is what fits,
-adopted as though it were neutral. A whole-epic ranking taken below the quality floor may not
-survive being re-taken above it.
+EVERY FIGURE WE HAVE EVER PRODUCED SITS AT ONE POINT ON THE PRECISION AXIS, and 4-bit was never
+chosen against an alternative -- it is what fits, adopted as though it were neutral.
+
+**MEASURED 2026-09-06, AND THE ANSWER IS NO.** Q6_K is a REGRESSION against Q4_K_M on this
+workload. Same model, publisher and release (unsloth/gemma-3-27b-it-GGUF), same
+`general.quantization_version`, same engine and image (llama.cpp server-cuda b10820), same context,
+KV, constrained decoding, prompt, schema, sampling and gold. The ONLY difference is
+`general.file_type` 15 vs 18, read from the GGUF headers rather than the filenames:
+
+  numbers_f1   Q4_K_M 0.6263 (sd 0.0039)  Q6_K 0.5985 (sd 0.0003)   d = -0.0278, 12.2x se
+               Q4 [0.6275, 0.6295, 0.6219]   Q6 [0.5988, 0.5985, 0.5983]  -- RANGES DISJOINT
+  recall -0.0257 (14.1x se) | precision -0.0297 | entities_f1 -0.0019 (FLAT, 0.5x se)
+  latency Q4 38.22 s/doc, Q6 43.58 s/doc -- 14% SLOWER for 5.6 GB more VRAM
+
+So 4-bit is VINDICATED for this workload, by measurement rather than assumption. The number axis
+moved against precision; the entity axis did not move at all. Limits, stated because they bound the
+claim: one model, one task, one publisher, and k-quants are not strictly ordered by bpw (Q4_K_M and
+Q6_K use different per-tensor type mixes), so this compares two real artifacts and not an abstract
+precision dial.
+
+AND THE ENGINE IT TOOK TO ASK THE QUESTION ANSWERS A SECOND ONE. vLLM's 8-bit rung at 27B is not
+merely tight, it is operationally unusable: 27.26 GiB of weights leave a 4,176-token KV pool, below
+this eval's own 7,617-token worst case, and throughput collapses from 419.6 to 92.8 tok/s with only
+2 of 6 requests resident. That is why the ladder had to move engines. But llama.cpp CUDA runs this
+workload at 38.22 s/doc against vLLM's ~2.6 s/doc -- roughly 15x slower. Both findings point the
+same way: stay on vLLM, stay at 4-bit.
 
 THE LADDER IS ENGINE-COUPLED, which makes this axis 1 x axis 3 and not axis 3 alone. vLLM
 serves 4-bit, 8-bit (w8a16 / w8a8) and bf16; a true 6-bit is essentially a GGUF rung (Q6_K),
@@ -306,8 +328,8 @@ by whoever last read it, which is the failure mode that produced the 0.067 sprea
 ✗ never let the repo name stand in for the weight-quant field -- MEASURED: two of the three
   checkpoints we serve are named for a quantization they do not use
 ✗ never treat activation quantization as the same axis as weight quantization
-✗ never call a point feasible because it LOADS -- q2 and sub-3-bit are banned, and 4-bit is
-  an untested rung, not the neutral default it has been treated as
+✗ never call a point feasible because it LOADS -- q2 and sub-3-bit are banned outright; 4-bit
+  is now MEASURED rather than assumed, and Q6_K lost to it by 0.0278 at 12.2x se
 ✗ never read a within-family single-axis delta as a cross-family result
 ✗ never quote a delta from arms "not served alike" -- fix the serving, do not caveat the number
 ✗ never treat the eval population or the alignment key as a constant; they are axis 10

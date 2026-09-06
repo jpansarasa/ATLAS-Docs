@@ -3343,6 +3343,43 @@ right, and the precise half matters: it follows the schema with 0 call errors bu
 inside production's 4,096-token budget on 8-9 of 40 articles (finish_reason `length`, stable across
 runs), which score zero. That is a budget interaction, not a schema-compliance failure.
 
+**THE PRECISION LADDER [2026-09-06]: Q6_K LOSES TO Q4_K_M.** Single axis, gemma-3-27b-it,
+unsloth GGUF, llama.cpp server-cuda b10820, only `general.file_type` differing (15 vs 18, read from
+the GGUF header not the filename). `numbers_f1` Q4_K_M **0.6263** sd 0.0039 vs Q6_K **0.5985** sd
+0.0003 -- d = -0.0278 at 12.2x se, run ranges DISJOINT. Recall -0.0257, precision -0.0297,
+entities_f1 flat at -0.0019 (0.5x se). Q6 is also 14% slower (43.58 vs 38.22 s/doc) for 5.6 GB more
+VRAM. 4-bit is vindicated by measurement. Limits: one model, one task, one publisher, and k-quants
+are not strictly bpw-ordered, so this is two artifacts rather than a precision dial.
+
+NOT COMPARABLE TO THE vLLM ROWS ABOVE, and the reasons are the point of recording them: these arms
+ran in CHAT mode at 8,192 per slot, so they carry `production_prompt_path: false`, against the vLLM
+arms' completions path at 32,768. The comparison is internally valid (both ladder arms matched) and
+cross-engine invalid. Note anyway that Gemma 3 lands at 0.6263 here and 0.6220 on vLLM w4a16 --
+close, across three moved axes, which is suggestive and not evidence.
+
+**AND vLLM HAS NO USABLE RUNG ABOVE 4-BIT AT 27B.** Measured, not estimated: w8a16 weights of
+27.26 GiB leave a 4,176-token KV pool -- below this eval's own 7,617-token worst case -- and
+throughput collapses 419.6 -> 92.8 tok/s with 2 of 6 requests resident. That is why the ladder moved
+engines. But llama.cpp CUDA runs the workload at 38.22 s/doc against vLLM's ~2.6 s/doc, about **15x
+slower**, so llama.cpp is not a deployment path here even where it is the only measurement path.
+
+**A VERIFICATION FAILED TOWARD SUCCESS, INSIDE THE TASK ABOUT THAT.** An earlier report of
+"llama.cpp honours `json_schema` on `/v1/completions` -- verified" was FALSE; the check read HTTP
+status and `finish_reason`, never the content. `/v1/completions` silently IGNORES `response_format`
+and emits the JSON inside a ```json fence -- the first Q6 arm returned 40/40 with 0 call errors,
+`finish_reason` stop, and `schema_invalid` 40. Measured across all three endpoints: `/v1/completions`
+ignores it, `/v1/chat/completions` honours it, `/completion` with a top-level `json_schema` honours
+it. Both ladder arms were re-run in chat mode, which is why they are off the production prompt path.
+Separately, reading a provenance file WHILE the runner was writing it reported "call_errors 40, wall
+1.9s" for a run whose own runner log said "records 40, errors 0, wall 291.8s" -- a spurious engine
+failure, caught only by cross-checking an independently written artifact.
+
+**THINKING DEFAULTS ARE AN UNCONTROLLED AXIS ACROSS VENDORS.** GLM's first scored attempt was
+invalid and killed: its vendor chat template defaults thinking ON (it ends on an open `<think>`), so
+the 4,096-token budget goes to reasoning and the JSON never closes. Gemma 4 and EXAONE both default
+OFF. Three vendor defaults were being inherited as though they were one setting; GLM is re-queued
+with a derived thinking-OFF template so the axis is consistent across arms.
+
 **COROBORATES `CLAUDE.md` §VLLM_UPGRADE**: this Gemma 4 arm ran 0.28.0 with `--kv-cache-dtype
 fp8_e4m3` at concurrency 6 for 3 full runs with 0 errors -- the flag that block names as the one-flag
 fix for the e5m2 fault, now exercised on a second model.
