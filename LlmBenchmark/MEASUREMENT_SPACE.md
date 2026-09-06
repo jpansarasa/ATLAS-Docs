@@ -198,6 +198,40 @@ We have been running Q2 and quoting it as Q1 for the whole epic. `CLAUDE.md`
 §MODEL_ACCEPTANCE is written model-shaped ("a candidate ships only with a SCORECARD ... that
 BEATS the incumbent's") for a decision that is configuration-shaped.
 
+## THE ENGINE AXIS IS OPEN, AND THE VRAM CEILING IS AN ASSUMPTION
+
+This file has twice enumerated axis 1 as though it were a short list, and twice been wrong in the
+same direction. First "vLLM 0.19.0, 0.28.0, llama.cpp". Then, when the precision question came up,
+"vLLM's rungs are 4-bit and 8-bit; Q6 is a llama.cpp path" -- framing the axis as a BINARY between
+the engine we run and the one we used to run.
+
+THE PROJECT'S OWN HISTORY SAYS OTHERWISE: llama.cpp, then Ollama, now vLLM. Three engines, each
+adopted for a reason that was good at the time, and NONE of the switches re-measured afterward. The
+engine in production is the residue of the last decision, not a constraint on the next one.
+
+AND THE HARNESS WAS BUILT FOR THIS. `LlmBenchmark/scripts/README.md` describes `run_model.py` as
+driving "any OpenAI-compatible engine (vLLM, SGLang, llama.cpp /v1)". It is a general instrument
+that has been used as a single-engine one. Candidates nobody here has scored: SGLang, TensorRT-LLM,
+ExLlamaV2/V3, MLC, ktransformers, colibri.
+
+  ✗ never treat the ENGINE IN PRODUCTION as the boundary of the engine axis -- it is one sample
+  ✗ never answer "can we do X" with "our engine cannot" until the axis has been enumerated
+
+**THE CEILING MOVES TOO.** Every feasibility argument in this file so far -- Command-R's OOM,
+llama3.3-70B having no point, "no rung above 4-bit fits at 27B" -- silently assumes the model lives
+in 31.8 GiB of VRAM. That is true of GPU-resident engines and of nothing else. CPU-primary MoE
+runtimes (colibri's stated premise: "Run frontier MoE models -- 744B to 2.8T parameters -- on
+consumer and heterogeneous hardware") put the budget at this box's 125 GB of RAM and 312 GB of free
+disk instead, with only the active experts hot per token.
+
+MEASURED CAPACITY, so the next feasibility claim is arithmetic and not a guess:
+  RAM 125 GB total (~40 GB free while the GPU sweep runs) | 48 threads, Threadripper 9960X,
+  1 NUMA node | 312 GB free on /home | VRAM 31.8 GiB
+  -> a ~125B MoE at int4 is ~62 GB and FITS IN RAM; a 284B is ~142 GB and does not, without
+     disk streaming; a 744B at ~372 GB is disk-resident or nothing.
+So the model-size axis has a whole region above 32B that we have never sampled, and rejected
+without ever pricing. Latency is the real question there, not capacity, and latency is measurable.
+
 ## THE FEASIBLE SET HAS A FLOOR, AND IT IS QUALITY, NOT VRAM
 
 A configuration that loads and emits tokens is NOT automatically a feasible point. The search
