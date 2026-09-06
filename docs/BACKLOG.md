@@ -2269,25 +2269,250 @@ OPEN, and NOT fixable inside this gold: the caps belong to production's schema, 
 what production emits, and no measurement yet says whether 120 costs real claim content at extraction
 time or only cost it at labelling time. Whoever raises them needs that number first.
 
-**IS A MACRO SERIES AN OWNER? 129 OF 518 NUMBERS (25%) SAY YES; THE PROMPT'S OWN EXAMPLE SAYS NO.**
-Those anchor `source_entity` to a `macro_indicator` entity ("unemployment rate", "Manufacturing
-PMI"), while `cod_json_v1.txt` reads: `On "US CPI rose 3.1%", context is "US CPI year over year"
-and source_entity is ""`. Pre-existing, unwritten, UNDECIDED -- deliberately not re-adjudicated,
-because a quarter of the number owners is not one agent's judgement call. `source_entity` sits in
-both proposed alignment keys, so a scorer silently inherits whichever answer this gold holds.
-SETTLE IT BEFORE ANY SCORER READS THIS GOLD FOR A MODEL DECISION. Re-check: `python3 -c "import json;
+**IS A MACRO SERIES AN OWNER? 129 OF 518 NUMBERS (25%) SAY YES; THE PROMPT'S OWN EXAMPLE SAYS NO.
+SIZED 2026-09-05: DROPPING BOTH FREE-FORM FIELDS FROM THE ALIGNMENT KEY IS WORTH 0.5064 `numbers_f1`
+AND 86.6% OF THE POOLED RUN-TO-RUN SWING; `source_entity` ALONE IS WORTH 0.3707 AND 65.4%; THIS
+UNDECIDED QUARTER, ISOLATED, IS WORTH 0.2048 UNDER THE HARNESS'S GREEDY MATCHING AND 0.2105 UNDER
+MAXIMUM-CARDINALITY MATCHING ON THE SAME GRAPH -- BOTH MEASURED, NEITHER A BOUND BY CONSTRUCTION --
+AND WHAT IT DOES TO THE SWING REVERSES SIGN BY ARM (pooled the range GROWS 15.6%, at concurrency 6
+it GROWS 45.0%, at concurrency 1 it SHRINKS 14.3%).** Those 129 anchor `source_entity` to a
+`macro_indicator` entity ("unemployment rate", "Manufacturing PMI"), while `cod_json_v1.txt` reads:
+`On "US CPI rose 3.1%", context is "US CPI year over year" and source_entity is ""`. Pre-existing,
+unwritten, UNDECIDED -- deliberately not re-adjudicated, because a quarter of the number owners is
+not one agent's judgement call. `source_entity` sits in both
+proposed alignment keys, so a scorer silently inherits whichever answer this gold holds. SETTLE IT
+BEFORE ANY SCORER READS THIS GOLD FOR A MODEL DECISION.
+THE 129 ARE A SUBSET OF THE `source_entity` DISPUTE, NOT THE WHOLE OF IT -- which is why the three
+figures above are three different numbers, and why the largest of them is NOT this question's price.
+The gold's anchors also read `country 23`, `industry 15`, `concept 10` and `<blank> 32` (census near
+the end of this entry), and on the flagship article `sentinel-v6.2-cove.json` index 0, 18 of the 30
+rows are non-macro. An earlier revision of this headline, its commit subject and its PR title all
+carried the 0.5064/86.6% pair against the macro quarter: those are the BOTH-FIELDS figures, and the
+body has always said so. Quote the row you mean -- and quote the ARM, because the five runs behind
+every percentage here are not one population (next paragraph).
+
+THE SIZE. Five runs of the incumbent (Qwen2.5-32B-AWQ @ vLLM 0.19.0, production's prompt path, the
+40 gold articles, seed 42, temperature 0), rescored through the harness's own key functions under
+alternative keys. NOT "five identical runs", which an earlier revision of this line called them:
+THREE ran at concurrency 6 and TWO at concurrency 1, because concurrency was itself under study that
+afternoon (`drive.sh`, interleaved c6/c1/c6/c1/c6). So the POOLED range is a CROSS-ARM gap, and both
+per-arm ranges are smaller than it:
+
+| alignment key | `numbers_f1` mean | range POOLED (n=5, two arms) | range c6 (n=3) | range c1 (n=2) |
+|---|---|---|---|---|
+| committed `(context, source_entity)` | 0.3883 | 0.0893 | 0.0427 | 0.0557 |
+| committed, `source_entity` floor waived on the 129 macro-owned rows ONLY | 0.5931 | 0.1033 | 0.0619 | 0.0477 |
+| `context` alone | 0.7591 | 0.0309 | 0.0210 | 0.0013 |
+| `source_entity` alone | 0.4942 | 0.0953 | 0.0625 | 0.0578 |
+| `value` alone -- **INADMISSIBLE AS AN ACCEPTANCE KEY, DIAGNOSTIC ONLY** (shuffled-gold floor 0.0267, the WORST of the five runs, not their mean) | 0.8947 | 0.0120 | 0.0120 | 0.0032 |
+
+EVERY SWING PERCENTAGE IN THIS ENTRY DERIVES FROM THE POOLED RANGE unless it names an arm, so each
+one is partly measuring the gap BETWEEN the arms. The pooled column stays the headline because it is
+what a reader re-derives by handing the rescorer all five files -- but n=5 split 3/2 cannot attribute
+the spread to concurrency, and nothing here claims it does.
+
+THE `value`-ALONE ROW IS NOT A SCORE AND MUST NOT BE CARRIED AWAY AS ONE. It is precisely the shape
+this entry's own alignment-key paragraph forbids: anything in the key reads 1.0 by construction, so a
+key holding `value` makes value accuracy -- the number a model swap turns on -- unmeasurable.
+`eval_harness.py:523-528` carries the same refusal at the code. What 0.8947 says is that the model's
+NUMBERS are largely right and the KEY is what rejects them; it does not say the incumbent's real
+score is 0.89. The macro-waived row is not a shippable key either -- it reads the GOLD's own
+`ent_type` to decide where to waive, which is only possible once the question is settled -- so it is
+a counterfactual, reported as an UPPER BOUND (method below).
+
+Dropping BOTH free-form fields from the key adds 0.5064 to the mean and removes 86.6% of the POOLED
+swing (0.0893 -> 0.0120); per arm, +0.5228 and 71.9% at c6, +0.4818 and 94.3% at c1. THAT IS THE
+BOTH-FIELDS ROW AND IT IS NOT THE MACRO QUESTION'S PRICE. Removing `source_entity` alone (committed
+-> `context` alone) adds 0.3707 and removes 65.4% pooled; per arm, +0.3806 and 50.9% at c6, +0.3560
+and 97.7% at c1.
+Waiving the `source_entity` floor on the 129 macro-owned rows and NOWHERE ELSE adds 0.2048 -- and
+this is the figure whose SIGN REVERSES BY ARM, which is why it is no longer written as one. POOLED it
+removes NONE of the swing and the range GROWS 15.6% (0.0893 -> 0.1033). At concurrency 6 (3 runs,
++0.2022) the range GROWS 45.0% (0.0427 -> 0.0619). At concurrency 1 (2 runs, +0.2087) it SHRINKS
+14.3% (0.0557 -> 0.0477). An earlier revision of the headline read "AND NONE OF THE SWING", which is
+the pooled answer written as if it were the only one. WHAT SURVIVES ALL THREE: settling the macro
+convention alone does not reliably repay the swing this entry opens with, and n=5 across two arms is
+far too little to say which way it cuts. METHOD, because the number is only as good as it: the
+committed key is applied unchanged to every pair except those whose GOLD `source_entity` is a
+`macro_indicator` the same article declares, where the floor is skipped and the pair ranks on
+`context`.
+0.2048 IS AN UPPER BOUND MEASURED ON THIS DATA, NOT ONE BY CONSTRUCTION -- an earlier revision of this
+line claimed the latter, and that claim is false. Waiving the floor credits PERFECT agreement on those
+rows, which is the most any settlement could buy, and a real convention still has to be one the model
+emits: THAT half is by construction. The half that is not: `eval_harness._cod_align` is GREEDY, and
+greedy matching is not monotone under a change to the candidate graph -- the waiver both ADDS edges
+and RE-WEIGHTS existing ones (a waived row ranks on `context` alone, so it can be outbid by a pair the
+committed key ranked below it). Built from those very functions, a 3x3 grid scores TP 2 committed and
+TP 1 waived. On THIS data the bound does hold: TP_waived >= TP_committed in all 200 article-runs --
+which `rescore_alignment_keys.py` now COUNTS and prints on every invocation rather than leaving to
+argument. THE RESIDUAL, also measured: greedy leaves true positives on the table, so a real convention
+could beat the "bound" by whatever greedy is short. Maximum-cardinality matching on the SAME waived
+candidate graph finds 1,465 pairs against greedy's 1,451, worth **+0.0057 `numbers_f1`** -- 0.5988
+waived, **+0.2105** over committed, which is the headline's second figure -- also recomputed on
+every run (`max_cardinality_headroom_f1`), never carried as a remembered number. NEITHER number
+changes a decision here: 0.5931 and 0.5988 both clear the `min_initial` 0.4 the next paragraph
+straddles.
+`source_entity` is the larger half of the key: of 2,062 (pred, gold) pairs across the five
+runs agreeing on BOTH value and unit, the committed key accepts 41.1% (848), rejects **40.1% (827) on
+`source_entity` alone** with `context` already clear of its floor, and 11.0% (226) on `context` alone.
+On the stricter value+unit+`source_text` proxy (n=1,713) source-entity-alone rejection is 37.9%.
+Across the five runs `numbers_f1` correlates r=0.967 with the key's accept rate and r=0.118 with what
+the model actually extracted (n=5, so directional not decisive) -- the published figure is measuring
+the convention mismatch, not the extraction.
+
+AND THE COMMITTED KEY STRADDLES ITS OWN ACCEPTANCE THRESHOLD, WHICH IS WHERE THE SWING DOES DAMAGE.
+`LlmBenchmark/eval-substrate/cod-stage1.criteria.json` sets `numbers_f1.min_initial` **0.4**
+(`basis: carried`, and the file's `ratified_by` is `null`). The five-run mean is **0.3883** and the
+per-run values are c6 0.3646 / 0.3528 / 0.3955 and c1 0.3865 / **0.4422** -- four runs FAIL that
+threshold and one PASSES, at seed 42 and temperature 0. THE STRADDLE IS NOT AN ARTEFACT OF POOLING THE
+TWO ARMS: the one passing run is c1_b, and its own arm-mate c1_a, at settings identical in everything
+this repo records, scores 0.3865 -- so 0.4 sits inside [0.3865, 0.4422] WITHIN a single arm. A gate
+whose verdict flips run to run without the model changing cannot decide a model swap in either
+direction. Moving the threshold does not repair that -- it only moves where the coin-flip band sits:
+any bar inside the pooled [0.3528, 0.4422] flips run to run, and 0.4 is inside it. The swing has to
+come out of the instrument first.
+
+Re-check (the whole table, the headline's three figures, and both controls):
+```
+python3 LlmBenchmark/scripts/rescore_alignment_keys.py \
+  --cod-gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json \
+  --predictions <run>.jsonl [--predictions ... once per run] \
+  [--scorecard <matching eval_harness scorecard>.json ... ]
+
+# and this one needs nothing outside the repo -- fourteen mutations, each caught by name;
+# prints `selftest: 14/14 controls behaved as required`:
+python3 LlmBenchmark/scripts/rescore_alignment_keys.py --selftest
+```
+PROVENANCE LIMIT, stated because these figures cannot be re-derived from the repo ALONE. The rescorer
+is committed and the gold is committed; the FIVE PREDICTIONS FILES ARE NOT. They came from the
+`run_model.py` re-check near the top of this entry, 5 x 40 articles on production's own engine, and
+live outside the tree, so re-deriving 0.3883/0.5931/0.7591/0.4942/0.8947 means re-running that first.
+BUDGET ~33 MINUTES, NOT ~11. Measured wall clock: 147s / 143s / 138s for the three concurrency-6 runs
+and 766s / 772s for the two at concurrency 1. An earlier revision of this line quoted the c6 figure
+("~135s each") for all five, which understates the re-derivation by a factor of three. AND THE
+ARTIFACTS CANNOT CORRECT THAT FOR YOU: `run_model.py`'s provenance sidecar records seed, temperature,
+max_tokens, engine build and substrate hash but NOT concurrency, so "five identical runs" was
+UNFALSIFIABLE from the committed-format files and had to be recovered from the driving script's log.
+Whoever re-runs this either fixes the sidecar or records the arm by hand. This is the same disclosure
+`LlmBenchmark/scripts/README.md` makes for the shuffled-gold figures, and for the same reason.
+What IS re-derivable today: hand the rescorer any CoD predictions file and it regenerates the whole
+table against the committed gold, importing `eval_harness`'s own `_cod_align`, `_token_f1`,
+`_source_entity_affinity` and both floors rather than re-implementing them, so a change to the
+scorer's notion of agreement moves these rows too.
+AND ITS CONTROLS NOW HAVE CONTROLS OF THEIR OWN. `--selftest` builds a synthetic corpus and runs
+fourteen mutations that must each be caught BY NAME, three of them NEGATIVE controls that must stay
+quiet -- no predictions file needed, which the out-of-tree predictions used to prevent. THREE run
+at n>1 deliberately: the shuffled-gold verdict as first written averaged the floor ACROSS runs, so a
+run breaching at 0.4570 diluted to 0.0457 beside nine honest ones and printed `FLOOR_OK`, exit 0 --
+and it had passed every SINGLE-run mutation test, because a defect in how a tool AGGREGATES across
+units is invisible to a mutation exercised on one unit. It is judged PER RUN now, names the offending
+run, treats an uncomputable floor as `NOT_MEASURABLE` rather than a pass, and takes its bar from
+`eval_harness.SHUFFLED_CONTROL_MAX_HEADLINE` rather than restating it (the local copy had already
+drifted to the opposite boundary, so exactly 0.10 read OK here and BREACHED in the scorer). Run
+against the five real runs it reports `FLOOR_OK` and reproduces all five published `numbers_f1`
+values to 1e-9.
+FOUR OF THE FOURTEEN PIN THIS ENTRY'S OWN NUMBERS, added because a review mutated the shipped tool
+eighteen ways and six of those mutations left it reporting `10/10`, exit 0. The four close FIVE of
+those six, each proved by re-running its mutation against the shipped file and requiring exactly ONE
+control to fail; the sixth was not carried into that round and is STILL OPEN, so a re-mutation sweep
+of this tool should expect one escape these controls do not see.
+(i) THE VERDICT MUST SWEEP ALL SEVEN KEYS. Every earlier fixture handed a record its partner's WHOLE
+gold, so all seven variants floored identically at 0.3333 and a verdict reading the committed key
+alone caught every one of them. The new fixture keeps the identity fields honest and takes only the
+stranger's VALUES: the value keys breach at 0.3333 while committed sits at 0.0000 -- the same 26x
+spread the real data shows (committed 0.0000, `value_only` 0.0267).
+(ii) THE BAR MUST STAY `eval_harness`'s. Every 0.3333 fixture would survive inflating it threefold,
+so one fixture now floors at 0.1111 against a bar of 0.1000.
+(iii) A SINGLE RUN MUST PRINT `range n/a`, NEVER `0.0000`. Two routes reach that false "no swing"
+and only the shared-basename one was pinned.
+(iv) THE TWO FIGURES DEFENDING "MEASURED, NOT CONSTRUCTIONAL" -- the `0 of 200` counter and the
+`+0.0057` headroom -- read on an honest corpus exactly as a counter that cannot fire and a
+max-cardinality search degraded to greedy would read. The 3x3 grid cited in `macro_waived_key`'s
+docstring is now an EXECUTABLE fixture where the waiver genuinely COSTS greedy two true positives
+(committed 2, waived 1, maximum cardinality 2, headroom 0.1667).
+
+WHAT IT HIDES: the correct value is present in the model's output for 0.845 of gold numbers (0.879
+set-wise, 0.909 over the union of the five runs) against a committed `numbers_recall` of 0.367.
+Article `sentinel-v6.2-cove.json` index 0 is the clean demonstration -- c6_a and c6_c, two runs at
+IDENTICAL settings in the SAME arm, agreed with gold on the same 29 of 30 values and scored 0 and 14
+true positives, because c6_a wrote `source_entity: "United States"` on all 30 numbers and c6_c wrote a
+different convention on 16 of them. The concurrency-1 arm splits the same way (c1_a 0, c1_b 14), so
+this one is not an arm effect either. Gold on that article holds a third answer again: 12 `macro_indicator` anchors, 10
+industries, 6 demographic `concept`s, 2 blanks. (`macro_indicator`, not "metric": ent_type `metric`
+occurs ZERO times in this gold, so a reader searching the census for metric labels finds none. And
+the article is written `<file> index <n>` rather than `<file>:<n>` because that pair is a substrate
+`(source_file, source_index)`, not a `file:line` citation -- written the other way it becomes an
+unresolvable citation in `scripts/verify-citations.py`, which is how it was found.)
+
+NOT THE ENTITIES ARRAY -- do not carry this finding across. `entities_f1` is 0.6744 with a range of
+0.0092, its key is already name-only, and TIGHTENING it scores LOWER (name-exact, 0.6366). Stricter,
+not looser, and an earlier revision of this line had the word backwards: the committed `_entity_key`
+(`eval_harness.py:540`) admits a pair at token-F1 >= 0.8, while name-exact is a multiset intersection
+on the normalized name -- a strict SUBSET of what that floor already admits. Scoring lower is what a
+subset key does, and it is the point: there is no slack in this key for a convention dispute to be
+hiding in, which is exactly what makes the numbers key's slack a finding. Entity recall 0.556 is
+genuine under-emission: 391-412 predicted against 616 gold.
+
+THE OPERATIONAL TIE-BREAK IS ALREADY IN THE CODE, AND IT DOES NOT FAVOUR THE COUNTRY. `source_entity`
+is not a display field: `DslToMergedExtractionAdapter` puts it on `ExtractionResult.SubjectEntity`
+(SentinelCollector D-15), which `DeterministicResolver` keys Rule 1 (candidate pre-selection), Rule 2
+(`hybrid_subject`, NO surface filter) and Rule 2.5 (paid Gemini) off; the instrument that comes back
+reaches `extracted_observations`, the digest and the matrix. Two measurements bear on the choice:
+- `NonInstrumentEntTypes` (`SentinelCollector/src/Extraction/DslToMergedExtractionAdapter.cs:108`)
+  excludes `country`, `macro_indicator`, `industry`, `sector` and `concept` ALIKE from the candidate
+  list, so 184 of 518 (35.5%) of this gold's anchors pre-select nothing under EITHER convention and
+  fall through to Rule 2.
+- Rule 2 runs no surface filter, and the country surface is the measured wrong-instrument class:
+  SentinelCollector D-1 counts 7,184 instrument-attaching rows carrying a `gpe_country` subject, 3,060
+  of them landing on `U` (Unity Software) -- over ONE 31-day window, `extracted_at` [2026-07-15,
+  2026-08-15), and a FLOOR rather than a total, because D-1 replayed the exact-match sets only and did
+  not re-run the shape classes. Cite it with both caveats or it reads as an all-time count.
+  SELECT against `atlas_secmaster` 2026-09-05: the surface
+  `United States` exact-matches ONE instrument, `EMISSCO2TOTVTTTOUSA` "United States" -- a CO2
+  emissions series -- while `Unemployment Rate` -> `UNRATE`, `All Employees, Total Nonfarm` ->
+  `PAYEMS` and `Average Hourly Earnings of All Employees, Total Private` -> `CES0500000003` are all
+  catalogued Economic instruments. The metric-series convention names something the catalog holds; the
+  country convention names a carbon series.
+That is EVIDENCE FOR the decision, not the decision. The prompt's worked example still says `""`, and
+`""` resolves to nothing at all -- so whoever settles this settles the prompt, the gold and the scorer
+in ONE PR, and says what the resolver is supposed to receive on a macro print.
+
+Re-check (the 129, unchanged): `python3 -c "import json;
 d=json.load(open('LlmBenchmark/cod-gold/cod_stage1_gold_v1.json'));print(sum(1 for a in
 d['articles'] for n in a['gold']['numbers'] if {e['name']:e['ent_type'] for e in
 a['gold']['entities']}.get(n['source_entity'])=='macro_indicator'))"` prints 129.
+Re-check (the 184 that can never pre-select, and the ent_type census behind it):
+```
+python3 - <<'PY'
+import collections, json
+NON = {"metric","macro_indicator","exchange","currency","person","country","region",
+       "location","sector","industry","object","event","concept","analyst_firm"}
+d = json.load(open('LlmBenchmark/cod-gold/cod_stage1_gold_v1.json'))
+c = collections.Counter()
+for a in d['articles']:
+    t = {e['name']: e['ent_type'] for e in a['gold']['entities']}
+    for n in a['gold']['numbers']:
+        c[t.get(n['source_entity'], '<blank>' if n['source_entity'] == '' else '<undeclared>')] += 1
+print(sum(v for k, v in c.items() if k in NON), sum(c.values()), c.most_common())
+PY
+```
+2026-09-05 -> `184 518` with `equity 187, macro_indicator 129, instrument 68, <blank> 32, org 26,
+country 23, index 21, industry 15, concept 10, person 3, event 2, location 1, region 1` and ZERO
+`<undeclared>`. A non-zero `<undeclared>` means a gold anchor stopped naming an entity its own article
+declares, which is the one thing `source_entity_referential_integrity` scores a MODEL on.
 
-BUDGET THE RE-CHECK ABOVE FOR MORE THAN 4096 COMPLETION TOKENS. Measured 2026-09-05, Qwen3.8-27B via
-the HF router (deepinfra), production's CoD prompt now correctly substituted, 2 substrate records at
-`--max-tokens 2048`: `truncated: 2`, `finish_reason: length` on both, `completion_tokens: 4096` -- i.e.
-both records spent the entire budget and were cut off. A third record at 6000 was still generating when
-the router returned 504. Truncated responses land in `schema_invalid`, so a run budgeted too low
-reproduces this entry's headline symptom (`schema_invalid` == record count) for a reason that has
-nothing to do with causes 1 and 2 -- and the runner's own default is 4096. Read `truncated` and
-`finish_reasons` in the provenance before concluding anything from `schema_invalid`.
+BUDGET THE `run_model.py` RE-CHECK NEAR THE TOP OF THIS ENTRY FOR MORE THAN 4096 COMPLETION TOKENS.
+Measured 2026-09-05, Qwen3.8-27B via the HF router (deepinfra), production's CoD prompt now correctly
+substituted, 2 substrate records at `--max-tokens 2048`: `truncated: 2`, `finish_reason: length` on
+both, `completion_tokens: 4096` -- i.e. both records spent the entire budget and were cut off. A third
+record at 6000 was still generating when the router returned 504. Truncated responses land in
+`schema_invalid`, so a run budgeted too low reproduces the `schema_invalid == record count` symptom
+this entry USED TO LEAD WITH -- which is CLOSED, at the top of this entry: production's engine on
+production's prompt path reports `schema_invalid: 0`, and it closed on the chat template, prompt
+assembly, scorer and runner, none of which a token budget touches. So a low budget is a BUDGET
+artefact wearing a fixed defect's face, recorded here rather than reopened; the runner's own default
+is 4096. Read `truncated` and `finish_reasons` in the provenance before concluding anything from
+`schema_invalid`.
 
 ### `run_model.py --schema-file` silently bypasses `SCHEMA_REQUIRED`, on the model-acceptance path [2026-09-04]
 `build_payload` reads `schema = load_schema(args) or extraction_json_schema()`
