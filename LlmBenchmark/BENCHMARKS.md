@@ -37,6 +37,11 @@ Tracking LLM extraction accuracy across models for ATLAS sentinel extraction.
 > are older still: Ollama was retired 2026-06-11 and no engine remains to reproduce them on.
 > Read this leaderboard as history, not as a comparison.
 
+> **This table tangles four axes in one F1 column** — engine, model, quantization and
+> context all vary row to row, and three rows (Command-R, llama3.3, Gemma 3) record a
+> serving failure as a model score. See [`MEASUREMENT_SPACE.md`](MEASUREMENT_SPACE.md)
+> before drawing any model conclusion from it, including "Qwen family dominates".
+
 ## Current Leaderboard (Quick Benchmark - 2 Test Cases)
 
 | Model | Backend | F1 | census_retail | fed_fomc | Mean Time | Date |

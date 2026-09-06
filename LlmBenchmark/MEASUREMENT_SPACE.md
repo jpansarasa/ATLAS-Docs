@@ -17,7 +17,7 @@ different measurement of the same thing.
 | # | Axis | Values we have actually run | Recorded in the scorecard? |
 |---|------|------------------------------|----------------------------|
 | 1 | Engine + build | vLLM 0.19.0, vLLM 0.28.0, llama.cpp | YES, fail-closed (`run_model.probe_engine`) |
-| 2 | Model identity | Qwen2.5-32B, Qwen3.8-27B | YES, `model` + `model_revision` (HF cache ref) |
+| 2 | Model family + size | 9 families / 14 rows in BENCHMARKS.md; Qwen 2.5-32B, 3-30B, 3-32B, 3.8-27B, Gemma 3-27B, Gemma 4-31B, GLM-4.7-Flash, EXAONE 4.0-32B, Command-R-35B, Mistral-Small-24B, phi4-14B, deepseek-r1-32B, llama3.3-70B | YES, `model` + `model_revision` (HF cache ref) |
 | 3 | Weight quantization | AWQ, AWQ-INT4, NVFP4, (GGUF untried) | NO -- inferred from the repo NAME, which is a convention, not a field |
 | 4 | KV cache dtype | fp8_e5m2, fp8_e4m3, unquantized | NO |
 | 5 | Context length | 15360, 32768 | NO |
@@ -58,6 +58,44 @@ And axis 10 on its own produced three different "recall" numbers for one unchang
 0.467 (off-manifold probes), 0.775 (catalog names), 0.7916 (obs-weighted production strings).
 A population is an axis. Changing it silently is the same error as changing the KV dtype
 silently.
+
+## A FAILURE ON ANOTHER AXIS IS NOT A MODEL SCORE
+
+`BENCHMARKS.md` is the worked example, and it is worse than confounded -- three of its
+fourteen rows are not extraction measurements at all, and they are the three that read as the
+most decisive model verdicts:
+
+  Command-R 35B    0.0%   its own finding says "OOM at 32K context (35B too large for KV
+                          cache). At 8K both entries timeout." -> an AXIS 4/5 result written
+                          into the model column. The model was never scored at a feasible point.
+  llama3.3 70B     CRASH  "insufficient VRAM at q2_K" -> an AXIS 3 result. We chose the quant
+                          that did not fit and recorded the model as crashing.
+  Gemma 3 27B      0.0%   "too slow, times out on both" -> a wall-clock/serving outcome.
+                          TIMEOUT is not a quality score; it is the absence of one.
+
+A zero in a quality column is read forever as "this model is bad". What those three rows
+actually say is "no feasible point was found under the constraints we happened to be running",
+which is a statement about OUR configuration, not about the model. Gemma is the live case: it
+appears twice, once as a total failure (Gemma 3, timeouts) and once as a credible 59.7% at
+Q4_K_M on llama.cpp -- and that second row is the only Gemma number anyone would quote,
+against Qwen rows served on a different engine at an unstated quantization.
+
+Quantization already lives in the model NAME here, and inconsistently: `Gemma 4 31B (Q4_K_M)`,
+`phi4:14b-q4_K_M` and `llama3.3:70b-instruct-q2_K` state it; `qwen2.5:32b-instruct`,
+`mistral-small:24b` and `deepseek-r1:32b` do not. That is axis 3 surviving as a naming
+convention across a whole leaderboard -- the defect the axis-3 row above names, at scale.
+
+So "Qwen family dominates -- 4 of top 5" is the inference this document forbids. It may well be
+true. This table cannot show it: those four Qwen rows sit on two different backends at
+unstated quants, the Gemma row is Q4_K_M on llama.cpp, and most of the losers are Ollama.
+
+THE ONE CORRECTLY DESIGNED COMPARISON IN THAT FILE is its "Backend Comparison (Same Model)"
+section, which holds the model fixed and varies the engine: qwen2.5:32b at 64.6% on llama.cpp
+vs 56.7% on Ollama. Single-axis, and it found 7.9pp -- four times the weight-quant effect and
+larger than the whole ~0.05 effect our current swap is trying to detect. (Caveat that keeps it
+honest: those rows came from the retired client that dropped the seed, so the magnitude is not
+reproducible. The lesson is that the axis is real and big, not that 7.9pp is the number.)
+The engine is not a detail to be held constant by luck.
 
 ## THE COUPLING THAT MAKES THIS HARD
 
@@ -124,3 +162,7 @@ by whoever last read it, which is the failure mode that produced the 0.067 sprea
 ✗ never read a within-family single-axis delta as a cross-family result
 ✗ never quote a delta from arms "not served alike" -- fix the serving, do not caveat the number
 ✗ never treat the eval population or the alignment key as a constant; they are axis 10
+✗ never write an infeasibility into a quality column -- OOM, TIMEOUT and CRASH are coordinate
+  findings ("no feasible point under X"), and recording them as 0.0% defames the model for good
+✗ never conclude a FAMILY is weak from rows that were never served at a feasible point; the
+  candidate set is 9 families, and most of them we eliminated on OUR configuration, not on theirs
