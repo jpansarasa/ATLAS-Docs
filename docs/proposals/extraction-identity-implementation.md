@@ -49,7 +49,7 @@ they will collide on merge. Verified 2026-08-26:
 | story | region of `ExtractionProcessor.cs` | also touches |
 |---|---|---|
 | S2 | `RunV2ProductionAsync` `:1746` + its XML doc `:1741-1745` | -- |
-| S3 | v1 `new ExtractedObservation` block `:687` | `V2ExtractionPipeline.cs:181`, `ReExtractBackgroundService.cs:464` and `:600`, the entity class, the adapter |
+| S3 | v1 `new ExtractedObservation` block `:687` | `V2ExtractionPipeline.cs:181`, `ReExtractBackgroundService.cs:470` and `:600`, the entity class, the adapter |
 
 **How to handle it: do NOT sequence the agents.** The edits are ~1,050 lines apart and touch
 different members, so this is a textual collision, not a semantic one -- git merges it cleanly in

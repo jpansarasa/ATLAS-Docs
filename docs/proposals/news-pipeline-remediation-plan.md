@@ -165,7 +165,7 @@ three fill, the row is gone too. `[M]`
 inherited figure is lower, and I could not reconstruct its exact predicate — §8.)
 
 **Embeddings.** `instrument_embeddings` coverage of the self-seeded set is **1,694 / 1,694 = 100%**,
-and the embedded text is name-bearing (`EmbeddingService.cs:468`:
+and the embedded text is name-bearing (`EmbeddingService.cs:605`:
 `instrument.Name + " (" + instrument.Symbol + ")"`). `[M]` They self-heal after a name repair:
 `EmbeddingBackgroundService.cs:103-113` marks stale on `i.UpdatedAt > e.CreatedAt` — **cross-table**
 (instrument's `UpdatedAt` vs the embedding row's `CreatedAt`), not one row's two columns as inherited.
@@ -240,7 +240,7 @@ include the D-2 per-field amendment. Both are checked out in other agent worktre
 **2.7 Quarantine leaves the vector, but search already filters it.** `is_active=false` never deletes an
 embedding — there is no delete path outside migrations and the cascade on *hard* delete — and **90
 inactive self-seeded rows retain embeddings right now**. `[M]` But vector search filters inactive rows
-at hydration (`EmbeddingService.cs:281-283`, with a comment naming exactly this failure mode). So
+at hydration (`EmbeddingService.cs:412-419`, with a comment naming exactly this failure mode). So
 dropping the vector is hygiene and defence-in-depth, **not** the correctness requirement the brief
 implies. `[I→M]`
 
@@ -394,7 +394,7 @@ Python half. `[M]`
 | A1.2 | `sum by (subject_source) (increase(sentinel_dsl_adapter_row_decision_total[24h]))` | a `per_num_slot` series **exists** and is > 25% of total | no `per_num_slot` series (today's state) | Today the series is *absent*, not zero — so the check must assert **presence**, not `> 0`. A PromQL `> 0` on an absent series returns empty, which is not a failure signal. |
 | A1.3 | Numeric-path substrate writes: `SELECT count(*) FROM macro_observations WHERE source_collector='sentinel' AND source_id NOT LIKE '%:sig:%' AND ingestion_time > now() - interval '48 hours'` | **≥ 5** | ≤ 4 | **48h and a count floor, not `> 0` over 24h** — the same burstiness argument B1 already applies to itself, which an earlier draft applied there and not here. `> 0` cannot separate "restored" from "still dying": this path wrote **exactly 1 row on 6 of its 14 ever-active days** (`ingestion_time` buckets, lifetime), so a death-rattle clears `> 0` at 24h and clears it again at 48h with 2 rows. The floor of 5 sits above that tail and below the path's own median throughput (4/day median over active days ⇒ ~8 per 48h; peak was 25/day, §2.3). `[M]` **Must not use `sentinelcollector_macro_observations_written_total`** — see §2.2; it reads 586/24h today with a zero numeric path. The `:sig:` exclusion is the whole check. Companion: the unfiltered count must also be > 0, proving the query reaches live data. |
 
-`exact_rejected_name` (`DeterministicResolver.cs:360`) is a *status tag* on a resolver counter, not a
+`exact_rejected_name` (`DeterministicResolver.cs:371`) is a *status tag* on a resolver counter, not a
 standalone metric `[M]`. Its parent counter emits no series in Prometheus today `[M]`, so it cannot be a
 gating criterion — measure it as an observation only, and treat "no series" as "not measured", never as
 "fell to zero". This is NT-4 in miniature. → §8.
@@ -743,7 +743,7 @@ Stated plainly, because a plan that hides its gaps reproduces NT-2.
    post-only reading cannot tell a drained basin from one that never existed, so the criterion would
    have been unfalsifiable in the direction that matters. C1.5 is now a diff against the C1.0 baseline
    and is explicitly **void** if that baseline is empty.
-5. **`exact_rejected_name` as a criterion.** It is a status tag at `DeterministicResolver.cs:360` `[M]`,
+5. **`exact_rejected_name` as a criterion.** It is a status tag at `DeterministicResolver.cs:371` `[M]`,
    and its parent counter emits **no series** in Prometheus over 24h `[M]`. I could not determine whether
    the counter is unwired or merely never incremented. Until that is resolved it cannot gate A1 — and
    "no series" must never be read as "fell to zero".
