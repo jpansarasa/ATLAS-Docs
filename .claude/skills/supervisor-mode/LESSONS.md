@@ -397,6 +397,25 @@ GRADUATES: delete when a claim-verification brief requires quoting the command's
   that requirement and finding it.
 GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -qiE 'echoed|truncat' $T/claim-verification.md && grep -qiE 'limit you passed|full output' $T/claim-verification.md
 
+L19 A control that AGGREGATES across units is invisible to a mutation test run on ONE unit -- and the passing
+  mutation test is what certifies it sharp.
+EVIDENCE: 2026-09-05, PR #1016. rescore_alignment_keys.py shipped a shuffled-gold floor control whose two
+  mutations both fired by name and moved the exit code, so the round reported it "mutation-verified". Review
+  re-ran the SAME control at the tool's own documented 5-run usage: the floor is a MEAN across runs, so a run
+  breaching the bar by 4x (0.4019 against 0.10) read 0.0804 and clean; at 6 runs the whole verdict flipped to
+  FLOOR_OK, exit 0. The single-run mutation could not see it because at n=1 a mean over one unit IS the unit.
+APPLIES: any guard, control, threshold or health check that reduces many units to one number before judging --
+  mean/median/total/any-of over runs, records, files, services, time buckets.
+RULE: mutate the control at the SCALE IT SHIPS AT, never only at n=1. Poison ONE unit, pad with clean ones up to
+  the documented usage AND one past it, and require the complaint to NAME the offending unit. A control that
+  judges an aggregate must state which unit breached, or it cannot be trusted to have looked at any of them.
+  Corollary for reviews: "mutation-verified" is a claim about the mutation's scale, not the control -- ask at what
+  n, and treat an unstated n as n=1.
+GRADUATES: delete when the guard-test contract requires a scale-matched mutation (poison one unit, pad to the
+  documented usage, assert the offending unit is named) -- checkable by grepping intent-review/SKILL.md
+  GUARD_TEST_CONTRACT for that requirement and finding it.
+GRADUATE_CHECK: S=.claude/skills/intent-review/SKILL.md; grep -qiE 'aggregat|scale-matched|pad(ded)? with clean' $S && grep -qiE 'names? the (offending|breaching) (unit|run|record)' $S
+
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, line number or severity as settled fact
 never amplify a correction you have not verified
