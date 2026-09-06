@@ -2161,7 +2161,7 @@ stop tokens), all 597 substrate articles:
 | number | value | reading |
 |---|---|---|
 | `source_entity_referential_integrity` | **0.9472** | 2,799 of 2,955 non-empty anchors. 156 name an entity the same response never emitted. Bar 0.95; FAILS by 0.0028. |
-| `source_entity_empty_rate` | **0.5806** | 4,090 of 7,045 predicted numbers carry `""`. Legal (a macro print owns no entity) and REQUIRED READING beside the row above -- integrity is scored on the other 2,955, 42%, so the row above alone cannot be told from 0.9472-over-everything. (An earlier version of this cell said a model blanking every anchor "would score 1.0 on an empty denominator". False: the metric returns null with a reason -- see `cod-stage1.criteria.json`'s `not_the_reason`.) |
+| `source_entity_empty_rate` | **0.5806** | 4,090 of 7,045 predicted numbers carry `""`. NOT a conformance figure, and NOT legal-by-definition: `""` is the answer only where no ONE named entity owns the number, and #1017 took macro prints OUT of that set -- the SERIES owns its own print -- so a blank on a macro print is now a defect. This run predates that correction on both sides (the row landed at #1014; `cod_json_v1.txt`'s macro clause changed only at #1017), so the rate says what the OLD prompt asked for. REQUIRED READING beside the row above -- integrity is scored on the other 2,955, 42%, so the row above alone cannot be told from 0.9472-over-everything. (An earlier version of this cell said a model blanking every anchor "would score 1.0 on an empty denominator". False: the metric returns null with a reason -- see `cod-stage1.criteria.json`'s `not_the_reason`.) |
 | `number_source_text_verbatim_rate` | 0.9709 | 6,840 of 7,045 literals appear verbatim (whitespace-normalized) in the article. Bar 0.90; passes. |
 | `json_valid` | 0.9849 | 588 of 597 parse and satisfy the schema. All 9 failures are `finish_reason: length` at 4,096 completion tokens -- the loop-guard cap, NOT JSON discipline. Production salvages partial JSON there; the harness deliberately does not. Bar 1.00; FAILS. |
 | `per_document_mean_latency_seconds` | 19.64 | concurrency 6 against the live production engine. Bar 300; passes. |
@@ -2592,6 +2592,89 @@ print(sum(1 for _,c in b.SOURCE_ENTITY_CLAUSES if b._rule_text(c) in b._rule_tex
 artifact and so cannot deadlock a build -- either it requires the three clauses verbatim in that
 field, or the field is generated and the hand-tuned prose moves to a sibling key. `3 of 3`, or a
 recorded decision that a paraphrase is enough and what checks the paraphrase, closes it.
+
+### The `source_entity` divergence guard: three things it does not pin [2026-09-06]
+`build_cod_gold.py`'s gate is what stands between a diverged labelling instruction and a paid
+rebuild of the gold, and a review of it 2026-09-05 confirmed the mechanism works: nine mutations cut
+from production's own bullet, each required to be caught BY NAME, plus a known-good base and the
+live check, and its own shape checked against literals neither structure feeds. A FOURTH gap that
+review found is closed by the PR carrying this entry -- `--selftest` for `build_cod_gold.py`,
+`verify_cod_gold.py` and `rescore_alignment_keys.py` now runs in
+`.github/workflows/python-tests.yml`, where it previously ran only when a human remembered. Three
+remain. None is theoretical; each was run against the shipped file on 2026-09-06 and each re-check
+below writes nothing, needs no corpus and buys nothing.
+
+**1. Clause TEXTS are unpinned -- only the NAMES are.** `EXPECTED_CLAUSE_NAMES` is the independent
+witness that stops `SOURCE_ENTITY_CLAUSES` being emptied, and what it compares is names. Shrink a
+clause's SENTENCE to any substring the three sites still contain -- the single word `issuer` -- and
+all eleven controls stay green while the guard has stopped watching the rule. It then accepts an
+INVERTED producer: an adjudication instruction reading "the country owns it" draws 1 complaint under
+the shipped tuple and 0 under the gutted one, so the paid call proceeds on an instruction that
+teaches the opposite of the prompt. Gutting a clause to `""` IS caught -- the mutation then removes
+nothing and its three site controls fail, `selftest: 8/11` at rc 1 -- so the hole is precisely a
+surviving SUBSTRING of the real sentence, not any edit to the tuple.
+```
+python3 - <<'PY'
+import sys; sys.path.insert(0, 'LlmBenchmark/scripts')
+import build_cod_gold as b
+rule = b.extraction_prompt_source_entity_rule()
+inverted = rule.replace("the SERIES owns it", "the country owns it")
+sites = {n: (inverted if n == "adjudication_instruction" else rule)
+         for n in b.EXPECTED_SITE_NAMES}   # this ORDER is pinned too -- reorder and the shape check fires
+print("shipped clause tuple:", len(b.source_entity_rule_divergence(sites)), "complaint(s)")
+b.SOURCE_ENTITY_CLAUSES = (("macro_series_is_the_owner", "issuer"),) + b.SOURCE_ENTITY_CLAUSES[1:]
+print("clause gutted to 'issuer':", len(b.source_entity_rule_divergence(sites)), "complaint(s)")
+print("selftest rc:", b.selftest_source_entity_rule())
+PY
+```
+2026-09-06 -> `shipped clause tuple: 1 complaint(s)`, `clause gutted to 'issuer': 0 complaint(s)`,
+`selftest: 11/11 controls behaved as required` and `selftest rc: 0`. A `1` on the second line closes it.
+
+**2. Site PROVENANCE is unpinned.** The guard asks whether the three sites AGREE, never whether each
+is still the text its name claims. Replace `source_entity_rule_sites()` with three echoes of
+production's own bullet -- no `adjudication_prompt()`, no `alignability()` output -- and the selftest
+prints `11/11` at rc 0. The nine mutations are cut from the prompt and replicated under each site
+name by design, so they cannot tell an echo from a producer, and the live check compares each site's
+text against the clause list rather than against what produced it. A producer that stopped being
+called at all therefore reads as a full pass.
+```
+python3 - <<'PY'
+import sys; sys.path.insert(0, 'LlmBenchmark/scripts')
+import build_cod_gold as b
+rule = b.extraction_prompt_source_entity_rule()          # every site an echo of the prompt
+b.source_entity_rule_sites = lambda: {n: rule for n in b.EXPECTED_SITE_NAMES}
+print("selftest rc:", b.selftest_source_entity_rule())
+PY
+```
+2026-09-06 -> `selftest: 11/11 controls behaved as required`, `selftest rc: 0`. A non-zero rc, or a
+control naming the echo, closes it.
+
+**3. No control asserts that the `main()` wiring exists.** The gate that refuses the paid call is
+seven lines in `main()` -- `divergence = source_entity_rule_divergence()` and its refusal -- and
+`--selftest` returns from `main()` before reaching them. Delete the block and every control still
+passes; nothing else in the repo names the function either (`grep -rln source_entity_rule_divergence
+--include='*.py' --include='*.sh' --include='*.yml' --include='*.cs' .` -> `build_cod_gold.py` alone,
+five occurrences in it, one of which is that call). The gate is reachable by inspection only.
+```
+python3 - <<'PY'
+import pathlib, sys
+src = pathlib.Path('LlmBenchmark/scripts/build_cod_gold.py')
+body = src.read_text()
+gate = body[body.index("    divergence = source_entity_rule_divergence()"):]
+gate = gate[:gate.index("        return 2\n") + len("        return 2\n")]
+print("gate deleted:", gate.count("\n"), "lines")
+sys.path.insert(0, 'LlmBenchmark/scripts')
+mod = {"__file__": str(src.resolve()), "__name__": "gate_deleted"}   # REPO resolves off __file__
+exec(compile(body.replace(gate, ""), str(src), "exec"), mod)
+print("selftest rc:", mod["selftest_source_entity_rule"]())
+PY
+```
+2026-09-06 -> `gate deleted: 7 lines`, then `selftest: 11/11 controls behaved as required` and
+`selftest rc: 0`. A control that fails on the gate-deleted body closes it, and such a control costs
+nothing: the divergence check runs BEFORE `args.work.mkdir` and `load_corpus`, so driving `main()`
+with a diverged site, `--corpus /nonexistent/corpus.json` and a work dir that does not exist returns
+`rc = 2` with `REFUSED: the labelling instruction and production's prompt disagree about
+source_entity.` on stderr and creates nothing -- measured 2026-09-06, no key and no request.
 
 ### `run_model.py --schema-file` silently bypasses `SCHEMA_REQUIRED`, on the model-acceptance path [2026-09-04]
 `build_payload` reads `schema = load_schema(args) or extraction_json_schema()`
