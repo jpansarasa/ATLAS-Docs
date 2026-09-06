@@ -276,9 +276,15 @@ precision dial.
 AND THE ENGINE IT TOOK TO ASK THE QUESTION ANSWERS A SECOND ONE. vLLM's 8-bit rung at 27B is not
 merely tight, it is operationally unusable: 27.26 GiB of weights leave a 4,176-token KV pool, below
 this eval's own 7,617-token worst case, and throughput collapses from 419.6 to 92.8 tok/s with only
-2 of 6 requests resident. That is why the ladder had to move engines. But llama.cpp CUDA runs this
-workload at 38.22 s/doc against vLLM's ~2.6 s/doc -- roughly 15x slower. Both findings point the
-same way: stay on vLLM, stay at 4-bit.
+2 of 6 requests resident. That is why the ladder had to move engines. And llama.cpp CUDA is slower
+on the same 40 articles at the same concurrency 6, on both measures, which agree:
+wall clock 260.9 s vs 102.7 s = **2.54x**; per-request 38.22 s vs 14.28 s = 2.68x. Both findings
+point the same way: stay on vLLM, stay at 4-bit.
+
+  A RATE IS NOT A LATENCY, and an earlier revision of this line said 15x by dividing llama.cpp's
+  PER-REQUEST latency (38.22 s) by vLLM's THROUGHPUT figure (2.57 s/doc = 102.7 s wall / 40 docs
+  at concurrency 6). The two quantities differ by the concurrency factor, so the ratio inflated
+  ~6x. Either measure is fine; mixing them is not. Re-derive across an agent boundary.
 
 THE LADDER IS ENGINE-COUPLED, which makes this axis 1 x axis 3 and not axis 3 alone. vLLM
 serves 4-bit, 8-bit (w8a16 / w8a8) and bf16; a true 6-bit is essentially a GGUF rung (Q6_K),

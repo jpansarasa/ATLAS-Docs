@@ -3360,8 +3360,22 @@ close, across three moved axes, which is suggestive and not evidence.
 **AND vLLM HAS NO USABLE RUNG ABOVE 4-BIT AT 27B.** Measured, not estimated: w8a16 weights of
 27.26 GiB leave a 4,176-token KV pool -- below this eval's own 7,617-token worst case -- and
 throughput collapses 419.6 -> 92.8 tok/s with 2 of 6 requests resident. That is why the ladder moved
-engines. But llama.cpp CUDA runs the workload at 38.22 s/doc against vLLM's ~2.6 s/doc, about **15x
-slower**, so llama.cpp is not a deployment path here even where it is the only measurement path.
+engines. And llama.cpp CUDA is slower on the same 40 articles at concurrency 6, on both
+measures, which agree with each other: wall 260.9 s vs 102.7 s = **2.54x**, per-request 38.22 s vs
+14.28 s = 2.68x. So llama.cpp is not a deployment path here even where it is the only measurement
+path -- but the margin is 2.5x, not the 15x an earlier revision of this entry carried. That figure
+was produced by dividing llama.cpp's PER-REQUEST latency by vLLM's THROUGHPUT figure; the two differ
+by the concurrency factor and the ratio inflated ~6x. Full table, wall for 40 articles / s-per-doc
+throughput / s-per-doc per-request:
+
+| arm | engine | wall | s/doc (thruput) | s/doc (per-req) |
+|---|---|---|---|---|
+| mistral | vLLM 0.19.0 | 83.5 | 2.09 | 12.08 |
+| commandr | vLLM 0.19.0 | 87.3 | 2.18 | 12.75 |
+| gemma3 | vLLM 0.19.0 | 102.7 | 2.57 | 14.28 |
+| gemma4 | vLLM 0.28.0 | 179.9 | 4.50 | 26.30 |
+| lcpp Q4_K_M | llama.cpp | 260.9 | 6.52 | 38.22 |
+| lcpp Q6_K | llama.cpp | 294.4 | 7.36 | 43.58 |
 
 **A VERIFICATION FAILED TOWARD SUCCESS, INSIDE THE TASK ABOUT THAT.** An earlier report of
 "llama.cpp honours `json_schema` on `/v1/completions` -- verified" was FALSE; the check read HTTP
