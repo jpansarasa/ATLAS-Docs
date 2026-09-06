@@ -16,6 +16,15 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**Production's CoD extraction loses ~108 gold entities per run to its own loop guard, TODAY.**
+`entities_recall` 0.5545 -> 0.3809 on the prompt production actually runs, measured 2026-09-06 and
+attributable to `CpuCod__JsonRepetitionPenalty` 1.1 rather than the token cap. The full entry, its
+four-cell table and its re-check live under §MEASUREMENT DEBT ("Production's `repetition_penalty` 1.1 --
+NOT the token cap -- costs `entities_recall`") because that is where the measurement that found it sits,
+but the DEFECT is a live production one and belongs in a reader's scan of this section. Nothing in
+production measures it; the cheapest next step is a 1.02 / 1.05 / 1.1 penalty sweep, scored on coined
+names as well as recall.
+
 **`ansible-gate-guard` denies READS, RUNS and even PROSE about a gate-layer file, while permitting an
 actual WRITE to one.** Its deny text states the contract exactly -- "RUNNING one of these files is NOT
 blocked -- only writing to it ... redirecting its output to a log is fine" -- and both halves are
@@ -72,6 +81,19 @@ the engine the "0.28.0 upgrade is BLOCKED by our `fp8_e5m2` KV cache" entry bloc
 
 FOUR digits on the 0.7634 and 0.7629 rows deliberately -- both round to 0.763, so a three-digit row does not
 say WHICH scorecard it came from. Do not round them.
+
+AND THE ENGINE IS ONLY HALF THE IDENTITY: SIX OF THESE SEVEN ROWS DO NOT NAME THEIR SAMPLING [2026-09-06].
+The last row is the proof, sitting inside the table it indicts -- the ONLY axis separating 0.694 from 0.764
+is the decoding, a **0.070** swing, larger than the 0.051 fp8 KV effect this file devotes an entry to and
+larger than most gaps the table is used to argue. So "EVERY FIGURE NAMES ITS ENGINE" is necessary and not
+sufficient: a row carrying an engine and no sampling still does not identify a run. Measured on the CoD
+path the same week, changing ONLY `repetition_penalty` and `max_tokens` moved `entities_f1` by 0.135 and
+REVERSED the sign of a prompt comparison -- see "The `entities_f1` regression REVERSES SIGN". Whoever next
+edits this table should add a sampling column rather than trusting the engine column to carry it.
+THE ACCEPTANCE SENTENCE BELOW IS ALSO NOW KNOWN INSUFFICIENT: "a swap needs a CoD scorecard on production's
+prompt path" is true and incomplete, because `production_prompt_path` reads no decoding knob and stamps
+`true` on a run that omitted production's loop guard. Prompt path AND sampling, or the scorecard is not
+production's request.
 
 NONE OF THIS IS ACCEPTANCE EVIDENCE. It is scored on the substrate's own 16 instruction blocks, a task
 production does not run; CLAUDE.md §MODEL_ACCEPTANCE governs, and a swap needs a CoD scorecard on production's
@@ -2200,6 +2222,12 @@ python3 LlmBenchmark/scripts/eval_harness.py --task cod --substrate /tmp/g40.jso
   --adapter-meta /tmp/cod-preds.jsonl.provenance.json --out /tmp/cod-scorecard.json
 ```
 A non-zero `schema_invalid`, or `production_prompt_path: false`, means this closure regressed.
+TWO CAVEATS ON THAT SENTENCE AND ON THE COMMAND ABOVE IT [2026-09-06]. The `--max-tokens 8192` is what
+this run USED, not what the task needs -- 4096 truncates nothing (see "THE 8192 ... IS NOT A
+REQUIREMENT" below). And `production_prompt_path: true` is NOT sufficient for the claim this line makes:
+the flag reads no decoding knob, so this closure -- measured with `repetition_penalty` unset -- is a
+closure of production's PROMPT PATH and not of production's REQUEST. Both are developed in the
+"blind on a second axis -- SAMPLING" paragraph further down.
 
 The two sampling knobs above are `CpuCod__JsonRepetitionPenalty` and `ExtractionOptions.StopTokens`;
 `seed=42` is `ExtractionOptions.V2Seed`. What the runner does and does not reproduce of production's
@@ -2419,7 +2447,7 @@ the spread to concurrency, and nothing here claims it does.
 THE `value`-ALONE ROW IS NOT A SCORE AND MUST NOT BE CARRIED AWAY AS ONE. It is precisely the shape
 this entry's own alignment-key paragraph forbids: anything in the key reads 1.0 by construction, so a
 key holding `value` makes value accuracy -- the number a model swap turns on -- unmeasurable.
-`eval_harness.py:531-536` carries the same refusal at the code. What 0.8947 says is that the model's
+`eval_harness.py:539-544` carries the same refusal at the code. What 0.8947 says is that the model's
 NUMBERS are largely right and the KEY is what rejects them; it does not say the incumbent's real
 score is 0.89. The macro-waived row is not a shippable key either -- it reads the GOLD's own
 `ent_type` to decide where to waive, which is only possible once the question is settled -- so it is
@@ -2553,7 +2581,7 @@ unresolvable citation in `scripts/verify-citations.py`, which is how it was foun
 NOT THE ENTITIES ARRAY -- do not carry this finding across. `entities_f1` is 0.6744 with a range of
 0.0092, its key is already name-only, and TIGHTENING it scores LOWER (name-exact, 0.6366). Stricter,
 not looser, and an earlier revision of this line had the word backwards: the committed `_entity_key`
-(`eval_harness.py:548`) admits a pair at token-F1 >= 0.8, while name-exact is a multiset intersection
+(`eval_harness.py:556`) admits a pair at token-F1 >= 0.8, while name-exact is a multiset intersection
 on the normalized name -- a strict SUBSET of what that floor already admits. Scoring lower is what a
 subset key does, and it is the point: there is no slack in this key for a convention dispute to be
 hiding in, which is exactly what makes the numbers key's slack a finding. Entity recall 0.556 is
@@ -2619,7 +2647,19 @@ had never declared (616 -> 624), which is why the object totals above moved with
 moving. A non-zero `<undeclared>` means a gold anchor stopped naming an entity its own article
 declares, which is the one thing `source_entity_referential_integrity` scores a MODEL on.
 
-BUDGET THE `run_model.py` RE-CHECK NEAR THE TOP OF THIS ENTRY FOR MORE THAN 4096 COMPLETION TOKENS.
+THE 8192 IN THE `run_model.py` RE-CHECK NEAR THE TOP OF THIS ENTRY IS NOT A REQUIREMENT, AND THIS
+PARAGRAPH USED TO SAY IT WAS ("budget ... for MORE THAN 4096 completion tokens"). Corrected 2026-09-06
+against the loop-guard control below: 240 records at `--max-tokens 4096` on the local incumbent, across
+BOTH prompt arms, give `truncated 0`, `finish_reason: stop` on every record, and a maximum observed
+`completion_tokens` of **3148 -- 77% of the cap**. Nothing legitimate wanted 8192. Every record that
+DID exceed 4096 in the unguarded arms sits on an article that was simultaneously degenerating:
+`sentinel-v6.2-cove.json` indices 183 (4181, 6432, 6516), 219 (5767 twice) and 35 (5607) all saturate a
+schema array at `maxItems` in the same run, and index 3 (4558, 4559) swings from `events: 1` to
+`events: 23` and `claims: 25` to `claims: 33` across runs at temperature 0. The loop wanted 8192; the
+task did not. An earlier enumeration of this list omitted index 219 and both 183-at-4181 records, and
+called index 3 a looper though it saturates no array -- it is repetition-degenerate by the run-to-run
+swing, which is a weaker test, and the distinction is kept here rather than smoothed over.
+THE SEPARATE HOSTED-ROUTE FINDING STANDS and is not what the sentence above was ever about.
 Measured 2026-09-05, Qwen3.8-27B via the HF router (deepinfra), production's CoD prompt now correctly
 substituted, 2 substrate records at `--max-tokens 2048`: `truncated: 2`, `finish_reason: length` on
 both, `completion_tokens: 4096` -- i.e. both records spent the entire budget and were cut off. A third
@@ -2632,7 +2672,7 @@ artefact wearing a fixed defect's face, recorded here rather than reopened; the 
 is 4096. Read `truncated` and `finish_reasons` in the provenance before concluding anything from
 `schema_invalid`.
 
-### Convention B measured end to end: +0.1873 `numbers_f1`, disjoint arms, 82.4% of the ceiling [2026-09-06]
+### Convention B measured end to end: +0.1873 `numbers_f1` AT HARNESS SAMPLING, disjoint arms, 82.4% of the ceiling [2026-09-06]
 The macro-owner decision (#1017: the SERIES owns its own print) is no longer a prediction. Both arms were
 run against the SAME committed gold on the SAME committed key, so the effect below is the PROMPT's and
 nothing else: incumbent Qwen2.5-32B-Instruct-AWQ rev `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c` @ vLLM
@@ -2652,6 +2692,20 @@ appears in full only next to the `git` command that consumes it.
 of runs still separates. The effect is 3.9x the wider of the two within-arm ranges and 4.4x their mean --
 which matters because the swing is what the entry above this one says has to come out of the instrument,
 and an effect inside the swing would have decided nothing.
+
+QUOTE THE SAMPLING WITH THE FIGURE. THIS IS A CAVEAT, NOT A RETRACTION -- the +0.1873 is real and it
+SURVIVES the move to production's decoding. Both arms above ran `repetition_penalty: null,
+max_tokens: 8192`; production sends **1.1 / 4096** (`CpuCod__JsonRepetitionPenalty` and
+`CpuCod__JsonMaxCompletionTokens` in `/opt/ai-inference/compose.yaml`, defaulted at
+`SentinelCollector/src/Configuration/CpuCodOptions.cs:91` and
+`SentinelCollector/src/Configuration/CpuCodOptions.cs:102`, forwarded at
+`SentinelCollector/src/Services/GpuJsonExtractionService.cs:222`). The fourth cell -- OLD prompt at
+production's sampling -- was measured 2026-09-06 and makes the comparison same-sampling: `numbers_f1`
+**0.3446 -> 0.5152 = +0.1707**, arms still DISJOINT at worst-case **+0.1357**. So the prompt's number
+holds under the guard; what does NOT hold across the sampling axis is the entity story two entries
+below, which reverses sign. The four-cell table is in "The `entities_f1` regression REVERSES SIGN at
+production's sampling" below, and the standing production cost it exposes has its own entry after that;
+this heading now names its sampling because the figure was written bare and read forward twice.
 
 WHAT IT DID NOT BUY IS 17.6% OF THE PRIZE. QUOTE THE ARM, which is what the entry above legislates and
 what an earlier revision of this line failed to do: its headline +0.2048 is the POOLED n=5 figure, and its
@@ -2714,13 +2768,37 @@ is what would make it one, and that hash changing is how you know it happened.
 AND THE FLAG CANNOT TELL THE TWO ARMS APART: `eval_harness` stamped `production_prompt_path: true` on ALL
 SIX scorecards. The stamp is a four-way conjunction -- `endpoint_mode == "completions"`, a `prompt_file`
 NAMED, a `schema_file` named, and a chat template that wraps the prompt -- and NOT ONE of the four
-inspects prompt CONTENT (`LlmBenchmark/scripts/eval_harness.py:1070` is the `prompt_file` conjunct, a bare
+inspects prompt CONTENT (`LlmBenchmark/scripts/eval_harness.py:1335` is the `prompt_file` conjunct, a bare
 `bool()` on the path string). So the flag is sound on WIRE SHAPE, which is what it was built for, and
 blind on the content axis: it certifies the arm that is false of production exactly as loudly as the arm
 that is true of it. FOLLOW-UP THIS PR DOES NOT TAKE: CLAUDE.md §MODEL_ACCEPTANCE cites a
 `production_prompt_path: true` scorecard as evidence that the bar runs end to end, and an agent reading
 only that will believe the flag discriminates prompt content. Either the flag hashes the prompt into the
 scorecard, or that HARD_STOP gains a clause saying it does not. Editing CLAUDE.md was out of scope here.
+
+AND IT IS BLIND ON A SECOND AXIS -- SAMPLING -- WHICH IS THE SAME FLAG AND THE SAME CLASS, recorded here
+rather than in a second entry [2026-09-06]. None of the four conjuncts reads a decoding knob, so a run
+that omits production's loop guard stamps `true` exactly like one that sends it. Measured over the
+loop-guard control below: **all TWELVE scorecards across the four cells stamp `production_prompt_path:
+true`**, including the SIX that ran `repetition_penalty: null, max_tokens: 8192` where the service sends
+1.1 / 4096. Six of those twelve are false of production on sampling, six of them are false of production
+on prompt content, and the flag separates neither. A run that DECODED differently from production is not
+a run on production's path however right its wire shape -- and the entry at the top of this file that
+closes the CoD path end to end was itself measured at `--max-tokens 8192` with the penalty unset, so the
+closure it records is of the PROMPT PATH and not of production's request.
+LANDED 2026-09-06 as `d139f954` (PR #1026): `request_shape` now carries `prompt_file_sha256` /
+`schema_file_sha256` / `chat_template_sha256`, and a per-knob `request_sampling` block sits beside it, under
+the invariant that a digest is of bytes that REACHED a request or is null. Scorecards produced after that sha
+carry them; the TWELVE counted above predate it and do not.
+THE MERGE DOES NOT CLOSE THIS ENTRY, and an earlier revision of this line predicted that it would -- read the
+merged code before believing it. `production_prompt_path` is still the same four conjuncts on `d139f954`
+(`eval_harness.py:1334-1337`); not one of them reads a digest or a decoding knob, and the comment directly
+above them says so in as many words. So a run that omitted production's loop guard still stamps `true`
+exactly like one that sent it. What changed is that the evidence is now IN the scorecard instead of absent
+from it: the scorer RECORDS and a human ADJUDICATES, comparing those digests against production's prompts
+mount and `CpuCodOptions` against `request_sampling`. Both blindnesses are now READABLE from a scorecard
+rather than closed by one, and the follow-up above -- CLAUDE.md §MODEL_ACCEPTANCE gaining a clause saying the
+flag does not discriminate content -- is still open.
 
 RE-CHECK (no GPU and no engine -- it re-scores the committed gold against the EXISTING prediction files,
 so it is free only while those files exist; see the PROVENANCE LIMIT below):
@@ -2746,35 +2824,60 @@ scorecard>.json` once per run and
 rescorer and `eval_harness` still agree; it printed `OK` on 2026-09-06.
 
 PROVENANCE LIMIT, the SAME one the entry above discloses for its own figures and for the same reason: the
-gold and the rescorer are committed, THE SIX PREDICTIONS FILES, THE SIX SCORECARDS AND THE RECONSTRUCTED
+gold and the rescorer are committed, THE PREDICTIONS FILES, THE SCORECARDS AND THE RECONSTRUCTED
 PRE-DECISION GOLD ARE NOT. They live under `/tmp`, so one `tmpwatch` ends every figure in this entry and
-in the two below it -- none is re-derivable from the repo alone. THIS APPLIES TO THE TWO ENTRIES THAT
-FOLLOW AS WELL, including the one whose re-check says its entity figures are "checkable against the six
-scorecards without re-scoring": true today, and it costs two GPU sweeps the moment `/tmp` clears.
-What survives is the METHOD, not the numbers: re-running the arms costs two `run_model.py` sweeps on the
-live engine (~7.5 minutes each at concurrency 6) plus a checkout of the pre-#1017 prompt for the OLD arm,
+in the three below it -- none is re-derivable from the repo alone. THIS APPLIES TO THE THREE ENTRIES THAT
+FOLLOW AS WELL, including the one whose re-check says its entity figures are "checkable against the
+scorecards without re-scoring": true today, and it costs GPU sweeps the moment `/tmp` clears.
+THE POPULATION IS NOW TWELVE, NOT SIX, and the count moved because a fourth cell was added 2026-09-06:
+twelve predictions files and twelve scorecards across four cells.
+UNITS, because three statements in this file disagreed until 2026-09-06: one RUN is ~2 minutes at
+concurrency 6 (measured 110-118s per run); one ARM is three runs, ~6-7.5 minutes. Rebuilding THIS entry's
+two arms is 6 runs; rebuilding the whole four-cell table is **12 runs, ~25 minutes**, not four 2-minute
+sweeps.
+What survives is the METHOD, not the numbers: re-running THIS entry's two arms costs two `run_model.py`
+arms on the live engine (~7.5 minutes each at concurrency 6) plus a checkout of the pre-#1017 prompt for the OLD arm,
 `git show 45d02cd8bd3e360529267c9fec3868fd8554af4a` (the git blob; the sha256 in the table is a different
 namespace). Whoever repeats this should write the predictions somewhere the tree can reach BEFORE the
 numbers are quoted forward.
 
-### The prompt's own anti-invention clause FAILS, and referential integrity is structurally blind to it [2026-09-06]
+### The prompt's own anti-invention clause FAILS, referential integrity is blind to it, and production's loop guard suppresses the RUNAWAY but not the COINAGE [2026-09-06]
+WHAT CHANGED 2026-09-06, and it changes the DEPLOYABILITY of the corrected prompt without excusing it.
+Everything below was measured at `repetition_penalty: null, max_tokens: 8192`. Production sends **1.1 /
+4096**. Re-run at production's sampling, the runaway DOES NOT MANIFEST: article 35 emits **6, 4 and 8**
+entities against 60/60/60, with **ZERO** coined names against 50/50/49. Read the causation carefully,
+because an earlier draft of this correction got it backwards and a sibling agent refuted it:
+- THE PROMPT IS WHAT MAKES ARTICLE 35 LOOP. Both arms of the original comparison ran with the penalty
+  unset, so a CONSTANT cannot explain a difference that appears in ONE arm. The corrected prompt is the
+  only axis that moved, and it remains the cause. This entry does not exonerate it.
+- PRODUCTION'S LOOP GUARD SUPPRESSES WHAT THE PROMPT PROVOKES. That is a different claim and it is the
+  one the control establishes.
+- SO THE CORRECTED PROMPT IS DEPLOYABLE, CONDITIONALLY. **If the loop guard is ever loosened or removed,
+  this prompt change bites.** That coupling is live, it is not a closed question, and it is the reason
+  this entry stays open rather than being deleted: `CpuCodOptions.JsonRepetitionPenalty` is now load
+  bearing for prompt correctness, not only for latency.
+- STILL OPEN, unchanged: whether the `macro_indicator` instruction CAUSED the article-35 runaway or
+  merely uncovered it. One prompt edit and one re-run settles it. The guard does not settle it -- it
+  hides it.
+
 The corrected `source_entity` bullet added a clause for exactly this case -- "a series the article never
 NAMES (a clause may describe the measure while naming no indicator; that is a blank, not licence to coin
 one)", in `SentinelCollector/src/cod-prompts/cod_json_v1.txt`, closed four lines later by "NEVER invent a
 name to fill this field". Cited by its verbatim text and NOT by line, because `scripts/verify-citations.py`
 `_EXTS` has no `txt` and a `.txt:<line>` form is therefore a citation no sweep in this repo can ever check.
-Measured on the arm-NEW runs above, the model coins names anyway, and the metric written
-to grade anchor grounding cannot see it.
+Measured on the arm-NEW runs above -- at HARNESS sampling, `repetition_penalty: null`; see the control
+below for what production's 1.1 does to every figure in this entry -- the model coins names anyway, and
+the metric written to grade anchor grounding cannot see it.
 
 WHAT MAKES IT DEBT RATHER THAN A BUG REPORT. `source_entity_referential_integrity` asks whether an anchor
-appears in the model's OWN `entities[]` (`LlmBenchmark/scripts/eval_harness.py:767`) -- never whether it
+appears in the model's OWN `entities[]` (`LlmBenchmark/scripts/eval_harness.py:775`) -- never whether it
 appears in the ARTICLE. Every coinage below is duly declared in `entities[]`, so the metric reads **0.9603
 / 0.9760 / 0.9900** across the three NEW runs, and the ONE run carrying hand-verified coined anchors on
 BOTH articles below scores 0.9760 -- the middle value. The metric does not even RANK the runs by coinage.
 A metric that cannot fail on the failure mode its clause exists to prevent is a signal riding on a
 mechanism that does not observe it, and the article text is ALREADY BOUND IN THE SAME LOOP: `content =
 _norm_ws(p.source_content)` sits just above that test and `number_source_text_verbatim_rate` reads it a few
-lines below at `LlmBenchmark/scripts/eval_harness.py:774`. The missing check needs no new data, only the
+lines below at `LlmBenchmark/scripts/eval_harness.py:782`. The missing check needs no new data, only the
 normaliser this entry's last paragraph specifies.
 
 WHAT WAS MEASURED, BY HAND, ON FOUR ARTICLES -- AND THE CRITERION SELECTS EIGHT, so this is a sample and
@@ -2810,6 +2913,41 @@ index 429 the analyst table is broken across column breaks -- the content field 
 Any measurement of this failure mode needs a normaliser that survives an intra-word newline before its
 rate means anything, so the corpus-wide coined-row rates produced during this work are NOT recorded here.
 
+THE DISCRIMINATING CONTROL, measured 2026-09-06, same engine and same 40 articles, THREE runs per cell,
+changing ONLY the two sampling knobs. The positive observable is a COUNT of article-runs whose longest
+array reaches the schema's `maxItems` (**60**, read from the schema actually sent, so a schema change
+cannot retune the threshold under its own control) -- never "no blowup", which is an absence and would
+have read green on a broken harness.
+
+| observable | OLD @ null/8192 | NEW @ null/8192 | OLD @ 1.1/4096 [production today] | NEW @ 1.1/4096 |
+|---|---|---|---|---|
+| article 183 `events[]` (cap 60) | 60 / 60 / 17 | 60 / 60 / 60 | 11 / 10 / 11 | 9 / 10 / 9 |
+| saturated article-runs | **3 / 120** | **6 / 120** | **0 / 120** | **0 / 120** |
+| article 35 `entities[]` | 9 / 10 / 11 | 60 / 60 / 60 | 4 / 4 / 4 | 6 / 4 / 8 |
+| coined entity names, corpus | 14 / 29 / 19 | **65 / 74 / 77** | 13 / 11 / 11 | **15 / 14 / 13** |
+
+Across BOTH unguarded arms article 183 saturates in **7 of 8 runs** (the five OLD runs include the two
+concurrency-1 runs). Under the guard it saturates in none, and coinage falls ~5x. QUOTE THE RESIDUAL
+HONESTLY: 15/14/13 is not zero and it is not below the OLD arm's floor -- the same-sampling OLD
+comparator is 13/11/11, so a gap of **2.33** coined names per run survives the guard (per-run 2, 3, 2 --
+"~3" would be the flattering round of a mean that is nearer 2). The corpus figure is a
+substring test and the noisy-instrument caveat above governs it; the article-35 collapse to zero is the
+hand-checked number.
+
+THE WIRE CONTROL, TWO-SIDED, because a null result on the real run is unreadable without it -- "the flag
+worked" and "the flag was silently dropped" produce the same clean scorecard. Article 183 alone,
+concurrency 1, `--max-tokens 4096` both sides:
+- `repetition_penalty 1.0` -- 1.0 is the identity for the penalty (it divides/multiplies logits by 1),
+  which is what an OMITTED field means on this engine; that equivalence is an INFERENCE about vLLM's
+  default, not a recorded artifact, and it is the one load-bearing assumption in this control. STILL
+  SATURATES: `events[] == 60`, `finish_reason: stop`, `truncated false`, `schema_valid true`, 4076
+  completion tokens. **So `max_tokens` alone does NOT close the loop** -- it stops cleanly at the schema
+  cap, well inside the budget. The penalty is the knob that matters.
+- `repetition_penalty 2.0` COLLAPSES the output: `finish_reason: length`, `truncated 1`,
+  `schema_invalid 1`, prediction `null`, 4096 completion tokens.
+One side proves the field is honoured; the other proves it is not silently ignored. Neither alone
+distinguishes the two.
+
 CLOSING IT is either a scorer change or a prompt change and the entry does not presume which:
 a gold-free `source_entity_article_grounding` beside the integrity metric (same loop, same
 `p.source_content`, the normaliser above), or a prompt clause the model actually obeys. What CANNOT close
@@ -2833,11 +2971,55 @@ PY
 2026-09-06 -> `60 entities, 50 not in the article` (49 on the third run) for the three NEW runs; the OLD
 arm prints 9, 10 and 11 entities and `0 not in the article`. Build the 40-article subset with the joiner
 in the entry two above this one.
+RUN THE SAME LOOP OVER A GUARDED PREDICTIONS FILE and it prints `6 entities, 0 not in the article` (4 and
+8 on the other two runs) -- that is the control, and it is the one line of this re-check that decides
+whether the defect reaches production. WHAT THE RE-CHECK CANNOT REACH: every predictions file it reads
+lives in `/tmp` and none is committed, so one `tmpwatch` ends it. The PROVENANCE LIMIT recorded two
+entries above governs this entry and the two below it identically; re-deriving these numbers afterwards
+costs 12 RUNS on the live engine -- four cells (two prompts x two samplings) at three runs each, ~2
+minutes per RUN and ~25 minutes in total at concurrency 6 plus a checkout of the pre-#1017 prompt, `git show 45d02cd8bd3e360529267c9fec3868fd8554af4a`.
 
-### `entities_f1` fell 0.0338 under the corrected prompt, and 94.9% of it is ONE article [2026-09-06]
-Same six runs. `entities_recall` did NOT move -- **0.5545 -> 0.5529** -- but the arms emit **403.7 ->
-454.7** entities per run for **346.0 -> 345.0** true positives: fifty-one more entities per run bought
-NEGATIVE ONE. So precision fell **0.8573 -> 0.7588** and `entities_f1` fell **0.6734 -> 0.6396**.
+### The `entities_f1` regression REVERSES SIGN at production's sampling: -0.0337 becomes +0.0478 [2026-09-06]
+THIS ENTRY USED TO BE HEADED "`entities_f1` fell 0.0338 under the corrected prompt, and 94.9% of it is
+ONE article", and it was measured only at `repetition_penalty: null, max_tokens: 8192`. A fourth cell --
+the OLD prompt at production's **1.1 / 4096** -- was measured 2026-09-06 and makes the comparison
+same-sampling. The prompt's effect on entities is not a constant with a sign; it depends on the decoding:
+
+| cell | `numbers_f1` | `entities_f1` | ent precision | ent recall |
+|---|---|---|---|---|
+| OLD x `null`/8192 | 0.3594 | 0.6734 | 0.8573 | 0.5545 |
+| NEW x `null`/8192 | 0.5467 | 0.6396 | 0.7588 | 0.5529 |
+| OLD x **1.1/4096** [production today] | 0.3446 | 0.5385 | 0.9191 | 0.3809 |
+| NEW x **1.1/4096** [production + #1017] | 0.5152 | 0.5862 | 0.8995 | 0.4348 |
+
+`entities_f1`: **-0.0337 at harness sampling, +0.0478 at production sampling**. BOTH are disjoint over
+their three runs -- NEW's best (0.6531) sits below OLD's worst (0.6712) in the first pair, and NEW's
+worst (0.5820) above OLD's best (0.5452) in the second, worst-case **+0.0367** -- so neither sign is
+noise. Both comparisons are prompt-against-prompt; what decides WHICH SIGN the prompt's effect carries is
+the SAMPLING REGIME it is measured under. (The old headline's 0.0338 was the
+difference of two 4-decimal displays; from full precision it is 0.03374.)
+`numbers_f1` does NOT reverse and needs no retraction: +0.1873 harness, **+0.1707** production, disjoint
+at worst-case +0.1357 (OLD runs 0.3278 / 0.3505 / 0.3554, NEW 0.4910 / 0.5184 / 0.5362).
+EVERY DELTA IN THIS ENTRY IS COMPUTED FROM FULL PRECISION, NOT BY DIFFERENCING THE PRINTED CELLS.
+Subtracting the 4-decimal table gives 0.1706, 0.0477, 0.0539 and 0.0368 -- four apparent last-digit
+errors that are only rounding. The full-precision values are +0.187325, +0.170662, -0.033744,
++0.047776, and the worst cases +0.147330, +0.135671, +0.036727.
+
+THE MECHANISM RECORDED HERE WAS ALSO WRONG, and the corrected conclusion must not carry the discredited
+explanation forward. The entry attributed the fall to pure false-positive inflation -- "`entities_recall`
+did NOT move" while emissions rose, so the extra entities bought nothing and only precision suffered.
+That is true WITHIN harness sampling and it is not the operative mechanism. Under the guard, in **BOTH**
+arms, precision RISES and recall FALLS: OLD `P 0.8573 -> 0.9191, R 0.5545 -> 0.3809`; NEW
+`P 0.7588 -> 0.8995, R 0.5529 -> 0.4348`. Emissions fall **403.7 -> 258.7** per run (OLD) and
+**454.7 -> 301.7** (NEW). The guard is trading recall for precision wholesale, in both arms, and that
+trade is far larger than the prompt effect it was masking. The article-35 concentration below is a real
+description of the unguarded arms and has NO production counterpart: article 35 contributes 180 of the
+NEW arm's 1364 entities unguarded (13.2%) and 18 of 905 guarded (2.0%).
+
+WHAT SURVIVES UNCHANGED, at harness sampling. `entities_recall` did NOT move -- **0.5545 -> 0.5529** --
+but the arms emit **403.7 -> 454.7** entities per run for **346.0 -> 345.0** true positives: fifty-one
+more entities per run bought NEGATIVE ONE. So precision fell **0.8573 -> 0.7588** and `entities_f1` fell
+**0.6734 -> 0.6396**.
 EVERY ENTITY FIGURE IN THIS ENTRY IS THE c6 ARM ALONE, n=3, AGAINST THE POST-DECISION GOLD'S 624
 entities. The entry above quotes `entities_f1` **0.6744** with range 0.0092 -- that is the POOLED
 five-run figure against the OLD gold and its pre-decision 616-entity denominator. Different rows, not a
@@ -2850,7 +3032,8 @@ The gold's 94 `macro_indicator` entities include ZERO on article 35, and article
 of the 99.3 come from. Excluding that one article the emissions are **30.0 -> 49.7 against the same 94**
 -- a real move toward the gold's typing, and still barely half of it.
 
-THE CONCENTRATION IS THE FINDING. The false-positive delta over the three-run pair is **+156 NET**, and
+THE CONCENTRATION IS THE FINDING AT HARNESS SAMPLING, AND ONLY THERE -- under the guard article 35 emits
+4 to 8 entities and the concentration does not exist. The false-positive delta over the three-run pair is **+156 NET**, and
 `sentinel-v6.2-cove.json` index 35 alone contributes **+148 of it -- 94.9% of the net** -- the runaway
 coinage in the entry directly above: 30 -> 180 entities emitted over three runs against 29 -> 31 true
 positives. QUOTE IT AS A NET, because the gross is a different number and says something else: 14 articles
@@ -2863,8 +3046,8 @@ EXCLUDE ARTICLE 35 FROM BOTH ARMS AND THE REGRESSION IS ESSENTIALLY GONE: precis
 
 A HYPOTHESIS WAS PUT AND THE PROBE DOES NOT SUPPORT IT, recorded because the next agent will otherwise put
 it again: that the new series names clear the `source_entity` affinity floor of **0.5**
-(`LlmBenchmark/scripts/eval_harness.py:538`) while missing the entity-NAME floor of **0.8**
-(`LlmBenchmark/scripts/eval_harness.py:543`), so one string helps `numbers` and hurts `entities`. The band
+(`LlmBenchmark/scripts/eval_harness.py:546`) while missing the entity-NAME floor of **0.8**
+(`LlmBenchmark/scripts/eval_harness.py:551`), so one string helps `numbers` and hurts `entities`. The band
 it predicts is real in aggregate -- unaligned predicted entities whose best token-F1 against a gold name
 in the SAME article falls in [0.5, 0.8) go 22.3 -> 63.3 per run, and the `macro_indicator` subset of that
 band goes 3.0 -> 44.7 per run. BUT THAT `macro_indicator` SUBSET IS **126 OF ITS 134 ROWS -- 94.0% --
@@ -2880,12 +3063,103 @@ WHAT IS ACTUALLY OPEN: whether the corrected prompt's `macro_indicator` instruct
 runaway or merely uncovered it. The OLD arm emits 9, 10 and 11 entities and zero `macro_indicator` on that
 article, so the instruction is at least proximate; that is one prompt edit and one re-run to settle, and until it
 is, `entities_f1` should not be quoted as a cost of the macro-owner decision.
-Re-check (no engine, same `/tmp` dependency): score both arms' entity arrays through the harness's own
-`_cod_align`/`_entity_key`, per article, and read the delta; the reproduced per-run means are
-`P 0.8573 R 0.5545 F1 0.6734` (OLD) and `P 0.7588 R 0.5529 F1 0.6396` (NEW), which match the six
-`eval_harness` scorecards exactly. THOSE SCORECARDS ARE IN `/tmp`, NOT THE REPO -- the PROVENANCE LIMIT
-two entries above governs this one too, so "check it against the scorecards" is free only while they
-exist and costs two GPU sweeps afterwards.
+Re-check (no engine, same `/tmp` dependency): read `metrics.entities_{f1,precision,recall}.value` out of
+the TWELVE `eval_harness` scorecards, three per cell, and average per cell -- that reproduces every row
+of the table above to four decimals. THE FOUR CELLS LIVE IN TWO DIRECTORIES AND THE BARE BASENAMES RESOLVE TO NOTHING -- give the paths:
+`/tmp/sentinel-remediation/convention-b-measurement/scorecard.old_c6_?.vsNEWgold.json` (OLD @ null/8192)
+and `.../convention-b-measurement/scorecard.new_c6_?.json` (NEW @ null/8192);
+`/tmp/sentinel-remediation/loopguard-control/scorecard.prod_c6_?.json` (OLD @ 1.1/4096) and
+`.../loopguard-control/scorecard.lg_c6_?.json` (NEW @ 1.1/4096). The PREDICTIONS follow a DIFFERENT
+naming: the OLD @ null/8192 arm's are `/tmp/sentinel-remediation/qwen-phase1/preds.c6_?.jsonl`, NOT
+`preds.old_c6_*` -- searching for the scorecard's name finds nothing and reads as an artifact already
+lost. It is not; it is named differently. Which
+prompt a guarded run read is pinned by `request_shape.prompt_file` in its provenance sidecar -- the
+guarded runs are the first on this path where that field distinguishes the arms, because the OLD arm was
+run from a checked-out copy at an explicit path rather than from the repo path both earlier arms shared.
+WHAT THIS RE-CHECK CANNOT REACH: all twelve scorecards and all twelve predictions files are in `/tmp`
+and NONE is committed -- one `tmpwatch` ends every figure in this entry, exactly as the PROVENANCE LIMIT
+two entries above discloses for its own. Afterwards it is 12 runs across four cells, ~25 minutes, not
+the two arms the entry above budgets for its own two.
+
+### Production's `repetition_penalty` 1.1 -- NOT the token cap -- costs `entities_recall` 0.5545 -> 0.3809, and that bill is being paid TODAY [2026-09-06]
+NEW FINDING, and the only one on this path that is about PRODUCTION rather than about the benchmark.
+The loop guard is not free and its price had never been measured. `CpuCod__JsonRepetitionPenalty=1.1`
+and `CpuCod__JsonMaxCompletionTokens=4096` are live in `/opt/ai-inference/compose.yaml`
+(`SentinelCollector/src/Configuration/CpuCodOptions.cs:91` and
+`SentinelCollector/src/Configuration/CpuCodOptions.cs:102` carry the defaults and the rationale;
+forwarded at `SentinelCollector/src/Services/GpuJsonExtractionService.cs:222`). Measured
+2026-09-06 on the 40 gold articles, three runs per cell, the SAME prompt either side so the only axis is
+sampling:
+
+| prompt | `entities_recall` | `entities_precision` | `entities_f1` | entities emitted/run |
+|---|---|---|---|---|
+| OLD (what production runs) | **0.5545 -> 0.3809** | 0.8573 -> 0.9191 | 0.6734 -> 0.5385 | 403.7 -> 258.7 |
+| NEW (#1017) | **0.5529 -> 0.4348** | 0.7588 -> 0.8995 | 0.6396 -> 0.5862 | 454.7 -> 301.7 |
+
+Against the gold's 624 entities, production's guarded arm finds ~238 per run where the unguarded one
+finds ~346: **roughly 108 gold entities per run that production does not extract and would extract
+without the penalty.** The trade is coherent -- precision rises in both arms -- but it is a TRADE, it was
+never quantified before today, and nothing in production measures it.
+
+THIS IS NOT A COST OF #1017, and must not be filed as one. Production runs the PRE-#1017 prompt
+(`git hash-object /opt/ai-inference/prompts/cod/cod_json_v1.txt` -> `45d02cd8bd3e...`, verified
+2026-09-06, which IS the pre-#1017 blob), so the top row IS today's production. #1017 partially RECOVERS
+the loss: at matched production sampling it buys **+0.0540 recall and +0.0478 `entities_f1`** for
+-0.0196 precision. Deploying the corrected prompt makes this cost smaller, not larger.
+
+IT IS THE PENALTY, NOT THE TOKEN CAP, ON THESE 40 ARTICLES. Across all 240 guarded records `truncated`
+is **0**, every `finish_reason` is `stop`, and the largest completion is **3148 tokens -- 77% of the 4096
+cap**. A cap nothing reaches cannot be removing content, so ON THIS SUBSET the recall delta is the
+`repetition_penalty`'s.
+SCOPE THAT SENTENCE, because the full corpus contradicts its general form: the `json_valid` row far above
+records **9 of 597** substrate articles hitting `finish_reason: length` at 4,096 AT PRODUCTION'S OWN
+SAMPLING. So the cap IS reached in production, on ~1.5% of articles, and "nothing reaches the cap" is
+true of the 40 gold articles and FALSE of the corpus. Whether those 9 are loopers (which
+`CpuCodOptions.cs:96` argues -- a JSON-CoD document not closed by ~4K tokens is in a repetition loop) or
+legitimate long documents is NOT settled here, and the recall figures above do not depend on it: they are
+measured on the 40, where the cap binds on nothing.
+The cap still earns its place on the OTHER side: unguarded, NINE records over the eight runs exceeded
+4096 -- 6516, 6432, 5767 twice, 5607, 4559, 4558 and 4181 twice -- and the cap would have cut every one.
+
+AND THE GUARD CANNOT SIMPLY BE REMOVED -- the two-sided wire control in the entry above shows
+`repetition_penalty 1.0` at the same 4096 cap STILL saturating article 183's `events[]` at the schema's
+`maxItems` with `finish_reason: stop`. `max_tokens` alone does not close the loop. So the open question
+is not whether to keep the guard but whether **1.1 is the right value**: only 1.0, 1.1 and 2.0 were ever
+probed here, 2.0 collapses the output entirely, and nothing between 1.0 and 1.1 has been measured. A
+sweep of 1.02 / 1.05 / 1.1 on this same 40-article harness is ~2 minutes per RUN (so ~6 minutes for a
+three-run point, ~18 for all three points) and would say whether
+half the recall comes back for a penalty that still breaks the argmax fixed point. THAT is the next
+measurement on this path, and it is cheap.
+DO NOT RUN THAT SWEEP WITHOUT READING THE COUPLING IT WOULD TRIGGER. The anti-invention entry above
+records that the corrected prompt's article-35 runaway is SUPPRESSED by this penalty, not absent from it:
+lowering 1.1 toward 1.0 walks back toward the arm where article 35 emits 60 entities and ~50 coined
+names. So the sweep is not a one-metric optimisation -- each point must be scored on the SATURATION and
+COINED-NAME observables from that entry as well as on recall, or it will buy recall with invention and
+the scorecard will not show it. A penalty that maximises `entities_recall` and reopens the runaway is a
+regression this file would have no number for.
+FOLLOW-UP THIS PR DOES NOT TAKE (docs-only by scope): `CpuCodOptions.JsonRepetitionPenalty` is now load
+bearing for PROMPT CORRECTNESS, not only for latency and loop-breaking, and nothing at the code says so
+-- `grep RepetitionPenalty SentinelCollector/AGENT_README.md` returns nothing, and the XML doc on
+`JsonRepetitionPenalty` (cited by SYMBOL, not line: it is a doc comment and the line will move)
+justifies the value on loop-breaking and latency alone.
+Per CLAUDE.md §INTENT_FIDELITY that precondition belongs in a D-entry on the SentinelCollector card with
+an `// INTENT(D-n):` at the option, so a future agent tuning this knob for recall meets the constraint
+at the code rather than in a backlog entry they may never open.
+
+Re-check (no engine): average `metrics.entities_recall.value` across the three scorecards of each cell --
+`scorecard.old_c6_?.vsNEWgold.json` and `scorecard.prod_c6_?.json` for the OLD row,
+`scorecard.new_c6_?.json` and `scorecard.lg_c6_?.json` for the NEW row. The production-config half is
+re-checkable from the repo and the host and does NOT decay:
+```
+grep -n 'JsonRepetitionPenalty\|JsonMaxCompletionTokens' /opt/ai-inference/compose.yaml
+git hash-object /opt/ai-inference/prompts/cod/cod_json_v1.txt   # 45d02cd8... == pre-#1017
+```
+WHAT THE RE-CHECK CANNOT REACH: the twelve scorecards and twelve predictions files live in `/tmp` and
+none is committed, so one `tmpwatch` ends every measured figure in this entry -- the same PROVENANCE
+LIMIT the three entries above disclose, and for the same reason. What survives a clear is the METHOD and
+the config half: re-deriving the table costs 12 runs across four cells (~2 minutes per run,
+~25 minutes total at concurrency 6) plus `git show 45d02cd8bd3e360529267c9fec3868fd8554af4a` for the OLD prompt. Whoever repeats this
+should write the predictions where the tree can reach them BEFORE quoting the numbers forward.
 
 ### Nothing checks whether the SHIPPED gold still states the `source_entity` convention [2026-09-05]
 `build_cod_gold.py`'s divergence gate is a PRODUCER gate: it compares production's prompt against
@@ -2995,7 +3269,8 @@ source_entity.` on stderr and creates nothing -- measured 2026-09-06, no key and
 
 ### `run_model.py --schema-file` silently bypasses `SCHEMA_REQUIRED`, on the model-acceptance path [2026-09-04]
 `build_payload` reads `schema = load_schema(args) or extraction_json_schema()`
-(`LlmBenchmark/scripts/run_model.py:348`), and `load_schema` (`:400-405`) returns whatever JSON the
+(`LlmBenchmark/scripts/run_model.py:430`), and `load_schema`
+(`LlmBenchmark/scripts/run_model.py:514-517`) returns whatever JSON the
 operator handed `--schema-file`, verbatim. Nothing between there and the wire checks that the supplied
 schema's `required` covers `SCHEMA_REQUIRED`. The derived schema is the only one carrying that coverage
 guarantee, and `--schema-file` is the flag that discards it -- without a word in the output.
@@ -3005,9 +3280,9 @@ invocation a model swap must produce a scorecard from (`--endpoint-mode completi
 cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...`). The bypass therefore sits on
 the one path that decides whether a candidate model replaces the incumbent.
 
-WHAT IT COSTS is already measured on this harness, at `run_model.py:90-106`: `certainty` was optional in
+WHAT IT COSTS is already measured on this harness, at `run_model.py:123-127`: `certainty` was optional in
 the request schema, so the model emitted it on 0 of 2,213 extractions while gold carries it on 5,111 of
-5,111; `eval_harness` counts every omission a miss (`certainty_accuracy` at `eval_harness.py:320`), and
+5,111; `eval_harness` counts every omission a miss (`certainty_accuracy` at `eval_harness.py:351`), and
 `certainty_accuracy` scored **-0.85** against threshold. That read as "the model is bad at certainty"
 and it was the request schema. A supplied `--schema-file` reintroduces precisely that defect, and the
 constant that was written to prevent it does not run.
@@ -3038,16 +3313,16 @@ itself as `schema_invalid = record count`. This entry is about the check that do
 supplied schema -- including one that IS array-shaped, scorer-compatible and merely under-specified.
 That case has no tell at all: it scores, it fills in, and the number is a penalty on the request.
 
-CLOSE THIS by making `validate_request_shape` (`run_model.py:518`) refuse a `--schema-file` whose
+CLOSE THIS by making `validate_request_shape` (`run_model.py:743`) refuse a `--schema-file` whose
 `required` does not cover `SCHEMA_REQUIRED`, in the same fail-closed-rather-than-default shape it already
 applies to `--chat-template-kwargs` in completions mode -- with the override spelled explicitly so the
 choice lands in provenance. Do NOT close it by merging the supplied schema into the derived one: that
 sends a schema the operator did not write, and then misreports it as production's.
 
 TEST THAT WOULD PIN IT: `test_run_model.should_exit_two_when_a_schema_file_omits_a_graded_field`, a
-sibling of `should_exit_two_when_completions_mode_has_no_chat_template` (`test_run_model.py:680`),
+sibling of `should_exit_two_when_completions_mode_has_no_chat_template` (`test_run_model.py:774`),
 driving `main()` rather than a helper, with its paired positive (a covering schema runs). Note that the
-existing `should_send_the_supplied_schema_when_a_schema_file_is_given` (`test_run_model.py:386`) asserts
+existing `should_send_the_supplied_schema_when_a_schema_file_is_given` (`test_run_model.py:397`) asserts
 the bypass verbatim -- it pins the current behaviour in place and must be read as the contract it is,
 never as coverage of this hole.
 
@@ -3082,12 +3357,19 @@ PY
 -> all three print False while this entry is true
 ```
 
-### `run_model.py` still diverges from production's sampling on `--stop` and `--min-p` [2026-09-04]
+### `run_model.py` still diverges from production's sampling on `--repetition-penalty`, `--stop` and `--min-p` [2026-09-04]
 `--seed` LANDED (measured 2026-09-05: `grep -c seed run_model.py` -> 7, the flag defaults to
 production's 42, `build_payload` sets `"seed": args.seed` and provenance records it). The eight
 scorecards in `LlmBenchmark/eval-substrate/` that PREDATE it still carry no `seed` key and still imply
 a determinism their runs did not have -- read them accordingly; nothing can retro-fit it.
-Two divergences remain: `--stop` exists but defaults to none while production always sends
+THREE divergences remain, and this line said TWO until 2026-09-06 -- the third is the one that turned out
+to REVERSE a finding's sign, so the omission was not cosmetic.
+`--repetition-penalty` defaults to `None` (`run_model.py`, `ap.add_argument("--repetition-penalty")`)
+while production always sends `CpuCodOptions.JsonRepetitionPenalty` = 1.1 -- the IDENTICAL shape to
+`--stop` below, and the entry "Production's `repetition_penalty` 1.1 ... costs `entities_recall`"
+measures what it is worth: -0.17 recall on the prompt production runs. `--max-tokens` does NOT belong on
+this list: it defaults to 4096 and production sends 4096.
+`--stop` exists but defaults to none while production always sends
 `ExtractionOptions.StopTokens`; and `--min-p` forwards `min_p` into the vLLM payload though
 `VllmCompletionRequest` has no such field (`ExtractionOptions.MinP` is documented "llama.cpp min_p"
 and only `LlamaServerClient` sends it) -- so a `--min-p` run records a knob the engine never read.
@@ -3316,6 +3598,55 @@ FORMS — the tool parses its own backlog entry, so spelling the findings out ve
 count it is describing (measured, not feared). Re-run the command rather than trusting these counts: the figure
 moves with every doc edit, and the tool cannot see content drift at all (see its module docstring), so it is a
 FLOOR on rot, never a census of it.
+A MECHANICAL LINE-SHIFT REPAIR PRESERVES A CONTENT DRIFT IT PASSES THROUGH, measured 2026-09-06 on the eleven
+citations #1026 handed over. SEVEN are pure shifts whose base citation was already correct and which re-land
+on byte-identical content; FOUR are content repairs of citations ALREADY stale on main, three of them with
+deltas of +82, +114 and +194 -- mutually inconsistent, so they were never shifts at all. An earlier revision
+of this line said TEN pure shifts, which counted three content repairs as shifts and is the same over-claim
+this paragraph exists to catch.
+
+NAME THE MERGED SHA, NOT THE BRANCH. An earlier revision of this entry said the eleven were "verified against
+#1026's branch", and that was never a checkable statement: a branch is a moving target. The numbers were
+computed against `e4e77381`, a mid-PR revision; #1026 then took FIVE more rounds and merged as `d139f954`.
+THREE of the eleven repairs were wrong against the tree that actually landed -- the `prompt_file` conjunct
+1242 -> **1335** and `validate_request_shape` 712 -> **743**, those rounds having inserted 93 and 31 further
+lines above them, plus the certainty cite below. Re-verified by reading every target on `d139f954` and
+repaired here. A citation figure without its tree is the same defect as a metric without its sampling, one
+directory up -- and "its tree" has to mean a sha that cannot move.
+
+THE ELEVENTH IS THE CONTENT CASE AND TOOK TWO PASSES. It names `certainty_accuracy` and had ALREADY drifted
+onto the `value` comparison; shifting it by the same +8 as its neighbours carried that drift forward intact.
+The first repair in this PR moved it to the `certainty` COMPARISON (`_certainty_equal`) -- the mechanism, but
+not the thing the prose NAMES. The metric itself is defined 20 lines below, at `eval_harness.py:351` on the
+merged tree and eight lines earlier on the tree before it. FOUR landings, every one non-blank and every one
+GREEN: the original, the mechanical shift, the first repair, and the right answer. Only opening the target
+and reading what the prose names separates them.
+
+THREE MORE SAT OUTSIDE THE HANDOVER'S ELEVEN, all in the `--schema-file` entry above, and they were caught
+by three DIFFERENT instruments -- which is the finding. Sweeping every citation in this file into the files
+#1026 touched, rather than only the ones the handover listed, surfaced two: one cited a line BLANK in both
+trees, the other a teardown line, while the test functions their prose names --
+`should_exit_two_when_completions_mode_has_no_chat_template` and
+`should_send_the_supplied_schema_when_a_schema_file_is_given` -- sit 94 and 11 lines further down.
+THE THIRD WAS FOUND BY NEITHER, and only by an independent re-derivation reading each target against the
+prose. That entry's opening sentence points at a block of stdlib imports and a comment documenting a
+DIFFERENT constant, while the measurement it paraphrases -- `certainty` optional, 0 of 2,213, -0.85 -- sits
+seventeen lines below, in the comment on the constant the entry is actually about. It never moved on ANY of
+the three trees and it lands on real code.
+SO EACH INSTRUMENT HAS ITS OWN BLIND SPOT, and they do not overlap: a handover computed from a diff sees only
+citations whose target MOVED; a cannot-land check sees only citations that hit NOTHING. The residue --
+already wrong, never moved, lands on something -- is invisible to both, and visible only to a reader
+comparing the prose against the target. THIS PARAGRAPH SPELLS NO `file:line` FORM, for the reason the entry
+above it gives: the tool parses its own backlog, so writing a broken citation out verbatim to describe it
+ADDS that finding to the count being described.
+
+THE COUNTS WERE IDENTICAL ACROSS THAT BRANCH ON BOTH SIDES, 502 and 502, while eleven citations moved: an
+aggregate hides a substitution, which is why the discipline is to diff the LANDING TEXT and never the totals.
+Measured for THIS repair the same way, documented invocation, once per checkout: pristine `d139f954` reads
+502 citations / 30 cannot land and this branch 512 / 27. The delta of three is exactly the three cannot-lands
+this file carried into the harness files on merged main, and the OTHER three wrong repairs moved no count at
+all -- they landed on real-but-wrong lines both before and after. Read the totals as corroboration of a
+landing-text diff that was already done, never as the check itself.
 
 **3 memory citations cannot land, all of one irreparable class, and until 2026-08-24 no routine sweep had ever
 included one.** The memory corpus lives outside the repo, so `git ls-files` cannot name a memory file and the documented
