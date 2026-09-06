@@ -198,6 +198,39 @@ We have been running Q2 and quoting it as Q1 for the whole epic. `CLAUDE.md`
 §MODEL_ACCEPTANCE is written model-shaped ("a candidate ships only with a SCORECARD ... that
 BEATS the incumbent's") for a decision that is configuration-shaped.
 
+## THE FEASIBLE SET HAS A FLOOR, AND IT IS QUALITY, NOT VRAM
+
+A configuration that loads and emits tokens is NOT automatically a feasible point. The search
+for "what fits" degenerates the moment fitting is the only test -- which is exactly how
+llama3.3-70B earned its `CRASH` row: someone crammed it in at q2_K. The remedy for a model
+that does not fit is to REPORT that it does not fit, never to lower the precision until it
+does.
+
+  ✗ q2 and sub-3-bit are BANNED outright. User, 2026-09-06, verbatim:
+    "skip the q2 quants. they produce tokens, not answers"
+  ✗ never squeeze a model into memory by dropping below the floor -- "no feasible point on
+    this hardware" is a legitimate, final answer and a better one than a bad score
+
+AND THE FLOOR MAY BE HIGHER THAN WHERE WE HAVE BEEN STANDING THE WHOLE TIME. User, same day:
+"even Q4 might not make sense. Q6 might be the floor." That is not a preference, it is an
+unmeasured claim about an axis, and it lands on every number this project owns:
+
+  incumbent  Qwen2.5-32B-Instruct-AWQ        4 bit
+  candidate  Qwen3.8-27B "AWQ-INT4"          4 bit
+  Gemma 3    gemma-3-27b-it-quantized.w4a16  4 bit
+
+EVERY FIGURE WE HAVE EVER PRODUCED SITS AT ONE POINT ON THE PRECISION AXIS, and we have never
+measured what that point costs. 4-bit was never chosen against an alternative; it is what fits,
+adopted as though it were neutral. A whole-epic ranking taken below the quality floor may not
+survive being re-taken above it.
+
+THE LADDER IS ENGINE-COUPLED, which makes this axis 1 x axis 3 and not axis 3 alone. vLLM
+serves 4-bit, 8-bit (w8a16 / w8a8) and bf16; a true 6-bit is essentially a GGUF rung (Q6_K),
+which is a llama.cpp path. So "Q6 as the floor" may not be REACHABLE on vLLM at all -- and if
+it is not, then testing the floor either drops to a smaller model or brings llama.cpp back
+into contention, on the same engine axis that BENCHMARKS.md already prices at 7.9pp. Do not
+invent a rung that does not exist; report the ladder that does.
+
 ## THE ADMISSIBILITY RULE
 
 A comparison between two scorecards is admissible only if ONE of:
@@ -239,6 +272,8 @@ by whoever last read it, which is the failure mode that produced the 0.067 sprea
 ✗ never let the repo name stand in for the weight-quant field -- MEASURED: two of the three
   checkpoints we serve are named for a quantization they do not use
 ✗ never treat activation quantization as the same axis as weight quantization
+✗ never call a point feasible because it LOADS -- q2 and sub-3-bit are banned, and 4-bit is
+  an untested rung, not the neutral default it has been treated as
 ✗ never read a within-family single-axis delta as a cross-family result
 ✗ never quote a delta from arms "not served alike" -- fix the serving, do not caveat the number
 ✗ never treat the eval population or the alignment key as a constant; they are axis 10
