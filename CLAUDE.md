@@ -259,14 +259,28 @@ MODEL_ACCEPTANCE [replaces the old `MODEL_SIZE >= 30B`] [HARD_STOP]:
     - the gold's four arrays do NOT weigh equally: NUMBERS and ENTITIES carry it, events are usable
       on `subject` only, and a comparison over CLAIMS measures noise # event_kind/claim_kind are
       free-form, so two careful human labellers score 0.302 and 0.138 against each other
-    - `source_entity` for macro series is UNDECIDED across 25% of numbers (129 of 518), and it sits
-      IN the alignment key, so a scorer silently inherits whichever answer the gold holds
+    - `source_entity` for macro series is DECIDED (2026-09-05, by the user): the macro SERIES owns
+      the number -- NOT the country, NOT blank. Implemented in the prompt and the gold at #1017;
+      490 of 518 conform, 6 are KNOWINGLY NON-CONFORMANT (article 183 names no series, so its six
+      payroll rows stay on `US`, which the corrected bullet forbids), and 22 remain open (6
+      blank-by-design, 16 the article never NAMES). 490+6+22 is the whole 518; an earlier draft of
+      this line said 496, which silently meant "non-blank" and hid the 6 inside it. It still sits IN
+      the alignment key, so a scorer inherits whichever answer the gold holds -- a KNOWN answer now
+      rather than an undecided one
       # docs/BACKLOG.md MEASUREMENT DEBT, "The CoD gold cannot yet back a model swap"
     ✗ a HOSTED run is NOT acceptance evidence # the labelling router is CHAT-only, production's wire
       shape is a client-side template into /v1/completions, and eval_harness stamps
       `production_prompt_path: false` on anything else -- scoring runs on a LOCAL engine
-    SETTLING the macro-owner question is the precondition for a model swap -- do not weaken this
-    line instead.
+    SETTLING the macro-owner question WAS the precondition, and it is now MET. What replaces it is
+    NOT nothing: sized PRE-DECISION on the 129-row gold, that settlement is worth at most +0.2048
+    (the harness's greedy matching) or +0.2105 (maximum-cardinality on the same graph) -- an UPPER
+    BOUND on a NON-SHIPPABLE counterfactual key that presumes the very question it sizes, so it is
+    not a score anything can be swapped on. It removes none of the run-to-run swing pooled or at
+    concurrency 6, where the range GROWS; at concurrency 1 the range shrinks, on two runs. The swing
+    is what a comparison must now clear, and the committed key's is 0.0893 pooled / 0.0427 within
+    the concurrency-6 arm against a ~0.05 effect.
+    A DECIDED convention is not a CLEARED bar; do not read this line as one, and do not weaken it
+    instead.
   rationale: the 30B floor was a PROXY for "does not collapse on this task", written because small
     models kept getting swapped in for VRAM headroom and scored terribly. A proxy invites the wrong
     argument -- whether 27B is close enough to 30 -- when the harness can answer the real question

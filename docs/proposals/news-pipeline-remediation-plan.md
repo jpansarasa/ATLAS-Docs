@@ -51,7 +51,7 @@ A producer/consumer contract break. `dsl-parser-mcp /parse_json` emits NUM slots
 `{source_text, value, unit, context}` (+ `source_words`); the C# adapter reads slot names that no
 producer emits.
 
-- Producer `SentinelCollector/dsl-parser-mcp/json_cod.py:267-280` (`_num`) emits `value`, `unit`,
+- Producer `SentinelCollector/dsl-parser-mcp/json_cod.py:267-295` (`_num`) emits `value`, `unit`,
   `context`, `source_words`; `source_text` becomes `NUM.raw`, not a slot. The schema
   `SentinelCollector/src/cod-prompts/cod_json_schema_v1.json:57-79` is
   `additionalProperties: false` over exactly `source_text|value|unit|context`, all four required. `[M]`

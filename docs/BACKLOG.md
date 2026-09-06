@@ -73,8 +73,9 @@ NOT YET DONE, and why: measured on the substrate's own 16 instructions, NOT prod
 schema path. Confirm on the production prompt before changing vllm_kv_cache_dtype.
 UNBLOCKED 2026-09-05: the harness scores production's CoD path end to end now, so both KV arms CAN be
 measured on it -- `--task cod` against the 40-article gold, NOT `aggregate_f1` (a CoVe metric the CoD
-scorecard does not carry). The undecided macro-owner convention biases both arms identically, so it
-does not invalidate a within-model A/B the way it would a model swap. Cost is unchanged: a production
+scorecard does not carry). The macro-owner convention is DECIDED and in the gold now; while it was
+open it biased both arms identically, so a within-model A/B was never what it blocked. Cost is
+unchanged: a production
 stop and two ~4min GPU reloads. See MEASUREMENT DEBT, "The CoD gold cannot yet back a model swap".
 
 RELATED: this same flag is what crashes vLLM 0.28 (see the entry below), and e5m2 carries 2 mantissa bits to
@@ -2073,12 +2074,17 @@ exclusion rule landed and (b) is closed.
 
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
-### The CoD gold cannot yet back a model swap: `source_entity` for macro series is undecided [2026-09-05]
+### The CoD gold cannot yet back a model swap: macro-owner DECIDED, the key's swing is not [2026-09-05]
 Production's CoD path is scoreable END TO END. The four divergences that made every scorecard on it
 `null` are closed -- chat template (#1002), prompt assembly, scorer (#1011), runner (#1013) -- the gold
 they needed exists (#1012), and the outage-vs-null-result gate that `call_errors` depends on landed
-with it (#1014). What still stops a scorecard from DECIDING a model swap is a labelling decision, not a
-tool: the macro-owner paragraph below, which is the live blocker CLAUDE.md §MODEL_ACCEPTANCE points at.
+with it (#1014). The labelling decision that blocked it is TAKEN -- the macro-owner
+paragraph below is no longer a question, and the 518 anchors now partition 490 conform + 6
+knowingly non-conformant + 22 open, re-checkable further down this entry. What
+still stops a scorecard from DECIDING a model swap is the instrument: the committed key's own
+run-to-run swing straddles the acceptance threshold, and `cod-stage1.criteria.json` is still
+`ratified_by: null`. Both are measured further down this entry; neither is a labelling question,
+and neither is fixed by the decision that closed the first one.
 
 MEASURED 2026-09-05, the measurement that closes the path. vLLM 0.19.0, production container as-is
 (`--kv-cache-dtype fp8_e5m2`), Qwen2.5-32B-AWQ rev `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c`, the 40
@@ -2180,7 +2186,7 @@ d['diagnostics']['source_entity_empty_rate']['value'],d['controls']['shuffled_go
 A shuffled-gold value that is NOT near zero is the finding, not the model's: it means the alignment key
 stopped discriminating, or the corpus went near-duplicate.
 
-THE GOLD ITSELF. `LlmBenchmark/cod-gold/` holds 1,736 gold facts in CoD's own shape over 40
+THE GOLD ITSELF. `LlmBenchmark/cod-gold/` holds 1,744 gold facts in CoD's own shape over 40
 deliberately-chosen articles, every object validating against `cod_json_schema_v1.json` under
 jsonschema Draft 2020-12, every fact naming the labeller that produced it
 (`LlmBenchmark/scripts/build_cod_gold.py`, `verify_cod_gold.py --selftest` = 10/10 known-bad mutations
@@ -2202,7 +2208,7 @@ WHAT THE GOLD DOES NOT COVER, measured on it 2026-09-05 and re-checkable from it
   zero. Rescored on `subject` ALONE the vocabulary effect separates: events recover 0.302 -> **0.708**,
   claims only 0.138 -> **0.356**. So for events the free-form kind is the whole problem; for claims it is
   NOT, and the two labellers genuinely pick different claim subjects. Stated plainly: numbers (518) and
-  entities (616) are usable gold, 1,134 of 1,736 objects (65%); events are usable on `subject`+`trigger`
+  entities (624) are usable gold, 1,142 of 1,744 objects (65%); events are usable on `subject`+`trigger`
   only; a model comparison run over `claims` measures noise. A scorer that weights the four arrays
   equally reports vocabulary as model quality.
 - Three gold `numbers[].value` fields hold RANGES ("3-4", "4-5", "50-100") where the schema's contract is
@@ -2217,16 +2223,19 @@ jsonschema and silent in a score.
    reads as a model miss. Production's own Qwen2.5 over 597 substrate articles emits 150 of 2,520 events
    with a blank `subject` and 38 of 2,351 claims with a blank `object`, every one schema-valid; that is
    what holds a gold-tautology ceiling to 0.9993 instead of 1.0. This gold carries ZERO of them, with one
-   deliberate exception: `numbers.source_entity` is blank on 32 of 518, because production's prompt
-   SPECIFIES `""` for a figure with no owner (Conference Board survey shares, national gas prices, a
-   shutdown's duration). They are KEPT -- dropping them would delete real facts and bias gold away from
-   macro prints, 13 of the 20 numbers in article 1 being ownerless. **A scorer must treat `""` as a value
-   that aligns with `""`, never as an absent identity**, or it silently zeroes 6.2% of numbers and far
-   more on the article type production sees most.
-   COUNT THE WHOLE CENSUS, NOT THE IDENTITY FIELDS. That 32 counts only the REQUIRED fields a scorer
-   aligns on. Gold holds **181** blank strings in total: 32 `numbers.source_entity`, 5 `events.object`,
+   deliberate exception: `numbers.source_entity` is blank on **22 of 518**, because production's prompt
+   SPECIFIES `""` where no ONE named entity owns the number. A NATIONAL GAS PRICE IS NO LONGER ONE OF
+   THEM, and neither is any other macro print: the decision below gives the SERIES ownership, and the ten
+   blanks that rested on the old clause now carry the series the article names. The 22 that remain are
+   6 blank-by-design (a figure spread across several entities, a bare count) and 16 the article never
+   NAMES -- article 1's eleven Conference Board survey shares and article 48's five Challenger job-cut
+   figures. They are KEPT -- dropping them would delete real facts. **A scorer must treat `""` as a value
+   that aligns with `""`, never as an absent identity**, or it silently zeroes 4.2% of numbers, and 11 of
+   article 1's 22 and all 5 of article 48's.
+   COUNT THE WHOLE CENSUS, NOT THE IDENTITY FIELDS. That 22 counts only the REQUIRED fields a scorer
+   aligns on. Gold holds **171** blank strings in total: 22 `numbers.source_entity`, 5 `events.object`,
    and **144 `entities.ticker`**. The latter two are optional in the schema and outside every alignment
-   key here, so the zero-unalignable-blanks claim is unaffected -- but "the only blanks are the 27
+   key here, so the zero-unalignable-blanks claim is unaffected -- but "the only blanks are the
    source_entity ones" was wrong by 149 and is the kind of number that gets quoted forward. The 144 are
    also an ENCODING DEVIATION: production's prompt says of `ticker` "include ONLY if the ticker is stated
    in or directly resolvable from the article; otherwise OMIT", and these emit `""` instead. A scorer
@@ -2269,23 +2278,57 @@ OPEN, and NOT fixable inside this gold: the caps belong to production's schema, 
 what production emits, and no measurement yet says whether 120 costs real claim content at extraction
 time or only cost it at labelling time. Whoever raises them needs that number first.
 
-**IS A MACRO SERIES AN OWNER? 129 OF 518 NUMBERS (25%) SAY YES; THE PROMPT'S OWN EXAMPLE SAYS NO.
-SIZED 2026-09-05: DROPPING BOTH FREE-FORM FIELDS FROM THE ALIGNMENT KEY IS WORTH 0.5064 `numbers_f1`
-AND 86.6% OF THE POOLED RUN-TO-RUN SWING; `source_entity` ALONE IS WORTH 0.3707 AND 65.4%; THIS
-UNDECIDED QUARTER, ISOLATED, IS WORTH 0.2048 UNDER THE HARNESS'S GREEDY MATCHING AND 0.2105 UNDER
-MAXIMUM-CARDINALITY MATCHING ON THE SAME GRAPH -- BOTH MEASURED, NEITHER A BOUND BY CONSTRUCTION --
-AND WHAT IT DOES TO THE SWING REVERSES SIGN BY ARM (pooled the range GROWS 15.6%, at concurrency 6
-it GROWS 45.0%, at concurrency 1 it SHRINKS 14.3%).** Those 129 anchor `source_entity` to a
-`macro_indicator` entity ("unemployment rate", "Manufacturing PMI"), while `cod_json_v1.txt` reads:
-`On "US CPI rose 3.1%", context is "US CPI year over year" and source_entity is ""`. Pre-existing,
-unwritten, UNDECIDED -- deliberately not re-adjudicated, because a quarter of the number owners is
-not one agent's judgement call. `source_entity` sits in both
-proposed alignment keys, so a scorer silently inherits whichever answer this gold holds. SETTLE IT
-BEFORE ANY SCORER READS THIS GOLD FOR A MODEL DECISION.
-THE 129 ARE A SUBSET OF THE `source_entity` DISPUTE, NOT THE WHOLE OF IT -- which is why the three
+**IS A MACRO SERIES AN OWNER? DECIDED 2026-09-05, BY THE USER: YES. The series owns its own print,
+the country does NOT, and `""` is not the answer. The prompt's worked example said the opposite and
+is rewritten; 20 gold anchors were repaired to match it and the 518 now partition **490 conform
++ 6 knowingly non-conformant + 22 open** (re-check below the disclosure two paragraphs down). An
+earlier revision of both lines read **496 of 518 conform**, which is 518 minus the blanks alone:
+"conform" silently meant "non-blank" and swallowed the six rows the very same paragraph discloses.
+A partition that does not sum to 518 out of buckets each named is how that recurs. THE SIZINGS
+BELOW WERE ALL TAKEN ON THE PRE-DECISION GOLD (129 macro-owned rows, before the repair moved it to
+149), so they price the question that WAS open and are NOT a measurement of the gold as it now
+stands. Dropping both free-form fields from the alignment key was worth 0.5064 `numbers_f1` and 86.6%
+of the POOLED run-to-run swing; `source_entity` alone 0.3707 and 65.4%; the then-undecided quarter,
+isolated, 0.2048 under the harness's greedy matching and 0.2105 under maximum-cardinality matching on
+the same graph -- both measured, neither a bound by construction -- and what it did to the swing
+REVERSED SIGN BY ARM (pooled the range GROWS 15.6%, at concurrency 6 it GROWS 45.0%, at concurrency 1
+it SHRINKS 14.3%). THE SWING IS WHAT REMAINS, AND THE DECISION DOES NOT REPAY IT -- that was the
+finding then and the decision does not change it. Re-measuring any of these on the amended gold needs
+the five predictions files this entry's PROVENANCE LIMIT says are not in the repo.**
+The gold now anchors **149 of 518 (28.8%)** numbers to a `macro_indicator` entity ("unemployment
+rate", "Manufacturing PMI") -- 129 before the decision plus the 20 repaired. `cod_json_v1.txt` used to
+read `On "US CPI rose 3.1%", context is "US CPI year over year" and source_entity is ""`; it now reads
+`... and source_entity is exactly "US CPI"`. The question was pre-existing and unwritten, and it was
+never one agent's to settle -- which is why it sat here as debt. `source_entity` sits in both proposed
+alignment keys, so a scorer inherits the answer this gold holds; that answer is now a decided one
+rather than an accident of labelling.
+WHAT IS STILL OPEN IS 22 ANCHORS, NOT THE CONVENTION. 6 are blank BY DESIGN (a figure spread across
+several entities, a bare count) and 16 are ones the article never NAMES -- article 1's eleven
+Conference Board survey shares, which it describes in clauses and never names as indicators, and
+article 48's five Challenger job-cut figures, whose series exists in SecMaster (CHALLENGER_JOB_CUTS)
+but is absent from that two-line article. They stay blank on the clause that survived the change
+unaltered, NEVER invent a name. Closing them needs a rule for a series a story describes without
+naming -- not a re-decision of this one.
+AND ONE KNOWN NON-CONFORMANCE, DISCLOSED RATHER THAN GUESSED: article 183's six payroll rows stay on
+`US`. That article contains ZERO occurrences of "payroll" or "nonfarm", so `""` was the
+rule-conformant answer and gold rewards a prompt violation on 6 of 518 rows. Left as-is deliberately;
+inventing the series name would be the larger error, and it is the same 16-row question above.
+RE-CHECK OF THE WHOLE PARTITION, which is what catches a bucket being folded into another:
+```
+python3 -c "
+import json
+d=json.load(open('LlmBenchmark/cod-gold/cod_stage1_gold_v1.json'))
+n=[(a['id'],(x.get('source_entity') or '').strip()) for a in d['articles'] for x in a['gold']['numbers']]
+b=sum(1 for _,s in n if not s); k=sum(1 for i,s in n if i.endswith(':183') and s=='US')
+print(len(n)-b-k, k, b, len(n))"
+```
+2026-09-05 -> `490 6 22 518`. The first three MUST sum to the fourth, and any figure this entry
+quotes for conformance MUST be one of the four. `496` is none of them and only exists by adding a
+bucket to `490` without saying so.
+THE 149 ARE A SUBSET OF THE `source_entity` DISPUTE, NOT THE WHOLE OF IT -- which is why the three
 figures above are three different numbers, and why the largest of them is NOT this question's price.
-The gold's anchors also read `country 23`, `industry 15`, `concept 10` and `<blank> 32` (census near
-the end of this entry), and on the flagship article `sentinel-v6.2-cove.json` index 0, 18 of the 30
+The gold's anchors also read `country 13`, `industry 15`, `concept 10` and `<blank> 22` (census near
+the end of this entry), and on the flagship article `sentinel-v6.2-cove.json` index 0, 16 of the 30
 rows are non-macro. An earlier revision of this headline, its commit subject and its PR title all
 carried the 0.5064/86.6% pair against the macro quarter: those are the BOTH-FIELDS figures, and the
 body has always said so. Quote the row you mean -- and quote the ARM, because the five runs behind
@@ -2314,7 +2357,7 @@ the spread to concurrency, and nothing here claims it does.
 THE `value`-ALONE ROW IS NOT A SCORE AND MUST NOT BE CARRIED AWAY AS ONE. It is precisely the shape
 this entry's own alignment-key paragraph forbids: anything in the key reads 1.0 by construction, so a
 key holding `value` makes value accuracy -- the number a model swap turns on -- unmeasurable.
-`eval_harness.py:523-528` carries the same refusal at the code. What 0.8947 says is that the model's
+`eval_harness.py:531-536` carries the same refusal at the code. What 0.8947 says is that the model's
 NUMBERS are largely right and the KEY is what rejects them; it does not say the incumbent's real
 score is 0.89. The macro-waived row is not a shippable key either -- it reads the GOLD's own
 `ent_type` to decide where to waive, which is only possible once the question is settled -- so it is
@@ -2437,21 +2480,24 @@ Article `sentinel-v6.2-cove.json` index 0 is the clean demonstration -- c6_a and
 IDENTICAL settings in the SAME arm, agreed with gold on the same 29 of 30 values and scored 0 and 14
 true positives, because c6_a wrote `source_entity: "United States"` on all 30 numbers and c6_c wrote a
 different convention on 16 of them. The concurrency-1 arm splits the same way (c1_a 0, c1_b 14), so
-this one is not an arm effect either. Gold on that article holds a third answer again: 12 `macro_indicator` anchors, 10
-industries, 6 demographic `concept`s, 2 blanks. (`macro_indicator`, not "metric": ent_type `metric`
-occurs ZERO times in this gold, so a reader searching the census for metric labels finds none. And
-the article is written `<file> index <n>` rather than `<file>:<n>` because that pair is a substrate
+this one is not an arm effect either. Gold on that article holds a third answer again: 14
+`macro_indicator` anchors, 10 industries, 6 demographic `concept`s and, since the decision, no
+blanks. (`macro_indicator`, not "metric": ent_type `metric` occurs ZERO times in this gold, so a
+reader searching the census for metric labels finds none. And the article is written
+`<file> index <n>` rather than `<file>:<n>` because that pair is a substrate
 `(source_file, source_index)`, not a `file:line` citation -- written the other way it becomes an
 unresolvable citation in `scripts/verify-citations.py`, which is how it was found.)
 
 NOT THE ENTITIES ARRAY -- do not carry this finding across. `entities_f1` is 0.6744 with a range of
 0.0092, its key is already name-only, and TIGHTENING it scores LOWER (name-exact, 0.6366). Stricter,
 not looser, and an earlier revision of this line had the word backwards: the committed `_entity_key`
-(`eval_harness.py:540`) admits a pair at token-F1 >= 0.8, while name-exact is a multiset intersection
+(`eval_harness.py:548`) admits a pair at token-F1 >= 0.8, while name-exact is a multiset intersection
 on the normalized name -- a strict SUBSET of what that floor already admits. Scoring lower is what a
 subset key does, and it is the point: there is no slack in this key for a convention dispute to be
 hiding in, which is exactly what makes the numbers key's slack a finding. Entity recall 0.556 is
-genuine under-emission: 391-412 predicted against 616 gold.
+genuine under-emission: 391-412 predicted against the 616 gold entities that run was scored on. The
+macro-owner decision has since added 8 (616 -> 624), so a re-run scores against a slightly larger
+denominator; 0.556 is the PRE-decision figure and is not restated here as a current one.
 
 THE OPERATIONAL TIE-BREAK IS ALREADY IN THE CODE, AND IT DOES NOT FAVOUR THE COUNTRY. `source_entity`
 is not a display field: `DslToMergedExtractionAdapter` puts it on `ExtractionResult.SubjectEntity`
@@ -2460,8 +2506,10 @@ is not a display field: `DslToMergedExtractionAdapter` puts it on `ExtractionRes
 reaches `extracted_observations`, the digest and the matrix. Two measurements bear on the choice:
 - `NonInstrumentEntTypes` (`SentinelCollector/src/Extraction/DslToMergedExtractionAdapter.cs:108`)
   excludes `country`, `macro_indicator`, `industry`, `sector` and `concept` ALIKE from the candidate
-  list, so 184 of 518 (35.5%) of this gold's anchors pre-select nothing under EITHER convention and
-  fall through to Rule 2.
+  list, so **194 of 518 (37.5%)** of this gold's anchors pre-select nothing under EITHER convention and
+  fall through to Rule 2. It was 184 (35.5%) before the decision: moving 10 anchors off a country and
+  10 off a blank onto the SERIES kept them all inside the excluded set, so the decision bought nothing
+  at Rule 1 and was never argued on that ground.
 - Rule 2 runs no surface filter, and the country surface is the measured wrong-instrument class:
   SentinelCollector D-1 counts 7,184 instrument-attaching rows carrying a `gpe_country` subject, 3,060
   of them landing on `U` (Unity Software) -- over ONE 31-day window, `extracted_at` [2026-07-15,
@@ -2473,15 +2521,19 @@ reaches `extracted_observations`, the digest and the matrix. Two measurements be
   `PAYEMS` and `Average Hourly Earnings of All Employees, Total Private` -> `CES0500000003` are all
   catalogued Economic instruments. The metric-series convention names something the catalog holds; the
   country convention names a carbon series.
-That is EVIDENCE FOR the decision, not the decision. The prompt's worked example still says `""`, and
-`""` resolves to nothing at all -- so whoever settles this settles the prompt, the gold and the scorer
-in ONE PR, and says what the resolver is supposed to receive on a macro print.
+That was the EVIDENCE FOR the decision, and the decision went with it: the resolver is supposed to
+receive the SERIES on a macro print. The prompt, the gold and the producer's own labelling instruction
+changed in ONE PR, as this paragraph said they would have to. What the evidence bought is a resolvable
+surface where `""` resolved to nothing and `United States` resolved to a CO2 series; what it did NOT
+buy is Rule 1 pre-selection, which still refuses a `macro_indicator` -- see the count above.
 
-Re-check (the 129, unchanged): `python3 -c "import json;
+Re-check (the 149): `python3 -c "import json;
 d=json.load(open('LlmBenchmark/cod-gold/cod_stage1_gold_v1.json'));print(sum(1 for a in
 d['articles'] for n in a['gold']['numbers'] if {e['name']:e['ent_type'] for e in
-a['gold']['entities']}.get(n['source_entity'])=='macro_indicator'))"` prints 129.
-Re-check (the 184 that can never pre-select, and the ent_type census behind it):
+a['gold']['entities']}.get(n['source_entity'])=='macro_indicator'))"` prints 149. It printed 129
+before the decision; a 129 today means the 20 repairs were reverted, which is what
+`build_cod_gold.py --selftest` exists to make loud.
+Re-check (the 194 that can never pre-select, and the ent_type census behind it):
 ```
 python3 - <<'PY'
 import collections, json
@@ -2496,9 +2548,13 @@ for a in d['articles']:
 print(sum(v for k, v in c.items() if k in NON), sum(c.values()), c.most_common())
 PY
 ```
-2026-09-05 -> `184 518` with `equity 187, macro_indicator 129, instrument 68, <blank> 32, org 26,
-country 23, index 21, industry 15, concept 10, person 3, event 2, location 1, region 1` and ZERO
-`<undeclared>`. A non-zero `<undeclared>` means a gold anchor stopped naming an entity its own article
+2026-09-05, after the decision -> `194 518` with `equity 187, macro_indicator 149, instrument 68,
+org 26, <blank> 22, index 21, industry 15, country 13, concept 10, person 3, event 2, location 1,
+region 1` and ZERO `<undeclared>`. Before it: `184 518` with `macro_indicator 129, <blank> 32,
+country 23` and the other twelve rows unmoved -- the whole delta is 10 anchors off a country surface
+and 10 off a blank, onto the series. Naming those series also added 8 `entities[]` rows the labellers
+had never declared (616 -> 624), which is why the object totals above moved without a number
+moving. A non-zero `<undeclared>` means a gold anchor stopped naming an entity its own article
 declares, which is the one thing `source_entity_referential_integrity` scores a MODEL on.
 
 BUDGET THE `run_model.py` RE-CHECK NEAR THE TOP OF THIS ENTRY FOR MORE THAN 4096 COMPLETION TOKENS.
@@ -2513,6 +2569,29 @@ assembly, scorer and runner, none of which a token budget touches. So a low budg
 artefact wearing a fixed defect's face, recorded here rather than reopened; the runner's own default
 is 4096. Read `truncated` and `finish_reasons` in the provenance before concluding anything from
 `schema_invalid`.
+
+### Nothing checks whether the SHIPPED gold still states the `source_entity` convention [2026-09-05]
+`build_cod_gold.py`'s divergence gate is a PRODUCER gate: it compares production's prompt against
+the adjudication instruction it is about to send and against the text `alignability()` would write
+into the next artifact. It never opens `LlmBenchmark/cod-gold/cod_stage1_gold_v1.json`. The README
+and the docstring both claimed it did -- corrected in the same PR rather than the gate widened,
+because opening the committed artifact would DEADLOCK the tool: after a deliberate rule change the
+shipped artifact necessarily still states the old rule, so the gate that must pass for
+`--stage assemble` to rewrite it would be the one refusing. That leaves a real hole. The artifact's
+`controls.control_5_alignability.blank_by_design.why` is what a reader ACTS ON when deciding how to
+treat a blank anchor, and it is prose a build may hand-tune, so it can drift from the prompt with
+nothing complaining. It has: it paraphrases all three pinned clauses and states none verbatim.
+```
+python3 -c "
+import json,sys; sys.path.insert(0,'LlmBenchmark/scripts')
+import build_cod_gold as b
+w=json.load(open('LlmBenchmark/cod-gold/cod_stage1_gold_v1.json'))['controls']['control_5_alignability']['blank_by_design']['why']
+print(sum(1 for _,c in b.SOURCE_ENTITY_CLAUSES if b._rule_text(c) in b._rule_text(w)), 'of', len(b.SOURCE_ENTITY_CLAUSES))"
+```
+2026-09-05 -> `0 of 3`. Closing this belongs in `verify_cod_gold.py`, which grades a FINISHED
+artifact and so cannot deadlock a build -- either it requires the three clauses verbatim in that
+field, or the field is generated and the hand-tuned prose moves to a sibling key. `3 of 3`, or a
+recorded decision that a paraphrase is enough and what checks the paraphrase, closes it.
 
 ### `run_model.py --schema-file` silently bypasses `SCHEMA_REQUIRED`, on the model-acceptance path [2026-09-04]
 `build_payload` reads `schema = load_schema(args) or extraction_json_schema()`
