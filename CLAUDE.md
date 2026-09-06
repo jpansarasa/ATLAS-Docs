@@ -260,11 +260,30 @@ MODEL_ACCEPTANCE [replaces the old `MODEL_SIZE >= 30B`] [HARD_STOP]:
     not a score anything can be swapped on. It removes none of the run-to-run swing pooled or at
     concurrency 6, where the range GROWS; at concurrency 1 the range shrinks, on two runs. The swing
     is what a comparison must now clear, and the committed key's is 0.0893 pooled / 0.0427 within
-    the concurrency-6 arm against a ~0.05 effect.
+    the concurrency-6 arm against a ~0.05 effect. A COMPARISON OUTRAN THAT SWING 2026-09-06, a
+    THRESHOLD still does not: 5 runs an arm at production's decoding separated two models by an
+    effect 2.5x the 0.0893, arms disjoint at RUN level -- while the pass count still flipped run to
+    run in every arm. Separating two models and passing a bar are different questions.
     A DECIDED convention is not a CLEARED bar; do not read this line as one, and do not weaken it
     instead.
   measured baselines [aggregate_f1, v6.2 substrate] -> docs/BACKLOG.md "MODEL BASELINES" # EVERY figure
     NAMES ITS ENGINE: the challenger spans 0.694-0.764 across five scorecards, so a bare number is not a run
+  measured, CoD TASK [numbers_f1, 40 gold articles, production's prompt path + decoding, vllm-0.19.0,
+    5 runs an arm] -> docs/BACKLOG.md "The candidate BEATS the incumbent on production's CoD path"
+    # A DIFFERENT TASK AND METRIC from the line above: 0.7400 here is NOT the 0.764 there
+    Qwen2.5-32B-AWQ 0.5153 | Qwen3.8-27B-AWQ-INT4 0.7400 | that candidate with a
+      ThinkingSuppressionSuffix set 0.6729 <- PLAN AGAINST THIS ONE, the conservative arm; nothing
+      sets that suffix today (D-26 keeps it empty deliberately) and whether a swap should set one is OPEN
+    ✗ an ARM delta, not a clean model delta # the arms were NOT served alike: the incumbent ran on
+      production's own container at fp8_e5m2 KV / 32K, the candidate at unquantized KV / 15,360, and
+      this file prices that flag at ~0.05 F1 CONCENTRATED IN RECALL -- which is where the gain is.
+      Direction survives (4.4x), the magnitude is not quotable as model-vs-model
+    ✗ NOT a clearance to swap # it MEETS the prompt-path requirement and FAILS §CONTEXT: that 15,360
+      is under the 32K floor. ONE flag remains untried -- fp8_e4m3, and only ever measured on the
+      INCUMBENT at vllm-0.28.0, not the 0.19.0 this ran on. Unquantized KV is not a remedy: it is
+      what produced the 15,360. So "cannot reach 32K" is UNMEASURED, not established. Pin first:
+      entity_ticker_accuracy 0.671 -> 0.458 (B) / 0.417 (B', the plan-against arm) -- a RECALL loss at
+      SecMaster's door (0 wrong tickers across 15 runs; every miss is a null), never a mis-resolution risk
   ✗ a scorecard from the substrate's own 16 instruction blocks is NOT acceptance evidence # that is
     a task production does not run; it was the gap that made every earlier comparison inconclusive
 CONTEXT: 32K required # ✗ reducing it breaks full-document decomposition and causes context rot

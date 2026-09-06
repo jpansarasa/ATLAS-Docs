@@ -386,7 +386,14 @@ production's request.
 
 NONE OF THIS IS ACCEPTANCE EVIDENCE. It is scored on the substrate's own 16 instruction blocks, a task
 production does not run; CLAUDE.md §MODEL_ACCEPTANCE governs, and a swap needs a CoD scorecard on production's
-prompt path. The table is also why the old `MODEL_SIZE >= 30B` floor was retired: a 27B model beats our 32B
+prompt path. THAT SCORECARD NOW EXISTS and its figures are NOT these: `numbers_f1` on production's CoD
+extraction is 0.5153 incumbent / 0.7400 candidate, a different task and a different metric from the
+`aggregate_f1` in this table -- see MEASUREMENT DEBT, "The candidate BEATS the incumbent on production's
+CoD path". 0.7400 and 0.764 are not the same number measured twice, and reading them as one is the
+conflation this table's engine labels were added to prevent. NOR ARE THE TWO ARMS THERE SERVED
+ALIKE -- that entry discloses a KV-cache and context difference between them, which is exactly what
+this table's own engine column exists to surface.
+The table is also why the old `MODEL_SIZE >= 30B` floor was retired: a 27B model beats our 32B
 incumbent here, so the proxy would have BLOCKED an upgrade on a number that was never the point. That
 retirement rationale lived in CLAUDE.md justifying a rule that no longer existed; it belongs with the
 measurement that settled it.
@@ -2445,6 +2452,77 @@ grep -c -iE 'clock|ordinal|bare year|exclude|not a fact' $P
 2026-09-04 -> lines `36` and `59` match; exclusion-word count `0`. A NON-ZERO second figure means an
 exclusion rule landed and (b) is closed.
 
+**D-27's dependency-outage guard is MERGED, TESTED, CARDED -- and NOT IN THE RUNNING CONTAINER. It
+orphaned three articles on 2026-09-06.** Taking the GPU for the A/B in MEASUREMENT DEBT, "The
+candidate BEATS the incumbent on production's CoD path", stopped production's vLLM for 32m56s (engine
+snapshots: incumbent healthy `18:12:19Z`, candidate serving `18:15:50Z`, incumbent restored and
+healthy `18:45:15Z`). Three `raw_content` rows were permanently failed inside that window, in
+EXACTLY the pre-spend orphan shape D-27 says can no longer occur (`SentinelCollector/AGENT_README.md:118`)
+-- `ProcessingError` written on a row nothing finished:
+
+| id | source | collected_at (UTC) | retry_count | processed_at | processing_error |
+|---|---|---|---|---|---|
+| 164565 | rss | 2026-09-06 18:23:09.108 | 0 | null | `The circuit is now open and is not allowing calls.` |
+| 164566 | rss | 2026-09-06 18:43:14.766 | 0 | null | `The circuit is now open and is not allowing calls.` |
+| 164567 | rss | 2026-09-06 18:43:15.094 | 0 | null | `The circuit is now open and is not allowing calls.` |
+
+BLAST RADIUS IS THOSE THREE, AND THE WHOLE-TABLE COUNT IS NOT WHAT ESTABLISHES IT. That count (three
+rows carrying this error, table-wide) bounds circuit-open orphans only. The window census is what
+bounds the outage: 17:50-19:00Z holds 14 rows -- 12 `rss`, 1 `rss-mirror`, 1 `tsa-checkpoint` -- and
+all 11 that are not in the table above are `processed_at` non-null with no error. Note that D-27's
+223 rows from 2026-09-04 carry the same predicate and do NOT appear today, so the table-wide count is
+of SURVIVING rows; the earlier cohort was reprocessed. NOT REPAIRED HERE -- psql is SELECT-only and
+every figure above was read that way; whether to reprocess is the user's call.
+
+**THE GUARD IS NOT A HOLE. IT IS NOT DEPLOYED.** `ArticleExtractionSpend` and `DependencyOutage`
+both landed in #1004 (`29846cf0`, 2026-09-05). The running `sentinel-collector` container was created
+2026-09-06T10:26:43Z from an image built **2026-08-27T14:55:24-04:00** (18:55Z), nine days
+earlier: recreated on the
+CURRENT `:latest`, which nothing rebuilt after #1004. `CLAUDE.md` §DEPLOYMENT already warns that
+`--skip-tags build` does exactly this, and for 21 of 26 service tags it is the only form on offer.
+Read the CONTAINER, never the image -- `nerdctl inspect` resolves the image first and returns the
+BUILD time as `.Created`, which is the trap that makes this invisible. VERIFIED AGAINST
+THE BINARY, not inferred from dates, with a positive control in the same probe so a silent search
+failure could not read as absence:
+```
+sudo nerdctl exec sentinel-collector sh -c 'for s in ProcessSingleArticleAsync ExtractionProcessor \
+  MaxArticleAgeDays ArticleExtractionSpend RecordModelCallReturned DependencyOutage IsCircuitOpen; \
+  do printf "%-32s " "$s"; grep -a -c "$s" /app/SentinelCollector.dll || true; done'
+```
+2026-09-06 -> `ProcessSingleArticleAsync 2`, `ExtractionProcessor 2`, `MaxArticleAgeDays 1` (the
+control: type and member names ARE reachable in the assembly) and `ArticleExtractionSpend 0`,
+`RecordModelCallReturned 0`, `DependencyOutage 0`, `IsCircuitOpen 0` -- every symbol D-27's GUARD
+clause names is absent. Search for STRING LITERALS instead and you learn nothing: `age_cutoff`
+returns 0 too, because literals live in the UTF-16 `#US` heap and a plain grep cannot see them. Probe
+type and member names only.
+THE FIX IS A BUILD, NOT A CODE CHANGE: `SentinelCollector/.devcontainer/build.sh --no-cache` then the
+scoped deploy. This entry closes when the probe above prints a non-zero `ArticleExtractionSpend`.
+
+DO NOT "FIX" THIS IN THE `isTransient` ALLOW-LIST. The obvious reading of the evidence --
+`BrokenCircuitException` is absent from the transient set
+(`SentinelCollector/src/Workers/ExtractionProcessor.cs:1155-1161`), so add it -- is the remedy D-27
+MEASURED AND REJECTED: it leaves MaxRetries to be spent and the row orphaned anyway, and D-27 records
+three named tests going RED on it. The design answer is the spend ledger, and it already exists.
+
+WHAT THE BOX SAID, and it is D-27's own warning arriving on schedule.
+`sentinel_extraction_error_total{reason="other", source="rss"}` reads **3** (Prometheus, instant at
+2026-09-06T19:07Z) -- the single unnamed bucket that, at 223 rows on 2026-09-04, was the ONLY reason
+that incident was visible at all. Whether three increments moved SentinelHighExtractionErrorRate is
+NOT checked here and should not be assumed either way; what IS certain is that the queue-depth gauge
+cannot see these rows by construction, because they LEFT the queue. So the deployed
+build's only signal for this class is a counter increment too small to alert on, under a label that
+says nothing about the cause. #1004 is what replaces `other` with two named reasons.
+
+Re-check (SELECT only):
+```
+sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data -c \
+ "SELECT id, source, retry_count, processed_at, processing_error FROM sentinel.raw_content
+  WHERE processing_error LIKE '%circuit is now open%' ORDER BY id;"
+```
+2026-09-06 -> three rows, ids `164565`-`164567`, `source rss`, `retry_count 0`, `processed_at` null.
+A GROWING count means another outage passed through the undeployed build. An EMPTY result means
+someone reprocessed the rows, which does NOT close this entry -- only the binary probe does.
+
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
 ### The CoD gold cannot yet back a model swap: macro-owner DECIDED, the key's swing is not [2026-09-05]
@@ -2458,6 +2536,11 @@ still stops a scorecard from DECIDING a model swap is the instrument: the commit
 run-to-run swing straddles the acceptance threshold, and `cod-stage1.criteria.json` is still
 `ratified_by: null`. Both are measured further down this entry; neither is a labelling question,
 and neither is fixed by the decision that closed the first one.
+NARROWED 2026-09-06: the swing blocks a THRESHOLD verdict, not every comparison. A three-arm A/B at
+five runs an arm separated two models by +0.2246 `numbers_f1` with disjoint runs, while the PASS
+COUNT flipped run to run in both arms -- so what this paragraph forbids is reading a `pass` as a
+verdict, not comparing two candidates. See "The candidate BEATS the incumbent on production's CoD
+path" below.
 
 MEASURED 2026-09-05, the measurement that closes the path. vLLM 0.19.0, production container as-is
 (`--kv-cache-dtype fp8_e5m2`), Qwen2.5-32B-AWQ rev `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c`, the 40
@@ -2793,6 +2876,11 @@ whose verdict flips run to run without the model changing cannot decide a model 
 direction. Moving the threshold does not repair that -- it only moves where the coin-flip band sits:
 any bar inside the pooled [0.3528, 0.4422] flips run to run, and 0.4 is inside it. The swing has to
 come out of the instrument first.
+FOR A THRESHOLD. It does not have to come out first for a COMPARISON, and 2026-09-06 it did not:
+five runs an arm at production's sampling give a within-arm sd of 0.0106 and an effect 8.0x the
+widest within-arm range -- 2.5x the 0.0893 pooled swing above -- with the arms disjoint at run level.
+The pass count still flipped in both arms, which is this paragraph, reproduced. See "The candidate
+BEATS the incumbent on production's CoD path" below.
 
 Re-check (the whole table, the headline's three figures, and both controls):
 ```
@@ -2960,6 +3048,354 @@ assembly, scorer and runner, none of which a token budget touches. So a low budg
 artefact wearing a fixed defect's face, recorded here rather than reopened; the runner's own default
 is 4096. Read `truncated` and `finish_reasons` in the provenance before concluding anything from
 `schema_invalid`.
+
+### The candidate BEATS the incumbent on production's CoD path -- +0.2246 `numbers_f1` -- and still cannot ship [2026-09-06]
+THE COMPARISON THE ENTRY ABOVE SAYS THE SWING BLOCKS HAS NOW BEEN MADE, and the swing was not what
+stopped it. Three arms, FIVE runs each, the 40 committed gold articles, production's CoD prompt path
+AND production's sampling, local vLLM 0.19.0, the committed gold on the committed alignment key.
+Every one of the fifteen runs reports `records 40  call_errors 0  schema_invalid 0  truncated 0`,
+`finish_reasons {"stop": 40}`, `json_valid 1.0` and `production_prompt_path: true`.
+
+| arm | model | client-side template | `numbers_f1` | sd | range |
+|---|---|---|---|---|---|
+| A -- incumbent | `Qwen/Qwen2.5-32B-Instruct-AWQ` | ChatML, sha256 `b18811f5` | **0.5153** | 0.0106 | 0.0282 |
+| B -- candidate | `cyankiwi/Qwen3.8-27B-AWQ-INT4` | ChatML, sha256 `b18811f5` | **0.7400** | 0.0072 | 0.0175 |
+| B' -- candidate + suppression | `cyankiwi/Qwen3.8-27B-AWQ-INT4` | ChatML + `<think></think>` prefill, sha256 `389c3561` | **0.6729** | 0.0100 | 0.0257 |
+
+B-A = **+0.2246** (se_diff 0.0057), B'-A = **+0.1576** (se_diff 0.0065). NEITHER IS A p-VALUE and
+neither is written as one -- n=5 an arm does not support one. What is claimed is SEPARATION: |diff|
+is 39x and 24x its own se_diff, and the arms are disjoint at RUN level, `min(B) - max(A)` =
+**+0.2036** and `min(B') - max(A)` = **+0.1305**, so the worst pairing of runs still separates.
+
+**PLAN AGAINST B', THE CONSERVATIVE ARM.** B' is the same model with a `ThinkingSuppressionSuffix`
+expressed in the client-side template. PRODUCTION SETS NO SUCH SUFFIX TODAY and this entry does not
+claim it does: `ExtractionOptions.ThinkingSuppressionSuffix` defaults to `string.Empty`
+(`SentinelCollector/src/Configuration/ExtractionOptions.cs:246`), nothing in
+`/opt/ai-inference/compose.yaml` or any appsettings sets it, and D-26 says that emptiness is
+DELIBERATE because the model served today does not reason (D-26,
+`SentinelCollector/AGENT_README.md:117`). So B is what production's CURRENT configuration would
+produce and B' is the arm a reasoning-model deployment might choose. Plan against B' because it is
+the LOWER of the two and the suffix machinery exists precisely for a model like this one -- not
+because anything sets it now. Either way the candidate is ahead: +0.2246 at B, +0.1576 at B'.
+
+THE SUFFIX COSTS 0.0671 `numbers_f1` AND 19% WALL CLOCK HERE, WHICH IS NOT WHAT IT WAS BOUGHT FOR --
+recorded as an open question, not answered. B and B' differ on the wire by the six prefilled template
+tokens and NOTHING else: same model revision, same seed, same endpoint, same prompt and schema bytes.
+Both arms sent `structured_output: true` -- a `response_format` json_schema
+(`LlmBenchmark/scripts/run_model.py:429-433`) -- so neither arm could have emitted a reasoning block
+for the suffix to suppress, yet B' spends 22% more completion tokens (59,613 vs 48,805 mean per
+40-article run) reaching a lower score. Whoever plans the swap should measure whether the suffix is
+needed at all on the GPU JSON path before paying that; D-26 governs the suffix REACHING the wire and
+says nothing about whether it should be set, so this is a question for the swap, not a contradiction
+of the entry.
+
+**THE ERROR BAR CAME IN TIGHTER THAN THE EPIC BUDGETED FOR, AND FIVE RUNS WAS GENEROUS.** The entry
+above sizes the instrument's swing as a RANGE, 0.0893 pooled and 0.0427 within the concurrency-6 arm,
+against a ~0.05 effect; recomputing an sd from those same five committed-key runs gives 0.0346 pooled
+and 0.0221 within the c6 arm. Measured here: within-arm sd **0.0106 / 0.0072 / 0.0100** and range
+0.0282 / 0.0175 / 0.0257. That is 3.3x tighter than the pooled prior sd and 2.1x tighter than the c6
+one, and the effect is 8.0x the widest within-arm range -- 2.5x the pooled swing the entry above says
+a comparison must clear. READ THAT AS "THE NOISE HERE WAS SMALL", NOT AS "THE LOOP GUARD SHRANK THE
+NOISE": the prior figures were taken at `repetition_penalty: null, max_tokens: 8192` and these at
+1.1 / 4096, and this file already measures that axis moving `entities_f1` by 0.135 and reversing the
+sign of a prompt comparison. Two runs an arm would have separated these models.
+
+**WHAT DOES NOT MOVE IS THE PASS COUNT, AND IT STILL FLIPS RUN TO RUN.** Against the PROVISIONAL
+criteria (`LlmBenchmark/eval-substrate/cod-stage1.criteria.json`, `ratified_by: null`) all fifteen
+runs score 24 of 29 metrics measurable, and the passed count is A 8/24 in four runs and 9/24 in the
+fifth, B 9/24 in three and 10/24 in two, B' 8/24 in four and 9/24 in the fifth. A gate whose verdict
+moves without the model changing is the entry above's straddle, reproduced at production's sampling
+on a 0.22 effect: SEPARATING two models and PASSING a threshold are different questions, and only the
+first one is answered here.
+
+FULL METRIC TABLE, every metric the harness could measure, means over 5 runs an arm:
+
+| metric | A incumbent | B candidate | B' cand+suppr | B-A | B'-A |
+|---|---|---|---|---|---|
+| `numbers_f1` | 0.5153 | 0.7400 | 0.6729 | +0.2246 | +0.1576 |
+| `numbers_precision` | 0.5611 | 0.7173 | 0.6274 | +0.1562 | +0.0663 |
+| `numbers_recall` | 0.4764 | 0.7641 | 0.7255 | +0.2876 | +0.2490 |
+| `entities_f1` | 0.5704 | 0.7842 | 0.7491 | +0.2138 | +0.1787 |
+| `entities_precision` | 0.8831 | 0.8406 | 0.7886 | -0.0425 | -0.0946 |
+| `entities_recall` | 0.4215 | 0.7349 | 0.7135 | +0.3135 | +0.2920 |
+| `events_f1` | 0.2441 | 0.3693 | 0.3601 | +0.1252 | +0.1160 |
+| `events_precision` | 0.3452 | 0.5514 | 0.4175 | +0.2062 | +0.0723 |
+| `events_recall` | 0.1895 | 0.2777 | 0.3166 | +0.0883 | +0.1271 |
+| `claims_f1` | 0.2145 | 0.3952 | 0.3636 | +0.1807 | +0.1491 |
+| `claims_precision` | 0.3538 | 0.5475 | 0.4901 | +0.1937 | +0.1363 |
+| `claims_recall` | 0.1544 | 0.3093 | 0.2890 | +0.1549 | +0.1346 |
+| `number_value_accuracy` | 0.9359 | 0.9697 | 0.9680 | +0.0338 | +0.0321 |
+| `number_unit_accuracy` | 0.8629 | 0.9116 | 0.9159 | +0.0487 | +0.0530 |
+| `number_source_entity_exact_match` | 0.9060 | 0.8914 | 0.8957 | -0.0146 | -0.0103 |
+| `number_source_text_verbatim_rate` | 0.9376 | 1.0000 | 0.9983 | +0.0624 | +0.0607 |
+| `source_entity_referential_integrity` | 0.9368 | 1.0000 | 0.9922 | +0.0632 | +0.0554 |
+| `ent_type_accuracy` | 0.7421 | 0.8055 | 0.8091 | +0.0634 | +0.0670 |
+| `entity_ticker_accuracy` | 0.6714 | 0.4583 | 0.4167 | **-0.2130** | **-0.2547** |
+| `event_kind_accuracy` | 0.4061 | 0.6699 | 0.5347 | +0.2638 | +0.1286 |
+| `claim_polarity_accuracy` | 0.6926 | 0.7810 | 0.8265 | +0.0884 | +0.1339 |
+| `article_type_accuracy` | 0.7250 | 0.6750 | 0.7000 | -0.0500 | -0.0250 |
+| `json_valid` | 1.0000 | 1.0000 | 1.0000 | +0.0000 | +0.0000 |
+| `per_document_mean_latency_seconds` | 16.07 | 20.28 | 24.22 | +4.21 | +8.16 |
+
+PER-RUN VALUES for the four metrics anything is decided on, in run order:
+```
+A  numbers_f1              0.5272 / 0.4989 / 0.5171 / 0.5126 / 0.5207
+B  numbers_f1              0.7358 / 0.7390 / 0.7484 / 0.7308 / 0.7458
+B' numbers_f1              0.6738 / 0.6798 / 0.6577 / 0.6697 / 0.6834
+A  entities_f1             0.5839 / 0.5617 / 0.5579 / 0.5659 / 0.5826
+B  entities_f1             0.7811 / 0.7835 / 0.7840 / 0.7856 / 0.7867
+B' entities_f1             0.7440 / 0.7525 / 0.7542 / 0.7473 / 0.7477
+A  numbers_recall          0.4865 / 0.4575 / 0.4807 / 0.4730 / 0.4846
+B  numbers_recall          0.7606 / 0.7625 / 0.7722 / 0.7548 / 0.7703
+B' numbers_recall          0.7297 / 0.7317 / 0.7104 / 0.7201 / 0.7355
+A  entity_ticker_accuracy  0.6744 / 0.6744 / 0.6744 / 0.6744 / 0.6591
+B  entity_ticker_accuracy  0.4583 / 0.4583 / 0.4583 / 0.4583 / 0.4583
+B' entity_ticker_accuracy  0.4167 / 0.4167 / 0.4167 / 0.4167 / 0.4167
+```
+
+**PROVENANCE -- THE BYTES, WHICH NO EARLIER RUN IN THIS EPIC RECORDED.** The neighbouring entries all
+disclose that their figures die with `/tmp` (see the PROVENANCE LIMIT paragraph in "Convention B
+measured end to end" below). This one's do not, because the INPUTS are named by digest and every one
+of them is committed:
+
+| input | sha256 | committed as / value |
+|---|---|---|
+| prompt | `0dd66ddec19ea58f01dcdad545da9aa4b8da4ab736746b44547bf189a6f445de` | `SentinelCollector/src/cod-prompts/cod_json_v1.txt` |
+| schema | `1b9719041dfee8effb02062d8a4843897736f55ecf5fd7ab7610a7b173e948d6` | `SentinelCollector/src/cod-prompts/cod_json_schema_v1.json` |
+| gold | `bc9c5b4c8331ac01ded0fc6eb718ea787b27fa39f6ff95cff07755925354acca` | `LlmBenchmark/cod-gold/cod_stage1_gold_v1.json` |
+| criteria | `fefef64721986eacf918b6fcf7bf62b3bf898015e3a3d9fe2e253cbfb0370927` | `LlmBenchmark/eval-substrate/cod-stage1.criteria.json` |
+| substrate | `008c338deaf6596884983883ef63bd1f0308c2f05403ad6daf83bdf3b392d684` | NOT committed -- see below |
+| template A/B | `b18811f5f4fac851c7a16cdc2839d96ac3d2a284baf8712e5ed2a043ba203a88` | `<\|im_start\|>user\n{0}<\|im_end\|>\n<\|im_start\|>assistant\n` |
+| template B' | `389c3561b39cf757fc65f93f973d30d8fc9be2c90089f63bb7b99ae49c01e941` | the same plus `<think>\n\n</think>\n\n` |
+
+The four repo digests were re-computed from the tree at `3d1fa9e5` and match the provenance sidecars
+exactly. THE SUBSTRATE WRAPPER IS THE ONE FILE THAT IS NOT REPO-DERIVABLE, and
+that costs nothing HERE: its 40 article texts are byte-identical, in the same order, to the 40
+`content` fields of the committed `LlmBenchmark/cod-gold/cod_stage1_corpus_v1.json` (checked
+40 of 40), and with `--prompt-file` the runner reads only `input.content` and the join key --
+`record["instruction"]` is the FALLBACK the flag overrides (`LlmBenchmark/scripts/run_model.py:406-409`).
+The wrapper's own sha256 is unreproducible because it also carries the v6.2 substrate's
+`instruction` and `output` fields, which this task never reads and which live outside the repo.
+
+`request_sampling`, identical on all fifteen runs: `temperature 0.0`, `seed 42`, `repetition_penalty
+1.1`, `max_tokens 4096`, `top_p/top_k/min_p/presence_penalty null`, `structured_output true`,
+`endpoint_mode completions`, concurrency 6.
+`stop` WAS `null` AND PRODUCTION SENDS `["<|im_end|>", "<|endoftext|>"]`
+(`SentinelCollector/src/Configuration/ExtractionOptions.cs:254`) -- so this is production's prompt
+path at production's DECODING, still not a byte-for-byte replay of its request. On this corpus the
+omission is observably inert (`truncated 0`, `finish_reason stop` on all 600 records), but the gap is
+real and `--stop` closes it.
+Models: `Qwen/Qwen2.5-32B-Instruct-AWQ` rev `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c` on
+`localhost:8000`; `cyankiwi/Qwen3.8-27B-AWQ-INT4` rev `63768c10df38c0395e12ef49edac1bd539eaeeea` on
+`localhost:8001`. Engine `vllm 0.19.0` both. Harness at `3d1fa9e5`.
+
+**THE ARMS WERE NOT SERVED ALIKE, AND THE DIFFERENCE FAVOURS THE CANDIDATE. READ THIS BEFORE QUOTING
+THE NUMBER.** `localhost:8000` is production's live `vllm-server`, serving
+`--max-model-len 32768 --kv-cache-dtype fp8_e5m2 --gpu-memory-utilization 0.92 --max-num-seqs 16`
+(read off `nerdctl container inspect vllm-server`). The candidate on `localhost:8001` came up at
+`--max-model-len 15360` with `fp8_e5m2` REFUSED on its compressed-tensors checkpoint, so it ran on
+UNQUANTIZED KV. The incumbent alone carried the quantized cache.
+
+| arm | endpoint | `--kv-cache-dtype` | `--max-model-len` |
+|---|---|---|---|
+| A incumbent | `:8000` (production's own container) | `fp8_e5m2` | 32768 |
+| B / B' candidate | `:8001` | unquantized (`fp8_e5m2` refused) | 15360 |
+
+AT LEAST THESE TWO AXES -- THE TABLE IS NOT A CLOSED DIFF. The A row is the incumbent's full live
+flag set minus four the table omits (`--quantization awq_marlin`, `--max-num-seqs 16`,
+`--enable-auto-tool-choice --tool-call-parser hermes`, `--generation-config vllm`); the candidate's
+remaining flags are UNRECOVERABLE, because its container was removed and the serve invocation was
+never written down. `--generation-config vllm` is the one to notice: `run_model.py` omits
+`top_p`/`top_k`/`min_p`/`presence_penalty` from the body when they are null, so the SERVER's defaults
+apply, and that flag is what makes production ignore a model card's. This candidate's card sets
+`presence_penalty 1.5`, worth a 0.070 swing on the substrate -- larger than the KV effect below. It
+would have cut RECALL, so it works against the candidate and does not threaten the headline; it is
+named because an unrecorded axis is not a controlled one.
+
+THIS FILE ALREADY PRICES THAT AXIS: "Production's `fp8_e5m2` KV cache costs ~0.05 aggregate F1 on
+extraction, concentrated in RECALL" -- 0.443 -> 0.494, with `text_quote_recall` +0.058 and
+`selectivity_recall` +0.058. The headline gains here ARE the recall metrics (`numbers_recall`
++0.2876, `entities_recall` +0.3135), so the confound points the same way as the effect. It is
+measured on the SUBSTRATE task, not this one, so ~0.05 is an order of magnitude and not a
+subtractable correction.
+WHAT SURVIVES AND WHAT DOES NOT. The DIRECTION survives with room: +0.2246 is ~4.4x the 0.051 the
+KV flag is worth, and no plausible reading of a 0.05-scale handicap closes a 0.2246 gap with
+disjoint runs. What does NOT survive is quoting +0.2246 as a clean model-vs-model delta -- it is an
+ARM-vs-ARM delta over model AND KV dtype AND context length -- though CONTEXT LENGTH IS OBSERVABLY
+INERT HERE (`truncated 0` and `finish_reason stop` on all 600 records, ~2.1K-token prompts against
+15,360), so the one live axis is the KV dtype. The three adverse deltas in blocker 4 below (0.0146,
+0.0425, 0.0500) are all at or under the confound's AGGREGATE magnitude of 0.051, so on that reading
+their SIGNS are not established either.
+BUT ALL THREE ARE NON-RECALL METRICS, and the fp8 entry's own non-recall rows are the fairer
+yardstick -- +0.030 `symbol_exact_match`, +0.029 `period_accuracy`. Measured against THOSE, only
+`number_source_entity_exact_match` (-0.0146) sits inside the confound; `entities_precision`
+(-0.0425) and `article_type_accuracy` (-0.0500) EXCEED it. So the honest split is one delta the
+confound could explain and two it probably cannot -- which cuts AGAINST the candidate, and is
+recorded here rather than left on the flattering aggregate comparison.
+THE MISSING CONTROL IS ONE THIS FILE WAS ALREADY WAITING FOR: the `fp8_e5m2` entry's own re-check --
+both KV arms of the INCUMBENT on the CoD path -- would price the confound on this task and was not
+run before the GPU was handed back. Run it before the next quote of this number.
+KNOWN-BAD CONTROL, run inside every one of the fifteen scorecards: `shuffled_gold` scores
+`numbers_f1` 0.0000 (A), 0.0019 (B), 0.0053-0.0054 (B') against `max_expected` 0.1 --
+`verdict: FLOOR_OK` fifteen times. A green run without it would be an opinion.
+
+**NONE OF THIS IS A SHIPPING DECISION. FOUR THINGS BLOCK IT, AND THE FIRST IS DISQUALIFYING.**
+
+1. **THE CANDIDATE DOES NOT MEET THE 32K CONTEXT FLOOR.** `--kv-cache-dtype fp8_e5m2` is REFUSED on
+   this compressed-tensors checkpoint, and without it the engine came up at `--max-model-len 15360`
+   reporting `GPU KV cache size: 15,680 tokens` -- below the floor `CLAUDE.md` §SENTINEL requires,
+   for the reason it requires it (full-document decomposition). It is ample for these articles, whose
+   prompts run ~2.1K tokens, and that is exactly why the scorecard cannot answer the question: the
+   corpus never exercises the axis the floor exists to protect. `--max-model-len 15360` is in the
+   engine snapshot (`engine.candidate-up.txt`); THE `15,680` IS NOT RE-DERIVABLE -- the candidate
+   container was removed after the run and no startup log was preserved, so that figure survives
+   only as `results.json`'s `kv_cache_note`. Whoever re-runs this must capture the engine log.
+   DISQUALIFYING ON WHAT WAS TRIED, NOT ON WHAT IS POSSIBLE -- AND THE UNTRIED LIST IS ONE LEVER,
+   NOT THREE. UNQUANTIZED KV IS NOT UNTRIED: it is what PRODUCED the 15,360 above, once the
+   checkpoint refused `fp8_e5m2`. An earlier revision of this paragraph listed it as a remedy, two
+   lines under the sentence saying the engine ran "without it" -- read the serving table, not this
+   list, if the two ever disagree again.
+   THE ONE FLAG NOBODY PULLED IS `fp8_e4m3`, and its supporting measurement does not transfer
+   cleanly: this file records it serving 32K at concurrency 6 with 0 errors, but ON THE INCUMBENT and
+   ON vLLM **0.28.0**, which is NOT the engine this A/B ran. There is no e4m3 row at 0.19.0 anywhere
+   in this file. Do not shorten that to "a blocked engine": what §VLLM_UPGRADE blocks is carrying
+   `fp8_e5m2` past 0.19, and it names e4m3 as the one-flag FIX -- so the objection here is the
+   0.28.0/0.19.0 mismatch and the incumbent-not-candidate checkpoint, nothing more.
+   A HIGHER `--gpu-memory-utilization` is the other candidate and THE SIGN MATTERS -- lowering it
+   SHRINKS the cache. Headroom exists: the candidate left 3,476 MiB free against the incumbent's
+   1,260 MiB at 0.92 (engine snapshots), about 2,216 MiB more. Whether that reaches 32K is NOT
+   measured and NOTHING here should be read as predicting it either way: 15,680 -> 32,768 tokens
+   wants roughly 2.1x the KV memory, which 2.2 GB may not cover -- but this file also records
+   unquantized KV fitting 36,848 tokens on this card under 0.19.0, for the LARGER 32B incumbent,
+   which points the other way and is not reconciled with the candidate's 15,680. Two recorded
+   numbers disagree; measure, do not adjudicate them from the armchair.
+   So the honest state is "this configuration does not reach 32K and one flag is untried", NOT "this
+   checkpoint cannot". Settle it before treating the blocker as a property of the model.
+2. **`entity_ticker_accuracy` REGRESSES, and it is upstream of SecMaster.** 0.6714 -> 0.4583 (B) ->
+   0.4167 (B'). RE-DERIVED OUTSIDE THE HARNESS, matching gold entity names case-insensitively with a
+   containment fallback rather than the harness's token-F1 aligner: the 40 articles carry **53**
+   gold ticker-bearing entities; the incumbent matches **47** of them and gets **29** tickers right
+   (0.617), the candidate matches **51** and gets **23** (B, 0.451) or **21** (B', 0.412) right.
+   THE CANDIDATE ARMS ARE FLAT ACROSS ALL FIVE RUNS; THE INCUMBENT IS NOT -- it matches 47, 47, 47,
+   47, **48**, which is why its five-run total is 236 and not 235, and the harness sees the same
+   one-row move (its A value is exactly `29/43` in four runs and `29/44` in the fifth). An earlier
+   revision of this line called both counts stable and was refuted by its own 236. BOTH DERIVATIONS SAY THE SAME THING: the candidate finds MORE ticker-bearing entities
+   and TICKERS FEWER of them.
+   IT DOES NOT MIS-TICKER THEM, AND THAT DISTINCTION IS THE WHOLE RISK ASSESSMENT: across all 15
+   runs, of 236 / 255 / 255 matched gold entities, the wrong-ticker count is **0 / 0 / 0**. Every
+   single miss in every arm is a NULL or empty `ticker` on a household name (`Boeing`, `Delta Air
+   Lines`, `Apple`, `Tesla`, `JPMorgan Chase`) -- 91 (A), 140 (B), 150 (B'). So the candidate hands
+   SecMaster fewer pre-resolved symbols, not wrong ones: it degrades RECALL at the resolver's front
+   door and adds no wrong-instrument risk. PIN IT BEFORE ANY SWAP -- it is a regression on the path
+   this epic spent a day repairing -- and pin it as a recall regression, which is what it is.
+3. **The criteria are PROVISIONAL.** `ratified_by: null`, most thresholds carried from the CoVe bar
+   unmeasured, and the pass count flips run to run in both arms. A `pass` here is not a ratified pass.
+4. **Three metrics move the wrong way besides the ticker**: `number_source_entity_exact_match`
+   -0.0146, `article_type_accuracy` -0.0500, `entities_precision` -0.0425, and latency
+   16.07 -> 20.28 s/doc (+26%), or 24.22 (+51%) at B'.
+
+**0.7400 HERE IS NOT THE 0.764 IN "MODEL BASELINES" ABOVE.** Different task, different metric,
+different corpus: that one is `aggregate_f1` on the v6.2 substrate's own 16 instruction blocks, this
+one is `numbers_f1` on production's CoD extraction over 40 gold articles. The two have been conflated
+before. They are not comparable and neither converts to the other.
+`events` and `claims` gained the most in relative terms and DECIDE NOTHING: `CLAUDE.md` §SENTINEL
+already records `event_kind`/`claim_kind` as free-form, with two careful human labellers scoring
+0.302 and 0.138 against each other. Read the `numbers` and `entities` rows; treat the rest as texture.
+
+Re-check. The predictions, the fifteen scorecards, the sidecars and the engine snapshots are under
+`/tmp/sentinel-remediation/qwen-ab/` and one `tmpwatch` ends them; the INPUTS are committed, so the
+measurement is repeatable even after that, which is what the digest table is for. One arm, five runs:
+```
+python3 LlmBenchmark/scripts/run_model.py --task cod --endpoint-mode completions \
+  --prompt-file SentinelCollector/src/cod-prompts/cod_json_v1.txt \
+  --schema-file SentinelCollector/src/cod-prompts/cod_json_schema_v1.json \
+  --chat-template '<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n' \
+  --repetition-penalty 1.1 --max-tokens 4096 --concurrency 6 \
+  --substrate <40-article subset> --endpoint http://localhost:8000 \
+  --model <model-id> --model-label "<model-id> @ vllm-0.19.0" --out preds.jsonl
+python3 LlmBenchmark/scripts/eval_harness.py --task cod --substrate <same subset> \
+  --cod-gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json --predictions preds.jsonl \
+  --adapter-meta preds.jsonl.provenance.json --out scorecard.json
+```
+Confirm `substrate_sha256` in the sidecar reads `008c338d...`. IF `/tmp` HAS CLEARED, rebuild the
+subset from the committed corpus -- one record per gold article, in the corpus's own order, and only
+`input.content` plus the join key are read on this path:
+```
+python3 -c 'import json; c=json.load(open("LlmBenchmark/cod-gold/cod_stage1_corpus_v1.json"));
+json.dump([{"input":{"content":a["content"]},"source_file":a["source_file"],
+"source_index":a["source_index"]} for a in c["articles"]], open("/tmp/g40.json","w"))'
+```
+Write it OUTSIDE the tree, as above -- the input path is repo-relative, so a bare `g40.json` lands an
+untracked file in the checkout. That reproduces the SUBSTRATE but NOT its sha256: the original
+wrapper also carried the v6.2 substrate's `instruction`, `output` and `is_negative` fields, none of
+which this task reads. So a rebuilt run cannot claim `008c338d...`; check the 40 `content` values
+against the corpus instead and say which route was taken.
+THE ENGINE SIDE OF THE RE-CHECK IS NOT RECORDED ANYWHERE DURABLE -- the candidate's serve invocation
+lived only in the removed container, and the arm difference above makes it load-bearing. Whoever
+re-runs this must write BOTH serve commands into the entry. `--model-label` is in the invocation
+deliberately; the fifteen runs behind this entry omitted it, and the entry below says what that cost.
+
+CLOSES when a matched-serving re-run exists: both arms on the SAME `--kv-cache-dtype` and the SAME
+`--max-model-len`, at 32K or with the shortfall priced on the CoD task, with the ticker recall
+regression pinned by a test. Until then this entry is a measured COMPARISON and not a swap decision,
+and `CLAUDE.md` §MODEL_ACCEPTANCE governs.
+
+### An acceptance scorecard names NO MODEL in its headline field, and does it silently [2026-09-06]
+All fifteen scorecards behind the entry above read `"model": "unspecified"` at the top level. The
+real id is in the file -- `adapter_metadata.model` carries `Qwen/Qwen2.5-32B-Instruct-AWQ` and
+`cyankiwi/Qwen3.8-27B-AWQ-INT4` with their revisions -- so nothing was lost HERE, because the
+provenance sidecar was passed and this entry re-reads it. THAT IS THE POINT: the artefact whose whole
+purpose is to say which model earned a score has a field for exactly that, and it defaults to a
+string that looks like a value.
+
+MECHANISM, one line: `--model-label` has `default="unspecified"`
+(`LlmBenchmark/scripts/eval_harness.py:1714`) and is written verbatim into the scorecard
+(`LlmBenchmark/scripts/eval_harness.py:1474`). Omit the flag and the run is scored, stamped
+`production_prompt_path: true`, and filed under a model name of "unspecified" -- no warning, exit 0.
+CHECKED, because the opposite was assumed first: all eight committed scorecards in
+`LlmBenchmark/eval-substrate/` carry a real label (`Qwen3.8-27B-AWQ-INT4 (no-think) @ vllm-0.19.0`
+and siblings), so the convention has held by DISCIPLINE for eight runs and broke on the ninth
+occasion anyone forgot the flag -- which is what an optional flag with a plausible-looking default
+guarantees eventually. §MODEL_ACCEPTANCE turns on comparing a candidate's scorecard to the
+incumbent's; a comparison whose two sides are both labelled "unspecified" is decided by whoever
+remembers which file was which.
+
+This is the TOOL_UPKEEP shape `CLAUDE.md` names: the tool fails toward SUCCESS. There is no dull
+reading, no missing-field error, no null -- the scorecard is complete and internally consistent and
+says nothing about the model.
+
+FIX, not applied here (this PR is docs-only): default the label to `adapter_metadata["model"]` when
+`--adapter-meta` supplied one, and emit the literal `"unspecified"` ONLY when neither source has a
+name -- at which point a scorecard that carries no model id anywhere is worth a warning on stderr.
+The data is already in the process; the defect is that the two fields never meet.
+
+**THE SAME SIDECAR HAS NO FIELD FOR HOW THE ENGINE WAS SERVED, AND THAT ONE IS NOT A FORGOTTEN
+FLAG.** `run_model.provenance` carries `endpoint`, `engine`, `engine_version`, `model`,
+`model_revision` and the full `sampling` block, and NO field for `kv_cache_dtype`, `max_model_len`,
+`gpu_memory_utilization` or `quantization` -- no CLI flag accepts them either. Two arms served with
+DIFFERENT KV dtypes therefore differ in their sidecars only in timings and token counts; NOTHING
+records the serving difference, and the scorecard pair reads like a matched one. That is not
+hypothetical: it is what happened to the A/B two entries above, where the incumbent alone carried
+`fp8_e5m2` -- a flag this file prices at ~0.05 F1 concentrated in recall -- and the confound had to
+be recovered afterwards from `nerdctl container inspect` and a hand-written engine snapshot in
+`/tmp`. An A/B harness that cannot describe the engine it measured cannot report its own dullness,
+which is this section's whole subject.
+FIX, AND IT IS CHEAPER THAN IT LOOKS -- THE DATA IS ALREADY IN THE PROCESS. `run_model.py` ALREADY
+GETs `/v1/models` and iterates the entries, taking only `d.get("id")`
+(`LlmBenchmark/scripts/run_model.py:284-286`); that same response carries `max_model_len`. The
+engine's `/metrics` exposes `vllm:cache_config_info` with `cache_dtype` and
+`gpu_memory_utilization` as labels. So three of the four are one already-open call and one scrape
+away. Record them, and refuse to stamp `production_prompt_path: true` on a run whose serving config
+could not be read.
+
+Re-check:
+```
+grep -n 'model-label\|"model": model_label' LlmBenchmark/scripts/eval_harness.py
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["model"], "|", d["adapter_metadata"].get("model"))' <scorecard>.json
+```
+2026-09-06 -> `default="unspecified"` at `:1714`, `"model": model_label` at `:1474`; on all fifteen
+runs the two-field print reads `unspecified | <the real id>`. This entry closes when the first field
+carries the second.
 
 ### Convention B measured end to end: +0.1873 `numbers_f1` AT HARNESS SAMPLING, disjoint arms, 82.4% of the ceiling [2026-09-06]
 The macro-owner decision (#1017: the SERIES owns its own print) is no longer a prediction. Both arms were
