@@ -5,6 +5,11 @@ Two harnesses for measuring Sentinel LLM extraction quality:
 - **C# xUnit** (this directory) — CoVe / CoD / epistemic-marker tracks against a golden dataset, driven through **vLLM or llama.cpp** using SentinelCollector's own clients. Produces `BENCHMARKS.md`.
 - **Python** (`scripts/`) — the 18 pinned acceptance-criteria metrics against an eval substrate, driven through any **OpenAI-compatible** engine (vLLM, SGLang, llama.cpp `/v1`) by `run_model.py`. Every run records the engine build, so a number can be told to be stale.
 
+> **Before comparing any two scorecards, read [`MEASUREMENT_SPACE.md`](MEASUREMENT_SPACE.md).**
+> A score is a property of a POINT in a 10-axis configuration space, not of a model. Four of
+> those axes are not yet recorded in the scorecard, and a comparison whose arms differ on one
+> of them is unfalsifiable rather than merely imprecise.
+
 ## Overview
 
 LlmBenchmark is the GPU-extraction track's accuracy gate for ATLAS Sentinel. It exercises the exact production code paths in `SentinelCollector` (`ChainOfVerification`, `ChainOfDensity`, the same `src/prompts` directory) against a pinned golden dataset and emits per-entry + aggregate scores (precision / recall / F1, timing, epistemic-marker recall). It is **not** a service: no container, no ports, no deployment — it runs inside the `SentinelCollector` devcontainer via `dotnet test`. The current leaderboard lives in `BENCHMARKS.md`.

@@ -228,6 +228,9 @@ ANTI: ✗ batch maintenance into its own phase # that is regrinding, after month
 
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]
 MODEL_ACCEPTANCE [replaces the old `MODEL_SIZE >= 30B`] [HARD_STOP]:
+  HOW TO MEET THIS BAR: LlmBenchmark/MEASUREMENT_SPACE.md -- a score belongs to a POINT in a
+    10-axis space, not to a model, and 4 axes (weight quant, KV dtype, context, concurrency)
+    are recorded NOWHERE. Every cross-family number below moved 4 axes at once.
   ✗ never swap the extraction model on a size, a benchmark from elsewhere, or a publisher's claim
   ✓ a candidate ships only with a SCORECARD from LlmBenchmark that BEATS the incumbent's, produced
     by scripts/run_model.py on PRODUCTION'S PROMPT PATH (--task cod --endpoint-mode completions
