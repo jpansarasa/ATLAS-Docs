@@ -16,7 +16,7 @@ different measurement of the same thing.
 
 | # | Axis | Values we have actually run | Recorded in the scorecard? |
 |---|------|------------------------------|----------------------------|
-| 1 | Engine + build | vLLM 0.19.0, vLLM 0.28.0, llama.cpp | YES, fail-closed (`run_model.probe_engine`) |
+| 1 | Engine + build + ITS DEPENDENCY STACK | vLLM 0.19.0, 0.28.0, llama.cpp; and the image's own `transformers` version | PARTLY -- engine build is fail-closed (`run_model.probe_engine`); the image's dependency versions are recorded NOWHERE |
 | 2 | Model family + size | 9 families / 14 rows in BENCHMARKS.md; Qwen 2.5-32B, 3-30B, 3-32B, 3.8-27B, Gemma 3-27B, Gemma 4-31B, GLM-4.7-Flash, EXAONE 4.0-32B, Command-R-35B, Mistral-Small-24B, phi4-14B, deepseek-r1-32B, llama3.3-70B | YES, `model` + `model_revision` (HF cache ref) |
 | 3 | Weight quantization | see VERIFIED QUANT COORDINATES below -- the repo names are NOT the schemes | NO -- was inferred from the repo NAME, which is a convention, not a field |
 | 4 | KV cache dtype | fp8_e5m2, fp8_e4m3, unquantized | NO |
@@ -128,6 +128,53 @@ honest: those rows came from the retired client that dropped the seed, so the ma
 reproducible. The lesson is that the axis is real and big, not that 7.9pp is the number.)
 The engine is not a detail to be held constant by luck.
 
+## MEASURED: THE RULE PAID OUT ON ITS FIRST TEST [2026-09-06]
+
+`BENCHMARKS.md` records Gemma 3 27B as `0.0% | TIMEOUT | ERROR | FAIL`, with the finding
+"too slow, times out on both test cases". Re-qualified at a feasible point on production's
+own CoD path:
+
+  Gemma 3 27B  numbers_f1 0.6220 (n=2, sd 0.0151, range 0.6113-0.6327)
+  incumbent    numbers_f1 0.5153 (n=5)                                 d = +0.107
+
+It BEATS the model currently in production, and it is not slow: 40 gold articles in 103.7s
+and 103.1s wall at concurrency 6, 0 call errors, 0 schema_invalid, 0 truncated, every
+finish_reason "stop". Coordinate: vLLM 0.19.0, RedHatAI/gemma-3-27b-it-quantized.w4a16,
+compressed-tensors pack-quantized, fp8_e4m3 KV, max_model_len 32768, max-num-seqs 16,
+util 0.95, KV pool 47,296 tokens, TRITON_ATTN -- identical to the candidate's serving point
+in every axis but the model and its quant format.
+
+The original zero was an ENGINE and DECODING artifact: llama.cpp with grammar-free
+generation and salvage-parsing, against vLLM with `response_format` json_schema here. A
+whole model family was written off on a coordinate we no longer run, in a decoding mode this
+project bans.
+
+TWO FURTHER ELIMINATIONS WERE RE-EXAMINED AND ONE STANDS, AS A COORDINATE FINDING:
+  llama3.3-70B    NO feasible point at any vLLM-servable quant. 4-bit weights ALONE are
+                  37.0-40.8 GiB on a 31.8 GiB card, before one KV byte. fp8 KV is irrelevant:
+                  the binding constraint is WEIGHTS. Sub-4-bit exists only as exl2/exl3/AQLM,
+                  which vLLM does not serve. That is a statement about our hardware, not the
+                  model, and it is the correct SHAPE for a negative result.
+  Command-R 35B   the v01 build has no GQA -- 64 kv_heads x 40 layers = 640 KiB/token, 5x the
+                  incumbent -- and its max_position_embeddings is 8192, so it was NEVER a 32K
+                  model. The old "OOM at 32K" was asking for something the checkpoint could
+                  not do. The family's CURRENT build (32B, WITH GQA, 80 KiB/token) is what
+                  should have been tested.
+
+## A NEW AXIS, FOUND BY TRIPPING OVER IT
+
+Gemma 4 31B failed to boot on the pinned vLLM image: it ships `transformers` 4.57.6, which
+cannot parse `model_type: "gemma4"`. vLLM 0.19.0 itself DOES register
+`Gemma4ForConditionalGeneration` -- so "the engine supports this model" was true and the
+engine still could not load it. Fixed with a derived image bumping ONLY transformers to
+5.16.1, torch and vLLM held.
+
+THE ENGINE VERSION IS NOT THE ENGINE. `probe_engine` records `0.19.0` for both the image that
+loads Gemma 4 and the one that cannot, so two runs that differ in whether a model can exist
+at all stamp the identical engine coordinate. A model eliminated on this axis would look
+exactly like a model that failed on its merits -- which is how Gemma got eliminated the first
+time.
+
 ## THE COUPLING THAT MAKES THIS HARD
 
 Axes 2-5 are coupled BY THE GPU. You cannot hold KV dtype and context fixed while swapping a
@@ -199,3 +246,5 @@ by whoever last read it, which is the failure mode that produced the 0.067 sprea
   findings ("no feasible point under X"), and recording them as 0.0% defames the model for good
 ✗ never conclude a FAMILY is weak from rows that were never served at a feasible point; the
   candidate set is 9 families, and most of them we eliminated on OUR configuration, not on theirs
+✗ never read a matching engine VERSION as a matching engine -- the image's dependency stack
+  (transformers, torch) decides which models can load at all, and it is recorded nowhere
