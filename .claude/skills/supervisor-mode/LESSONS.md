@@ -1,436 +1,130 @@
 # SUPERVISOR_LESSONS
 
-Lessons paid for once, kept where every dispatched agent can read them.
-Here and not in supervisor memory because subagents cannot read `~/.claude/projects/.../memory/` — so the supervisor
-hand-transcribed them into briefs, which grew past 700 words and corrupted two of them on 2026-08-07/08.
+Generalizations paid for once, kept where every DISPATCHED AGENT can read them # subagents cannot read supervisor
+memory, so a lesson filed there gets hand-transcribed into briefs, and two were corrupted that way on 2026-08-07/08.
+A LESSON IS A GENERALIZATION YOU CAN APPLY SOMEWHERE ELSE. One that names a single incident and dies when that
+incident is fixed is a commit message: it belongs in git, or in docs/BACKLOG.md carrying its measurement.
 
 ## GRADUATION_RULE [read before adding anything]
-A lesson's goal is to STOP being a lesson. Encoded into a template, hook, guard test or checklist -> DELETE it here and
-  name where it now lives # a lesson enforced in two places drifts in one of them
-This file must SHRINK as often as it grows # an append-only lessons doc becomes the thing nobody reads, and then every
-  lesson in it is lost a second time
-ADD nothing already enforced elsewhere -> cross-reference under ALREADY_ENCODED instead.
-CITE section anchors, never file:line # numeric citations rotted three times in one day
-WRITE_TRIGGER: a defect RECURS -> entry here. Once is an incident; twice is a lesson.
-  A first occurrence goes to **docs/BACKLOG.md**, NOT to STATE.md # STATE.md is wiped at every epic boundary, so an
-  incident parked there makes the SECOND occurrence unrecognisable and the lesson is never earned. BACKLOG is what
-  carries an incident ACROSS epics until it recurs; keeping first occurrences out of here is what keeps this file
-  short enough to be read.
-  WHICH STORE [never both]: can a DISPATCHED AGENT act on it? -> here, and the memory entry becomes a POINTER.
-    Is it the supervisor's own judgement or recall? -> memory only.
-  Write at the VERDICT, not the retro: recording a BLOCK for a class you have blocked before IS the second occurrence.
-RULE_MUST_BE_CHEAP: the RULE names the CHEAPEST SUFFICIENT action, not the most correct one # measured 2026-08-13:
-  L2 existed, was exactly on point, and did NOT fire — its remedy was "dispatch an agent", disproportionate against a
-  one-line refutation, so it was skipped. If the only sufficient remedy IS expensive, say so and expect it to be
-  skipped under pressure — an unaffordable rule is a rule that does not exist.
-FORMAT per entry: the lesson in one line / OCCURRENCES the instances that earned it (two minimum — this is what
-  makes WRITE_TRIGGER auditable; L1-L11 carry theirs inside EVIDENCE) / EVIDENCE re-checkable in ~3-5 lines (date,
-  command, measured outcome) / APPLIES where / RULE what to do instead / GRADUATES to what.
-  GRADUATES IS NOT OPTIONAL and must be CHECKABLE — name the observable state that retires the entry, so a later
-  session can test it. An entry with no exit condition is permanent by construction, which is how this file stops
-  shrinking. # measured 2026-08-17: three of five new entries had none
-GRADUATE_CHECK per entry, and it is what makes GRADUATES more than a sentence: a SHELL PREDICATE, run from the repo
-  ROOT, that EXITS 0 WHEN THE LESSON HAS GRADUATED. Copy-pastable as written — no variables the runner supplies.
-  `GRADUATE_CHECK: none — judgement` is the legal honest value for a criterion no predicate can express, the way a
-  service card writes `DECISIONS: none`. Spell it; silence is a finding, not an abstention.
-  `scripts/new-epic.sh` RUNS every one at each epic boundary and REFUSES the reset while any exits 0, naming the
-  lesson and printing its GRADUATES clause. That is the out-flow this section described for months and never had:
-  13 of 14 entries already carried a GRADUATES clause and not one had ever been tested.
-  FAIL DIRECTION: a predicate whose files moved goes non-zero, so the lesson is RETAINED, never silently deleted —
-  over-retention is the cheap error. The expensive one is a check that CANNOT RUN, which is silence wearing a
-  verdict, so rc 124/126/127 (timeout, not-executable, command-not-found) is reported as a BROKEN CHECK and blocks.
-  A refusal is a PROMPT FOR JUDGEMENT, not an auto-delete: promote the lesson and remove it, or re-run with
-  `--evicted` once you have recorded why not.
-  ONE of these keys on an artifact's NAME (L15 `*corpus*`) because its criterion is about a tool that does not
-  exist yet and has no other observable. It fails toward not-graduated; when you build the tool, name it so, or
-  rewrite the line in the same PR. L11 used to key on a name too and now reads the file's non-comment content.
-  MATCH THE ARTIFACT, NEVER THE PROSE ABOUT IT — the failure this block exists to stop, and it is not
-  hypothetical: L8's second half was `grep -rq verify-citations .claude/hooks/`, standing for "and a hook runs the
-  tool". That directory holds executables AND `mark-verified.log`, an append-only audit file whose rows are prose
-  an AGENT writes about its own work, so the only match in it was a row citing "verify-citations 492/27" and the
-  gate reported GRADUATED on its first real run against main. A tool's own bookkeeping satisfied the check for
-  the tool being wired. So, when you write a predicate:
-    ✓ scan FILES, not directories — and where a directory is unavoidable, restrict it to what the clause means
-      (`-perm -u+x` for "a hook", `--include='*.yml'` for "a rule")
-    ✓ exclude comment lines (`grep -v '^[[:space:]]*#'`) when the clause says the artifact DOES something —
-      a string in a comment is prose too, and this is the whole of L8b's weakness
-    ✓ require the WIRING where being wired is the point: a hook nobody registered in `.claude/settings.json`
-      never runs, so it is not "a hook runs it"
-    ✗ never end a listing pipeline with `xargs -r grep -q` — empty input makes `xargs -r` exit 0, which the gate
-      reads as GRADUATED. Terminate with `| grep -q .`, as L4 and L8 do
-  THESE LINES EXECUTE. LESSONS.md is executable input to the reset gate — the same trust boundary as the script
-  itself, which anyone who can edit this file can also edit.
-  Measured 2026-09-05 on fix/graduate-check-matches-artifacts: 0 of the 14 predicates pass. Treat that as
-  suspicious, not as reassurance — it was checked entry by entry, and L8 is genuinely HALF met (`wrong_d_entry`
-  shipped in #1002; no hook runs the tool on changed files), which is why its predicate is the AND its own
-  GRADUATES clause states. The count was written as 13 here while the file held 14 entries, in the file whose
-  purpose is now accuracy.
+A lesson's goal is to STOP being a lesson: once encoded in a template, skill, hook or checklist -> DELETE it here and
+  leave a pointer under ALREADY_ENCODED # a lesson enforced in two places drifts in one of them
+SHRINK as often as you grow; add nothing enforced elsewhere. CITE anchors, never file:line # they rotted 3x in a day
+WRITE_TRIGGER: a failure RECURS -> here, at the VERDICT and not the retro; a FIRST occurrence goes to docs/BACKLOG.md,
+  which carries it across epics until it recurs. A METHOD failure leaves no artifact, so it never trips this by
+  itself -- which is why this file filled with artifact facts and stayed silent on method, the thing it exists for.
+  Its observables: a PR over its class budget (`review-discipline` ROUND_BUDGET), a proposition adjudicated a third
+  time (`re-derive` PASS_COUNTER). WHICH STORE, never both: a DISPATCHED AGENT can act on it -> here; supervisor
+  judgement or recall -> memory only.
+RULE_MUST_BE_CHEAP: name the CHEAPEST SUFFICIENT action, not the most correct one # the correction lesson existed, was
+  exactly on point, and did NOT fire: its remedy was "dispatch an agent" against a one-line refutation
+FORMAT, all five or it is not an entry: the generalization in ONE line / EVIDENCE, re-checkable / RULE / GRADUATES,
+  NAMING THE ARTIFACT THAT WILL HOLD THIS RULE and why it cannot hold it today / GRADUATE_CHECK. Naming the
+  destination at WRITE time IS the out-flow -- the in-flow fires at every verdict and the audit only at ~10-day epic
+  boundaries, so an entry that never named where it was going becomes the queue that invites `--evicted`. An entry
+  whose destination exists TODAY is not an entry; it is an edit to that artifact.
+GRADUATE_CHECK: a shell predicate, run from the repo ROOT, copy-pastable, EXITING 0 ONCE THE LESSON HAS GRADUATED;
+  `none -- judgement` is the honest value and an absent line is silence wearing a verdict. `scripts/new-epic.sh` runs
+  every one at each epic boundary and REFUSES the reset while any exits 0 -- promote that lesson and delete it, or
+  record why not and re-run `--evicted`. Over-retention is the cheap error; a check that CANNOT RUN (rc 124/126/127)
+  blocks as broken. MATCH THE ARTIFACT, NEVER THE PROSE ABOUT IT: scan FILES not directories, exclude comment lines
+  where the clause says the artifact DOES something, require the WIRING where being wired is the point, and never end
+  a listing pipeline with `xargs -r grep -q` whose empty input exits 0 and reads as GRADUATED # a directory grep once
+  matched an agent's own audit-log prose about running a tool and reported the tool wired
+  THESE LINES EXECUTE -- the same trust boundary as the script that runs them.
 
 ## ALREADY_ENCODED [go there, never restate here]
-Every line NAMES the mechanism that enforces it now, so removing that mechanism removes a visible pointer
-  instead of silently losing the lesson # a deleted entry with no pointer cannot be told from one never earned
-verify a claim before relaying it -> SKILL.md TIER1_CLAIM_CHECK + `templates/claim-verification.md`
-two reviewers need DIFFERENT lenses -> SKILL.md TIER1_CLAIM_CHECK TWO REVIEWERS + REVIEW_FIX_LOOP LENSES
-a measured number in a brief is a hypothesis -> `templates/implementation-fix.md` Notes for the supervisor
-findings are claims, verify each before fixing -> `templates/implementation-fix.md` TRAJECTORY step 2
+Every line NAMES the mechanism enforcing it now, so removing that mechanism removes a visible pointer instead of
+  silently losing the lesson # a deleted entry with no pointer cannot be told from one that was never earned
+a brief's numbers, cited lines, root causes and severities are HYPOTHESES, and findings are claims verified before they are fixed -> `templates/implementation-fix.md` TRAJECTORY step 2 # was L1
+a CORRECTION is a claim, and a refutation licensing a DELETE gets a derivation -> `.claude/skills/re-derive/SKILL.md` + `templates/claim-verification.md` step 7 # was L2
+prune a finished agent's worktree, sweeping for STAGED indexes and not only for held branches -> `templates/implementation-fix.md` Notes for the supervisor # was L4
+a fix round fixes what you NAME and adds what you did not ask for -> `templates/implementation-fix.md` CONSTRAINTS, the ceiling-not-floor bullet # was L9
+build AFTER the final commit; the marker keys to the TREE -> CLAUDE.md GIT_PUSH + both dispatch templates + `.claude/hooks/commit-marker-staleness.sh` # was L10
+a hand-rolled measurement harness fails toward SUCCESS unless you stop it -> `templates/recon-measurement.md` TRAJECTORY step 3 # was L13
+a guard matching a DESCRIPTION of an act inherits the whole grammar of the description, so a fix that handles one more grammar construct is priced out loud as converging on a reimplementation of bash, and a bypass is bisected across the branch's OWN commits with over-denial reported beside it -> `.claude/skills/guard-change/SKILL.md` item 9 (GRAMMAR INHERITANCE and PRICE IT OUT LOUD), 18 and 16; the review-method half -> `review-discipline` FORCED_PASS # was L14
+a guard whose scope includes its own SOURCE makes its own repair unreachable -> `guard-change` item 14; the open defect is docs/BACKLOG.md, the gate-layer deadlock entry # was L16
+an alert that fires by ACCIDENT is not coverage -> CLAUDE.md OBSERVABILITY; the six ungauged D-18 series are docs/BACKLOG.md # was L17, whose enumerate-from-the-DATA-side half is NOT there and survives in L11 below
+a command reporting its own limit, warning or truncation has ANSWERED you -> `templates/claim-verification.md` step 8 # was L18
+verify a claim before relaying it, and give two reviewers DIFFERENT lenses -> SKILL.md TIER1_CLAIM_CHECK + REVIEW_FIX_LOOP LENSES + `templates/claim-verification.md`
 what a guard test must do to count -> `.claude/skills/intent-review/SKILL.md` GUARD_TEST_CONTRACT
 what the verdict marker attests -> SKILL.md MERGE_GATE + `.claude/hooks/README.md` PR Review Verdict Gate
-gate the ACT not a spelling; a FAST oracle answering a different question is still wrong (`@{push}` reports where the
-  BRANCH would go, not what the push would WRITE) -> `.claude/skills/guard-change/SKILL.md` CHECKLIST item 9
-find a recorded DECISION about a PR (BLOCKED, do-not-merge, superseded) BEFORE reviewing its code -> SKILL.md
-  MERGE_GATE SEQUENCE, step 0 # the incident that earned it is in docs/BACKLOG.md, filed under #935
-analysis is not a review record; the Skill invocation is what makes a verdict possible -> SKILL.md MERGE_GATE,
-  fail-closed at both ends by `.claude/hooks/pr-review-marker.sh` (sole writer of the pending record) and
-  `scripts/claude-pr-verdict`, which exits 1 without it # was L3
-one merge act per Bash invocation -> `.claude/hooks/git-push-guard.sh` denies any command carrying more than one,
-  and SKILL.md RED_FLAGS carries the stop-line # was L5
-prose quoting a gated push or merge form trips that gate; pass long text by path -> `.claude/hooks/README.md`
-  Accepted cost explains it. Whether the DENY says so depends which one fires: both merge denies name the remedy
-  (`git commit -F`, `gh pr comment --body-file`), and so does the two-pushes-merged-into-one-span push deny; the
-  three a quoted push actually reached in probing do not — `push origin main` answers "use a feature branch", a
-  name main lacks answers "the branch does not exist … check 'git branch --list'", and a second `git push`
-  anywhere in the line answers "Run the pushes as separate commands" # was L6; round 1 said the denies name it and
-  round 2 said they do not, and the narrow form is the only true one
-squash merge makes commit reachability answer NO for work that landed -> SKILL.md RED_FLAGS; ask the PR's state
-  or compare CONTENT # was L7
+find a recorded DECISION about a PR (BLOCKED, do-not-merge, superseded) BEFORE reviewing its code -> SKILL.md MERGE_GATE SEQUENCE step 0
+analysis is not a review record -> SKILL.md MERGE_GATE, fail-closed by `.claude/hooks/pr-review-marker.sh` and `scripts/claude-pr-verdict` # was L3
+one merge act per Bash invocation -> `.claude/hooks/git-push-guard.sh` denies any command carrying more than one + SKILL.md RED_FLAGS # was L5
+prose quoting a gated push or merge form trips that gate; pass long text by path -> `.claude/hooks/README.md` Accepted cost # was L6; only the merge denies and the two-pushes deny name the remedy
+squash merge makes commit reachability answer NO for work that landed -> SKILL.md RED_FLAGS; ask the PR's state or compare CONTENT # was L7
 
 ## LESSONS
 
-L1 Brief a MECHANISM as a hypothesis, never as a specification.
-  EVIDENCE: 2026-08-07/08 briefs named a line number that had moved (`deploy.yml:972`), a root cause that was real but
-    mislocated, and a rule the code does not implement ("ambiguity on EITHER side denies", struck after measurement).
-    Each was caught by the dispatched agent.
-  APPLIES: every impl, fix and review brief — line numbers, root causes, severity rankings alike.
-  RULE: label them "hypothesis, verify before acting"; an agent refuting one is the round's value, not a deviation.
-    # a brief stated as fact is obeyed, and a wrong fact is obeyed into code
-  GRADUATES: when `templates/implementation-fix.md` widens "every measured number" to "every measured number, cited
-    line, root cause and severity".
-  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -qi 'cited line' $T/implementation-fix.md && grep -qi 'root cause' $T/implementation-fix.md && grep -qi severity $T/implementation-fix.md
+L8 A PROXY DOES NOT MOVE WITH THE THING IT STANDS FOR, and when it stops tracking it fails in the direction that
+  reads as SUCCESS. A reference is a proxy for the content at a position; an mtime is a proxy for freshness.
+  EVIDENCE: #1002, 2026-09-04 -- 8 lines above a card's DECISIONS block moved D-18 from `:85` to `:93`. Two docs
+    cite `:84`: BLANK on main and FLAGGED, landing on D-13 on head and QUIET, so cannot-land FELL BY ONE as the
+    citation went wrong. #1004, 2026-09-05 -- a `mv` restore put content below the built mutant's DLL mtime, so
+    every later run scored the FIRST mutant's binary.
+  RULE: verify against the THING, never the proxy -- the CONTENT a reference should land on, the ARTIFACT a build
+    should have produced. Content edits first and references LAST, then sweep your OWN diff and compare the
+    unresolved SET against a pristine baseline (never a count, never an rc: both sides are rc 1 here). `touch` after
+    BOTH a mutate and a restore, then require one mutant SHOWN to have compiled -- never the test result, which is
+    the thing under suspicion.
+  GRADUATES: TWO halves, both open, so graduating one is not graduating the entry -- split it then. (a) when
+    `scripts/verify-citations.py` resolves to the NAMED CONSTRUCT rather than a live line AND a hook runs it on
+    changed files (the `D-n` class shipped in #1002, no hook is wired). (b) when a SHARED mutation helper asserts
+    the built artifact CHANGED, instead of a harness hand-rolled per round.
+  GRADUATE_CHECK: H=$(find .claude/hooks -type f -perm -u+x -exec grep -l '^[^#]*verify-citations' {} +); grep -q WRONG-D-ENTRY scripts/verify-citations.py && [ -n "$H" ] && printf '%s\n' "$H" | sed 's|.*/||' | grep -qFf - .claude/settings.json && test -x scripts/mutate-verify.sh && grep -v '^[[:space:]]*#' scripts/mutate-verify.sh | grep -qwE 'cmp|strings|sha256[a-z]*'
 
-L2 A CORRECTION is a claim. Verify it before amplifying it.
-  EVIDENCE: 2026-08-13, and this entry EXISTED and did not fire. A reviewer called "the console bounds the token figure
-    from above" false, testing it against the $1.76-2.86/day BAND (a value inside an interval bounds it from neither
-    side) when the sentence's subject was the token LEG (console = token cost + an unseen fee >= 0, so console >= token
-    cost, true by construction). Every number in the refutation was right; only the SUBJECT differed. Relayed as
-    CRITICAL, it deleted a true sentence from four files including a D-entry's INTENT. Two rounds to detect and undo.
-    Earlier: a "50 survivors summing to 58" defect (50/58 is the CORRECT pair); an `rm -rf "/"` hazard that cannot
-    occur (the expansion is one empty argument).
-  APPLIES: any report that CORRECTS an earlier claim — a correction arrives framed as the fix, so it skips the check
-    the original claim would have got.
-  RULE: run it through TIER1_CLAIM_CHECK like the claim it corrects — AND when it says "X is false", restate X's
-    proposition in your own words and NAME ITS SUBJECT first. One sentence of work. Arithmetic-flavoured refutations
-    are the dangerous ones: every number can be right while the quantity they are about is the wrong one.
-  ASYMMETRY [why this outranks an ordinary claim check]: acting on a false ordinary claim ADDS something wrong and the
-    next review catches it. Acting on a false refutation DELETES something right — and deletion is the one edit later
-    review CANNOT audit, because reviewers read what is in the tree, not what used to be. Raise the bar highest when
-    the refutation licenses a delete. # three agents disagreed across three rounds over `0.81%`; it was right from the
-    start. Chained refutations converge on noise unless someone RE-DERIVES the quantity instead of adjudicating the
-    previous opinion.
-  GRADUATES: when `templates/claim-verification.md` names corrections as in-scope AND carries the restate-the-subject step.
-  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -qi correction $T/claim-verification.md && grep -qiE 'restate[^.]*subject|name its subject' $T/claim-verification.md
+L11 An instrument that dies silently scores its silence as a PASS -- and coverage can never be enumerated from the
+  instruments that EXIST, because the missing one is precisely what a census of them cannot show.
+  EVIDENCE: an alert rule oscillating pending -> inactive through a real resolution rate of ~3%: 24 pending cycles, 0
+    fires in 24h, in a file whose promtool suite asserted only silence. GeminiResolverNotResolving fired only because
+    rejected calls consumed cap slots -- undesigned, and switched off silently by fixing the accounting. A
+    shuffled-gold control averaged a 4x breach into a pass, invisible to its own mutation test: at n=1 the aggregate
+    IS the unit (#1016).
+  RULE: adding or changing an alert rule -> ONE `promql_expr_test` asserting `alertstate="firing"` on input shaped
+    like the real traffic, BURSTS WITH GAPS for this fleet; a test showing only silence has pinned nothing. Mutate
+    any control at THE SCALE IT SHIPS AT -- poison one unit, pad with clean ones to the documented usage AND one past
+    it, make the complaint NAME the offending unit, and read an unstated n as n=1. Enumerate coverage from the DATA
+    side: grep the config that would HAVE to mention the thing you care about.
+  GRADUATES: BOTH -- the alert-rules CI step fails any rule file holding an `alert:` with no positive assertion
+    naming it, AND intent-review GUARD_TEST_CONTRACT requires a scale-matched mutation. Neither artifact can hold the
+    rule today: no coverage checker exists beside `check-matchers.py`, the contract is silent on aggregates. Keep the
+    `consumed cap` clause above -- two hook fixtures cite it by that phrase as their provenance.
+  GRADUATE_CHECK: S=.claude/skills/intent-review/SKILL.md; grep -v '^[[:space:]]*#' deployment/tests/alerts/run.sh | grep -qE 'check-[a-z-]*coverage' && grep -qiE 'scale-matched|pad(ded)? with clean' "$S" && grep -qiE 'names? the (offending|breaching) (unit|run|record)' "$S"
 
-L4 Prune the finished agent's worktree BEFORE dispatching the next agent onto that branch.
-  EVIDENCE: 2026-08-07/08 fix-round branches were repeatedly still held by the worktree of the agent that had finished
-    with them — the next agent stalls or branches off a stale copy. 2026-08-13 it became a DESTRUCTION hazard: FOUR
-    abandoned worktrees held a live branch with the whole change STAGED AS DELETIONS (1,301 on one, 357 on another).
-    A bare `git commit` in any of them rewrites the branch and silently reverts merged work. HEAD follows the ref so it
-    LOOKS current; the stale thing is the index. My own cleanup missed a second instance after reporting it closed.
-  APPLIES: every fix round, every re-dispatch onto a finished branch, and every dispatch that ENDS — the hazard is what
-    it leaves behind.
-  RULE: the supervisor prunes; the agent takes the branch with `git checkout --ignore-other-worktrees` and never
-    deletes another agent's worktree. That flag is what permits several worktrees on ONE branch, so the instruction
-    that fixes the dispatch is what creates the hazard — sweep for STAGED CHANGES across ALL worktrees, not just for
-    held branches, and require every dispatch to release its branch leaving nothing staged.
-  GRADUATES: when a pre-dispatch check lands in the templates or a hook AND it checks `diff --cached`, not merely which
-    branch is held.
-  GRADUATE_CHECK: { find .claude/hooks -type f -perm -u+x; find .claude/skills/supervisor-mode/templates -type f -name '*.md'; } | xargs -r grep -l -- '--cached' | xargs -r grep -l 'worktree list' | grep -q .
-
-L8 Repair citations LAST, and treat every fact-shaped claim as a citation.
-  EVIDENCE: 2026-08-12/13, one PR chain. Round 2 repaired ONE line citation and broke FOURTEEN (its own edits shifted
-    `server.py`), in a commit whose message NAMED that class. Round 4 re-ran its own sweep and still shipped two,
-    because the sweep resolved `file:line` while the new breakage was in COUNTS and ROSTERS ("the four tests beside it"
-    after the list grew to 6; a doc saying a card holds D-1..D-4 after D-5/D-6 landed, which would make the next agent
-    mint a colliding D-6). Round 5's edits shifted 27 more, including D-6's own GUARD.
-  APPLIES: any edit to a file a D-entry, card or CLAUDE.md cites INTO — which is most service code.
-  RULE: content edits first, citations last, then re-run over your OWN diff. Enumerate the KINDS of fact-shaped claim
-    before sweeping (line numbers, counts, rosters, "N tests", "the three files"). Best of all DELETE the derived
-    spelling: a bare count beside an enumerated list is one fact written twice, which IS the defect.
-  A GREEN SWEEP IS NOT PROOF: `scripts/verify-citations.py` is content-blind by design — it flags BLANK and
-    out-of-range only, so a citation drifted onto a comment, a brace or an unrelated task reads GREEN, and ranges are
-    blank-checked at the START only. Every instance found was found by READING the entry. Two were wrong the DAY THEY
-    WERE WRITTEN, off by 4 lines — citations ship broken, they do not only rot.
-  THE COUNT CAN IMPROVE WHILE THE CITATION GETS WORSE -- so compare the SET, never the DIRECTION [2026-09-04, #1002,
-    third instance in ONE PR]: the PR added 8 lines above a card's DECISIONS block, moving D-18 from :85 to :93. Two
-    docs cite `:84`. On main `:84` was BLANK and the tool FLAGGED it; on head it lands on D-13 and the tool went
-    QUIET. Baseline, and re-derive it rather than quoting this line -- `mapfile -d '' F < <(git ls-files -z '*.md')`
-    then `python3 scripts/verify-citations.py --quiet "${F[@]}"`, once per pristine checkout: 474 citations /
-    30 cannot-land at base c761e7b4, 483 / 29 at 91ec2319. ANCHOR THE PAIR TO ITS TWO SHAS; a sweep figure with no
-    sha attached is the rot itself, and every figure here moves with the next doc edit. The cannot-land count FELL
-    BY ONE while that citation became WRONG, and a citation pointing at the WRONG D-entry is worse than one
-    pointing at nothing -- it reads as valid to every later reader. CLAUDE.md TOOL_UPKEEP already mandates a
-    pristine-baseline comparison; this is the case that defeats a careless one, because "cannot-land went down"
-    reads as an improvement. DIFF THE SET of unresolved citations, and treat any citation LEAVING that set as
-    suspect until you have read where it now lands. AND THIS LESSON'S OWN BASELINE SHIPPED WRONG, as head 487,
-    and survived a review round saying so: 487 was true the day it was measured and dead 65 seconds before it
-    was committed here, because the commit immediately preceding removed four citations by re-anchoring them to
-    symbols and nobody re-swept. It had already been copied into two other documents by then. A count captured
-    BEFORE an edit and written AFTER it is a citation by any other name and rots on the same clock -- which is
-    why the command that produces it now sits beside it. Same round: a targeted repair fixed the one citation it
-    noticed (D-4) and swept none of the file's other consumers -- L9's naming failure, inside the commit whose
-    own subject line names this class.
-  GRADUATES: when the tool resolves a citation to the NAMED CONSTRUCT rather than a live line, and a hook runs it on
-    changed files. Until then this is judgement, not tooling. IN PROGRESS 2026-09-04 (#1002 round 4): making it assert
-    that a `D-n` citation lands on a line CONTAINING that `D-n`, with a wrong-entry fixture as its known-bad control.
-    That graduates the D-entry class ONLY -- non-D-entry content drift stays judgement.
-  GRADUATE_CHECK: H=$(find .claude/hooks -type f -perm -u+x -exec grep -l '^[^#]*verify-citations' {} +); grep -q WRONG-D-ENTRY scripts/verify-citations.py && [ -n "$H" ] && printf '%s\n' "$H" | sed 's|.*/||' | grep -qFf - .claude/settings.json
-
-L8b A MUTATION HARNESS CAN TEST A STALE BUILD, AND THAT SCORES MUTANTS AS KILLED [2026-09-05, #1004].
-  EVIDENCE: an agent's throwaway harness restored files with `mv backup file`. That restores CONTENT but
-    rewinds MTIME below the already-built mutant DLL, so MSBuild skipped the rebuild and every later run
-    silently exercised the FIRST mutant's binary. It surfaced as a confident, reproducible "your fix is
-    broken" -- logs showed the guard running and logging its tag while the row read back untagged. The
-    agent chased it to evidence rather than editing code, and confirmed by mtime plus a DLL string check.
-  WHY IT MATTERS MORE THAN THE INCIDENT: it failed LOUDLY, which is the lucky direction. The identical
-    defect while testing the UNMUTATED tree scores every mutant KILLED without compiling one, and a
-    mutation matrix is precisely the instrument we trust when we distrust a green suite. Same round, the
-    reviewer found THREE of six recorder sites had been GREEN under mutation all along -- so an
-    unverified matrix is not hypothetical here, it had already happened.
-  APPLIES: any mutate-build-test loop, and any restore that uses `mv`, `cp -p`, `git stash pop` or a
-    tarball -- every one of which can hand the compiler an mtime older than its own output.
-  RULE: `touch` the file after BOTH the mutate and the restore, or force the build. Then prove the loop
-    itself: after restoring, the suite must be GREEN before the next mutant (the agent's own re-run
-    checked this), and at least one mutant must be verified to have actually COMPILED -- a DLL string
-    check or a build-log line, never the test result alone. The test result is the thing under suspicion.
-  GENERALISES [[feedback_verification_tools_fail_toward_success]]: the harness is a tool, so it needs its
-    own known-bad control. Here that control is "mutate, and confirm the binary changed".
-  GRADUATES: when a SHARED mutation helper exists that agents invoke instead of hand-rolling a harness
-    per round, and that helper itself asserts the built artifact CHANGED after the mutate -- so the
-    "did it actually compile" check rides on the tool rather than on whoever remembers. Every instance
-    so far has been a throwaway script rewritten from scratch, which is why the same defect can recur
-    with nobody having ignored the rule.
-  GRADUATE_CHECK: test -x scripts/mutate-verify.sh && grep -v '^[[:space:]]*#' scripts/mutate-verify.sh | grep -qwE 'cmp|strings|sha256[a-z]*'
-    -- scope, stated because the check is weaker than the clause: it can only see that the helper exists
-    and compares the artifact somehow. It cannot tell whether agents USE it, which is the half that
-    actually retires this lesson. Tighten it when a dispatch template names the helper.
-
-L9 A fix round fixes exactly what you NAME and adds what you did NOT ask for. Brief the class, ban the framing.
-  EVIDENCE: 2026-08-13, two PRs, seven rounds. NAMING: a reviewer named 3 stale citations; the round fixed 3 and left 3.
-    Named 3 more; found 6 — the two worst in neither list, incl. an INTERFACE CONTRACT declaring "does not throw" for a
-    client that throws and whose D-entry guard fires ONLY because it throws. The round that worked was told "do NOT fix
-    the three I name — search for the PROPOSITION and report the COUNT before the fixes."
-    FRAMING: successive rounds shipped 7, then 5, then 3, then 1 NEW false claims, every one from explanatory prose the
-    round volunteered while fixing something else. The round that added zero was told "correct these sentences and add
-    NOTHING."
-  APPLIES: every fix round, and every sweep for a defect with more than one instance.
-  RULE: brief the CLASS with a searchable predicate, never a list of sites; require the count BEFORE the fixes; treat
-    "more than you named" as the useful result. Forbid volunteered framing — the ONE justified addition is a clause
-    closing a contradiction your own edit opens. A list in the brief is the ceiling on what comes back.
-  ALSO: "report it, do not fix it" is right for JUDGEMENT and wrong for a CHEAP FACT. A round surfaced "if any inactive
-    row were a series this count is wrong" and left it open; one SELECT settled it and CHANGED THE ANSWER (16 -> 17).
-    If one query closes it, close it and report.
-  GRADUATES: when `templates/implementation-fix.md` carries a "state the class, report the count first, add nothing" stanza.
-  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -qi 'report the count' $T/implementation-fix.md && grep -qi 'add nothing' $T/implementation-fix.md
-
-L10 Run the build AFTER the final commit. The marker keys to the TREE.
-  EVIDENCE: 2026-08-13, twice in one evening. An agent edited, compiled green, then committed the card and its INTENT
-    comments — comments still change `HEAD^{tree}`, so the marker keyed to the PRE-commit tree and the push gate
-    refused a tree nobody had built. Content was identical each time; only the tree hash moved.
-  APPLIES: every dispatch that both compiles and commits — most of them.
-  RULE: final commit, THEN `compile.sh`, then report the attested tree hash and check it equals `HEAD^{tree}`.
-    # one line in the brief; it removes a whole re-verification round
-  GRADUATES: when the dispatch templates carry the ordering and the report asks for the tree hash.
-  GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -q 'tree hash' $T/implementation-fix.md && grep -q 'tree hash' $T/story-implementation.md && grep -qiE 'after the final commit|final commit, THEN' $T/implementation-fix.md $T/story-implementation.md
-
-L11 An alert rule is unproven until a test asserts it FIRES. Green promtool says only that it did not crash.
-  EVIDENCE: 2026-08-14, second occurrence of the same class. `SentinelLowResolutionRate` stepped over 6h at 5m:
-    9 of 18 samples NaN (empty `rate(...[5m])` denominator across the idle gaps between bursts), the other 9 exactly
-    `0` — it oscillates pending -> inactive and never holds `for: 15m`. 24 pending cycles, 0 fires in 24h, through a
-    real resolution rate of ~3%. FIRST occurrence already in docs/BACKLOG.md: `SecMasterDiscoveryTimeoutsElevated`,
-    whose ratio a double-count pins at exactly 0.5 against a `> 0.5` test. Both rules live in files that HAVE
-    promtool suites; neither had a positive assertion naming it.
-  APPLIES: every rule in `deployment/artifacts/monitoring/alerts/` — and hardest to the ones written to catch a
-    condition that is not currently happening, because nothing on the box will ever contradict them.
-  RULE: adding or changing a rule -> ONE `promql_expr_test` asserting `alertstate="firing"` on an input series shaped
-    like the real traffic, which for this fleet means BURSTS WITH GAPS, not a steady rate. A rule whose test only
-    shows it staying silent has pinned nothing: silence is also what a rule that can never fire produces.
-    # `deployment/tests/alerts/run.sh` already executes these and check-assertion-counts.py already ratchets the
-    # count, so the cost is one fixture, not a harness
-  WHY THE CHEAP VERSION IS ENOUGH: both defects here are visible the moment you feed the rule a gappy series — no
-    soak, no prod data, no judgement about thresholds. The expensive version (measure the live distribution first) is
-    what nobody will do under pressure.
-  GRADUATES: when the alert-rules CI step fails any rule file containing an `alert:` with no positive assertion
-    naming it — a coverage checker beside `check-matchers.py`, which already resolves alertname literals and so
-    already holds both halves of the join.
-  GRADUATE_CHECK: grep -v '^[[:space:]]*#' deployment/tests/alerts/run.sh | grep -qE 'check-[a-z-]*coverage'
-
-L13 An instrument that dies silently scores its silence as a PASS.
-  OCCURRENCES: five in one session, 2026-08-15 — and the `awk` one fired TWICE, the second time while writing the
-    comment that warns about it.
-  EVIDENCE: five distinct harness failures, EVERY one biased toward false success. A relative guard path under a
-    fixture `cd` -> bash rc 127 -> every row scored invalid, reading as "the guard is broken" rather than "my probe
-    is broken". An apostrophe inside a single-quoted `awk` program closed the program, so the guard emitted NO
-    decision — which the permission layer reads as ALLOW. A suite that prints only a `PASS=<n>` summary scored 0
-    under a per-row grep: a 2,138-assertion undercount that read as green. `$(git ls-files '*.md')` unquoted
-    word-split on a path with spaces and aborted the tool two-thirds through with no summary, and the truncated
-    sweep was read as a complete one. Parallel agents overwrote each other's harness in the shared scratchpad,
-    producing an all-zero mutation result that read as "no coverage".
-  APPLIES: every measurement brief, and every harness a dispatch builds for one job and throws away.
-  RULE: absolute tool paths; abort on rc 127; syntax-check the thing under test before measuring; blob-check each
-    copy against its git object; a uniquely-named private scratch dir; and make the harness ABORT BY NAME on a
-    missing anchor rather than scoring the row. # three of the five were caught only because a harness aborted
-    instead of scoring — a tool that fails toward SUCCESS cannot be caught by reading its output
-  GRADUATES: when `templates/recon-measurement.md` carries those checks as a TRAJECTORY step, so a measurement brief
-    cannot omit them — grep that file for `rc 127`, which returns nothing today (the file exists, the checks do
-    not, so an empty result is not-yet-graduated rather than wrong-file).
-  GRADUATE_CHECK: grep -q 'rc 127' .claude/skills/supervisor-mode/templates/recon-measurement.md
-
-L14 A guard that matches TEXT instead of ACTS inherits the whole grammar — and every round attacks the NEWEST
-  mechanism, so the oldest defect is never re-attacked.
-  OCCURRENCES: `git-push-guard.sh` and `ansible-gate-guard.sh`, thirteen review rounds between them, 2026-08-15/17.
-    RECURRED 4x in one day, 2026-09-05, all the DESCRIPTION half and all outside any guard round -- ordinary work
-    tripping a gate by writing prose about it. No new lesson: the phenomenon is already named below. What was
-    missing was the remedy at the point of the act, so it is now in SKILL.md's commit-discipline stanza rather
-    than here. A worker hitting this needs one line in the template, not a lesson to have read.
-  EVIDENCE: every round found the previous round's fix broken by a piece of bash grammar it did not model — span cut
-    at metacharacters, then act-bounding, then the nesting-depth counter, then escape handling; each fix correct and
-    each creating the next surface. The tell runs BOTH ways: these guards refuse a DESCRIPTION of an act (a filename
-    quoted in a verdict reason; `2>&1` and `Rule 1` read as PR numbers) while permitting the act under a spelling
-    they do not parse. A bypass that let the gate approve one PR while the tool merged another was BISECTED to the
-    third commit and had been live through all eight rounds — every brief said "attack what the last round
-    introduced", which is correct and which left the original change permanently behind the frontier. Eleven rounds
-    measured only whether the guard refuses enough; the two that also measured whether it still PERMITS ordinary
-    work caught the swings in each direction, one of which would have locked the session out of its own repo.
-  APPLIES: every round on a text-matching guard, and every review of one.
-  RULE: bisect a confirmed bypass across the BRANCH'S OWN COMMITS, every time — it is cheap, it names the commit,
-    and it is the only thing that finds a defect older than the review that keeps missing it. Measure over-denial
-    EVERY round, not only bypasses. When a round's fix is "handle one more grammar construct", say so out loud and
-    price it: that is an approximation converging on a reimplementation of bash. # the act-not-a-spelling half of
-    this lesson is ALREADY_ENCODED above — go there, do not restate it here
-  GRADUATES: when `guard-change/SKILL.md` CHECKLIST item 18 names the ACT ("bisect every confirmed bypass across the
-    branch's own commits") and item 16 requires the over-denial count REPORTED beside the bypass count — grep that
-    file for `bisect`, which returns NOTHING today: item 18 describes the check ("Check WHEN a surviving defect was
-    introduced") without ever naming the act, so an empty grep means not-yet-graduated, not wrong-file.
-  GRADUATE_CHECK: grep -q bisect .claude/skills/guard-change/SKILL.md && grep -qi 'over-denial count' .claude/skills/guard-change/SKILL.md
-
-L15 A "nothing loosened" claim is scoped to its author's imagination. Fixing the BASELINE is necessary and not
-  sufficient.
-  OCCURRENCES: #935's seven rounds, then the salvage round built specifically to avoid #935's error — which fixed
-    the baseline, measured zero against MAIN, and was still wrong (2026-08-16).
-  EVIDENCE: every zero was measured honestly and every one was falsified by the NEXT, bigger corpus. The series is
-    the whole argument: 83 rows -> 14 loosened shapes · 181 rows -> those 14 plus 46 more · 342 rows -> 60 · 968
-    rows -> 88, 52 of them landing in `/opt` or `/etc`. **Each ~3x corpus finds ~2-6x more. NOT converging.** #935's
-    own seven rounds each measured against its PREVIOUS HEAD rather than main, were right every time, and the branch
-    drifted anyway. Corpus sizes, per-round detail and the drift-against-main figures: `docs/BACKLOG.md`, the #935
-    entries.
-  THE TELL, and every miss that week fits it: **the shape that leaks is a SPELLING VARIANT of one the fixtures
-    already cover.** Object-store rows spelled without `--`, so the `--` spelling leaked. The only destination-flag
-    row unbundled, so `-rt` leaked. The tab-stripping heredoc rows without whitespace, so `<<- EOF` leaked. The
-    heredoc row unterminated, so the terminated form — the one bash actually runs — leaked. A fixture set reads as
-    coverage of a CONSTRUCT while covering one SPELLING.
-  APPLIES: any self-authored negative offered as a merge signal ("nothing loosened", "no regressions", "no new
-    findings"), and any corpus built by whoever wrote the fix — corpus author and fix author being the SAME MIND is
-    the residual flaw once the baseline is right, and the holes are the shapes that mind was not thinking about.
-  RULE: the corpus must come from a DIFFERENT mind than the fix — say so in the brief, literally: "build your own
-    matrix; do not replay theirs". For each construct a rule names, enumerate its SPELLINGS and test each: separator
-    present/absent, flag bundled/glued/spaced, delimiter quoted/unquoted, terminator present/absent. Require the
-    corpus SIZE and the sentence "this number is only as good as this corpus" in the report.
-  GRADUATES: when an adversarial corpus is generated from the guard's own rule table rather than by hand, so the
-    spellings come from the code instead of from whoever is feeling thorough today.
+L15 A self-authored negative -- "nothing loosened", "no regressions", "no new findings" -- is scoped to its author's
+  imagination, and fixing the BASELINE is necessary but not sufficient.
+  EVIDENCE: #935, then the salvage round built specifically to avoid #935's error, which fixed the baseline, measured
+    zero against MAIN and was still wrong (2026-08-16). Every zero was honest and every one was falsified by the
+    next, bigger corpus: 83 rows -> 14 loosened shapes, 181 -> 60, 342 -> 60, 968 -> 88. Not converging.
+  RULE: the corpus must come from a DIFFERENT MIND than the fix -- say it in the brief, literally: "build your own
+    matrix; do not replay theirs". Require the corpus SIZE and the sentence "this number is only as good as this
+    corpus" in the report. The guard-specific instance (enumerate the SPELLINGS of every construct a rule names) is
+    `guard-change` item 1; this entry is the general form, which no artifact holds.
+  GRADUATES: when an adversarial corpus is GENERATED from the guard's own rule table rather than written by hand, so
+    the spellings come from the code and not from whoever is feeling thorough today. The check keys on an artifact's
+    NAME because that tool does not exist and has no other observable; name it `*corpus*` when you build it.
   GRADUATE_CHECK: find .claude/hooks/test -type f -perm -u+x -iname '*corpus*' | grep -q .
 
-L16 A guard that gates writes to ITSELF cannot be repaired by the isolation we default to.
-  OCCURRENCES: PR #970, PR #974. Recorded once in `docs/BACKLOG.md` as a one-off; it is not one.
-  EVIDENCE: gate-layer work dispatched with isolation:"worktree" deadlocks — ansible-gate-guard refuses every write
-    to `.claude/hooks/**`, including the edit that FIXES the guard, and its only documented escape is a confirm file,
-    so the agent's choices are "create a bypass" or "deliver nothing". The deadlock is invisible at dispatch time:
-    the brief looks ordinary, the worktree is created normally, and the refusal appears only after the agent has
-    done all the analysis, so the cost is paid in full before the blocker is discovered. #974 is what good looks
-    like — the agent hit the wall, created NO bypass, and delivered the finished work as a patch verified with
-    `git apply --check`.
-  APPLIES: every dispatch that edits `.claude/hooks/**` or the suites that guard it.
-  RULE: dispatch gate-layer work NON-ISOLATED, or fix `project_dir` resolution to use the actual toplevel. A blocked
-    agent that hands back an applicable patch has lost nothing but the commit. Deciding to create the confirm file
-    is the USER's, never the supervisor's — self-authorizing past a HARD_STOP is indistinguishable from routing
-    around it, and it is the supervisor who is least able to see that difference in the moment.
-  GRADUATES: when a gate-layer dispatch either resolves its own project_dir or is REFUSED AT DISPATCH, so the
-    deadlock costs a turn instead of an agent-hour.
-  GRADUATE_CHECK: grep -v '^[[:space:]]*#' .claude/hooks/ansible-gate-guard.sh | grep -q show-toplevel || grep -v '^[[:space:]]*#' .claude/hooks/design-intent-dispatch-guard.sh | grep -qi gate-layer
-
-L17 An alert that fires by ACCIDENT is not coverage, and coverage cannot be enumerated from the alerts that exist.
-OCCURRENCES: GeminiResolverNotResolving (CLAUDE.md §OBSERVABILITY) worked only because rejected calls consumed cap
-  slots, so sustained rejection tripped the APPROACHING-CAP alert — nobody designed that, and fixing the cap
-  accounting switched it off silently. 2026-08-19: the approaching-severe alert surfaced a four-month feed outage
-  only because a pattern happened to reference the dead series.
-EVIDENCE [2026-08-19]: `grep -rl ADP_EMPLOYMENT ThresholdEngine/config/patterns/` returns ZERO — same for
-  INDEED_POSTINGS and REDBOOK_SALES. All three are Sentinel-primary (SentinelCollector/AGENT_README.md D-18), so no
-  pattern means no `thresholdengine_pattern_data_overdue_days` series, means no alert is POSSIBLE. Last publish:
-  2026-07-10, 2026-04-16, 2026-04-23. Two were already dead and nothing anywhere could have said so.
-APPLIES: any alerting or observability change, and any claim that a subsystem is monitored.
-RULE: enumerate coverage from the DATA side, never from the alert list — for the thing you care about, grep the
-  config that would HAVE to mention it. One grep, before trusting that something is watched. The alert list is
-  structurally blind to absence, so reading it can only ever confirm what already fires.
-GRADUATES: delete this when every series in D-18's owned-series list has a freshness metric independent of whether
-  any pattern references it — checkable by grepping the metric name per series and getting a non-empty result for all.
-GRADUATE_CHECK: for s in ADP_EMPLOYMENT BDIY CHALLENGER_JOB_CUTS INDEED_POSTINGS REDBOOK_SALES TRUFLATION_CPI; do grep -rhv '^[[:space:]]*#' --include='*.yml' deployment/artifacts/monitoring/alerts/ | grep -q "$s" || exit 1; done
-
-L18 A command that reports its own limit, warning or truncation has ANSWERED you; theorising past that line is
-  inventing evidence. Five instances in one session, all mine, all where the output carried its own disqualifier.
-OCCURRENCES: (1) `grep -rn CHALLENGER_JOB_CUTS` printed `SecMaster/config/instruments/challenger-job-cuts.json` in
-  its own results; I walked past that line and argued across three turns that no instrument existed, escalating a
-  guard change to the human for arbitration. (2) A `LIMIT 4` sample of the same table was reported as "the headline
-  figure is missing"; it was row 1 of the unlimited query. (3) `gh pr list --limit 300` returned exactly 300 against
-  962 merged PRs and the empty intersection was read as "none of these ever merged". (4) `SET LOCAL` printed
-  `WARNING: SET LOCAL can only be used in transaction blocks` twice and the result was used to EXONERATE the HNSW
-  index; run properly inside BEGIN, the seq scan gave the opposite answer. (5) A query echoed back
-  `Challenger, Gray \u0026amp; Christmas` — my own HTML-escaped ampersand — and the flat similarities it produced
-  were nearly reported as "the vector search is globally broken".
-EVIDENCE: 2026-08-24. (3) `search/issues total_count` = 962 vs a 300-row page. (4) exact seq scan (plan confirmed
-  `Seq Scan`) ranks CHALLENGER_JOB_CUTS #1 at cosine 0.716; the same ORDER BY under the index returns it nowhere.
-  Both wrong readings were corrected only because the USER pushed back a third time.
-APPLIES: any measurement whose result becomes a claim — sampled queries, paged APIs, forced query plans, greps whose
-  output you skim rather than read.
-RULE: before interpreting a result, read its own boundary markers — did it warn, did the row count EQUAL the limit
-  you passed, does the echoed query match what you sent. One re-read of output already on screen, no new command.
-  If the count equals the limit, the instrument has told you it is truncated and the result is not an answer.
-GRADUATES: delete when a claim-verification brief requires quoting the command's full output header/footer (limits,
-  warnings, echoed args) beside any figure it reports — checkable by grepping templates/claim-verification.md for
-  that requirement and finding it.
-GRADUATE_CHECK: T=.claude/skills/supervisor-mode/templates; grep -qiE 'echoed|truncat' $T/claim-verification.md && grep -qiE 'limit you passed|full output' $T/claim-verification.md
-
-L19 A control that AGGREGATES across units is invisible to a mutation test run on ONE unit -- and the passing
-  mutation test is what certifies it sharp.
-EVIDENCE: 2026-09-05, PR #1016. rescore_alignment_keys.py shipped a shuffled-gold floor control whose two
-  mutations both fired by name and moved the exit code, so the round reported it "mutation-verified". Review
-  re-ran the SAME control at the tool's own documented 5-run usage: the floor is a MEAN across runs, so a run
-  breaching the bar by 4x (0.4019 against 0.10) read 0.0804 and clean; at 6 runs the whole verdict flipped to
-  FLOOR_OK, exit 0. The single-run mutation could not see it because at n=1 a mean over one unit IS the unit.
-APPLIES: any guard, control, threshold or health check that reduces many units to one number before judging --
-  mean/median/total/any-of over runs, records, files, services, time buckets.
-RULE: mutate the control at the SCALE IT SHIPS AT, never only at n=1. Poison ONE unit, pad with clean ones up to
-  the documented usage AND one past it, and require the complaint to NAME the offending unit. A control that
-  judges an aggregate must state which unit breached, or it cannot be trusted to have looked at any of them.
-  Corollary for reviews: "mutation-verified" is a claim about the mutation's scale, not the control -- ask at what
-  n, and treat an unstated n as n=1.
-GRADUATES: delete when the guard-test contract requires a scale-matched mutation (poison one unit, pad to the
-  documented usage, assert the offending unit is named) -- checkable by grepping intent-review/SKILL.md
-  GUARD_TEST_CONTRACT for that requirement and finding it.
-GRADUATE_CHECK: S=.claude/skills/intent-review/SKILL.md; grep -qiE 'aggregat|scale-matched|pad(ded)? with clean' $S && grep -qiE 'names? the (offending|breaching) (unit|run|record)' $S
-
 ## ANTI [HARD_STOP @end for recency]
-never state a brief's mechanism, line number or severity as settled fact
-never amplify a correction you have not verified
-never relay "X is false" without restating X's proposition and naming its subject
-never repair citations before your last content edit, and never trust a green sweep as proof
-never hand a fix round a list of sites — brief the class and require the count before the fixes
-never let a round volunteer framing it did not measure, and never leave a cheap fact unqueried
-never compile before the final commit — the marker keys to the tree, not the content
-never dispatch onto a branch still held by a finished agent's worktree
-never leave a worktree behind with a staged index — it is one commit from reverting merged work
-never accept a self-authored "nothing loosened" as a merge signal — the corpus must come from a
-  different mind than the fix, and the shape that leaks is a SPELLING VARIANT of one already covered
+never state a brief's mechanism, cited line, root cause or severity as settled fact
+never relay "X is false" without restating X's proposition and naming its subject # RELAYING is not DISPUTING, which
+  is why this line stays here while the rest lives in `.claude/skills/re-derive/SKILL.md`
+never open a THIRD pass on one proposition with an opinion -- re-derive it # `.claude/skills/re-derive/SKILL.md`
+never open review round 1 without a declared artifact class and budget, and never diff-scope the round that carries
+  the approve # `.claude/skills/review-discipline/SKILL.md`
+never spend an EXPENSIVE observation while a FREE one bearing on the same question is unrun
+  # `.claude/skills/cheapest-discriminator/SKILL.md`
+never hand a fix round a list of sites -- brief the CLASS, require the count before the fixes, then add nothing
+never compile before the final commit -- the marker keys to the tree, not the content
+never dispatch onto a branch a finished agent's worktree still holds, or leave one behind with a staged index
 never dispatch gate-layer work worktree-isolated, and never create the confirm file yourself
-never interpret a result whose row count EQUALS the limit you passed, or whose output carried a
-  warning you did not read — the instrument has already told you the answer is not an answer
-never add an entry here that a template, hook or checklist already enforces
-never add an entry without a GRADUATE_CHECK — `none — judgement` is an answer, an absent line is not,
-  and `scripts/new-epic.sh` refuses the next epic reset over either that or a check that now PASSES
+never interpret a result whose row count EQUALS the limit you passed, or whose output carried a warning you did not
+  read -- the instrument has already told you the answer is not an answer
+never repair a reference before your last content edit, and never believe a PROXY over the thing it stands for:
+  not a green sweep, not a FALLING cannot-land count, not a test result on a build you did not prove rebuilt [L8]
+never accept a rule, alert or control proven only by silence, only at n=1, or only from the alert list [L11]
+never accept a self-authored "nothing loosened", or a corpus built by the fix's own author [L15]
+never add an entry that a template, skill, hook or checklist already enforces
+never add an entry without a GRADUATES clause NAMING THE ARTIFACT that will hold it and a GRADUATE_CHECK -- `none --
+  judgement` is an answer, an absent line is not, and `scripts/new-epic.sh` refuses the next epic reset over either
+  that or a check that now PASSES

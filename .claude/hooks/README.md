@@ -772,8 +772,8 @@ work here: the decision vocabulary IS the backlog's ordinary working vocabulary.
 rejected", "the older design in #900 was superseded by" and a fourth modelled on
 the house sentence about rejected calls and cap slots each refused a legitimate
 approve. The fourth is MODELLED, not quoted — that passage names no PR at all, so
-it could never have refused anything. It lives in supervisor-mode LESSONS.md L17,
-on its OCCURRENCES line and reflowed across a break there, so grep `consumed cap`
+it could never have refused anything. It lives in supervisor-mode LESSONS.md L11,
+on its EVIDENCE line and reflowed across a break there, so grep `consumed cap`
 rather than the whole clause. CLAUDE.md §OBSERVABILITY carried it until 2026-09-06
 and now keeps the rule without the sentence, so grepping CLAUDE.md finds nothing.
 What a

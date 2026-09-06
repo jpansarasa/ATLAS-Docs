@@ -298,7 +298,8 @@ PARALLELISM [CANONICAL matrix — references/parallel-dispatch.md points here, n
   different branches WITH worktrees -> isolates GIT state ONLY. Whether it isolates the DEVCONTAINER
     compile flow depends on what identity the compile scripts derive — CHECK, never assume, and the
     failure is silent (wrong tree compiled, then attested, exit 0).
-  PRUNE the finished agent's worktree BEFORE dispatching the next agent onto that branch [[LESSONS.md L4]]
+  PRUNE the finished agent's worktree BEFORE dispatching the next agent onto that branch, sweeping for STAGED
+    indexes and not only for held branches [[templates/implementation-fix.md, Notes for the supervisor]]
   ALWAYS TELL each agent which files belong to other in-flight agents
   DEFAULT: pass isolation: "worktree" on the Agent tool call for parallel CODE dispatch
   the check to run before parallel compiles, and the collision mechanism:
@@ -334,7 +335,8 @@ TIER1_CLAIM_CHECK [mechanical — the DATA-vs-DIAGNOSIS rule above kept failing 
     that cannot contain its own counter-examples.
   HOW: dispatch(templates/claim-verification.md) — cheap model, narrow brief, ~2 min, background.
   ALSO a claim: a CORRECTION of an earlier claim. It arrives framed as the fix, so it skips the
-    check the original got — and one has already been wrong [[LESSONS.md L2]].
+    check the original got — and one has already been wrong [[templates/claim-verification.md step 7]].
+    A refutation licensing a DELETE gets a re-derivation, never an argument [[.claude/skills/re-derive/SKILL.md]].
   SKIP for mechanical work: compile re-runs, pushes, marker refreshes, worktree ops.
     Nothing there to be adversarial about.
   rationale: agent reports state inferences in the same voice as measurements, and PR review
@@ -357,7 +359,7 @@ TIER1_CLAIM_CHECK [mechanical — the DATA-vs-DIAGNOSIS rule above kept failing 
       # re-examined it and direct comparison UPHELD it. Cleared ground caught one, confirmed the other;
       # both outcomes are the rule working, and only the first is a catch.
     RE-ATTACK THE OLDEST, never only the newest — "attack what the last round introduced" is correct
-      and leaves the ORIGINAL CHANGE permanently behind the frontier [[LESSONS.md L14]]
+      and leaves the ORIGINAL CHANGE permanently behind the frontier [[review-discipline/SKILL.md FORCED_PASS]]
       SCOPE, precisely: the round carrying the APPROVE re-attacks the oldest at FULL artifact scope,
         always. An intermediate round that CANNOT approve — a critical still open, or >=2 rounds left
         in budget — may be diff-scoped to the fix it is checking.

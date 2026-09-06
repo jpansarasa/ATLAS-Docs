@@ -25,6 +25,12 @@ TRAJECTORY
 3. CHECK IT ALREADY EXISTS FIRST. Before writing a harness, look: `.claude/skills/*/scripts/`,
    `scripts/sentinel-quality-check/`, `SentinelCollector/scripts/`, the service MCP tools. The
    capability is usually present and unused.
+   IF YOU DO BUILD ONE IT WILL FAIL TOWARD SUCCESS unless you stop it — an instrument that dies
+   silently scores its silence as a PASS, and a tool that fails toward success cannot be caught by
+   reading its output. Absolute tool paths, never relative under a fixture `cd`; ABORT on rc 127
+   rather than scoring the row; syntax-check the thing under test before measuring; quote every
+   `$(...)` file list; a uniquely-named private scratch dir, never the shared scratchpad; and make
+   the harness ABORT BY NAME on a missing anchor instead of scoring it. Then say what it CANNOT see.
 4. Read the relevant `{Service}/AGENT_README.md` DECISIONS block before reasoning about the
    service. The card front-loads does-NOT / on-miss / invariants an endpoint list cannot.
 5. Gather per source, tagging every figure with its population tag: Loki/Prometheus via the

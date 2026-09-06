@@ -45,12 +45,13 @@ CONSEQUENCE, both directions. The write path means the gate does not enforce wha
 gate-layer change lands without the deliberate, visible confirm-file step that IS the mechanism. The
 read/run/prose path costs working forms an agent then has to route around -- which is how a guard
 teaches people to reach for the bypass, and creating the confirm file is the USER's decision, never
-an agent's (LESSONS.md L16), so the only honest alternative is to stop.
+an agent's (`.claude/skills/guard-change/SKILL.md` item 14), so the only honest alternative is to stop.
 
 Do NOT close this by teaching it the `bash -c` and `python3` spellings. That is the
-converging-on-a-reimplementation-of-bash path L14 prices out, and the prose case shows the grammar is
-unbounded. Close it by gating the ACT -- the tool call's resolved write target -- rather than the
-spelling of the command line.
+converging-on-a-reimplementation-of-bash approximation that `guard-change` item 9 tells you to
+PRICE IT OUT LOUD rather than ship, and the prose case shows the grammar is unbounded. Close it by
+gating the ACT -- the tool call's resolved write target -- rather than the spelling of the command
+line.
 
 **MODEL BASELINES, aggregate_f1 on the v6.2 substrate.** Moved out of CLAUDE.md §MODEL_ACCEPTANCE 2026-09-06,
 which now carries only the rule and a pointer here; scorecards are in `LlmBenchmark/eval-substrate/*.json`.
@@ -3959,7 +3960,8 @@ carries that grep as its first step or it does not.
 measured its own corpus honestly and each zero was falsified by the next, bigger corpus (2026-08-15/16): 83-row
 corpus -> claimed 0, actually **14** loosened shapes · 181-row -> found those 14, missed 46 · 342-row -> **60**
 (detailed in the CORRECTION entry above) · 968-row -> **88** write shapes, 52 of them landing in `/opt` or `/etc`.
-**Each ~3x corpus finds ~2-6x more. NOT converging.** Separately, #935 measured "loosened = 0" against its own
+**NOT converging** — the monotone series above is the claim, not a ratio: one of its three steps found nothing
+new at all. Separately, #935 measured "loosened = 0" against its own
 PREVIOUS HEAD — true each time — while against MAIN the branch opened **41 shapes, 32 of them executing a real
 write**, sandbox-proved; the sweep that found them was agent-scratch and is not in the repo, so its row count is
 not recorded. Every zero claimed on this work — at 83 rows, at 342 rows, and the HARD_STOP zero at 498 rows — was

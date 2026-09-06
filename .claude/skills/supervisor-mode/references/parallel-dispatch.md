@@ -33,4 +33,5 @@ DEFAULT for parallel code dispatch: pass `isolation: "worktree"` on the Agent to
 EXCEPTIONS: docs-only parallel work on disjoint files can skip worktrees; single-agent dispatches
   do not need them.
 PRUNE the finished agent's worktree BEFORE dispatching the next agent onto that branch
-  # LESSONS.md L4 — the agent half (take, never delete) only works if the supervisor does this half
+  # templates/implementation-fix.md, Notes for the supervisor — the agent half (take, never delete) only
+  # works if the supervisor does this half, and the sweep is for STAGED indexes, not merely held branches

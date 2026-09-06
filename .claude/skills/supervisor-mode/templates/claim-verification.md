@@ -37,6 +37,16 @@ For each factual claim in the report:
    counter read as a hard cap; a difference quoted without its run-to-run spread; a
    component described from its NAME instead of its wiring; an untagged metric read as
    zero volume; a cleanup that would delete the real rows it counted.
+7. A CORRECTION IS A CLAIM. Where the report refutes an earlier claim, verify it exactly as
+   you would the claim it corrects — a correction arrives framed as the fix, so it skips the
+   check the original got. When it says "X is false", restate X's proposition in your own
+   words and NAME ITS SUBJECT first: every number in an arithmetic-flavoured refutation can
+   be right while the quantity they are about is the wrong one. A refutation that licenses a
+   DELETE gets a re-derivation, never an argument — `.claude/skills/re-derive/SKILL.md`.
+8. READ THE COMMAND'S OWN BOUNDARY MARKERS before interpreting its result — quote the full
+   output header and footer beside any figure, not the rows you skimmed. Did it warn? Does
+   the row count EQUAL the limit you passed? Does the echoed query match what was sent? A
+   result whose count equals its limit has told you it is truncated and is not an answer.
 
 Report (<=12 lines): a table of {claim, verdict CONFIRMED/REFUTED/UNVERIFIABLE, the value
 you measured}. Lead with anything REFUTED. If everything checks out, say so plainly in one

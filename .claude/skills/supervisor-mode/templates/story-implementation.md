@@ -54,12 +54,15 @@ never hand-author migration .cs files."}
   the supervisor/human decides, not you.)
 
 ## Build / verify
-- `bash {Service}/.devcontainer/compile.sh` (with tests). Per CLAUDE.md
-  GIT_PUSH HARD_STOP: 0 errors / 0 warnings / all tests pass.
+- `bash {Service}/.devcontainer/compile.sh` (with tests), AFTER the final commit.
+  Per CLAUDE.md GIT_PUSH HARD_STOP: 0 errors / 0 warnings / all tests pass.
+  The marker keys to `HEAD^{tree}`, which every tracked path feeds — so a commit
+  after the build (comments and docs included) remaps it and the push gate
+  refuses a tree nobody built.
 - Do NOT deploy. Do NOT push. Do NOT open PR.
 
 ## Reporting back (final reply, <=200 words)
-- Branch + final commit hash
+- Branch + final commit hash, and the attested tree hash = `HEAD^{tree}`
 - Files touched (paths, <=20 lines)
 - Build status: errors / warnings / tests pass
 - Deviations from spec + rationale

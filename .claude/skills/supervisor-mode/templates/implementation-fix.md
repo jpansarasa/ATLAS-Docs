@@ -34,6 +34,9 @@ TRAJECTORY
    re-derive the number, open the cited file:line (lines drift between rounds). One that does not
    reproduce is REJECTED WITH EVIDENCE — a valid outcome, not a deviation. DB SELECT-only;
    Loki/Prometheus anchored to actual `date -u`.
+   EVERY MEASURED NUMBER, CITED LINE, ROOT CAUSE AND SEVERITY IN THIS BRIEF IS A HYPOTHESIS, never a
+   specification — a brief stated as fact is obeyed, and a wrong fact is obeyed into code. Refuting
+   one is the round's value, not a deviation.
 3. The fix, plus an `// INTENT(D-n):` comment at the guard site if a guard is involved. Commit.
 4. The guard test: construct the violation, assert refusal AT the boundary through the real flow,
    mock ONLY the external client. Contract: `.claude/skills/intent-review/SKILL.md`
@@ -41,9 +44,12 @@ TRAJECTORY
 5. MUTATION-VERIFY each guard or alert rule you added or moved: delete or invert it, re-run,
    confirm RED, restore. A test that stays green is the bug, not the proof. Comment-only rounds
    skip this, never step 6.
-6. `bash {Service}/.devcontainer/compile.sh` — every compile.sh is 100644 in git, so `bash`,
-   never bare. CAPTURE THE FULL LOG AND THE REAL `$?`; `| grep | tail` hides Permission-denied
-   and swallows the exit code. 0 errors AND 0 warnings AND all tests pass.
+6. `bash {Service}/.devcontainer/compile.sh`, AFTER THE FINAL COMMIT — every compile.sh is 100644
+   in git, so `bash`, never bare. CAPTURE THE FULL LOG AND THE REAL `$?`; `| grep | tail` hides
+   Permission-denied and swallows the exit code. 0 errors AND 0 warnings AND all tests pass. The
+   tests-passed marker keys to `HEAD^{tree}` and the root tree covers EVERY tracked path, so any
+   later commit — comments and docs included — remaps it and the push gate refuses a tree nobody
+   built. Report the attested tree hash and check it equals `HEAD^{tree}`.
 7. Alert rules -> `bash deployment/tests/alerts/run.sh`: promtool over the REPO's rules plus the
    committed unit tests, inside the prometheus image (promtool is not on the host PATH, and the
    running container holds the DEPLOYED rules). One `*_test.yml` case per new rule. Ansible
@@ -56,6 +62,12 @@ TRAJECTORY
    deferred}, the before/after number, mutation results, compile counts.
 
 CONSTRAINTS
+- A LIST OF SITES IS A CEILING, NOT A FLOOR. Where a finding names instances it is naming a CLASS:
+  search the repo for the PREDICATE, report the count BEFORE any fix, and treat "more than you were
+  given" as the useful result. Then add nothing — no volunteered framing, no explanatory prose you
+  did not measure; the one justified addition is a clause closing a contradiction your own edit
+  opens. Exception for a CHEAP FACT: "report it, do not fix it" is right for judgement and wrong
+  when one query settles it — run the query, close it, report the answer.
 - NARROW (FIX ROUND): no re-architecting, no adjacent refactors, no scope the findings did not
   raise. Scope added mid-round is scope the review never saw, so it restarts the loop it was
   meant to close.
@@ -90,6 +102,12 @@ FAILURE MODES -> THE CHECK
   spends its first tool calls guessing between a stale worktree and the live branch.
 - Every measured number in the brief is a hypothesis; an agent correcting one is the round's
   value, not a deviation.
+- PRUNE the finished agent's worktree BEFORE dispatching the next one onto that branch, and sweep
+  `git worktree list` for STAGED indexes (`git -C <wt> diff --cached --stat`), never only for held
+  branches. A resource that outlives the process holding it is inherited by the next process in
+  whatever state it was abandoned: an abandoned worktree carrying the change staged as deletions is
+  one bare `git commit` from silently reverting merged work, and HEAD follows the ref so it LOOKS
+  current — the index is the stale part. Every dispatch releases its branch leaving nothing staged.
 - Convergence is the goal, not one-shot. Several rounds on one PR is normal and not a failed
   dispatch; each round should shrink the findings list, and that is the signal to watch.
 - Long output to `/tmp/sentinel-remediation/{slug}/`, not the report.

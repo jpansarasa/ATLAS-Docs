@@ -207,12 +207,18 @@ What this pass gets is not exemption from the count but a NARROW SCOPE and a lic
   LICENCE: "nothing outside the claimed scope" is a COMPLETE and CORRECT result for this pass.
   Manufacturing a finding to justify the round is itself a defect - it converts a bounded check
   back into the unbounded sweep the budget exists to end.
-  THE ONE ROUND THAT MAY NOT HAVE THIS SCOPE IS THE LAST. supervisor-mode SKILL.md RE-ATTACK THE
-  OLDEST exists because a bypass survived all eight rounds of #970 while every brief said "attack
-  what the last round introduced" [[LESSONS.md L14]]. A diff scope answers "did this fix work"; it
-  cannot answer "is the ORIGINAL change still sound", and no other round asks. So the round that
-  carries the APPROVE re-attacks the oldest at full artifact scope, always. Diff-scoping the
-  terminal round is the #970 failure with a budget bolted on.
+  THE ONE ROUND THAT MAY NOT HAVE THIS SCOPE IS THE LAST, and the reason is a property of the
+  METHOD, not of any one PR: EVERY ROUND ATTACKS THE NEWEST CHANGE, SO THE OLDEST DEFECT IS NEVER
+  RE-ATTACKED. A review that always aims at the frontier leaves the original change permanently
+  behind it, and nothing in the loop notices, because each round is doing exactly what it was
+  briefed to do. Measured on #970: a bypass that let the gate approve one PR while the tool merged
+  another bisected to the THIRD commit and had been live through all eight rounds, every brief
+  saying "attack what the last round introduced". supervisor-mode SKILL.md RE-ATTACK THE OLDEST
+  exists for it. A diff scope answers "did this fix work"; it cannot answer "is the ORIGINAL change
+  still sound", and no other round asks. So the round that carries the APPROVE re-attacks the oldest
+  at full artifact scope, always. Diff-scoping the terminal round is the #970 failure with a budget
+  bolted on. # the ACT that finds a defect older than the review is a bisect across the branch's own
+  # commits, every round - `.claude/skills/guard-change/SKILL.md` item 18
 
 ## TERMINATION [a decision someone records]
 End by writing the decision where the next reader finds it - on ATLAS that is the reason field of
@@ -289,7 +295,8 @@ never quote a round count without its UNIT # verdicts, dispatches and commits ar
 never spend a round on a finding whose reader and wrong action you cannot name
 never narrow a gate-forced pass that COULD approve # narrow scope only when a critical is open or
   the budget has >=2 rounds left; otherwise full scope, because terminality is known only afterwards
-never diff-scope the round that carries the approve # re-attack the oldest, at full scope
+never diff-scope the round that carries the approve # every round attacks the newest change, so the
+  oldest defect is never re-attacked unless the terminal round does it at full scope
 never manufacture a finding to justify a round # the round was already counted, and an empty
   forced pass is the licensed normal ending
 never read a NEW finding class as thoroughness # it is evidence round 1 was scoped wrong

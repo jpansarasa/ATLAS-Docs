@@ -25,9 +25,10 @@ mutation-verify step, findings-are-claims, take-never-delete a held worktree -> 
 re-deriving a reported number, population bias -> `.claude/skills/supervisor-mode/templates/claim-verification.md`
 
 ## IMPLEMENTER [first pass]
-1. Name what the CODE READS, then vary THAT axis in the fixtures.
+1. Name what the CODE READS, then vary THAT axis in the fixtures - and enumerate the SPELLINGS of every construct a rule names: separator present/absent, flag bundled/glued/spaced, delimiter quoted/unquoted, terminator present/absent.
    # #928 shipped two deny-to-allow regressions: fixtures varied main's CONTENT while the code read the repo's REF LIST; #929 then had to add a CONFIG-STATE axis
-   rationale: testing the wrong dimension looks identical to testing thoroughly
+   # #935 and its salvage round: every shape that leaked was a SPELLING VARIANT of one the fixtures already covered - object-store rows without `--`, the only destination flag unbundled, the heredoc unterminated, the tab-stripping heredoc without whitespace
+   rationale: testing the wrong dimension looks identical to testing thoroughly, and a fixture set reads as coverage of a CONSTRUCT while covering one SPELLING
 
 2. Prove the harness has teeth BEFORE trusting a zero.
    run it against the KNOWN-BROKEN version -> it must light up; swap the two guards -> the count must invert
@@ -63,6 +64,8 @@ re-deriving a reported number, population bias -> `.claude/skills/supervisor-mod
    # #930: `-p` walked through because only `--paginate` was enumerated; the fix replaced the alternation with a generic dash-prefixed arm
    ok: `git rev-parse --symbolic-full-name` applies git's own rules (#928); `git push --dry-run --porcelain` as the test ORACLE (#929)
    but: check the tool answers the question you asked - `@{push}` reports where the BRANCH would go, not what the push would WRITE (#929, fast and wrong)
+   GRAMMAR INHERITANCE is why an enumeration always grows another member: a guard matching a DESCRIPTION of an act inherits the whole grammar of the description, and the tell runs BOTH ways - it refuses text that merely DESCRIBES the act (writing ABOUT a gated act is gated wherever the literal tokens appear, a commit message included; hooks README "Accepted cost") while permitting the act itself under a spelling it does not parse (a python script whose body opens the gated path and writes it, undenied; docs/BACKLOG.md gate-layer deadlock entry)
+   PRICE IT OUT LOUD: a round whose fix is "handle one more grammar construct" is an approximation converging on a REIMPLEMENTATION OF BASH - say so in the round's report rather than shipping it silently, and weigh gating the resolved ACT (the tool call's write target) against handling the next construct
 
 10. A shared test override binds EVERY participant - assert it in BOTH directions.
     # #921: only two of five marker writers honoured `ATLAS_MARKER_DIR`, so a suite wrote real verdict markers into the directory every agent's push gate reads; the fix asserts set->temp AND unset->live, because a fix hardcoding the TEMP path passes a one-sided test and silently disarms production (run-wiring-smoke.sh `marker_dir_isolation`). #930, one round later: the new suite ignores `PUSH_GUARD_HOOK`, which its sibling honours, so its teeth cannot be shown the documented way
@@ -73,18 +76,23 @@ re-deriving a reported number, population bias -> `.claude/skills/supervisor-mod
 12. Any "how often did this fire" count is a FLOOR, not a census - no guard writes a run log, and the only trace is a rotating per-session transcript.
 13. A rename can silently break a grep-based dependency.
     # #931: a renamed constant dropped every `-c` from the replication and fail-opened the config-destination rule; the sweep missed it, the suite's two composed rows caught it
-14. Prune the finished agent's worktree BEFORE dispatching the next one onto the same branch.
+14. Prune the finished agent's worktree BEFORE dispatching the next one onto the same branch, and dispatch this layer NON-ISOLATED.
     # supervisor-side half of implementation-fix's take-never-delete rule; stale worktrees repeatedly blocked these branches on 2026-08-07/08
+    # A GUARD WHOSE SCOPE INCLUDES ITS OWN SOURCE MAKES ITS OWN REPAIR UNREACHABLE: ansible-gate-guard refuses every write under `.claude/hooks/**`, the edit that FIXES the guard included, and a worktree agent cannot reach the one sanctioned bypass (docs/BACKLOG.md, the gate-layer deadlock entry). The deadlock is invisible at dispatch time - the brief looks ordinary and the refusal arrives only after all the analysis is paid for. A blocked agent that hands back a patch verified with `git apply --check` has lost only the commit; creating the confirm file is the USER's decision, never the agent's or the supervisor's, because self-authorizing past a HARD_STOP is indistinguishable from routing around it
 
 ## REVIEWER
-15. Re-derive independently; never audit the author's reasoning.
+15. Re-derive independently; never audit the author's reasoning - and build your OWN corpus, never a replay of theirs. Report its SIZE, and that this number is only as good as this corpus.
     # the rounds that found real defects re-ran the measurement (#928's review found 18 loosenings against the pre-fix head; #930's built its own 4,340-cell corpus); the diff-reading rounds found least
-16. Weigh over-denial as heavily as under-denial on any path ordinary work flows through.
+    # corpus author and fix author being the SAME MIND is the residual flaw once the baseline is right: the holes are the shapes that mind was not thinking about, and a self-authored "nothing loosened" is scoped to its author's imagination
+16. Weigh over-denial as heavily as under-denial on any path ordinary work flows through, and REPORT THE OVER-DENIAL COUNT beside the bypass count every round.
     # #925: the guard refused reviewed IaC edits and offered only a 4h global bypass - a guard that makes correct work require disabling all guards trains people to disable all guards
+    # eleven of thirteen rounds on these two guards measured only whether the guard refuses ENOUGH; the two that also measured whether it still PERMITS ordinary work caught the swings in each direction, one of which would have locked the session out of its own repo
 17. A GREEN mutation is a finding, not noise - investigate it and say WHICH it is.
     # #928: the drop-the-second-rc mutation measures 0, not 84 - a genuine equivalence, so the header and the battery both overstated the fix
-18. Check WHEN a surviving defect was introduced before calling a PR non-convergent.
+18. BISECT every confirmed bypass across the BRANCH'S OWN COMMITS, every round, before calling a PR non-convergent.
     # #927 round 5: the remaining flaw dated to the first commit and was untouched by rounds 3-5 - a surviving flaw is not evidence the latest round regressed
+    # #970: a bypass that let the gate approve one PR while the tool merged another bisected to the THIRD commit and had been live through all eight rounds, because every brief said "attack what the last round introduced" - correct, and it left the original change permanently behind the frontier
+    rationale: it is cheap, it names the commit, and it is the only thing that finds a defect OLDER than the review that keeps missing it
 
 ## ANTI [HARD_STOP @end for recency]
 never ship a sweep whose SWAPPED direction was never run     # a blind harness reads as clean
@@ -93,5 +101,8 @@ never decide-and-exit on the first act in a command          # a command is a SE
 never assert a mechanism in a comment you did not demonstrate
 never trust a green suite over an invocation shape production does not use
 never call a round converged without per-mutation counts
+never call a bypass understood before bisecting it across the branch's OWN commits # every round attacks the newest change, so the oldest defect is never re-attacked
+never report a bypass count without the over-denial count beside it
+never accept a corpus built by the fix's own author as coverage # its holes are the shapes that mind was not thinking about
 never narrow what you INSPECT to fix a false deny            # narrow the EXEMPTION instead - `head -1`, the ansible execute exemption, the text carve-out (README "narrow what you EXEMPT")
 never let a fixture's second reason carry a row              # add the control that proves it absent
