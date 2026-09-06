@@ -7,7 +7,7 @@ Python harness scripts for the Sentinel extraction-LoRA acceptance-criteria pipe
 | Script | Purpose |
 |---|---|
 | `build_eval_substrate.py` | Deterministically builds the evaluation substrate (positives + negatives) for the Sentinel extraction acceptance-criteria harness. Writes the merged substrate plus a sidecar `criteria.json` documenting construction. Substrate itself is ~10 MB (10,185,438 bytes, measured 2026-09-04) and lives under `/opt/ai-inference/training-data/eval-substrates/` (not committed). |
-| `run_model.py` | Drives a substrate through any **OpenAI-compatible** endpoint (vLLM, SGLang, llama.cpp `/v1`) and emits the predictions JSONL `eval_harness.py --predictions` consumes, plus a provenance sidecar recording the engine build. Takes the same **`--task`** as the scorer and must agree with it: `cove` (default) keeps the extraction array under `predicted_extractions`, `cod` keeps production's stage-1 object under `prediction`. Stdlib only. |
+| `run_model.py` | Drives a substrate through any **OpenAI-compatible** endpoint (vLLM, SGLang, llama.cpp `/v1`) and emits the predictions JSONL `eval_harness.py --predictions` consumes, plus a provenance sidecar recording the engine build, the **sha256 of the prompt and schema files whose bytes actually reached a request**, and of the chat template string it applied (a path is not a prompt — see below). Takes the same **`--task`** as the scorer and must agree with it: `cove` (default) keeps the extraction array under `predicted_extractions`, `cod` keeps production's stage-1 object under `prediction`. Stdlib only. |
 | `eval_harness.py` | Scores predictions against an eval substrate, on **either of two tasks** (`--task`). `cove` (default): the 18 pinned metrics over the v6.2 substrate's own `{text_quote, value, period, certainty}` shape — a task production does not run. `cod`: production's CoD stage-1 shape `{article_type, entities, numbers, events, claims}`. Both scorers are pure functions (no vLLM / GPU / network — unit-testable); they score `--predictions`, or `--mock` gold-tautology predictions. It does **not** call a model — that is `run_model.py`'s job, and keeping them apart is what keeps the scorer offline-testable. |
 | `test_run_model.py` | Unit tests over the runner: strict parsing (never salvage), the outbound payload, engine identification, and that a CoD response is **kept** under the key the scorer reads — the contract test imports `eval_harness._cod_object` and asserts the join rather than restating the key. Fully offline — the HTTP boundary is stubbed. |
 | `test_eval_harness.py` | Unit tests over both scorers, the scorecard builder and the control arms. Fully offline. One guard test per metric, each constructing the wrong-pairing case; the CoD alignment-key test asserts the OLD key scores 1.0 on it, so the trap it replaces is measured rather than asserted. |
@@ -231,6 +231,109 @@ pin is what supplies the attribution instead (recorded as `provenance.provider`)
 why the runner refuses a router model with no pin rather than warning about it: the same
 `/v1/models` response that makes a bare id *look* valid is the one proving the router will
 choose for you.
+
+## Why the artifact records the prompt's digest, not only its path
+
+Same decay, one level down. `provenance.request_shape.prompt_file` is the path **as typed on
+the command line**, and until now nothing opened it — so a finished run's prompt bytes were
+unrecoverable. Measured 2026-09-06: of 25 scorecards on this host carrying a `request_shape`
+at all, **22 share one byte-identical value** and every one stamps
+`acceptance_evidence.production_prompt_path: true` — 8 of them scored the prompt as it stood
+before #1017 rewrote that same path, 14 after, and the artifact does not change across the
+boundary. (Those files live in `/tmp`, not the repo; every scorecard *committed* here
+predates `request_shape` entirely.) The prompts are distinguishable in reality —
+`SentinelCollector/src/cod-prompts/cod_json_v1.txt` against the host mount
+`/opt/ai-inference/prompts/cod/cod_json_v1.txt`, which lag each other between deploys — and
+were identical in the artifact. No wording of a caveat could recover that; three attempts
+tried.
+
+The runner now records `prompt_file_sha256`, `schema_file_sha256` and `chat_template_sha256`
+**alongside** the paths — a path plus a hash is strictly more than a path — and the scorer
+surfaces them in `acceptance_evidence.request_bytes`. A digest is written only for a file the
+run actually **read**: `--no-structured-output` names a `--schema-file` and sends none of it,
+so that run records the path and a `null` digest rather than attesting to bytes nothing sent.
+
+A digest is written **only for bytes that reached a request**, and null otherwise — `--limit 0`,
+`--no-structured-output`, a schema file whose JSON parses falsy (which `build_payload` silently
+replaces with the built-in), a chat template outside completions mode. A digest reads like
+proof, so one attesting to a file the run merely *named* would be worse than the bare path it
+improves on. The scorer's `unrecorded` therefore keys off the **absence of the field**, not the
+falsiness of its value: a run predating these digests carries no `*_sha256` key at all, while a
+run that has them writes the key always and a null there is the runner *saying* the element was
+not sent.
+
+**Nothing here adjudicates, deliberately.** The scorer cannot see the mount production serves
+from, so a hardcoded "production" digest compiled into it would be a guarantee it has no way
+to keep — the same class of false claim being fixed. A human compares the recorded digest
+against the mount, and now has something to compare. `production_prompt_path` is unchanged in
+meaning and still narrow: it says the request had production's **shape** — completions mode,
+a prompt file and schema file *named*, a template that really wraps — and never says **which**
+prompt. A scorecard predating these fields says so in `request_bytes.unrecorded`, and one that
+recorded no request shape at all says *that*, rather than borrowing the wording for a run that
+sent nothing. An absent digest is not a matching one.
+
+**The note is chosen per element, over three elements that need not agree.** One caption picked
+for the whole block states a fact about all three from evidence about one, and every mixed record
+is then over- or under-stated. So `request_bytes.note` is cut on what each NAMED element answers,
+and the answer is three-valued, not two: its digest is **recorded**, or it is **null with its key
+present** (the runner saying this element reached no request), or **its key is absent entirely**
+(an artifact predating the digests, named in `unrecorded`). Six states follow:
+
+| state | when |
+|---|---|
+| no shape at all | the run recorded no `request_shape` |
+| shape naming nothing | the instruction came from the substrate |
+| **recorded** | nothing named is missing a digest key, and at least one is identified — a named element sitting at null is *not* a gap and does not leave this state |
+| **partial** *(new)* | at least one identified **and** at least one named element whose digest key is absent |
+| **unverifiable** | nothing identified, and at least one named element's digest key is absent |
+| **not sent** *(new)* | every named element carries its key and every one is null — nothing reached a request |
+
+The two new states are the ones the old block mis-captioned. A `--limit 0` run that named
+production's prompt was told it "named no prompt file … the instruction came from the substrate";
+it is now *not sent*, which is a finding rather than a null. And a mixed record was forced into a
+caption true of only one half; it is now *partial*. Separately, `recorded` was **re-worded** rather
+than added: it used to send a run that digested only its chat template to check "the prompt and
+schema files that served it" — files it never named — and now names no element at all. The wording
+also stops treating all three elements as paths: `--chat-template` takes the **template itself**
+and the artifact holds it verbatim, so a missing digest there costs the attestation that it
+reached a request, never the content.
+
+### And the same blindness on the sampling side
+
+No conjunct of `production_prompt_path` reads a decoding knob either, so the shape can be
+production's while the decoding is not. Measured 2026-09-06: benchmark runs sent
+`repetition_penalty: null` and `max_tokens: 8192` where the service sends a loop guard
+(`CpuCodOptions.JsonRepetitionPenalty` = 1.1) and half that budget, and every scorecard
+stamped `production_prompt_path: true`. A run that decoded differently from production is
+not a run on production's path, whatever the shape says — that is the finding, and it stands
+on its own.
+
+**What this section deliberately does not claim.** It is tempting to pin the article-35
+entity runaway on the missing loop guard. The evidence does not carry it: *both* arms of the
+two-arm prompt comparison ran with `repetition_penalty` unset, so a constant cannot explain a
+difference that appeared in one arm only, and production's own rationale describes the trap as
+one object *repeated*, where article 35 produced *distinct invented* names. `docs/BACKLOG.md`
+holds that question open — whether the corrected prompt's `macro_indicator` instruction caused
+the runaway or merely uncovered it — and one prompt edit plus one re-run settles it. Recording
+sampling earns its place because the gap is real, not because it has been shown to be that
+gap's cause.
+
+The runner already recorded `provenance.sampling`; nothing surfaced it next to the pass. The
+scorer now carries it as `acceptance_evidence.request_sampling`, under the same rule: it
+**reports**, it does not compare. **Not sent is not unrecorded** — the runner omits an unset
+knob rather than defaulting one nobody chose, so `repetition_penalty: null` inside a recorded
+block means *this run ran without the loop guard*, which is a fact. A knob the artifact never
+carried is named in `unrecorded` instead, per knob and not per block: `seed` was added to the
+runner at #1009, so every scorecard written before it carries nine keys and no `seed` — judged
+on the container alone those read as fully recorded, with the determinism knob a model
+comparison turns on simply absent.
+
+**The note now follows that per-knob data**; it used to be chosen for the block as a whole. So one
+missing knob reached for the wording "this run wrote no sampling block" — false of a run that wrote
+nine of ten. Re-scoring the eight scorecards committed here: **seven were given that sentence**,
+which is every one of them produced by a real run. The eighth, the only one the wording fitted, is
+the harness's own gold-tautology mock, which called no model. A partially recorded block now says
+so and names the knobs it cannot speak for.
 
 ## What the run cost
 
