@@ -16,6 +16,295 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**THE CORRECTED `source_entity` PROMPT IS IN PRODUCTION, IT STOPPED THE BLANKING, AND ON ARTICLES THAT NAME
+NO SERIES IT PUT THE COUNTRY IN ITS PLACE. 37 rows anchored on a country, 10 of them resolved to an
+instrument, and all 10 are wrong on the FIGURE-to-INSTRUMENT fit** -- an inflation rate is not a quantity of
+an equity ETF. That is a judgement made by reading each row against its article, not a measured label, and it
+is FOUR articles' worth of evidence: read the caveats before quoting the number. #1017's prompt reached prod
+2026-09-06T10:26:43Z; window is `extracted_at >= 2026-09-06 10:26:43Z`, snapshot **10:59Z: 72 observations,
+8 documents**. The country is the one answer the prompt explicitly forbids --
+`SentinelCollector/src/cod-prompts/cod_json_v1.txt:57-58` reads "the country is NOT the owner".
+
+**THIS IS NOT AN ARGUMENT FOR A `country -> reject` RULE, and the entry below must not be quoted as one.**
+The existing entry "The candidate surface filter gates 4.3% of the rows that attach instruments" measures the
+opposite half: country subjects ALSO produce defensible resolutions -- `Brazil` -> `EWZ` 446, `Germany` ->
+`DAX` 345, `China` -> `GXC` 190, and `China` -> `NGDPXDCCNA` 73, which THIS entry lists as a wrong
+attachment. Both readings are correct because they judge different things: that entry judges
+country -> instrument, this one judges number -> instrument. The fix this observation points at is the
+prompt's contradictory bullet and the catalog naming below, NEVER a reject rule that entry already refutes in
+three caveats.
+
+READ THE COUNTRY ARM AS THE FINDING AND EVERYTHING ELSE AS A SNAPSHOT, because this window is OPEN and moves
+fast: 33 rows / 3 documents at 10:38Z, 50 / 6 at 10:46Z, 62 / 7 at 10:53Z, 72 / 8 at 10:59Z. Country-valued
+has gone 81.8% -> 66% -> 53% -> 51% of a rising denominator, so the RATE is a reading and the COUNT is the
+figure. Anyone re-running gets more than this entry reports, and should.
+
+THE FIRST READING OF THIS WINDOW GOT THAT WRONG, WHICH IS WHY THE PARAGRAPH ABOVE EXISTS. At 10:38Z it was
+written up as "the population, not a slice" because three re-checks six minutes apart had not moved it. It
+then grew four times. Three unchanged re-checks are not evidence that a live window is closed.
+
+THE DEPLOY, restricted to what can be re-derived. `SentinelCollector/src/cod-prompts/cod_json_v1.txt` moved
+blob `45d02cd8` -> `85187c39` (`git rev-parse a8a0ed5d~1:<path>` / `git hash-object <path>`). The host mount
+`/opt/ai-inference/prompts/cod/cod_json_v1.txt` carries mtime 2026-09-06T10:26:41Z and the same sha256 as the
+repo file, so the sync at `deployment/ansible/playbooks/deploy.yml:1112` (`force: true`,
+`tags: [sentinel-collector, cpu-cod-prompts]`) landed. `sentinel-collector` was recreated two seconds later at
+10:26:43.554966881Z; `vllm-server` was NOT touched, still created 2026-09-01T10:11:00Z. First row landed
+**47.4s** after the recreate (document 164424 at 10:27:30.942403Z), not the 53s reported at handover -- 53s is
+document 164425. The tally `ok=36 changed=6 failed=0` is NOT re-derivable and is recorded as REPORTED, never
+measured: `deployment/ansible/ansible.cfg` sets no `log_path` and no run log survives.
+
+38 log lines in the first ten minutes and 0 at Error or Fatal, both re-derivable. An earlier revision of this
+entry said "15 Warning and all 15 the startup banner"; the COUNT is right and the CLASSIFICATION was wrong,
+and the exception is load-bearing rather than cosmetic. At least four are runtime: an EF `First`/`FirstOrDefault`
+-without-`OrderBy` warning at 10:26:55, "Semantic signal shadow budget exhausted with 3 catalog misses
+unscored" at 10:29:15, and **`ReExtract cycle removed an existing instrument from 4 of 6 rows` at 10:29:58 and
+`from 5 of 5 rows` at 10:34:02**. That last pair matters to this entry's own evidence: the limitations
+paragraph below names ReExtract as a hazard, and the worker is not a future risk -- it ran TWICE inside the
+ten minutes being reported, on a roughly four-minute cadence, stripping instruments from 9 of 11 rows in other
+cohorts. It has not reached this window yet (0 of 72 rows carry `re_extracted_at`), which is what keeps the
+table below readable, and it is running now.
+
+WHAT THE FIELD HOLDS at 10:59Z: `Turkey` 22, blank 11, `Boeing` 7, `UK` 6, `Lumentum Holdings Inc` 4,
+`China` 3, `People's Bank of China` 3, `European government bond yields` 3, `Hong Kong` 2, `Acadia Realty
+Trust` 2, and one each of `Germany`, `France`, `Spain`, `Italy`, `Eyepoint Pharmaceuticals Inc`, `Sonida
+Senior Living Inc`, `Covista Inc`, `Sempra Energy`, `U.S. 10-year Treasury yield`. `People's Bank of China` is
+arguably right (an institution owning its own gold reserves); the company names are right outright.
+
+THE PRE/POST STEP IS WEAKER THAN IT LOOKS, and none of the obvious framings survives. The handover's "11/12
+and 5/6 blank in the two windows immediately before restart" both reproduce, but they are MINUTE buckets
+slicing ONE document. Per DOCUMENT the last two before the deploy are **164422 at 16/17 blank and 164423 at
+0/1**. Across the whole pre-deploy day (00:00Z-10:26:43Z, 425 rows / 47 documents) blank is
+157/425 = **36.9%**, and **20** minute-buckets today ran at ZERO blanks. Blank rate tracks article mix; no
+single number states the step. Nor is a country in `source_entity` new: the same pre-deploy day carries
+`India` 13, `US` 3, `China` 1, `U.S.` 1 = 18/425 = 4.2%.
+
+`source_entity` AND `subject_entity` ARE THE SAME FIELD ON THIS PATH, and the invariant is ABSOLUTE rather
+than dominant. `DslToMergedExtractionAdapter.cs:399` sets `perRowSubject = sourceEntity` whenever the slot is
+non-blank; `:528` persists `SourceEntity` and `:536` persists `SubjectEntity` from it. Measured since
+2026-09-01: of **20,640 rows where BOTH columns are non-blank, ZERO differ**.
+The 3,660 rows since 2026-09-01 that do carry a non-blank `source_entity` against a differing `subject_entity`
+all have `subject_entity` BLANK, which this adapter cannot produce; they are the other producer's rows.
+Re-check, and silence on the second column is the pass:
+`SELECT count(*), count(*) FILTER (WHERE source_entity IS DISTINCT FROM subject_entity) FROM
+sentinel.extracted_observations WHERE extracted_at >= TIMESTAMPTZ '2026-09-01' AND
+coalesce(trim(source_entity),'')<>'' AND coalesce(trim(subject_entity),'')<>'';`
+It MATTERS because it makes the downstream argument mechanical rather than inferred: a country in
+`source_entity` IS a country in `SubjectEntity`, which IS the string `DeterministicResolver` Rule 2 queries.
+
+THE MECHANISM IS A HYPOTHESIS, recorded as one. The corrected bullet tells the model to emit the series "under
+the name THE ARTICLE gives it" (`cod_json_v1.txt:56-58`) and in the SAME sentence that `""` is NOT the answer;
+two lines later (`:60-63`) it says to emit `""` when the article "never NAMES" the series. On a Turkish
+inflation story that names no series those two instructions point opposite ways, and the model appears to
+resolve the conflict by taking the third option `:58` explicitly forbids.
+
+THE GOLD ALREADY CONTAINS THIS EXACT CASE, WHICH IS THE STRONGEST SUPPORT THE HYPOTHESIS HAS AND IT IS NOT
+FROM PRODUCTION AT ALL. The macro-owner entry under MEASUREMENT DEBT discloses article 183's six payroll rows
+as the gold's ONE knowing non-conformance: that article names no series -- zero occurrences of "payroll" or
+"nonfarm" -- so the rule-conformant label was `""`, and the gold keeps them on **`US`**, the country, which
+the corrected bullet forbids. A careful human labeller with the rule in front of them reached for the country
+on an article that named no series, and production now does the same. Separately, **16** of the gold's 22 open
+anchors are the same class -- a series the article never NAMES (article 1's eleven Conference Board survey
+shares, article 48's five Challenger figures); the other 6 are blank-by-design and are a different question.
+Closing the 16 needs the rule this observation points at: what to emit for a series a story DESCRIBES without
+NAMING. The prompt currently answers that twice, differently.
+
+THE TEST, one step, and the strongest evidence inside this window. `BuildCandidatesFromEnts`
+(`DslToMergedExtractionAdapter.cs:1411-1416`) drops every ENT whose `ent_type` is in `NonInstrumentEntTypes`
+(`DslToMergedExtractionAdapter.cs:108-125`, `"country"` at `:115`), so an EMPTY `candidate_symbols_json` means
+the model declared no instrument-like entity at all -- the proxy for "this article named nothing else to
+anchor to". The 54-name country list below is the ONE list this entry uses; the anchor-class re-check further
+down reuses it deliberately, because an earlier revision used a 7-name shortlist there and silently binned
+`Germany`, `France`, `Spain` and `Italy` as named-issuer, contaminating the exact arm the headline rests on
+(it reported country 33/9 where the full list gives 37/10):
+
+```sql
+-- sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data     [psql is SELECT-only]
+SELECT (candidate_symbols_json IS NULL OR jsonb_array_length(candidate_symbols_json)=0) AS no_instrument_ent,
+       count(*) AS rows,
+       count(*) FILTER (WHERE source_entity IN
+         ('United States','USA','US','U.S.','America','United Kingdom','UK','U.K.','Britain','China','Japan',
+          'Germany','France','India','Russia','Brazil','Canada','Mexico','Italy','Spain','Australia',
+          'South Korea','Korea','Saudi Arabia','UAE','United Arab Emirates','Israel','Iran','Turkey',
+          'Switzerland','Netherlands','Sweden','Singapore','Hong Kong','Taiwan','Indonesia','Thailand',
+          'Vietnam','Nigeria','South Africa','Egypt','Argentina','Poland','Ireland','Norway','Denmark',
+          'Finland','Belgium','Austria','Portugal','Greece','European Union','EU','Eurozone','Europe'))
+         AS country_se,
+       count(*) FILTER (WHERE coalesce(trim(source_entity),'')='') AS blank_se
+FROM sentinel.extracted_observations
+WHERE extracted_at >= TIMESTAMPTZ '2026-09-06 10:26:43Z'
+GROUP BY 1 ORDER BY 1;
+```
+
+READ THE EMPTY SIDE PER DOCUMENT, NEVER ROW-WEIGHTED -- the query above returns rows, and a single
+high-row document swamps it. At 10:59Z the empty side read **22 of 22 country, 0 blank**; at 17:32Z the
+row-weighted figure is **24 of 272 = 8.8%**, which looks like a collapse and is not one: **246 of those 272
+rows are ONE document** (`raw_content_id` 164489, every row anchored `TSA`). Each of the 5 documents on this
+side carries exactly ONE distinct `source_entity`, so a row-weighted rate here measures document SIZE and
+not model behaviour. Per DOCUMENT it is **3 of 5 country** -- 164424 `Turkey` 12 rows, 164425 `Turkey` 10,
+164507 `Italy` 2, together **24 of 24 rows and 0 blank**, the unanimity intact -- against one 246-row `TSA`
+document and one 2-row blank document (164552). This entry already draws that distinction for the country
+arm ("the RATE is a reading and the COUNT is the figure") and shipped its own discriminator without it, so:
+anyone re-running the query must report `count(DISTINCT raw_content_id)` and the per-document surfaces
+beside the row counts, or a single fat document reads as a refutation of an intact hypothesis. The POPULATED
+side has fallen 45% -> 39% -> 30% as company articles arrived, which moved because the denominator did. It
+remains a PROXY and not the real discriminator: `macro_indicator` is ALSO in `NonInstrumentEntTypes`, so an
+empty shortlist cannot separate "declared only a country" from "declared a country AND a macro series and
+anchored on the wrong one" -- and the `TSA` document is that limitation live, an INSTITUTION ENT being
+non-instrument too, so the empty side admits documents that declared neither a country nor a series.
+Settling THAT needs the model's `entities[].ent_type`, which no column persists; it takes a harness re-run
+over these `raw_content_id`s.
+
+DOWNSTREAM. A country ENT is excluded from the Rule 1 shortlist by `NonInstrumentEntTypes`, so the row falls
+to Rule 2 (`DeterministicResolver.cs:154`), which hands the RAW `SubjectEntity` to hybrid resolve and consults
+NO surface filter. That uncovered leg is already measured -- `SentinelCollector/AGENT_README.md` D-1 counts
+7,184 instrument-attaching rows carrying a `gpe_country` subject, 3,060 landing on `U` (Unity Software),
+**over ONE 31-day window, `extracted_at` [2026-07-15, 2026-08-15), and a FLOOR rather than a total** because
+D-1 replayed the exact-match sets only. Both caveats are mandatory (this file says so at the sibling entry);
+without them it reads as an all-time count. The mechanism, its three caveats and the two candidate seams live
+in "The candidate surface filter gates 4.3% of the rows that attach instruments" in this file -- go there, not
+to a fourth restatement. What is NEW here is only that it is now visible in a live post-deploy window, one row
+at a time:
+
+| figure | value | anchor | leg | attached to |
+|---|---|---|---|---|
+| Turkey annual inflation | 28.4 PCT | Turkey | `hybrid_subject` | `TUR` |
+| Turkey annual inflation | 21.0 PCT | Turkey | `hybrid_subject` | `TUR` |
+| Turkey national income | $2.2T | Turkey | `hybrid_subject` | `TUR` |
+| Turkey export value | $450B | Turkey | `hybrid_subject` | `TUR` |
+| Turkey GDP growth projection | 5.0 PCT | Turkey | `hybrid_subject` | `TUR` |
+| unemployment rate [Turkish, a 2029 projection of "below 8%"] | 8.0 PCT | Turkey | `hybrid_subject_description` | `UNRATE` |
+| China's gold purchases in 2023 | 225,000 | China | `hybrid_subject` | `NGDPXDCCNA` |
+| China's gold purchases in July 2026 | 20,000 | China | `hybrid_subject` | `AIRYY` |
+| UK defence spending target | 3.0 PCT | UK | `hybrid_subject_description` | `UKNGDP` |
+| budget deficit projection for France and Germany | 5.5 PCT | Germany | `hybrid_subject` | `EWG` |
+
+The `UNRATE` and `UKNGDP` rows arrived on Rule 2b (`hybrid_subject_description`,
+`DeterministicResolver.cs:172`) -- the leg added to RESCUE macro series, which off a country anchor reaches
+the wrong COUNTRY's series. Note also that the same France/Germany figure was emitted twice, once per country,
+and only the `Germany` copy attached.
+
+**THE CATALOG IS A CO-CAUSE, AND A PROMPT FIX WILL NOT REMOVE IT.** These are not fuzzy near-misses. SecMaster
+holds instruments whose `name` is a bare country string, so a country anchor EXACT-matches one:
+`TUR` is named `"Turkey"`, `NGDPXDCCNA` is named `"China"`, `UKNGDP` is named `"UK"`, `EWG` is named
+`"Germany"` -- four for four on the wrong attachments above. There are three instruments named `UK` (`.LON`,
+`IMPUK`, `UKNGDP`) and eight named `US`, so WHICH one wins is a ranking artifact. `UUP` -- the Invesco DB US
+Dollar Index fund -- is named `"Italy"`, which is a catalog defect in its own right and would have caught the
+`Italy` row had it ranked. Re-check, `atlas_secmaster`:
+`SELECT symbol, name FROM instruments WHERE name IN ('Turkey','China','UK','Germany','France','Spain','Italy','US');`
+Fixing the prompt stops the anchor being produced; it does not stop the catalog answering to it, and any
+OTHER path that reaches hybrid resolve with a country string still lands here.
+
+THE PAID GEMINI RUNG COSTS NOTHING HERE, BUT THE ROWS DO REACH IT -- an earlier revision of this entry said
+"not one country-anchored row reached it", which is false and was refuted by the counter that exists to say
+so. `Classify` runs INSIDE Rule 2.5 (`DeterministicResolver.cs:675`, D-6) and the rejection is metered at
+`:684`: `sentinel_gemini_resolver_calls_total{outcome="surface_filtered"}` reset at the restart and read
+**29** by 10:58Z, against `secmaster_match` 6 and `below_threshold_or_null` 2. So country rows DO enter the
+rung and are refused at its gate before any paid call -- the mechanism working as designed, and none of the 10
+attachments above came from `gemini_fallback`. The conclusion (no bill) stands; the claim that they never
+arrive did not, and the table alone could never have decided it. That is the lesson: an absence in a result
+set is not an absence in the system, and the counter is what distinguishes reached-and-rejected from
+never-reached.
+
+BLANK IS NOT SAFE EITHER, but the rule is sharper than "blank is bad". A blank slot does not withhold an
+anchor: `perRowSubject` falls back to the DOCUMENT-LEDE ENT (`DslToMergedExtractionAdapter.cs:399-401`), so
+the row is anchored on whatever the lede happens to be. On the five blank rows adjudicated at 10:46Z that lede
+was `China` (x3), `Wall Street Breakfast` and `John Healey` -- a country, a PUBLICATION and a PERSON, and the
+prompt excludes all three from ownership by name ("the PUBLISHER is never the owner", `cod_json_v1.txt:65-66`).
+"Potentially unreported buying" attached to `TW` through the lede "China". But four LATER blank rows attached
+to `LITE` off a single-company Lumentum article where the lede IS the right owner and the fallback did exactly
+the right thing. So blanking is safe when the document has ONE subject and dangerous when it has several or
+none -- the same condition that produces the country anchor. A positional fallback cannot tell those apart;
+that is the defect, not the fallback's existence.
+
+THE ISSUER ARM IS NOT A CLEAN CONTROL EITHER. At 10:46Z
+it was 12 rows / 9 attachments, all through Rule 1's shortlist as `llm_candidate_hybrid`, all checked by hand
+and correct (`BA` x7, `AKR` x2). It then grew, and the growth is not clean: three rows anchored on
+`European government bond yields` -- a named surface, so this entry's own rule bins it as issuer -- attached
+to **`DGS10`, the US 10-Year Treasury**, the identical "right series kind, wrong country" failure as `UNRATE`.
+So the narrow claim survives (an issuer-anchored row reaches Rule 1's shortlist and resolves through the leg
+designed for it, which is why the pipeline is not broadly broken) and the wide one does NOT. Note too that the
+two arms are judged by ASYMMETRIC standards: country-arm wrongness follows from instrument identity alone,
+while issuer-arm rightness only establishes that the instrument matches the named issuer -- "aircraft
+delivered 53" on `BA` is a Boeing operating metric, not a quantity of the BA security, and this entry does not
+call that right.
+
+CONTAINMENT, and it is partial. Every wrong row sits `review_status='Pending'` on a method NOT in
+`AutoApproveMethods` (`ExtractionOptions.cs:396` -- only `ticker_in_quote` and `llm_candidate_exact`), so it
+is held. It is not held forever: `AutoApprovePolicy` default-accepts a held row after `ReviewGraceDays` = 3
+(`ExtractionOptions.cs:409`), metered as `GraceDefaultAccept`. The XML doc at `ExtractionOptions.cs:405-406`
+claims `extracted_observations` feed only the qualitative digest and NOT the WS3 matrix -- recorded here as
+the CODE's claim, unverified by this entry, and in tension with CLAUDE.md §GIGO's "a junk `entity` resolving
+to the WRONG instrument corrupts the matrix". Which of the two is right is not settled here and must not be
+assumed either way.
+
+THE COUNTERWEIGHT, not buried. The benchmark gain was `numbers_f1` 0.3446 -> 0.5152 at production's OWN
+sampling (see the Convention B and sign-reversal entries under MEASUREMENT DEBT) -- a PARTIAL improvement that
+never claimed full compliance, so residual country-emission is CONSISTENT with the benchmark rather than
+contradicting it. **Nothing in this entry argues for reverting #1017, and nothing in it argues for a
+country -> reject rule** (see the second paragraph).
+
+WHAT THIS SAMPLE CANNOT CONTAIN. Thirty-two minutes of one morning cannot state a corpus-wide rate. The
+country arm rests on FOUR articles -- two Turkish macro, one Chinese gold, one European budget -- all naming
+no series; 10 wrong of 10 could still be four articles' worth of bad luck, and it needs a day of articles
+before the rate means anything. Correctness is a JUDGEMENT made by reading each row against its article, not a
+measured label -- there is no ground truth column, which is why the grown issuer arm is left unadjudicated
+rather than assumed. METHODOLOGY EXCEPTION, stated because the sibling entry forbids it in bold: that entry
+reads `OriginalInstrumentId`/`OriginalResolutionMethod`, never the live columns, because ReExtract erases
+them. This entry reads the LIVE columns, which is earned ONLY because the window is minutes old and 0 of 72
+rows have been re-extracted -- verified, not assumed. The moment ReExtract reaches this cohort the table above
+stops being reproducible, and the worker is running on a ~4-minute cadence.
+
+WHAT PRODUCTION IS ACTUALLY RUNNING, AND IT IS NOT `main`. `sentinel-collector` was created
+2026-09-06T10:26:43.554966881Z and **has NOT been recreated since** (`nerdctl container inspect`, re-read
+17:32Z). So the running process carries the corrected PROMPT -- a host-mount sync, which needs no image --
+and NEITHER of the two resolver fixes that merged after it: #1029 (merged 15:56:11Z) and #1031 (17:18:33Z).
+Every live figure in this entry therefore describes a production that has the prompt and NOT the code fixes.
+Rows were still landing on `U` at 11:00Z, 13:00Z and 16:00Z today (9 rows / 5 documents, anchored `CPI`,
+`PCE inflation` and one blank) -- macro-indicator surfaces rather than the country strings this entry tracks,
+so those are D-1's leg still open and not this entry's arm. Any query here re-run after the next deploy
+measures a DIFFERENT binary, and a changed figure is not by itself a refutation of this entry.
+
+RE-CHECKS, all `psql` SELECT-only. Every one widens as the window grows:
+- distribution: `SELECT coalesce(nullif(trim(source_entity),''),'<BLANK>'), count(*) FROM
+  sentinel.extracted_observations WHERE extracted_at >= TIMESTAMPTZ '2026-09-06 10:26:43Z' GROUP BY 1 ORDER BY 2 DESC;`
+- anchor-class split, the entry's headline. Use the SAME 54-name list as the discriminator query above --
+  a shortened list silently reclassifies `Germany`/`France`/`Spain`/`Italy` and inflates the issuer arm:
+  `SELECT CASE WHEN coalesce(trim(source_entity),'')='' THEN 'blank' WHEN source_entity IN (<the 54 names>)
+  THEN 'country' ELSE 'named-issuer' END AS anchor, count(*), count(*) FILTER (WHERE instrument_id IS NOT NULL)
+  FROM sentinel.extracted_observations WHERE extracted_at >= TIMESTAMPTZ '2026-09-06 10:26:43Z' GROUP BY 1;`
+- the attachments: same `WHERE`, plus `AND instrument_id IS NOT NULL`, selecting
+  `description, value, source_entity, resolution_method, "Symbol"`.
+- catalog co-cause, DB `atlas_secmaster`: `SELECT symbol, name FROM instruments WHERE name IN
+  ('Turkey','China','UK','Germany','France','Spain','Italy','US');` -- the table's parenthetical glosses
+  (`TUR` = iShares MSCI Turkey ETF, `UNRATE` = the US rate) are external knowledge, NOT what this returns.
+- has ReExtract reached the window: same `WHERE`, `count(*) FILTER (WHERE re_extracted_at IS NOT NULL)`.
+  Non-zero means the attachment table above is no longer reproducible.
+- Rule 2.5 arrivals: `sentinel_gemini_resolver_calls_total` in Prometheus, `outcome="surface_filtered"`.
+- deploy: `sudo nerdctl container inspect sentinel-collector --format '{{.Created}}'` -- NOT bare `inspect`,
+  which resolves the IMAGE and returns the BUILD time -- plus `sha256sum` on the two prompt paths.
+
+GRADUATED OUT OF THIS ENTRY, so it is not lost when this defect closes: **the `cod` prompt directory is NOT
+CPU-only -- it is production's GPU extraction prompt.** That is service SHAPE, so by §WHERE_WORK_LANDS it now
+lives in `SentinelCollector/AGENT_README.md` §GOTCHAS ("the `cod` PROMPT DIRECTORY IS NOT CPU-ONLY"), with
+its citations, rather than in a KNOWN DEFECTS entry that gets deleted on close.
+
+NOT REPAIRED HERE, recorded so it is not re-discovered from scratch: D-1's four `DeterministicResolver.cs`
+citations have drifted. It cites Rule 1 `:60`, Rule 2 `:124`, Rule 2.5 `:150` and `Classify` `:640`; those
+lines now hold a comment fragment, a comment fragment, a `LiftSector` call and a bare `{`, while Rule 1,
+Rule 2, Rule 2.5 and `Classify` live at `:95`, `:154`, `:212` and `:675`. The default sweep is SILENT on all
+four and NOT for one reason: only `Classify`'s cite is filename-qualified in D-1's prose, so it is the ONLY
+one the tool reads -- and it reports GREEN on that bare `{`. The other three are BARE CONTINUATIONS, and
+bare continuations are opt-in (`--bare`, default OFF -- `scripts/verify-citations.py:185` and
+`scripts/verify-citations.py:719`), so the default sweep never PARSES them. Silence on those three is not a
+clearance: the tool did not inspect them at all, which is the inverse of the blind spot its docstring
+warns about and worse, because a reader repairing D-1 would take a quiet sweep as three citations checked.
+AND `--bare` DOES NOT RESCUE THEM -- measured on this card: it binds all three to `V2ExtractionPipeline.cs`,
+the nearer preceding filename in D-1's own prose, where `:60` reads BLANK and `:124`/`:150` land on
+real-but-unrelated lines. Three wrong answers in place of three unread ones. These three can be checked by
+READING them and no other way.
+(The `:60`/`:124`/`:150`/`:640` forms in this paragraph quote D-1 verbatim and are bare for the same
+reason, so they are equally unswept.)
+
 **Production's CoD extraction loses ~108 gold entities per run to its own loop guard, TODAY.**
 `entities_recall` 0.5545 -> 0.3809 on the prompt production actually runs, measured 2026-09-06 and
 attributable to `CpuCod__JsonRepetitionPenalty` 1.1 rather than the token cap. The full entry, its
@@ -1185,7 +1474,7 @@ reload, and confirm `thresholdengine_pattern_severe_overdue_threshold_days` for 
 `max(3 * SecMaster-derived freq, 14)` — the authored number must not appear anywhere.
 
 **TRIPWIRE, green by design: a NEW `BrokenCircuitException` orphaning cohort.** The classification gap itself is
-closed (SentinelCollector D-27, `SentinelCollector/AGENT_README.md:108`) and both known cohorts are disposed of: 55
+closed (SentinelCollector D-27, `SentinelCollector/AGENT_README.md:118`) and both known cohorts are disposed of: 55
 rows orphaned 2026-07-19..07-24, left as won't-do on alpha decay; 223 rows orphaned 2026-09-04 while `vllm-server`
 was stopped for a vLLM 0.28.0 evaluation, recovered same-day by `POST /admin/reprocess`. The query is kept because
 it is the standing detector for a THIRD cohort, and because the predicate matches EVERY breaker-open event ever
