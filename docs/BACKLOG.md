@@ -79,19 +79,26 @@ incumbent here, so the proxy would have BLOCKED an upgrade on a number that was 
 retirement rationale lived in CLAUDE.md justifying a rule that no longer existed; it belongs with the
 measurement that settled it.
 
-**Two docs outside CLAUDE.md still teach the retired `MODEL_SIZE >= 30B` floor.** Found 2026-09-06 while moving
-the retirement rationale into the entry above; both predate that move and neither was touched by it. The ROOT
-`README.md` asserts ">=30B-parameter models" for Sentinel extraction and links `[CLAUDE.md -> SENTINEL]` -- the
-section that RETIRED the floor -- so the pointer now leads to its own refutation; the same file also advertises
-"Sentinel sizing" as one of CLAUDE.md's conventions. `docs/SENTINEL-RLM.md` carries a `### Model Size (30B+)`
-heading, a table cell reading "30B+ required for extraction quality", and a `## Do Not` bullet forbidding
-sub-30B models. This MISLEADS rather than merely lagging: the floor was retired because it is a PROXY that
-would have BLOCKED a real upgrade -- a 27B model beats our 32B incumbent on this substrate, in the table above --
-so a reader who lands on any of these declines the upgrade the measurement favours. Cited by grep and not by
-line, because a `README.md` citation is ambiguous across this repo and would rot besides:
-`grep -c 30B README.md docs/SENTINEL-RLM.md` -> 1 and 4 on 2026-09-06. Close it by replacing each with
-MODEL_ACCEPTANCE's actual bar -- a scorecard on production's prompt path that beats the incumbent's -- not by
-deleting the numbers.
+**THREE live sites outside CLAUDE.md still teach the retired `MODEL_SIZE >= 30B` floor, and one of them is
+PRODUCTION CODE.** Found 2026-09-06 while moving the retirement rationale into the entry above; all three predate
+that move and none was touched by it. The ROOT `README.md` asserts ">=30B-parameter models" for Sentinel
+extraction and links `[CLAUDE.md -> SENTINEL]` -- the section that RETIRED the floor -- so the pointer now leads
+to its own refutation; the same file also advertises "Sentinel sizing" as one of CLAUDE.md's conventions.
+`docs/SENTINEL-RLM.md` carries a `### Model Size (30B+)` heading, a table cell reading "30B+ required for
+extraction quality", and a `## Do Not` bullet forbidding sub-30B models. AND
+`SentinelCollector/src/Services/ExtractionService.cs:35` carries it as a code comment on the CoVe constructor --
+`// CoVe (extraction) always runs on GPU - requires >=30B model`. THE CODE SITE IS WHY THIS ENTRY WAS WIDENED
+RATHER THAN CLOSED: an earlier revision said "two docs" and gave a two-FILE grep as its re-check, so anyone
+closing it by its own instrument would have left the retired rule taught in a comment and read GREEN doing it.
+This MISLEADS rather than merely lagging: the floor was retired because it is a PROXY that would have BLOCKED a
+real upgrade -- a 27B model beats our 32B incumbent on this substrate, in the table above -- so a reader who
+lands on any of these declines the upgrade the measurement favours. Cited by grep for the two docs and not by
+line, because a `README.md` citation is ambiguous across this repo and would rot besides; the `.cs` site is cited
+by line because that file's name is unique:
+`grep -c 30B README.md docs/SENTINEL-RLM.md SentinelCollector/src/Services/ExtractionService.cs` -> 1, 4 and 1 on
+2026-09-06. Close it by replacing each with MODEL_ACCEPTANCE's actual bar -- a scorecard on production's prompt
+path that beats the incumbent's -- not by deleting the numbers. THE `.cs` EDIT IS A SEPARATE PR: it is a comment
+change in a service, so it pulls in a full `SentinelCollector` compile, and a docs PR may not carry it.
 
 **The three stores, and the numbers CLAUDE.md §WHERE_WORK_LANDS no longer carries.** Measured 2026-09-05
 (recorded by #1007) at `c32354f7`, which is the sha that reproduces them and NOT #1007's own `7a9769ed`, a
@@ -2624,6 +2631,261 @@ artefact wearing a fixed defect's face, recorded here rather than reopened; the 
 is 4096. Read `truncated` and `finish_reasons` in the provenance before concluding anything from
 `schema_invalid`.
 
+### Convention B measured end to end: +0.1873 `numbers_f1`, disjoint arms, 82.4% of the ceiling [2026-09-06]
+The macro-owner decision (#1017: the SERIES owns its own print) is no longer a prediction. Both arms were
+run against the SAME committed gold on the SAME committed key, so the effect below is the PROMPT's and
+nothing else: incumbent Qwen2.5-32B-Instruct-AWQ rev `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c` @ vLLM
+0.19.0 (production's live engine, client-only), the 40 gold articles, concurrency 6, seed 42, temperature
+0, `--max-tokens 8192`, THREE runs per arm. The only axis that moves is the prompt file's content:
+sha256 `ab06b7b0` (pre-#1017) against sha256 `0dd66dde` (repo HEAD). BOTH ARE CONTENT DIGESTS, NOT GIT
+OBJECT IDS, and an earlier revision of this line called them "blobs": `git show ab06b7b0` is a fatal
+error. The corresponding git blobs are `45d02cd8bd3e...` and `85187c399dd4...`; everywhere below, a git id
+appears in full only next to the `git` command that consumes it.
+
+| arm | `numbers_f1` per run | mean | within-arm range |
+|---|---|---|---|
+| OLD prompt, sha256 `ab06b7b0` | 0.3564 / 0.3426 / 0.3792 | **0.3594** | 0.0366 |
+| NEW prompt, sha256 `0dd66dde` | 0.5747 / 0.5389 / 0.5265 | **0.5467** | 0.0482 |
+
+**+0.1873**, and the distributions are DISJOINT: `min(NEW) - max(OLD)` = **+0.1473**, so the worst pairing
+of runs still separates. The effect is 3.9x the wider of the two within-arm ranges and 4.4x their mean --
+which matters because the swing is what the entry above this one says has to come out of the instrument,
+and an effect inside the swing would have decided nothing.
+
+WHAT IT DID NOT BUY IS 17.6% OF THE PRIZE. QUOTE THE ARM, which is what the entry above legislates and
+what an earlier revision of this line failed to do: its headline +0.2048 is the POOLED n=5 figure, and its
+ARM-MATCHED counterpart -- the same three c6 runs used here -- is **+0.2022**. Against the NEW gold that
+same c6 arm sizes the question at **+0.2273** greedy, or **+0.2321** under maximum-cardinality matching on
+the same waived graph. Captured: **82.4%** of the greedy ceiling. The 80.7% figure divides the same
+greedy-measured +0.1873 by the max-cardinality ceiling, so it is a MIXED basis and is the conservative
+reading, not a second measurement. The remaining 0.0400 is a real convention the model does not yet emit,
+not a scoring artefact.
+
+The decomposition, all c6 n=3, which is what separates the GOLD's move from the PROMPT's:
+
+| measurement | `numbers_f1` | reading |
+|---|---|---|
+| OLD preds x OLD gold, committed key | 0.3710 | the c6 arm of the entry above, whose published figure is the POOLED 0.3883 |
+| OLD preds x NEW gold, committed key | 0.3594 | the gold move ALONE costs **-0.0116** |
+| OLD preds x NEW gold, WAIVED key | 0.5867 | counterfactual ceiling on the gold as it stands |
+| NEW preds x NEW gold, committed key | 0.5467 | achieved -- **0.0400 short** of that ceiling |
+| NEW preds x NEW gold, WAIVED key | 0.6143 | **+0.0676 residual headroom** still in the key |
+
+MECHANISM, per row through `eval_harness`'s own `_cod_align`/`_number_key`: macro_indicator-owned gold
+rows that align AT ALL went **2.3 of 149 -> 83.3 of 149**; aligned number pairs **176 -> 264**; the
+model's own `source_entity_empty_rate` **0.3142 -> 0.0943**. The prompt asked for a series name where it
+used to ask for a blank, and the model supplied one.
+
+OPERATIONAL, because a clean run is a claim too: all six runs rc 0, `schema_invalid 0`, `call_errors 0`,
+`truncated 0`, `finish_reasons {stop: 40}`, shuffled-gold control FLOOR_OK on EVERY run (bar 0.10, judged
+per run). The three NEW runs took 7m27s end to end (03:48:04Z-03:55:31Z), 446s of it inference. The engine
+was unharmed: `vllm:request_success_total{finished_reason="error"}` and `="abort"` both 0 before and after
+each run, and the `stop` counter advanced by exactly 40 per run.
+
+WHICH PROMPT A RUN READ IS NOT IN ITS ARTIFACT -- the same sidecar gap the entry above discloses for
+concurrency. `run_model.py`'s provenance records the prompt FILE PATH and never its hash, and BOTH arms
+name the same path, so nothing in the six sidecars distinguishes them. What pins the assignment is time
+and token count: the OLD arm's three runs finished 2026-09-05T23:31:56Z and #1017 landed at `a8a0ed5d`
+four hours later, 2026-09-06T03:46Z, with the NEW arm starting 03:48:04Z -- two minutes after. The runs
+corroborate it themselves: `usage.prompt_tokens` is 76,759 in every OLD run and 83,079 in every NEW one
+over the identical 40 articles, a constant +158 per article, which is the size of the clause #1017 added.
+Whoever repeats this should hash the prompt INTO the sidecar rather than reconstruct it from timestamps.
+
+`number_source_entity_exact_match` SHOWS AN APPARENT -0.020 REGRESSION AND IT IS ONE ARTICLE. 0.9280 ->
+0.9076 over all aligned pairs. It is `sentinel-v6.2-cove.json` index 183 in full: that article's six `US`
+payroll rows -- the non-conformance the entry above DISCLOSES rather than hides -- now ALIGN (6, 5 and 5
+per run) and every one of them scores 0 exact, where before they did not align at all and were counted by
+nothing. They align because the model writes `US jobs market` or `US economy` against a gold `US`:
+`_source_entity_affinity` 0.5 on 12 of the 16 rows and 0.667 on the other 4, i.e. AT or just above the
+0.5 floor. Over the 490 conform rows the metric is FLAT: **0.9247 -> 0.9246**. (The OLD arm's 0.9280 and
+its conform-only 0.9247 differ even though no article-183 row aligned in that arm, because the all-pairs
+figure also carries the aligned OPEN_BLANK rows, which score 1.0 on blank-equals-blank. Neither number is
+wrong; they have different denominators.) A disclosed
+non-conformance surfacing in a metric is the metric working, not a defect -- but it also means this number
+cannot be read as a conformance figure until article 183's six rows are settled.
+
+PRODUCTION STILL RUNS THE OLD PROMPT, and this is the most decay-prone claim in the entry because it is
+live host state, so it gets its own one-liner:
+`git hash-object /opt/ai-inference/prompts/cod/cod_json_v1.txt` -> `45d02cd8bd3e360529267c9fec3868fd8554af4a`
+on 2026-09-06, which IS the pre-#1017 blob. So this entry measures the CORRECTED prompt, not what
+production does, and the +0.1873 is not yet a production number -- an ansible deploy of the prompts mount
+is what would make it one, and that hash changing is how you know it happened.
+AND THE FLAG CANNOT TELL THE TWO ARMS APART: `eval_harness` stamped `production_prompt_path: true` on ALL
+SIX scorecards. The stamp is a four-way conjunction -- `endpoint_mode == "completions"`, a `prompt_file`
+NAMED, a `schema_file` named, and a chat template that wraps the prompt -- and NOT ONE of the four
+inspects prompt CONTENT (`LlmBenchmark/scripts/eval_harness.py:1070` is the `prompt_file` conjunct, a bare
+`bool()` on the path string). So the flag is sound on WIRE SHAPE, which is what it was built for, and
+blind on the content axis: it certifies the arm that is false of production exactly as loudly as the arm
+that is true of it. FOLLOW-UP THIS PR DOES NOT TAKE: CLAUDE.md §MODEL_ACCEPTANCE cites a
+`production_prompt_path: true` scorecard as evidence that the bar runs end to end, and an agent reading
+only that will believe the flag discriminates prompt content. Either the flag hashes the prompt into the
+scorecard, or that HARD_STOP gains a clause saying it does not. Editing CLAUDE.md was out of scope here.
+
+RE-CHECK (no GPU and no engine -- it re-scores the committed gold against the EXISTING prediction files,
+so it is free only while those files exist; see the PROVENANCE LIMIT below):
+```
+python3 LlmBenchmark/scripts/rescore_alignment_keys.py \
+  --cod-gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json \
+  --predictions <OLD run a>.jsonl --predictions <OLD run b>.jsonl --predictions <OLD run c>.jsonl
+python3 LlmBenchmark/scripts/rescore_alignment_keys.py \
+  --cod-gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json \
+  --predictions <NEW run a>.jsonl --predictions <NEW run b>.jsonl --predictions <NEW run c>.jsonl
+```
+2026-09-06 -> the OLD invocation prints `committed_context_and_source_entity 0.3594 range 0.0366` and
+`macro-owner question, ISOLATED: +0.2273`; the NEW one prints `0.5467 range 0.0482` and `+0.0676`. Those
+four figures ARE the headline, the ceiling and the residual, so ROWS 2 TO 5 of the table re-derive from
+two commands. ROW 1 DOES NOT, and the entry does not pretend otherwise: `OLD preds x OLD gold` needs the
+PRE-DECISION gold, which is committed NOWHERE -- it was reconstructed for this work and lives in `/tmp`
+beside the predictions. It was measured, not quoted, and it lands on the entry above's own published c6
+per-run values to four decimals (0.3646 / 0.3528 / 0.3955, mean 0.3710), which is the corroboration
+available without that file. So the **-0.0116** gold-move figure is the one number here that a future
+reader cannot re-derive from the repo plus the predictions alone. Add `--scorecard <matching
+scorecard>.json` once per run and
+`controls.reproduces_published_numbers_f1` goes from `NOT RUN` to `OK`, which is the check that the
+rescorer and `eval_harness` still agree; it printed `OK` on 2026-09-06.
+
+PROVENANCE LIMIT, the SAME one the entry above discloses for its own figures and for the same reason: the
+gold and the rescorer are committed, THE SIX PREDICTIONS FILES, THE SIX SCORECARDS AND THE RECONSTRUCTED
+PRE-DECISION GOLD ARE NOT. They live under `/tmp`, so one `tmpwatch` ends every figure in this entry and
+in the two below it -- none is re-derivable from the repo alone. THIS APPLIES TO THE TWO ENTRIES THAT
+FOLLOW AS WELL, including the one whose re-check says its entity figures are "checkable against the six
+scorecards without re-scoring": true today, and it costs two GPU sweeps the moment `/tmp` clears.
+What survives is the METHOD, not the numbers: re-running the arms costs two `run_model.py` sweeps on the
+live engine (~7.5 minutes each at concurrency 6) plus a checkout of the pre-#1017 prompt for the OLD arm,
+`git show 45d02cd8bd3e360529267c9fec3868fd8554af4a` (the git blob; the sha256 in the table is a different
+namespace). Whoever repeats this should write the predictions somewhere the tree can reach BEFORE the
+numbers are quoted forward.
+
+### The prompt's own anti-invention clause FAILS, and referential integrity is structurally blind to it [2026-09-06]
+The corrected `source_entity` bullet added a clause for exactly this case -- "a series the article never
+NAMES (a clause may describe the measure while naming no indicator; that is a blank, not licence to coin
+one)", in `SentinelCollector/src/cod-prompts/cod_json_v1.txt`, closed four lines later by "NEVER invent a
+name to fill this field". Cited by its verbatim text and NOT by line, because `scripts/verify-citations.py`
+`_EXTS` has no `txt` and a `.txt:<line>` form is therefore a citation no sweep in this repo can ever check.
+Measured on the arm-NEW runs above, the model coins names anyway, and the metric written
+to grade anchor grounding cannot see it.
+
+WHAT MAKES IT DEBT RATHER THAN A BUG REPORT. `source_entity_referential_integrity` asks whether an anchor
+appears in the model's OWN `entities[]` (`LlmBenchmark/scripts/eval_harness.py:767`) -- never whether it
+appears in the ARTICLE. Every coinage below is duly declared in `entities[]`, so the metric reads **0.9603
+/ 0.9760 / 0.9900** across the three NEW runs, and the ONE run carrying hand-verified coined anchors on
+BOTH articles below scores 0.9760 -- the middle value. The metric does not even RANK the runs by coinage.
+A metric that cannot fail on the failure mode its clause exists to prevent is a signal riding on a
+mechanism that does not observe it, and the article text is ALREADY BOUND IN THE SAME LOOP: `content =
+_norm_ws(p.source_content)` sits just above that test and `number_source_text_verbatim_rate` reads it a few
+lines below at `LlmBenchmark/scripts/eval_harness.py:774`. The missing check needs no new data, only the
+normaliser this entry's last paragraph specifies.
+
+WHAT WAS MEASURED, BY HAND, ON FOUR ARTICLES -- AND THE CRITERION SELECTS EIGHT, so this is a sample and
+must not be read as a sweep. Articles whose gold carries a blank anchor are 1 (eleven), 48 (five), 395
+(two), 471, 479, 490 and 35 (one each), plus article 183's six non-conformant `US` rows: eight in all.
+Hand-checked here: 1, 35, 48 and 183. The other four were not opened.
+- `sentinel-v6.2-cove.json` index 1 (Conference Board survey): in **1 of 3 runs** the model coined six
+  `concept` anchors nominalised from clauses the article only DESCRIBES -- `income increase`, `income
+  decrease`, `business conditions improve`, `business conditions worsen`, `home purchases`, `automobile
+  purchases`, on 7 of its 20 predicted numbers. The article reads "The share of consumers expecting their
+  incomes to increase rose to 17.6 percent" and "Intentions to buy homes within six months"; it names no
+  indicator anywhere. The other two runs coined nothing on this article. AN EARLIER DRAFT OF THIS ENTRY
+  SAID "2 OF 3" -- it is 1, and the other two runs' `income prospects` / `jobs plentiful` /
+  `business conditions` are verbatim article phrases, which is what a re-derivation caught and a reading
+  of the summary would not have.
+- `sentinel-v6.2-cove.json` index 35 (Visa holiday sales) IS THE LARGE ONE AND IT REPRODUCES IN ALL THREE
+  RUNS. The model emits **60 entities in every run where the gold holds 15**, of which 50, 50 and 49 are
+  `macro_indicator` and **NOT ONE of those occurs in the article**: `U.S. holiday sales growth rate`,
+  `... pace`, `... momentum`, `... velocity`, `... acceleration`, `... deceleration`, `... forecast`,
+  `... prediction`, `... estimate`, `... projection`, `... outlook`, `... trend` -- a dozen near-duplicate
+  nominalisations of one sentence. The OLD prompt emits 9, 10 and 11 entities on the same article, zero
+  `macro_indicator` and zero coined. The coinage reaches `numbers[].source_entity` in only ONE of the
+  three runs (16 rows on `U.S. holiday sales`), which is why an anchor-only sweep understates this by 3x:
+  the invention is in `entities[]` every time.
+- Held CLEAN: index 48 emits 5 of 5 blanks in all three runs (publisher-is-not-owner held perfectly), and
+  index 183's anchors are all verbatim article surfaces in all three.
+
+THE CORPUS-WIDE SWEEP IS A NOISY INSTRUMENT AND ITS RATE MUST NOT BE QUOTED. A substring test against the
+article marks a correct answer wrong whenever the source text is mangled: on `sentinel-v6.2-cove.json`
+index 429 the analyst table is broken across column breaks -- the content field literally holds
+`Commerzb\nank`, `Bank of\nAmerica`, `Standard\nChartere\nd`, `Societe\nGenerale`, `Goldman\nSachs`,
+`Morgan\nStanley` -- and the model REASSEMBLED them correctly. A substring sweep flags every one as coined.
+Any measurement of this failure mode needs a normaliser that survives an intra-word newline before its
+rate means anything, so the corpus-wide coined-row rates produced during this work are NOT recorded here.
+
+CLOSING IT is either a scorer change or a prompt change and the entry does not presume which:
+a gold-free `source_entity_article_grounding` beside the integrity metric (same loop, same
+`p.source_content`, the normaliser above), or a prompt clause the model actually obeys. What CANNOT close
+it is quoting integrity: 0.9603-0.9900 is the number this failure mode produces.
+Re-check (no engine, but it reads a predictions file from `/tmp` -- article 35 is the one that reproduces
+in every run):
+```
+python3 - <<'PY'
+import json, re
+sub = {r['source_index']: r for r in json.load(open('<the 40-article subset>.json'))}
+art = re.sub(r'[^a-z0-9]+', ' ', sub[35]['input']['content'].lower()).strip()
+for line in open('<a NEW-arm predictions>.jsonl'):
+    r = json.loads(line)
+    if r['source_index'] != 35:
+        continue
+    e = r['prediction']['entities']
+    coined = [x['name'] for x in e if re.sub(r'[^a-z0-9]+', ' ', x['name'].lower()).strip() not in art]
+    print(len(e), 'entities,', len(coined), 'not in the article:', coined[:6])
+PY
+```
+2026-09-06 -> `60 entities, 50 not in the article` (49 on the third run) for the three NEW runs; the OLD
+arm prints 9, 10 and 11 entities and `0 not in the article`. Build the 40-article subset with the joiner
+in the entry two above this one.
+
+### `entities_f1` fell 0.0338 under the corrected prompt, and 94.9% of it is ONE article [2026-09-06]
+Same six runs. `entities_recall` did NOT move -- **0.5545 -> 0.5529** -- but the arms emit **403.7 ->
+454.7** entities per run for **346.0 -> 345.0** true positives: fifty-one more entities per run bought
+NEGATIVE ONE. So precision fell **0.8573 -> 0.7588** and `entities_f1` fell **0.6734 -> 0.6396**.
+EVERY ENTITY FIGURE IN THIS ENTRY IS THE c6 ARM ALONE, n=3, AGAINST THE POST-DECISION GOLD'S 624
+entities. The entry above quotes `entities_f1` **0.6744** with range 0.0092 -- that is the POOLED
+five-run figure against the OLD gold and its pre-decision 616-entity denominator. Different rows, not a
+contradiction, and the two must not be differenced.
+`ent_type_accuracy` ROSE, 0.7332 -> 0.7594, and it is graded on ALIGNED pairs only, so the false positives
+below never touch it.
+`macro_indicator` EMISSIONS ARE THE FLATTERING NUMBER HERE AND MUST NOT BE QUOTED BARE: 30.0 -> 99.3 per
+run against 94 in gold reads as the model finally typing entities the way the gold does. It is not.
+The gold's 94 `macro_indicator` entities include ZERO on article 35, and article 35 is where ~50 per run
+of the 99.3 come from. Excluding that one article the emissions are **30.0 -> 49.7 against the same 94**
+-- a real move toward the gold's typing, and still barely half of it.
+
+THE CONCENTRATION IS THE FINDING. The false-positive delta over the three-run pair is **+156 NET**, and
+`sentinel-v6.2-cove.json` index 35 alone contributes **+148 of it -- 94.9% of the net** -- the runaway
+coinage in the entry directly above: 30 -> 180 entities emitted over three runs against 29 -> 31 true
+positives. QUOTE IT AS A NET, because the gross is a different number and says something else: 14 articles
+move UP (+189 together, of which article 35 is +148 and the largest of the other thirteen is +12, four per
+run, on article 1), 10 move DOWN (-33) and 16 do not move at all. An earlier draft of this line read "the
+other thirteen sum to +8" -- that is the NET after the ten decreases, not their sum, and the two figures
+differ by 33.
+EXCLUDE ARTICLE 35 FROM BOTH ARMS AND THE REGRESSION IS ESSENTIALLY GONE: precision 0.8544 -> 0.8480,
+`entities_f1` **0.6709 -> 0.6669**, a net +8 false positives across three runs.
+
+A HYPOTHESIS WAS PUT AND THE PROBE DOES NOT SUPPORT IT, recorded because the next agent will otherwise put
+it again: that the new series names clear the `source_entity` affinity floor of **0.5**
+(`LlmBenchmark/scripts/eval_harness.py:538`) while missing the entity-NAME floor of **0.8**
+(`LlmBenchmark/scripts/eval_harness.py:543`), so one string helps `numbers` and hurts `entities`. The band
+it predicts is real in aggregate -- unaligned predicted entities whose best token-F1 against a gold name
+in the SAME article falls in [0.5, 0.8) go 22.3 -> 63.3 per run, and the `macro_indicator` subset of that
+band goes 3.0 -> 44.7 per run. BUT THAT `macro_indicator` SUBSET IS **126 OF ITS 134 ROWS -- 94.0% --
+ARTICLE 35 AGAIN** (rows counted across all three NEW runs, not per run), where the "near-miss" partner is
+the gold entity `U.S.` at token-F1 0.500. That is not a surface-form mismatch on a legitimate series name;
+it is the invented name scoring half-marks on a country. A general floor mismatch would spread across
+articles and this does not. THE FLOORS ARE STILL THE RIGHT PLACE TO LOOK if the question is reopened --
+both are named above and a one-line edit to either re-scores the whole corpus -- but the aggregate
+regression is ALREADY EXPLAINED by invention, and lowering the entity floor to admit invented names would
+make the scorer agree with a defect.
+
+WHAT IS ACTUALLY OPEN: whether the corrected prompt's `macro_indicator` instruction CAUSED the article-35
+runaway or merely uncovered it. The OLD arm emits 9, 10 and 11 entities and zero `macro_indicator` on that
+article, so the instruction is at least proximate; that is one prompt edit and one re-run to settle, and until it
+is, `entities_f1` should not be quoted as a cost of the macro-owner decision.
+Re-check (no engine, same `/tmp` dependency): score both arms' entity arrays through the harness's own
+`_cod_align`/`_entity_key`, per article, and read the delta; the reproduced per-run means are
+`P 0.8573 R 0.5545 F1 0.6734` (OLD) and `P 0.7588 R 0.5529 F1 0.6396` (NEW), which match the six
+`eval_harness` scorecards exactly. THOSE SCORECARDS ARE IN `/tmp`, NOT THE REPO -- the PROVENANCE LIMIT
+two entries above governs this one too, so "check it against the scorecards" is free only while they
+exist and costs two GPU sweeps afterwards.
+
 ### Nothing checks whether the SHIPPED gold still states the `source_entity` convention [2026-09-05]
 `build_cod_gold.py`'s divergence gate is a PRODUCER gate: it compares production's prompt against
 the adjudication instruction it is about to send and against the text `alignability()` would write
@@ -3026,11 +3288,23 @@ reordering a rule would silently change the message a blocked reviewer reads. Re
 `git push origin <a real branch> # git push origin main` and the newline shape through the hook and read which
 deny answers each.
 
-**16 citations in tracked `.md` cannot land, and rc 1 is therefore the corpus's steady state.** Reproduce:
-`git ls-files -z '*.md' | xargs -0 python3 scripts/verify-citations.py --quiet` — 296 checked, 17 cannot land at
+**Citations in tracked `.md` that cannot land are the corpus's steady state, and so is rc 1: 28 of them at
+`5d42ce9f`.** Reproduce:
+`mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-citations.py --quiet "${F[@]}"` -- 198
+files / 497 citations / 28 cannot land at `5d42ce9f`, rc 1. THE FIGURE MOVES WITH EVERY DOC EDIT, WHICH IS
+WHY IT IS STAMPED: 296 checked, 17 cannot land at
 `68b655df` (PR #967 head), 16 once that PR's own regression in the architecture-cards exemplar card is repaired;
-292 checked / 16 cannot land at its base `eb2835e8`. So a green run is not the bar today and nobody should chase one
-as a merge gate: judge a PR on whether its cannot-land SET is a subset of its base's. Composition of the 16, because
+292 checked / 16 cannot land at its base `eb2835e8`. This headline read a bare, unstamped "16" until 2026-09-06,
+by which point the true figure was 28 -- the sentence a reader quotes was the one sentence in the paragraph
+carrying no sha.
+THE `xargs -0` PIPELINE THIS LINE ALSO CARRIED UNTIL 2026-09-06
+REPORTS THE SAME COUNTS AT rc 123, NEVER rc 1: `xargs` remaps a child's exit status, so the rc this entry's own
+headline asserts is UNOBSERVABLE through the form it prescribed. Measured on the identical corpus at `5d42ce9f`:
+`mapfile` rc 1, `xargs` rc 123, both 198 files / 497 citations / 28 cannot land. #1021 repaired the same defect
+in CLAUDE.md §TOOL_UPKEEP; this copy survived it, which is what a fact written twice does. So a green run is not
+the bar today and nobody should chase one
+as a merge gate: judge a PR on whether its cannot-land SET is a subset of its base's. Composition of the 16 AT
+`eb2835e8` -- a SNAPSHOT, not today's 28, and it is the composition that has never been re-taken -- because
 they are three different jobs and only the first two are defects: 11 AMBIGUOUS basenames a `--scope` would resolve
 (`server.py` eight times, ambiguous across `gemini-resolver-mcp` and `SentinelCollector`, plus `Program.cs`,
 `DependencyInjection.cs`, `AdminEndpoints.cs`); 3 UNRESOLVED "no file named", of which ONE — the `src/Removed.cs`
