@@ -2589,6 +2589,119 @@ someone reprocessed the rows, which does NOT close this entry -- only the binary
 
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 
+### Stage 2 has a gold now, and it prices three things a comparison must clear [2026-09-07]
+`--task cove` is the metric every `aggregate_f1` in this repo is quoted in, and until now its gold was
+the `output` arrays of `v6.2-cove-plus-negatives` -- machine-written against the substrate's own 16
+instruction blocks, with no cross-check, no origin field and no control. `LlmBenchmark/cove-gold/`
+replaces it on the 40-article corpus: **420 items over 40 articles, 8 with no figures**, labelled on
+production's stage-2 prompt path (`initial_extraction.txt` + `ExtractionSchema.cs`) at production's
+stage-2 decoding (**16,384 completion tokens, no `repetition_penalty`, temperature 0** -- what
+`ChainOfVerification` -> `GenerateStructuredAsync` sends with neither override; stage 1's 4,096 + 1.1
+is a different call and is NOT carried across). Two arms, different families, neither the incumbent's
+(Qwen) nor the swap candidate's (Gemma). **$0.5099** of a $6.00 fail-closed cap over 101 requests.
+
+**WHAT IT CAN CARRY.** Inter-arm agreement on 272 matched pairs, in the scorer's own alignment with
+its quote-key ties broken on `value`: `value` 0.985, `certainty` 0.949, `unit` 0.912, `is_comparison`
+0.890, `period` 0.835, `source_entity` 0.721. Item-set f1 between the two families **0.785**
+(P 0.754 / R 0.819), which clears the 0.60 headline bar the artifact pre-registered before the arms
+were assembled. The item-set rates are the scorer's own: a tie-break cannot change how many pairs
+there are, only which figures are paired.
+
+**WHAT IT CANNOT.** `description` agrees at **0.357** -- NOISE, in the same class as CoD's free-form
+`event_kind`/`claim_kind` at 0.302/0.138. Do not score it and do not quote it.
+
+**FOUR `confirmed` STAMPS ARE STILL WRONG, and they are the floor of a tie-break-only repair.**
+`align_for_assembly` moves a pairing only where the move is ratio-neutral AND agrees more values, so
+it cannot help where the primary never produced the cross-check's figure at that span at all: on 4
+pairs across 3 articles (`sentinel-v6.2-cove.json` :0 x2, :395, :4) the arms read overlapping spans
+as different figures, the cross-check's is absorbed as a confirmation of the primary's, and it never
+enters gold. **4 of 271 `confirmed` (1.5%)** name a figure the cross-check did not produce there, and
+4 admitted cross-check figures are missing. Down from 13 and 13 before the tie-break. Closing the
+rest needs the scorer to stop pairing on quote alone -- the same change point 1 records as open, and
+not a tie-break. Re-check: pair each arm's admitted items through `align_for_assembly` and count
+matched pairs whose `value`s differ and whose cross-check figure no gold item at that quote holds.
+
+**THREE NUMBERS A STAGE-2 COMPARISON MUST CLEAR, all re-derivable from the artifact's own
+`controls` block:**
+
+1. **The CoVe scorer's per-field accuracies are coupled to EMISSION ORDER, and the coupling is not
+   marginal.** 282 of 420 gold items (67%) share a `text_quote` with a sibling -- the prompt REQUIRES
+   one sentence to be quoted once per figure it carries -- and `eval_harness._align_one` keys on
+   `text_quote` overlap ALONE, so the greedy assignment pairs same-quote items by INDEX. Reversing
+   every same-quote group and changing nothing else moves `value_accuracy` **1.000 -> 0.367**;
+   `period_accuracy` 1.000 -> 0.781. `aggregate_f1` is **untouched at 1.000**, because it counts
+   matched ITEMS. That is an upper bound (no real model reverses every group), but it settles where a
+   stage-2 comparison belongs: **on the headline, never on `value_accuracy`.** Same class of defect as
+   the CoD scorer's `source_text` key recorded above. STILL OPEN IN THE SCORER, deliberately:
+   `_align_one` grades every published scorecard, so changing it re-prices history and is its own
+   decision. What the gold no longer does is DEPEND on it -- `build_cove_gold.align_for_assembly`
+   breaks that tie on `value` before order, so which arm confirmed which figure is decided by the
+   figure. That is a tie-break, not a second aligner: it applies only moves `_align_one` scores
+   identically, so the pair count and every item-set rate are unchanged (272 / P 0.754 / R 0.819 /
+   f1 0.785, before and after). 15 pairings move on this corpus, 9 inside one normalised quote and 6
+   across two spans of one sentence.
+2. **An absolute `aggregate_f1` on this gold is NOT comparable to a published one on the v6.2
+   substrate.** The two golds align at item f1 **0.654** (P 0.764 / R 0.571) on the same 40 articles.
+   The legacy gold also carries 44 of 314 quotes that are **not verbatim in their own article** and 15
+   units outside production's schema enum (`million` x14, `hours` x1), and the two disagree on whether
+   two articles hold any figure at all. Every baseline quoted in `aggregate_f1` sits on the legacy side
+   of that gap.
+3. **Gold construction owns 0.0690 of recall.** Gold is the admitted union deduplicated by figure
+   (primary arm + the cross-check's extras that clear a deterministic gate, each `text_quote`+`value`
+   held once), so the primary arm scores recall 0.788 against the gold it helped build and the
+   cross-check 0.857. Common-mode across two models scored on the same gold -- but it is the size of
+   this repo's cross-family effects, so a candidate that happens to resemble one arm inherits part of
+   it. Selecting `origin.crosscheck == "confirmed"` re-derives the arms' INTERSECTION without
+   re-labelling; it does not re-derive the union, whose other two thirds are the single-family items
+   that field also names. A perfect extractor ceilings at `aggregate_f1` **1.000** on this gold: no
+   two items share a quote AND a value, so none is unmatchable by construction.
+
+**A SCORECARD ON THIS GOLD STILL STAMPS `production_prompt_path: false`, and that is a runner
+limitation, not a prompt one.** The flag requires `--prompt-file`, and `render_prompt` substitutes
+`{{article_text}}` and `{{source_id}}` only -- production's CoVe prompt uses `{{source}}`,
+`{{content_type}}` and `{{content}}`, so a `--prompt-file` run would send literal braces in the header
+line. The substrate's per-record `instruction` carries the correctly rendered prompt instead, which is
+byte-identical to what `GetInitialExtractionPrompt` builds. Closing the flag needs `run_model.py` to
+substitute those two placeholders (or to accept a per-record instruction as "the prompt"); until then
+compare the recorded `stage.prompt.sha256` against the mount by hand.
+
+**PRODUCTION'S CoVe SCHEMA IS NOT THE SCHEMA THE SCORER ACCEPTS.** `ExtractionSchema.cs` carries
+`period_end` and `release_date`; `eval_harness._is_schema_valid` treats ANY key outside its 11 as
+invalid. A model handed production's real schema and emitting either field scores `json_valid` 0 --
+one metric, not `aggregate_f1`, but it reads as a model defect and is a request-shape fact. The gold
+holds the 11 scorer-visible fields and `verify_cove_gold.py` fails on a twelfth.
+
+**WHAT IS STILL UNMEASURED.** No model has been scored on this gold -- the GPU was held by another
+sweep. Until one is, the gold's ability to SEPARATE two models is inferred from its inter-arm
+agreement, not demonstrated. Re-check:
+```
+python3 LlmBenchmark/scripts/run_model.py --task cove --endpoint-mode completions \
+  --chat-template $'<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n' \
+  --max-tokens 16384 --substrate LlmBenchmark/cove-gold/cove_stage2_substrate_v1.json \
+  --endpoint http://localhost:8000 --model <candidate> --out /tmp/cove-preds.jsonl
+python3 LlmBenchmark/scripts/eval_harness.py --task cove \
+  --substrate LlmBenchmark/cove-gold/cove_stage2_substrate_v1.json \
+  --predictions /tmp/cove-preds.jsonl --adapter-meta /tmp/cove-preds.jsonl.provenance.json \
+  --out /tmp/cove-scorecard.json
+python3 LlmBenchmark/scripts/verify_cove_gold.py \
+  --gold LlmBenchmark/cove-gold/cove_stage2_gold_v1.json \
+  --corpus LlmBenchmark/cod-gold/cod_stage1_corpus_v1.json --selftest
+```
+The verifier's `--selftest` is the re-check that matters for the ARTIFACT: 15 controls, 12 mutations
+caught by name and 3 negative controls that must stay silent. It also FAILS if `initial_extraction.txt`
+or `ExtractionSchema.cs` moves under the gold -- the gold's labels answer a specific prompt, and a
+derived schema that outlives its source still parses.
+
+**BOTH PRODUCTION CoVe PATHS ARE NEAR-DORMANT, and that is a finding about the split-test, not about
+the gold.** The path this gold measures (V1 `ChainOfVerification`, sources NOT in
+`Extraction__V2EnabledSources`) produced **6 observations in 14 days** against rss's 69,827 -- only
+`rss-fallback` reaches it. The other CoVe claimant, `QualitativeVerificationService` (the same 16,384 /
+no-penalty decoding over five sentiment/sector/regime fields), is gated on `validation-content`, which
+has produced **no row since 2026-04-17**. So "the model question answered PER STAGE" is answered for a
+stage whose live traffic is ~0.01% of stage 1's. The gold is still the right instrument -- it is what
+every `aggregate_f1` baseline means -- but a swap decision weighted by production impact belongs on
+stage 1.
+
 ### The CoD gold cannot yet back a model swap: macro-owner DECIDED, the key's swing is not [2026-09-05]
 Production's CoD path is scoreable END TO END. The four divergences that made every scorecard on it
 `null` are closed -- chat template (#1002), prompt assembly, scorer (#1011), runner (#1013) -- the gold
