@@ -168,6 +168,15 @@ not restated here. See sections "THE FAMILY RE-QUALIFICATION", "The candidate BE
 on production's CoD path", "COLIBRI: NO ADMISSIBLE SCORECARD IS POSSIBLE" and "THE PRECISION
 LADDER".
 
+- **Qwen3.8-27B** — **never in the leaderboard above, and never eliminated: it is the CANDIDATE this
+  whole epic is about.** Listed here because a reader looking for it found nothing, which was a real
+  gap in this file. On production's CoD path its clean arm is `numbers_f1` **0.7132** (n=3, sd 0.0109,
+  fp8_e4m3 / 32,768 / seqs 16). Two earlier arms exist and are NOT the same coordinate: **0.7400**
+  (n=5, unquantized KV at 15,360 context — the confounded A/B) and **0.6729** (same model with a
+  thinking-suppression prefill). On the GGUF ladder, a different engine and wire mode again:
+  Q4_K_M **0.6745**, Q6_K **0.6862**, Q8_0 **0.6554**. Its vendor template defaults thinking ON,
+  which truncates 110 of 120 documents at production's 4,096-token budget — **a swap must set
+  `ThinkingSuppressionSuffix`**. Elsewhere it appears as `armC`, `B` and `B'`; those are all this model.
 - **Gemma 3 27B** — leaderboard above: `0.0% FAIL` (COORDINATE FINDING, wall-clock, on a decoding
   mode this project bans). Re-qualified: `numbers_f1` **0.6177**, and it **beats the model
   currently in production by +0.1024** (11.5x se, disjoint runs) on production's own engine
