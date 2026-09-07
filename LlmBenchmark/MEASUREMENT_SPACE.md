@@ -176,6 +176,38 @@ at all stamp the identical engine coordinate. A model eliminated on this axis wo
 exactly like a model that failed on its merits -- which is how Gemma got eliminated the first
 time.
 
+## AXIS 11 IS STRUCTURALLY CONFOUNDED WITH AXIS 2, AND THAT BOUNDS THE WHOLE METHOD
+
+The chat template CANNOT be held fixed across model families -- each model requires its own. So in
+every cross-family comparison, axis 11 moves with axis 2 by construction. This is not an oversight
+that better discipline fixes; it is a property of the question.
+
+That matters because axis 11 was measured at **~0.05-0.06 F1** (an injected "helpful assistant"
+system block), which is larger than the KV dtype, the engine step and concurrency combined.
+
+**MEASURED CONSEQUENCE [2026-09-06]: a cross-family gap BELOW ~0.06 is not a model result.**
+Gemma 4 31B 0.7570 vs the Qwen3.8-27B candidate 0.7132 is +0.0439 -- INSIDE that band -- and the
+templates differ substantively rather than cosmetically:
+
+  Gemma 4  `<bos><|turn>user\n{0}<turn|>\n<|turn>model\n<|channel>thought\n<channel|>`
+           -> pre-fills a thought channel and CLOSES it: thinking suppression, baked in
+  armC     `<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n`
+           -> a bare assistant turn, NO suppression, on a thinking-capable model
+
+So "Gemma 4 beats the latest Qwen" is NOT ESTABLISHED. It is also not refuted -- it may well be
+true. The comparison simply cannot separate the model from its template at this gap size. It
+additionally rides on engine and concurrency nulls that were measured on a DIFFERENT model
+(the incumbent), which is an assumption of transferability, not a measurement.
+
+WHAT SURVIVES THE SAME TEST, because the gap outruns the band:
+  Gemma 4 vs incumbent  +0.3026  -- roughly 5-6x the template axis
+  Gemma 3 vs incumbent  +0.1024  -- roughly 2x it, and on production's CURRENT engine
+
+AND THE Q1/Q2 SPLIT DECIDES WHICH SENTENCE IS LEGITIMATE. For a DEPLOYMENT decision the template
+comes WITH the model -- you buy the pair, nothing needs controlling, and "this serving point beats
+that one by 0.0439" is a fair Q2 claim. For a MODEL claim it is not. Both sentences are true of the
+same numbers; only one of them is about the model.
+
 ## THE COUPLING THAT MAKES THIS HARD
 
 Axes 2-5 are coupled BY THE GPU. You cannot hold KV dtype and context fixed while swapping a
