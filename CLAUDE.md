@@ -252,8 +252,9 @@ MODEL_ACCEPTANCE [SCORED ON PERFORMANCE — the a priori limits were dropped 202
       `subject` only, CLAIMS measure noise # two careful human labellers score 0.302 and 0.138
     - `source_entity` for macro series: the macro SERIES owns the number, not the country, not blank
       (DECIDED 2026-09-05 by the user; 490 of 518 conform, 6 knowingly non-conformant, 22 open)
-    - PIN BEFORE ANY SWAP: entity_ticker_accuracy is a RECALL loss at SecMaster's door on the Qwen
-      candidate (0 wrong tickers across 15 runs; every miss is a null), never a mis-resolution risk
+    - entity_ticker_accuracy is an INDEPENDENT axis, not a tiebreak: the worst extractor measured
+      has the BEST ticker score. Measured on every arm -> LlmBenchmark/BENCHMARKS.md. The Qwen3.8
+      loss is RECALL (0 wrong tickers across 15 runs; every miss is a null), never mis-resolution
   measured results -> docs/BACKLOG.md. ✗ NEVER quote a model figure from THIS file # a figure without
     its coordinate is not a run, and this file cannot carry a coordinate
 CONTEXT [MEASURED, not asserted]: serve more than the longest real document, with headroom.

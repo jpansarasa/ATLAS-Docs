@@ -44,16 +44,30 @@ Not preferences — without them the score above is not what you get.
 
 ### Secondary metric: `entity_ticker_accuracy`
 
-Pre-resolved tickers handed to SecMaster. Measured on two models only.
+Of the entities a model extracts that should carry a stock ticker, the fraction where it attached
+the right one. These are pre-resolved hints handed to SecMaster; a miss means SecMaster resolves
+from the entity name alone. Measured on every arm at the same coordinate as the results above.
 
-| Model | entity_ticker_accuracy |
-|---|---:|
-| Qwen2.5-32B-AWQ *(production)* | 0.671 |
-| Qwen3.8-27B | 0.458 |
-| Gemma 3 27B / Gemma 4 31B | **not measured** |
+| Model | entity_ticker_accuracy | numbers_f1 |
+|---|---:|---:|
+| EXAONE 4.0 32B | 0.6369 | 0.2218 |
+| Qwen2.5-32B-AWQ *(production)* | 0.5504 | — |
+| **Gemma 3 27B** | **0.5455** | 0.6177 |
+| Command-R 08-2024 | 0.4640 | 0.3178 |
+| **Gemma 4 31B** | **0.4101** | 0.7570 |
+| **Qwen3.8-27B** | **0.3725** | 0.7132 |
+| Mistral-Small 24B | 0.3311 | 0.5105 |
+| GLM-4.7-Flash | 0.1667 | 0.0000 |
 
-The Qwen3.8 drop is **recall, not mis-resolution**: across 15 runs the wrong-ticker count is 0 —
-every miss is a null. Neither Gemma has been measured on this metric.
+**It does not track extraction quality.** The worst extractor here has the best ticker score and the
+best extractor is fourth from bottom, so this is an independent axis and not a tiebreak.
+
+**Gemma 3 is the only leader that does not regress on it** — 0.5455 against production's 0.5504,
+flat within run-to-run spread, while gaining +0.1024 on extraction. Gemma 4 and Qwen3.8 buy their
+larger extraction gains at a measurable ticker cost.
+
+The Qwen3.8 loss is **recall, not mis-resolution**: across 15 runs the wrong-ticker count is 0 —
+every miss is a null, so it hands SecMaster fewer hints rather than wrong ones.
 
 ---
 
