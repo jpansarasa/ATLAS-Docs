@@ -168,22 +168,10 @@ not restated here. See sections "THE FAMILY RE-QUALIFICATION", "The candidate BE
 on production's CoD path", "COLIBRI: NO ADMISSIBLE SCORECARD IS POSSIBLE" and "THE PRECISION
 LADDER".
 
-- **Qwen3.8-27B** — **never in the leaderboard above, and never eliminated: it is the CANDIDATE this
-  whole epic is about.** Listed here because a reader looking for it found nothing, which was a real
-  gap in this file. On production's CoD path its clean arm is `numbers_f1` **0.7132** (n=3, sd 0.0109,
-  fp8_e4m3 / 32,768 / seqs 16). Two earlier arms exist and are NOT the same coordinate: **0.7400**
-  (n=5, unquantized KV at 15,360 context — the confounded A/B) and **0.6729** (same model with a
-  thinking-suppression prefill). On the GGUF ladder, a different engine and wire mode again:
-  Q4_K_M **0.6745**, Q6_K **0.6862**, Q8_0 **0.6554**. Its vendor template defaults thinking ON,
-  which truncates 110 of 120 documents at production's 4,096-token budget — **a swap must set
-  `ThinkingSuppressionSuffix`**. Elsewhere it appears as `armC`, `B` and `B'`; those are all this model.
 - **Gemma 3 27B** — leaderboard above: `0.0% FAIL` (COORDINATE FINDING, wall-clock, on a decoding
   mode this project bans). Re-qualified: `numbers_f1` **0.6177**, and it **beats the model
   currently in production by +0.1024** (11.5x se, disjoint runs) on production's own engine
   (vLLM 0.19.0).
-- **Gemma 4 31B** — not in the original leaderboard at all. `numbers_f1` **0.7570**, served on
-  vLLM 0.28.0 — **not** production's pinned engine (0.19.0); `docs/BACKLOG.md` carries the
-  caveat this difference costs.
 - **Mistral-Small 24B** — leaderboard above: 52.1% on retired Ollama. Re-qualified on vLLM at
   0.5105, indistinguishable from the incumbent's 0.5153. This is deliberately **the control**: it
   shows the Gemma gains above are not a universal "just move it to vLLM" uplift.
@@ -196,6 +184,27 @@ LADDER".
 - **GLM-4.7-Flash** — leaderboard above: 48.0% (one of two test cases timed out). Re-qualified:
   degenerate at **both** grammar settings — non-terminating when unconstrained, empty arrays when
   constrained. A second coordinate finding, not an F1.
+
+### Models measured but never in the leaderboard above
+
+Neither was eliminated; both were measured directly on production's CoD path.
+
+| model | numbers_f1 | n | coordinate |
+|---|---:|---|---|
+| Qwen3.8-27B | **0.7132** | 3 | vLLM 0.19.0, fp8_e4m3, 32,768, seqs 16 / util 0.95 |
+| Qwen3.8-27B | 0.7400 | 5 | vLLM 0.19.0, **unquantized KV, 15,360 context** — below the context floor |
+| Qwen3.8-27B | 0.6729 | 5 | as above, plus a thinking-suppression prefill |
+| Gemma 4 31B | **0.7570** | 3 | vLLM **0.28.0** — not production's pinned engine |
+
+`0.7132` is the arm served like the re-qualified models above; the other two Qwen rows are earlier
+coordinates kept because they are cited elsewhere, not because they are comparable.
+
+**Qwen3.8-27B's vendor chat template enables reasoning by default**, which consumes production's
+4,096-token completion budget and leaves the JSON unclosed on 110 of 120 documents. Adopting it
+requires setting `ThinkingSuppressionSuffix`, which `CLAUDE.md` D-26 currently leaves empty.
+
+On the GGUF ladder — llama.cpp, chat mode, 8,192 tokens per slot, so comparable only to each other
+and not to any row above — Qwen3.8-27B scores Q4_K_M 0.6745, Q6_K 0.6862, Q8_0 0.6554.
 
 None of the above is a shipping decision by itself — `docs/BACKLOG.md` names the blockers
 (context floor, a ticker-recall regression, provisional criteria) for the one candidate closest

@@ -12,11 +12,9 @@ property of the point, not of the model at its centre.
 Every irreconcilable number in the 2026-09-04/06 epic was a different point read as a
 different measurement of the same thing.
 
-**ARM LABELS, because this file uses them and they hide which model is which.** `A` is the
-INCUMBENT, `Qwen/Qwen2.5-32B-Instruct-AWQ`. `B`, `B'` and `armC` are all the CANDIDATE,
-`cyankiwi/Qwen3.8-27B-AWQ-INT4` — B at unquantized KV / 15,360, B' the same with a
-thinking-suppression prefill, armC the clean arm at fp8_e4m3 / 32,768. Searching this file for
-"Qwen3.8" used to miss every one of its scores.
+**ARM LABELS used throughout this file.** `A` is the incumbent, `Qwen/Qwen2.5-32B-Instruct-AWQ`.
+`B`, `B'` and `armC` are all the candidate, `cyankiwi/Qwen3.8-27B-AWQ-INT4`: B at unquantized KV /
+15,360, B' the same plus a thinking-suppression prefill, armC at fp8_e4m3 / 32,768.
 
 ## THE AXES
 
