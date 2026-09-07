@@ -42,42 +42,6 @@ Not preferences — without them the score above is not what you get.
 - **EXAONE 4.0 fails to terminate** inside the 4,096-token budget on 8–9 of 40 articles. Those
   score zero and are included in its 0.2218.
 
-### `entity_ticker_accuracy` — DO NOT SELECT ON THIS
-
-**It mostly measures memorised world knowledge, not extraction.** Of the 53 gold entities carrying
-a ticker, **29 (55%) have a ticker that appears nowhere in the article** — the labeller supplied
-`Nvidia -> NVDA`, `Microsoft -> MSFT`, `Delta Air Lines -> DAL` from world knowledge. Only 24 are
-tickers the model could have read off the page.
-
-The CoD prompt asks for transcription, not resolution: *"include ONLY if the ticker is stated in or
-directly resolvable from the article; otherwise omit."* Entity resolution is **SecMaster's** job,
-and SecMaster resolves from the entity NAME. A model that omits `MSFT` because the article never
-printed it is following the prompt, and costs the pipeline nothing.
-
-So a lower score here is, for the majority of scored cases, a model that memorised fewer ticker
-symbols during pretraining. That is not an extraction quality this project should choose a model on.
-
-| Model | entity_ticker_accuracy |
-|---|---:|
-| EXAONE 4.0 32B | 0.6369 |
-| Qwen2.5-32B-AWQ *(production)* | 0.5504 |
-| Gemma 3 27B | 0.5455 |
-| Command-R 08-2024 | 0.4640 |
-| Gemma 4 31B | 0.4101 |
-| Qwen3.8-27B | 0.3725 |
-| Mistral-Small 24B | 0.3311 |
-| GLM-4.7-Flash | 0.1667 |
-
-The ordering is its own warning: the WORST extractor in this file (EXAONE, `numbers_f1` 0.2218) has
-the BEST ticker score, and the best extractor is fourth from bottom. Whatever this ranks, it is not
-extraction.
-
-Where the model DOES emit a ticker it is not wrong, only absent — across 15 runs on Qwen3.8 the
-wrong-ticker count is 0, so every miss is a null rather than a mis-resolution.
-
-**Open:** the 24 article-stated cases would be a legitimate extraction metric. Splitting them from
-the 29 inferred ones is not done, so the number above cannot currently be read either way.
-
 ---
 
 ## Not viable on this hardware

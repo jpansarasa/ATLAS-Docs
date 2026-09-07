@@ -16,6 +16,34 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**GOLD DEFECT: 55% of `entity_ticker_accuracy`'s scored cases are labeller world-knowledge, not
+extraction** [2026-09-07]
+
+Of the 53 entities in `cod_stage1_gold_v1.json` carrying a `ticker`, **29 have a ticker that appears
+nowhere in their article** -- the labeller supplied `Nvidia -> NVDA`, `Microsoft -> MSFT`,
+`Delta Air Lines -> DAL`, `JPMorgan Chase -> JPM` from world knowledge. Only 24 are tickers a model
+could read off the page.
+
+The CoD prompt asks for transcription: *"include ONLY if the ticker is stated in or directly
+resolvable from the article; otherwise omit."* Entity resolution is SecMaster's job and resolves
+from the NAME, so a model omitting `MSFT` on an article that never printed it is obeying the prompt
+at no cost to the pipeline. For the majority of scored cases the metric therefore ranks PRETRAINING
+RECALL of ticker symbols.
+
+The ordering is the tell: the worst extractor measured (EXAONE, `numbers_f1` 0.2218) has the BEST
+ticker score at 0.6369, and the best extractor (Gemma 4, 0.7570) is fourth from bottom at 0.4101.
+
+  ✗ barred as a swap criterion -> `CLAUDE.md` §MODEL_ACCEPTANCE
+  ✗ removed from `LlmBenchmark/BENCHMARKS.md` -- it is a gold defect, not a benchmark result
+  FIX: score only the 24 article-stated cases, which would be a real extraction metric. Not done,
+    so the current number cannot be read in either direction.
+
+Values as measured, kept only so the fix has a before: EXAONE 0.6369 | incumbent 0.5504 |
+Gemma 3 0.5455 | Command-R 0.4640 | Gemma 4 0.4101 | Qwen3.8 0.3725 | Mistral 0.3311 | GLM 0.1667.
+Where a model does emit a ticker it is not wrong, only absent -- across 15 runs on Qwen3.8 the
+wrong-ticker count is 0.
+
+
 **A DELTA AND A LEVEL ARE THE SAME ROW: `numbers[]` cannot express "dropped 2%" vs "is 2%"**
 [raised 2026-09-07 by the user; IMMATERIAL TO MODEL SCORING and parked on that basis -- every
 candidate faces the identical schema, so this discriminates between no two of them. A data-model
