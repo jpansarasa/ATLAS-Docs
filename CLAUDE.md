@@ -313,24 +313,15 @@ substrate: MacroSubstrate | shared: Events/, deployment/, docs/
 mcp: FredCollector/mcp, ThresholdEngine/mcp, FinnhubCollector/mcp, OfrCollector/mcp, SecMaster/mcp, WhisperService/mcp
 
 ## SERVICE_ARCHITECTURE [HARD_STOP]
-READ <Service>/AGENT_README.md before reasoning about a service's architecture, API, data model or
+READ {Service}/AGENT_README.md before reasoning about a service's architecture, API, data model or
   resolution flow # the card front-loads negative space (does-NOT / on-miss / invariants /
   DISTINCTIONS / GOTCHAS) that an endpoint catalog cannot convey
+every service in SERVICES above has one, at that exact path. The only card off the pattern is
+  gemini-resolver-mcp/AGENT_README.md -- a host systemd unit, not a compose service, so it is not
+  in the roster.
 ✗ guess a service's shape from method names or the endpoint table
 ✗ "fix" a symptom by violating a card INVARIANT
-cards:
-  SecMaster:             SecMaster/AGENT_README.md
-  ThresholdEngine:       ThresholdEngine/AGENT_README.md
-  SentinelCollector:     SentinelCollector/AGENT_README.md
-  FredCollector:         FredCollector/AGENT_README.md
-  FinnhubCollector:      FinnhubCollector/AGENT_README.md
-  AlphaVantageCollector: AlphaVantageCollector/AGENT_README.md
-  NasdaqCollector:       NasdaqCollector/AGENT_README.md
-  OfrCollector:          OfrCollector/AGENT_README.md
-  AlertService:          AlertService/AGENT_README.md
-  CalendarService:       CalendarService/AGENT_README.md
-  MacroSubstrate:        MacroSubstrate/AGENT_README.md
-  gemini-resolver:       gemini-resolver-mcp/AGENT_README.md
+
 ## DATA_FLOW
 Collectors ->gRPC:5001-> ThresholdEngine ->metrics-> Prometheus -> Alertmanager -> AlertService -> ntfy|email
 Collectors ->gRPC:5001-> SecMaster (registration, fire-and-forget)
