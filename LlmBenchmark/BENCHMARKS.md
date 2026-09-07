@@ -23,11 +23,14 @@ a configuration, not to a model.
 | EXAONE 4.0 32B | 0.2218 | 0.0089 | 3 | −0.2935 | vLLM 0.19.0 | Q4_K_M | 32,768 |
 | GLM-4.7-Flash | *no score* | — | — | — | vLLM 0.19.0 | Q4_K_M | 32,768 |
 
-All three leaders beat production by more than the ~0.06 confound band, so the ranking is real.
+All three leaders beat production by more than the ~0.06 confound band, so each of those gains over
+production is real. The order among the leaders is not: the top two are 0.0438 apart — inside that
+same band — and were measured on different engines.
 
 **Mistral-Small is the control.** It lands within noise of production despite being re-measured on
-the same engine and decoding path as everything else — which is what rules out "these gains are an
-artifact of the new harness".
+the same engine and decoding path as every row but Gemma 4 — which is what rules out "these gains
+are an artifact of the new harness" for the rows on 0.19.0. It does not cover the engine axis on
+Gemma 4, whose +0.2417 stays a configuration delta with engine and model moving together.
 
 ### Serving coordinates required to reproduce these numbers
 
@@ -36,11 +39,12 @@ Not preferences — without them the score above is not what you get.
 - **Qwen3.8-27B requires thinking disabled.** Its vendor chat template enables reasoning by default;
   at production's 4,096-token completion budget that leaves the JSON unclosed on **110 of 120
   documents** and the run is unscoreable. The 0.7132 is the thinking-off arm.
-- **Gemma 4 31B was measured on stock `vllm/vllm-openai:v0.28.0`** (`transformers` 5.15.1). Stock
-  vLLM **0.19.0** ships `transformers` 4.57.6, which cannot parse `model_type: gemma4`, so the model
-  does not load there. **Whether 0.19.0 can serve it with a newer `transformers` is UNTESTED** — the
-  engine registers `Gemma4ForConditionalGeneration`, and a derived 0.19.0 image was built but never
-  produced a scored run. Until that is measured, Gemma 4 is the only arm off production's engine.
+- **Gemma 4 31B needs vLLM 0.28.0, and no *stock-derived* 0.19.0 image serves it** — re-pinned
+  wheels, nothing else; patching vLLM source was not tried. Measured 2026-09-07; the arm above
+  stands on stock `vllm/vllm-openai:v0.28.0` (`transformers` 5.15.1). 0.19.0 is not short a
+  dependency, it is short a **capability**, so Gemma 4 stays the one arm off production's engine and
+  the +0.2417 remains a configuration delta with engine and model moving together. Detail in
+  *An engine axis that a version bump cannot cross* below.
 - **EXAONE 4.0 fails to terminate** inside the 4,096-token budget on 8–9 of 40 articles. Those
   score zero and are included in its 0.2218.
 
@@ -55,6 +59,75 @@ Recorded as coordinate findings, not scores — the constraint is ours, not the 
 | llama3.3-70B | 4-bit weights alone are 37–41 GiB on a 31.8 GiB card. Sub-4-bit is banned. No feasible point. |
 | Command-R 35B **v01** | No GQA (640 KiB/token) and `max_position_embeddings` 8192 — never a 32K model. Superseded by the 08-2024 build above. |
 | GLM-4.7-Flash | Non-terminating unconstrained, empty arrays constrained. A decoding/template interaction. |
+
+---
+
+## An engine axis that a version bump cannot cross
+
+**Question:** does a *stock-derived* vLLM 0.19.0 — stock 0.19.0 with its wheels re-pinned, nothing
+else — serve Gemma 4 31B, so the +0.2417 could be re-taken on production's own engine?
+
+**Answer, measured 2026-09-07: no, and no re-pin can change it.** Recorded as a coordinate finding,
+never as a score. The arm produced no `numbers_f1` because it never reached a first token.
+
+The derived image the earlier note called untested (`vllm-requal:tx5161` = stock 0.19.0 +
+`transformers` 5.16.1) *was* built and *was* pointed at Gemma 4. It failed, and re-running it at the
+exact coordinate of the 0.7570 row — `--max-model-len 32768 --max-num-seqs 6
+--gpu-memory-utilization 0.90 --kv-cache-dtype fp8_e4m3 --generation-config vllm`, same substrate
+sha `008c338d`, same gold sha `bc9c5b4c`, same 69-byte chat template `7a8a39d2` — reproduces the
+failure.
+
+`tx5161` is one committed layer over the digest-pinned `vllm_image` in
+`deployment/ansible/group_vars/all.yml` — `pip install --no-deps -U transformers==5.16.1 tokenizers
+huggingface_hub safetensors`, torch left at 2.10.0+cu129. Rebuild from that line; the image is local
+only and one prune from gone.
+
+**The mechanism is not the one the note assumed.** `model_type: gemma4` parses fine, and 0.19.0
+registers `Gemma4ForConditionalGeneration` and ships `gemma4.py`. Serving dies earlier, in
+`ModelConfig.__post_init__`:
+
+```
+# vllm/transformers_utils/model_arch_config_convertor.py, get_head_size(), inside the image
+head_dim = getattr(self.hf_text_config, "head_dim", 0)
+-> transformers.integrations.heterogeneity ...
+   AmbiguousGlobalPerLayerAttributeError: 'head_dim' is a per-layer attribute
+```
+
+Gemma 4 31B is genuinely heterogeneous — `head_dim` 256 with 16 KV heads on sliding-attention
+layers, `global_head_dim` 512 with 4 on the 10 full-attention layers of 60. `Gemma4TextConfig`
+inherits `HeterogeneousConfigMixin` and declares both fields per-layer, so **every** `transformers`
+that knows `gemma4` refuses the flat read, and the one that permits it cannot parse the model:
+
+| `transformers` | knows `gemma4`? | permits 0.19.0's flat `head_dim` read? |
+|---|---|---|
+| 4.57.6 (stock 0.19.0) | no | yes — no heterogeneity module at all |
+| 5.15.1 (stock 0.28.0) | yes | **no** — raises |
+| 5.16.1 (the derived image) | yes | **no** — raises |
+
+Only the 5.16.1 row is a boot attempt — the one above. The other two were read out of the
+`transformers` packages themselves: 4.57.6 ships no heterogeneity module, 5.15.1 carries the same
+`Gemma4TextConfig`. Neither was put in front of Gemma 4 on 0.19.0.
+
+That pincer is why no wheel re-pin exists. Of the two escapes one was tried and failed, the other
+was ruled out unrun: `--hf-overrides '{"allow_global_per_layer_attribute_access": true}'` does not
+reach the config before `ModelConfig` reads it, and setting the flag on the checkpoint would hand a
+homogeneous engine one head size for a model with two — a point that loads without being feasible,
+which is why it was not attempted.
+
+0.28.0 clears it by *capability*, not by dependency: a per-layer `model_arch_config[layer_idx]`, a
+`transformers_utils/configs/gemma4.py` that materialises the per-layer overrides, and
+`get_num_kv_heads(arch_config=…)` sized one layer at a time. 0.19.0 represents head size as a single
+scalar (`max(head_dim, global_head_dim)`) and has no per-layer path to fix. Closing this would mean
+patching vLLM source, which is no longer a stock-derived image and no longer this question.
+
+**What this does not establish.** It says nothing about Gemma 4's quality — 0.7570 stands unchanged
+on 0.28.0. It does not price the engine step *for Gemma 4*; the incumbent controls put that step at
++0.0005 (0.4540 → 0.4545, well inside noise) on Qwen2.5-AWQ **at Gemma 4's serving point** — seqs 6
+/ util 0.90, on the control arm's own chat template, not the seqs 16 / util 0.95 point the 0.5153
+row above was taken at, which is why neither level is that row's — and whether an engine result
+transfers between models is untested: the non-transfer rule below was measured on **precision**, not
+on engines. And it is a statement about **0.19.0**,
+not about every engine between it and 0.28.0 — the intermediate releases were not tested.
 
 ---
 
