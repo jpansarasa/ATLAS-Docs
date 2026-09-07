@@ -227,79 +227,63 @@ ANTI: ✗ batch maintenance into its own phase # that is regrinding, after month
       ✗ ship a tool whose docstring claims coverage it does not have # the defect, moved into the tool
 
 ## SENTINEL [llm_extraction] [arxiv:2512.24601]
-MODEL_ACCEPTANCE [replaces the old `MODEL_SIZE >= 30B`] [HARD_STOP]:
-  HOW TO MEET THIS BAR: LlmBenchmark/MEASUREMENT_SPACE.md -- a score belongs to a POINT in a
-    10-axis space, not to a model, and 4 axes (weight quant, KV dtype, context, concurrency)
-    are recorded NOWHERE. Every cross-family number below moved 4 axes at once.
-  ✗ never swap the extraction model on a size, a benchmark from elsewhere, or a publisher's claim
-  ✓ a candidate ships only with a SCORECARD from LlmBenchmark that BEATS the incumbent's, produced
-    by scripts/run_model.py on PRODUCTION'S PROMPT PATH (--task cod --endpoint-mode completions
-    --prompt-file cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...) and
-    scored by scripts/eval_harness.py --task cod --cod-gold. That path RUNS END TO END (#1014): measured
-    2026-09-05 on production's engine + its real prompt/schema, the 40 gold articles -> `records 40 errors 0
-    schema_invalid 0 truncated 0`, 40/40 scored, 24 of 29 metrics measurable, `production_prompt_path: true`.
-  WHAT A SCORECARD STILL DOES NOT SETTLE -- and none of this is an invitation to reason around the bar:
-    - the criteria are PROVISIONAL (cod-stage1.criteria.json, `ratified_by: null`) and most thresholds
-      are carried from the CoVe bar unmeasured, so a `pass: true` on them is not a ratified pass
-    - the gold's four arrays do NOT weigh equally: NUMBERS and ENTITIES carry it, events are usable
-      on `subject` only, and a comparison over CLAIMS measures noise # event_kind/claim_kind are
-      free-form, so two careful human labellers score 0.302 and 0.138 against each other
-    - `source_entity` for macro series is DECIDED (2026-09-05, by the user): the macro SERIES owns
-      the number -- NOT the country, NOT blank. Implemented in the prompt and the gold at #1017;
-      490 of 518 conform, 6 are KNOWINGLY NON-CONFORMANT (article 183 names no series, so its six
-      payroll rows stay on `US`, which the corrected bullet forbids), and 22 remain open (6
-      blank-by-design, 16 the article never NAMES). 490+6+22 is the whole 518; an earlier draft of
-      this line said 496, which silently meant "non-blank" and hid the 6 inside it. It still sits IN
-      the alignment key, so a scorer inherits whichever answer the gold holds -- a KNOWN answer now
-      rather than an undecided one
-      # docs/BACKLOG.md MEASUREMENT DEBT, "The CoD gold cannot yet back a model swap"
-    ✗ a HOSTED run is NOT acceptance evidence # the labelling router is CHAT-only, production's wire
-      shape is a client-side template into /v1/completions, and eval_harness stamps
-      `production_prompt_path: false` on anything else -- scoring runs on a LOCAL engine
-    SETTLING the macro-owner question WAS the precondition, and it is now MET. What replaces it is
-    NOT nothing: sized PRE-DECISION on the 129-row gold, that settlement is worth at most +0.2048
-    (the harness's greedy matching) or +0.2105 (maximum-cardinality on the same graph) -- an UPPER
-    BOUND on a NON-SHIPPABLE counterfactual key that presumes the very question it sizes, so it is
-    not a score anything can be swapped on. It removes none of the run-to-run swing pooled or at
-    concurrency 6, where the range GROWS; at concurrency 1 the range shrinks, on two runs. The swing
-    is what a comparison must now clear, and the committed key's is 0.0893 pooled / 0.0427 within
-    the concurrency-6 arm against a ~0.05 effect. A COMPARISON OUTRAN THAT SWING 2026-09-06, a
-    THRESHOLD still does not: 5 runs an arm at production's decoding separated two models by an
-    effect 2.5x the 0.0893, arms disjoint at RUN level -- while the pass count still flipped run to
-    run in every arm. Separating two models and passing a bar are different questions.
-    A DECIDED convention is not a CLEARED bar; do not read this line as one, and do not weaken it
-    instead.
-  measured baselines [aggregate_f1, v6.2 substrate] -> docs/BACKLOG.md "MODEL BASELINES" # EVERY figure
-    NAMES ITS ENGINE: the challenger spans 0.694-0.764 across five scorecards, so a bare number is not a run
-  measured, CoD TASK [numbers_f1, 40 gold articles, production's prompt path + decoding, vllm-0.19.0,
-    5 runs an arm] -> docs/BACKLOG.md "The candidate BEATS the incumbent on production's CoD path"
-    # A DIFFERENT TASK AND METRIC from the line above: 0.7400 here is NOT the 0.764 there
-    Qwen2.5-32B-AWQ 0.5153 | Qwen3.8-27B-AWQ-INT4 0.7400 | that candidate with a
-      ThinkingSuppressionSuffix set 0.6729 <- PLAN AGAINST THIS ONE, the conservative arm; nothing
-      sets that suffix today (D-26 keeps it empty deliberately) and whether a swap should set one is OPEN
-    ✗ an ARM delta, not a clean model delta # the arms were NOT served alike: the incumbent ran on
-      production's own container at fp8_e5m2 KV / 32K, the candidate at unquantized KV / 15,360, and
-      this file prices that flag at ~0.05 F1 CONCENTRATED IN RECALL -- which is where the gain is.
-      Direction survives (4.4x), the magnitude is not quotable as model-vs-model
-    ✗ NOT a clearance to swap # it MEETS the prompt-path requirement and FAILS §CONTEXT: that 15,360
-      is under the 32K floor. ONE flag remains untried -- fp8_e4m3, and only ever measured on the
-      INCUMBENT at vllm-0.28.0, not the 0.19.0 this ran on. Unquantized KV is not a remedy: it is
-      what produced the 15,360. So "cannot reach 32K" is UNMEASURED, not established. Pin first:
-      entity_ticker_accuracy 0.671 -> 0.458 (B) / 0.417 (B', the plan-against arm) -- a RECALL loss at
-      SecMaster's door (0 wrong tickers across 15 runs; every miss is a null), never a mis-resolution risk
-  ✗ a scorecard from the substrate's own 16 instruction blocks is NOT acceptance evidence # that is
-    a task production does not run; it was the gap that made every earlier comparison inconclusive
-CONTEXT: 32K required # ✗ reducing it breaks full-document decomposition and causes context rot
+MODEL_ACCEPTANCE [SCORED ON PERFORMANCE — the a priori limits were dropped 2026-09-06]:
+  THE BAR: a candidate ships on a SCORECARD that BEATS the incumbent's at an ADMISSIBLE coordinate.
+    Admissibility is the whole rule and it lives in LlmBenchmark/MEASUREMENT_SPACE.md: arms differ in
+    exactly ONE axis and the delta is attributed to it, OR the comparison declares itself a
+    CONFIGURATION result and attributes the delta to nothing.
+  ✓ evidence = scripts/run_model.py --task cod + eval_harness.py --task cod --cod-gold, LOCAL engine,
+    `production_prompt_path: true`, n>=3 an arm, both arms served alike
+  ✗ never swap on a publisher's claim, a benchmark from elsewhere, or any number whose coordinate is unstated
+  NO A PRIORI LIMITS. Size, engine, quantization, KV dtype, context and topology are AXES TO BE
+    MEASURED, never floors to be asserted. Every floor this file carried was an assumption that
+    pre-empted a measurement, and each one measured on 2026-09-06 fell:
+      MODEL_SIZE >= 30B     -> retired; a 27B and a 31B both beat the 32B incumbent
+      "Gemma is too slow"   -> an engine+decoding artifact; Gemma 3 beats production by 0.1559
+      "Q6 beats Q4"         -> REFUTED, -0.0278 at 12.2x se, and 14% slower
+      "the engine matters"  -> NULL on this task, 0.0x se (two tasks, two golds, same answer)
+      "concurrency matters" -> NULL on this task, 0.4x se
+    A limit may be RE-ADDED only with the measurement that establishes it.
+  VALIDITY CONDITIONS [not limits — these bound what a scorecard MEANS]:
+    - criteria are PROVISIONAL (`ratified_by: null`) -> a `pass: true` is not a ratified pass
+    - the gold's arrays do NOT weigh equally: NUMBERS and ENTITIES carry it, events are usable on
+      `subject` only, CLAIMS measure noise # two careful human labellers score 0.302 and 0.138
+    - `source_entity` for macro series: the macro SERIES owns the number, not the country, not blank
+      (DECIDED 2026-09-05 by the user; 490 of 518 conform, 6 knowingly non-conformant, 22 open)
+    - PIN BEFORE ANY SWAP: entity_ticker_accuracy is a RECALL loss at SecMaster's door on the Qwen
+      candidate (0 wrong tickers across 15 runs; every miss is a null), never a mis-resolution risk
+  measured results -> docs/BACKLOG.md. ✗ NEVER quote a model figure from THIS file # the baseline
+    moved 2026-09-06: armA ran fp8_e5m2 / util 0.92 and was FLATTERING by 0.0536 against the matched
+    control, and every figure once written here was scored against it
+CONTEXT [MEASURED, not asserted]: serve more than the longest real document, with headroom.
+  ✗ the old "32K required; reducing it breaks full-document decomposition and causes context rot" was
+    never measured # it forbade the cheapest remedy for every OOM on no evidence
+  MEASURED: the 40-article gold's worst case is 7,617 tokens, truncation 0 in every arm ever run, and
+    the precision ladder ran at 8,192 per slot with truncation 0
+  UNMEASURED, and the thing to measure before setting any floor: production's REAL article length
+    distribution. Set the floor from that, never from a round number.
 PROMPT_HYGIENE [HARD_STOP]:
   ✗ never version a prompt in its FILENAME # no cod_json_final_final_v3.txt. git is the history
   ✓ edit the prompt in place; the diff, the commit message and the scorecard carry the story
   a prompt that is no longer referenced by code or compose is DELETED, not renamed or parked
-INFERENCE_TOPOLOGY: vLLM(GPU) + llama.cpp(CPU) # ollama fully retired 2026-06-11
-  GPU: vllm-server (Qwen2.5-32B-AWQ; continuous batching — no per-slot NUM_PARALLEL tuning)
-  CPU: llama-server(DSL/GBNF rollback) | llama-cpu-rag(SecMaster RAG) | llama-cpu-embed(bge-m3)
-  ✗ propose ollama # no container/engine remains; GGUF blobs live in the frozen ollama-format store, ro-mounted
-GPU_OOM: restart vLLM first; never downgrade the model or reduce context
-VLLM_UPGRADE [HARD_STOP before bumping vllm_image]:
+INFERENCE_TOPOLOGY [what RUNS today — a fact about what is installed, NOT a fence]:
+  GPU: vllm-server (Qwen2.5-32B-AWQ) | CPU: llama-server(GBNF) | llama-cpu-rag | llama-cpu-embed(bge-m3)
+  THE ENGINE IS AN AXIS, and this project has run three: llama.cpp, then ollama, now vLLM. None of the
+    switches was re-measured. run_model.py drives any OpenAI-compatible engine BY DESIGN.
+  ollama is RETIRED (no container remains, GGUF blobs ro-mounted) # a deployment fact, not a ban
+  PRICED 2026-09-06: llama.cpp CUDA is 2.5x slower than vLLM here (wall 260.9s vs 102.7s, same 40
+    articles at concurrency 6) -- a MEASUREMENT path, not a deployment one. It is also the only engine
+    with rungs above 4-bit at 27B, which is why the precision question had to be asked there.
+  SCREENED, and the screen is cheap: an engine must take `seed` AND do REAL constrained decoding
+    (a grammar that MASKS sampling, not one that only drafts speculatively) or no admissible scorecard
+    can exist on it. colibri fails both -> docs/BACKLOG.md. NEXT: SGLang (takes both; same-GPU
+    single-axis vs vLLM), then ktransformers for the >32B RAM-resident region.
+GPU_OOM: restart vLLM first. Then treat model, quantization and context as the MEASURED tradeoffs they
+  are # the old "never downgrade the model or reduce context" banned the two cheapest remedies outright
+VLLM_UPGRADE [a STABILITY finding, not a performance limit — the crash is real, the cost is now suspected]:
+  SUSPECTED COST, UNPINNED: the incumbent scored 0.5153 at e5m2/util 0.92 and 0.4617 at e4m3/util 0.95
+    -- -0.0536 across TWO axes, and util should not touch quality at these prompt lengths. If e4m3 owns
+    it, the mandated fix below trades a crash for ~0.05 F1. Pin it single-axis before calling either free.
   ✗ carry `--kv-cache-dtype fp8_e5m2` past 0.19 # measured 2026-09-04: 0.28.0 starts fine, serves ONE request,
     then faults under concurrent decode (CUDA illegal memory access) and stays 503. Isolated to the KV DTYPE at
     matched context and concurrency -- not sm_120, not structured output, not CUDA graphs (--enforce-eager still

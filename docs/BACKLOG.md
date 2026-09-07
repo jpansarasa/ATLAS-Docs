@@ -3374,6 +3374,54 @@ right, and the precise half matters: it follows the schema with 0 call errors bu
 inside production's 4,096-token budget on 8-9 of 40 articles (finish_reason `length`, stable across
 runs), which score zero. That is a budget interaction, not a schema-compliance failure.
 
+**COLIBRI: NO ADMISSIBLE SCORECARD IS POSSIBLE [2026-09-06]. Two structural blockers, both measured.**
+Evaluated because `CLAUDE.md` §INFERENCE_TOPOLOGY had been treating the deployed engine as the whole
+axis. Build and serve are excellent and are NOT the problem: v1.10.2 at commit `fd93c41a`, `gcc -O3
+-march=native -fopenmp`, **1.96 s** to a 180 KB zero-dependency binary, weights loaded in 6.5 s, all
+OpenAI endpoints correct, `coli doctor` 11 ok / 1 warn / 1 skip.
+
+  1. **`seed` is REFUSED** -- `HTTP 400 "Per-request seeds are not supported yet."` `run_model.py`
+     sends `seed` on every request because production does, and has no off switch. The unmodified
+     harness reports `2/2 calls failed; that is an outage, not a run`. Reproduces with AND without
+     `--no-structured-output`, so the two blockers are independent.
+  2. **NO CONSTRAINED DECODING AT ALL** -- every `response_format` form on both wire shapes returns
+     `400 "response_format grammars are not supported by the qwen36 engine yet."`
+     `FamilyCapabilities.grammar_payload` is true for **1 of 8** families (the 372 GB GLM-5.2/5.3),
+     and even there it is a SPECULATIVE DRAFT SOURCE, not a constraint: `pick_tok` ranges over the
+     full vocab unmasked and the draft is kept only `if(next==draft[j])`. Their own docs: *"a draft
+     source, never a sampling constraint."* Scoring would require exactly the free-generate-and-salvage
+     mode that produced the nine false eliminations in `BENCHMARKS.md`.
+
+**LATENCY, and the confound is flagged rather than hidden.** Warm steady state **1.91 tok/s**; ONE
+gold article on production's prompt took **2,853 s (47.6 min)** and ended `finish_reason: length` --
+against **124.5 / 119.8 / 122.5 s for all forty** on vLLM at concurrency 6. That is 933x measured, or
+240x on the optimistic basis where it terminates at vLLM's 1,054-token average. Concurrency is
+hard-capped at 1 (`max_kv_slots=1`). **BUT the engine was disk-streaming, not RAM-resident** -- 910-948
+MiB/s sustained, 476 MiB read per token against 510 predicted (ratio 0.93, near-zero expert cache
+reuse) -- because the concurrent GPU sweep held ~95 of 125 GB and swap was full. An idle-box
+re-measurement would be materially faster; HOW MUCH IS UNMEASURED and was deliberately not guessed.
+The 47.6 minutes also produced NO answer: 4,096 tokens of thinking-mode monologue, cut off
+mid-sentence, zero JSON -- Qwen3.6 is a thinking model and production's template does not suppress it
+(D-26 leaves `ThinkingSuppressionSuffix` empty). There was nothing to salvage even in principle.
+
+**THE PREMISE IS VINDICATED EVEN THOUGH THE ENGINE IS NOT, AND THIS IS THE FIRST TIME THE REGION
+ABOVE 32B HAS BEEN PRICED HERE.** Arithmetic validated at ratio 0.93 against the measured point:
+Qwen3.8-Flash-Next 125B is **62.5 GB at int4 and genuinely fits this box's RAM**, as does DeepSeek
+REAP-150B at 75 GB; 284B / 321B / 744B are disk-resident with 0.54 / 0.13 / 0.06 tok/s ceilings. But
+both reachable candidates are `grammar_payload=False` and every candidate hits the seed blocker, so
+every path is blocked BEFORE model size becomes the question. Download nothing.
+
+**THE SCREEN THIS PRODUCES, now in `CLAUDE.md` §INFERENCE_TOPOLOGY and cheap to apply:** an engine
+must accept `seed` AND perform REAL constrained decoding -- a grammar that MASKS sampling, not one
+that only drafts speculatively -- or no admissible scorecard can exist on it. Two engines pass it and
+are worth the GPU: **SGLang** (takes `seed` and `json_schema`, XGrammar is real constraint, and it
+gives a same-GPU single-axis comparison against vLLM 0.19.0 -- the one that could land a scorecard
+this week) and **ktransformers** (GPU attention with experts in RAM, real grammar constraint -- the
+right comparator for that 125B row, where colibri cannot be scored at all). ExLlamaV2/V3 is the only
+route to the Q6-as-floor question on a GPU; TensorRT-LLM moves axes 1 and 3 together; MLC buys
+nothing on one fixed NVIDIA card. Artifacts: `/tmp/sentinel-remediation/colibri/COORDINATE.md`; the
+22 GB model there is reclaimable.
+
 **THE PRECISION LADDER [2026-09-06]: Q6_K LOSES TO Q4_K_M.** Single axis, gemma-3-27b-it,
 unsloth GGUF, llama.cpp server-cuda b10820, only `general.file_type` differing (15 vs 18, read from
 the GGUF header not the filename). `numbers_f1` Q4_K_M **0.6263** sd 0.0039 vs Q6_K **0.5985** sd
