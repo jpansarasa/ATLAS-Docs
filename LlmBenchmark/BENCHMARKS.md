@@ -93,18 +93,6 @@ Full statement in [`MEASUREMENT_SPACE.md`](MEASUREMENT_SPACE.md).
 
 ---
 
-## Superseded: the 2026-01/04 quick-benchmark leaderboard
-
-Retired 2026-09-07. It ranked 14 rows on a single F1 column that tangled engine, quantization and
-decoding, produced under salvage-parsing or Ollama's structured-output parameter — neither is how
-production extracts — on an engine retired 2026-06-11, with seeds dropped so no row is reproducible.
-
-Six of its nine families were re-qualified on 2026-09-06 and appear above. **Not one of their
-eliminations was a measurement of the model.** Gemma 3, recorded there as `0.0% FAIL — too slow`,
-now beats production.
-
-Recover it with `git show 7d760fdd:LlmBenchmark/BENCHMARKS.md`.
-
 ---
 
 ## Running the benchmarks
