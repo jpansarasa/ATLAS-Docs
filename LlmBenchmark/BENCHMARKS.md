@@ -24,12 +24,6 @@ a configuration, not to a model.
 | GLM-4.7-Flash | *no score* | — | — | — | vLLM 0.19.0 | Q4_K_M | 32,768 |
 
 All three leaders beat production by more than the ~0.06 confound band, so the ranking is real.
-**Gemma 4 leads by 0.0438 over Qwen3.8 and 0.1393 over Gemma 3.**
-
-One open item, and it is a measurement question rather than an operational one: Gemma 4 is the only
-arm not on production's engine. The 0.19.0 → 0.28.0 step was measured null (+0.0005, 0.0× se) but on
-the INCUMBENT, so applying it to Gemma 4 is a transferability assumption, not a measurement. Scoring
-Gemma 4 on 0.19.0 — if it serves there at all — would close it.
 
 **Mistral-Small is the control.** It lands within noise of production despite being re-measured on
 the same engine and decoding path as everything else — which is what rules out "these gains are an
