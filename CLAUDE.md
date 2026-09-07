@@ -273,11 +273,20 @@ TRACK LATEST, ROLL BACK ON FAULT [user direction 2026-09-07. This SUPERSEDES "sc
   ✗ never price an engine bump as a tax charged against the model that needs it # independently worth
     doing, and doing it DECOUPLES the engine decision from the model decision
   ✗ never let the DEPLOYED engine bound the option space # the axis is what is PERMITTED, not INSTALLED
-  PRECONDITION WE CURRENTLY FAIL [roll-back-on-fault needs faults to be VISIBLE, and ours are not]:
-    the deploy gate is a /health wait plus ONE SEQUENTIAL 1-token completion, so it cannot see the
-    fp8_e5m2 concurrency fault above, nor any fault needing concurrency >= 2 -- an upgrade PASSES that
-    gate and is still broken. FIX THE GATE (exercise CONCURRENT decode on the real path), never slow
-    the upgrades # the gate is the thing that is wrong here, not the cadence
+  THE DETECTOR IS THE HARNESS, NOT THE DEPLOY GATE [measured 2026-09-07 -- it ALREADY EXISTS, so
+    roll-back-on-fault does not wait on new tooling]:
+    LlmBenchmark/scripts/run_model.py drives its OWN ThreadPoolExecutor at `--concurrency` default 8
+      (:1294, :1514) and records `concurrency` AND the server's `max_num_seqs` as coordinate axes --
+      so a scored run exercises CONCURRENT decode and surfaces the fp8_e5m2 fault class PRE-DEPLOY,
+      before production serves a request # strictly stronger than gate detection, which fires only
+      once the broken engine is already live. It is also more aggressive than production's own
+      ExtractionOptions.MaxConcurrentExtractions default of 1
+    the deploy gate (a /health wait plus ONE SEQUENTIAL 1-token completion) cannot see any fault
+      needing concurrency >= 2. That makes it a BACKSTOP, worth fixing on its own merits and NEVER a
+      reason to slow an upgrade # do not read its blindness as a precondition on the cadence
+    WHAT NEITHER COVERS, so say it rather than assume the harness is total: DURATION (a bounded run
+      cannot show a leak or fragmentation needing hours) and the COMPOSITION (stage 1 and stage 2 are
+      split-tested by design, so a fault needing BOTH stages live against one engine is unmeasured)
   SCORE AFTER THE BUMP, AS A DETECTOR, NEVER AS A GATE # a crash rolls itself back loudly; a silent
     quality regression does not, and only the harness sees it
   ✓ llama.cpp is already deployed here and is a legitimate GPU arm to SCORE, not only the CPU rollback
