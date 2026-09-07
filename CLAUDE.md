@@ -87,17 +87,19 @@ rationale: broken tests = broken code = broken trust
 ✗ NEVER edit /opt/ai-inference/compose.yaml directly # ansible-managed; direct edit = config drift
 compose-service tag [SCOPED — the default]:
   ansible-playbook playbooks/deploy.yml --tags {service} --skip-tags build -e "scoped_restart=true scoped_services={service}"
-  scoped_services must name a COMPOSE service, not merely an ansible tag # deploy.yml:1508 filters
-    label=com.docker.compose.service and :1518 asserts it is running, so a tag-only name matches nothing and FAILS.
+  scoped_services must name a COMPOSE service, not merely an ansible tag # deploy.yml filters on
+    `label=com.docker.compose.service=${svc}` and then asserts the container is running, so a
+    tag-only name matches nothing and FAILS. Grep those two strings, never a line number.
     No compose service exists for dashboards | patterns | monitoring | otel | alerting | instruments | models |
     nasdaq-collector; macro-substrate's service is migrate-macro-substrate.
   --skip-tags build deploys the CURRENT :latest, it does NOT build # for 21 of 26 service tags the only task
     carrying the tag IS the build task -> this form runs zero service tasks. Build first (CONTAINER_BUILD).
     Only alert-service | secmaster | sentinel-collector | threshold-engine | vllm-server carry config/sidecar tasks too.
 non-service tag [dashboards | patterns | alerting | monitoring]: --tags {tag} --skip-tags always # only that tag's tasks
-✗ bare `--tags {anything}` # UNCONDITIONAL full-stack restart, not a conditional one: deploy.yml:522 deletes
-  compose.yaml (state:absent, tags:[always], no `when:`) and :528 re-templates it, so compose_file.changed is ALWAYS
-  true and :1425 resolves to 'restarted'. = compose down/up of EVERY service incl a ~4min vLLM GPU reload, and it
+✗ bare `--tags {anything}` # UNCONDITIONAL full-stack restart, not a conditional one: the task
+  "Remove existing compose.yaml to force regeneration" runs state:absent under tags:[always] with no `when:`,
+  the next task re-templates it, so compose_file.changed is ALWAYS true and the restart state resolves to
+  'restarted'. = compose down/up of EVERY service incl a ~4min vLLM GPU reload, and it
   RESURRECTS a deliberately-stopped alert-service. The two escapes are `--skip-tags always` and `-e scoped_restart=true`.
 grafana alerting: `--tags alerting --skip-tags always` THEN `sudo nerdctl restart grafana` # provisioning is
   startup-loaded AND grafana lives in the separate OTEL stack, so no ansible form reloads it.
@@ -149,7 +151,6 @@ MIGRATIONS [HARD_STOP]:
 ANTI: ✗ raw SQL during deployment ✗ bypassing EF to seed/migrate ✗ manual DB fixes
 
 ## DATA_ML_CONTEXT
-TRAINING_DATA: assume >=500 good docs available, never lowball ("30-50") # high-yield sources are abundant
 VLLM_STRUCTURED: response_format (openai standard), never guided_json # guided_json broken in vLLM 0.19
 PROMPTS: edit the REPO upstream, never the host mount and never the container
   ✓ SentinelCollector/src/prompts/     -> /opt/ai-inference/prompts/sentinel -> container /prompts
@@ -158,8 +159,10 @@ PROMPTS: edit the REPO upstream, never the host mount and never the container
     force:true -> host edits are CLOBBERED next deploy; ansible-gate-guard denies the write
   ✗ inside the container # lost on restart; the host mount is what the container reads
   hot-tune on the host to iterate, but tuning worth keeping must land in the repo path
-ESTIMATE_GATE [data | vram | model tradeoff]: enumerate repo + filesystem FIRST, then estimate; check THIS project's
-  prior results before claiming a tradeoff # generic defaults ("30-50 docs", "LoRA hurts quality") are not our reality
+ESTIMATE_GATE [data | vram | model tradeoff]: enumerate repo + filesystem FIRST, then estimate; check THIS
+  project's prior results before claiming a tradeoff # generic defaults ("30-50 docs", "LoRA hurts quality") are
+  not our reality, and high-yield sources here have been abundant every time anyone counted -- so COUNT, and
+  never substitute one unmeasured number for another
 
 ## GIGO [garbage_in_garbage_out] [HARD_STOP]
 BOUNDARY_HANDLING in the OTHER direction: we validate what a function RECEIVES and drop that rigor for what a call
@@ -236,36 +239,25 @@ MODEL_ACCEPTANCE [SCORED ON PERFORMANCE — the a priori limits were dropped 202
     `production_prompt_path: true`, n>=3 an arm, both arms served alike
   ✗ never swap on a publisher's claim, a benchmark from elsewhere, or any number whose coordinate is unstated
   NO A PRIORI LIMITS. Size, engine, quantization, KV dtype, context and topology are AXES TO BE
-    MEASURED, never floors to be asserted. Every floor this file carried was an assumption that
-    pre-empted a measurement, and each one measured on 2026-09-06 fell:
-      MODEL_SIZE >= 30B     -> retired; a 27B and a 31B both beat the 32B incumbent
-      "Gemma is too slow"   -> an engine+decoding artifact; Gemma 3 beats production by 0.1559
-      "Q6 beats Q4"         -> MODEL-DEPENDENT, not a general answer: Gemma 3 says Q6 LOSES by
-                               0.0278 at 12.2x se; Qwen3.8 says the two are INDISTINGUISHABLE
-                               (+0.0117, 1.2x se, overlapping). Never carry it across models.
-      "the engine matters"  -> NULL on this task, 0.0x se (two tasks, two golds, same answer)
-      "concurrency matters" -> NULL on this task, 0.4x se
-    A limit may be RE-ADDED only with the measurement that establishes it.
+    MEASURED, never floors to be asserted. A limit may be ADDED only with the measurement that
+    establishes it, and it is scoped to what was measured -- a quantization result on one model
+    says nothing about another. Which axes have been measured, and to what: LlmBenchmark/BENCHMARKS.md.
   VALIDITY CONDITIONS [not limits — these bound what a scorecard MEANS]:
     - criteria are PROVISIONAL (`ratified_by: null`) -> a `pass: true` is not a ratified pass
     - the gold's arrays do NOT weigh equally: NUMBERS and ENTITIES carry it, events are usable on
       `subject` only, CLAIMS measure noise # two careful human labellers score 0.302 and 0.138
     - `source_entity` for macro series: the macro SERIES owns the number, not the country, not blank
       (DECIDED 2026-09-05 by the user; 490 of 518 conform, 6 knowingly non-conformant, 22 open)
-    - ✗ NEVER select a model on entity_ticker_accuracy # 29 of its 53 gold tickers appear NOWHERE
-      in their article (Nvidia->NVDA, Microsoft->MSFT), so it mostly measures PRETRAINING RECALL of
-      ticker symbols. Entity resolution is SecMaster's job and resolves from the NAME; the CoD
-      prompt asks only for a ticker "stated in or directly resolvable from the article". A model
-      omitting MSFT is obeying the prompt. -> LlmBenchmark/BENCHMARKS.md
+    - ✗ NEVER select a model on entity_ticker_accuracy # most of its gold tickers appear nowhere in
+      their article, so it largely scores PRETRAINING RECALL of ticker symbols. Entity resolution is
+      SecMaster's job and resolves from the NAME. -> docs/BACKLOG.md KNOWN DEFECTS
   measured results -> docs/BACKLOG.md. ✗ NEVER quote a model figure from THIS file # a figure without
     its coordinate is not a run, and this file cannot carry a coordinate
 CONTEXT [MEASURED, not asserted]: serve more than the longest real document, with headroom.
-  ✗ the old "32K required; reducing it breaks full-document decomposition and causes context rot" was
-    never measured # it forbade the cheapest remedy for every OOM on no evidence
-  MEASURED: the 40-article gold's worst case is 7,617 tokens, truncation 0 in every arm ever run, and
-    the precision ladder ran at 8,192 per slot with truncation 0
-  UNMEASURED, and the thing to measure before setting any floor: production's REAL article length
-    distribution. Set the floor from that, never from a round number.
+  MEASURED: the 40-article gold's worst case is 7,617 tokens, and truncation is 0 in every arm run
+    at 8,192 per slot or above.
+  UNMEASURED, and what must set any floor: production's REAL article length distribution. Set the
+    floor from that, never from a round number.
 PROMPT_HYGIENE [HARD_STOP]:
   ✗ never version a prompt in its FILENAME # no cod_json_final_final_v3.txt. git is the history
   ✓ edit the prompt in place; the diff, the commit message and the scorecard carry the story
@@ -282,12 +274,10 @@ INFERENCE_TOPOLOGY [what RUNS today — a fact about what is installed, NOT a fe
     (a grammar that MASKS sampling, not one that only drafts speculatively) or no admissible scorecard
     can exist on it. colibri fails both -> docs/BACKLOG.md. NEXT: SGLang (takes both; same-GPU
     single-axis vs vLLM), then ktransformers for the >32B RAM-resident region.
-GPU_OOM: restart vLLM first. Then treat model, quantization and context as the MEASURED tradeoffs they
-  are # the old "never downgrade the model or reduce context" banned the two cheapest remedies outright
+GPU_OOM: restart vLLM first. Then treat model, quantization and context as measurable tradeoffs --
+  none of the three is off the table, and each has a scorecard path.
 VLLM_UPGRADE [a STABILITY finding, not a performance limit — the crash is real and the fix is FREE]:
-  QUALITY COST: NONE. Pinned single-axis 2026-09-06: `fp8_e5m2` vs `fp8_e4m3` is +0.0103, null. An
-    earlier revision suspected ~0.05 here; that gap was the CHAT TEMPLATE (an injected system prompt),
-    not the dtype -> docs/BACKLOG.md "A CORRECTION OF A CORRECTION".
+  QUALITY COST: NONE. `fp8_e5m2` vs `fp8_e4m3` measured single-axis and null -> docs/BACKLOG.md.
   ✗ carry `--kv-cache-dtype fp8_e5m2` past 0.19 # measured 2026-09-04: 0.28.0 starts fine, serves ONE request,
     then faults under concurrent decode (CUDA illegal memory access) and stays 503. Isolated to the KV DTYPE at
     matched context and concurrency -- not sm_120, not structured output, not CUDA graphs (--enforce-eager still
