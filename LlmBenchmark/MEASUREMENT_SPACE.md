@@ -238,9 +238,16 @@ true. The comparison simply cannot separate the model from its template at this 
 additionally rides on engine and concurrency nulls that were measured on a DIFFERENT model
 (the incumbent), which is an assumption of transferability, not a measurement.
 
-WHAT SURVIVES THE SAME TEST, because the gap outruns the band:
-  Gemma 4 vs incumbent  +0.3026  -- roughly 5-6x the template axis
-  Gemma 3 vs incumbent  +0.1024  -- roughly 2x it, and on production's CURRENT engine
+WHAT SURVIVES THE SAME TEST, because the gap outruns the band. Both against PRODUCTION'S OWN ARM
+(armA, 0.5153) so the comparator is identical:
+  Gemma 4 vs production  +0.2417  -- roughly 4x the template axis
+  Gemma 3 vs production  +0.1024  -- roughly 2x it, and on production's CURRENT engine
+
+  ✗ AN EARLIER REVISION QUOTED GEMMA 4 AT +0.3026, against control arm C1 (0.4545) rather than
+    armA. That comparator is CIRCULAR here: C1 was produced by a template deriver that injects a
+    system prompt production does not send -- the very axis-11 effect the gap is being measured
+    against -- so it depresses the incumbent by ~0.05-0.06 and inflates the delta by the same
+    amount. Use one comparator for every candidate, and use production's.
 
 AND THE Q1/Q2 SPLIT DECIDES WHICH SENTENCE IS LEGITIMATE. For a DEPLOYMENT decision the template
 comes WITH the model -- you buy the pair, nothing needs controlling, and "this serving point beats

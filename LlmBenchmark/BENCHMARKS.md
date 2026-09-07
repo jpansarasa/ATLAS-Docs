@@ -1,273 +1,181 @@
-# LLM Extraction Benchmark Results
+# LLM Extraction Benchmarks
 
-Tracking LLM extraction accuracy across models for ATLAS sentinel extraction.
+Extraction quality for ATLAS Sentinel, measured on production's own CoD path.
+Method and comparability rules: [`MEASUREMENT_SPACE.md`](MEASUREMENT_SPACE.md). Raw coordinates,
+controls and sample-level detail: `docs/BACKLOG.md`. Swap criteria: `CLAUDE.md` §MODEL_ACCEPTANCE.
 
-> ## READ THIS BEFORE CITING A NUMBER BELOW
->
-> **These figures are stale, and two of them describe software this box no longer runs.**
-> Measured 2026-09-03:
->
-> | | |
-> |---|---|
-> | llama.cpp this box **runs** | build **10603** (image built 2026-08-24) |
-> | Newest llama.cpp figure in this table | **2026-04-03** |
-> | Engines compared in "Backend Comparison" below | llama.cpp vs **Ollama** — retired 2026-06-11 |
-> | vLLM (the engine that serves **production** extraction) | never scored in this table |
->
-> Five months of llama.cpp development sit between the best number here (64.6% F1) and the
-> binary actually installed, so "llama.cpp scores 64.6%" is not a statement about our
-> llama.cpp. Nothing in a result file recorded an engine build, which is why none of that
-> was visible from the results themselves.
->
-> **This table cannot answer "which engine should we use".** It compares one engine we still
-> run against one we deleted, on data from before either moved. For a current, engine-attributed
-> number use the Python track — [`scripts/`](scripts/README.md) — whose `run_model.py` drives
-> any OpenAI-compatible engine (vLLM, SGLang, llama.cpp `/v1`), records the engine build in
-> every scorecard, and **refuses to emit a result it cannot attribute**. `check_staleness.py`
-> compares a scorecard's recorded build against what is live now.
->
-> The C# harness below can now drive vLLM as well: it builds SentinelCollector's own
-> `VllmClient`/`LlamaServerClient` from a real `ExtractionOptions`. **Every row in this table
-> predates that**, and no row was produced by a client this repo still contains. The llama.cpp
-> rows came from the replaced `BenchmarkLlamaServerClient`, which posted to `/completion` for
-> plain generation and to `/v1/chat/completions` for structured output — hardcoding
-> `model: "default"` and `max_tokens: -1` on that second endpoint — and dropped the seed on
-> both, so none of those numbers is seed-reproducible or on production's completion budget.
-> The seven `Ollama` rows — half of the fourteen-row table, the other seven being llama.cpp —
-> are older still: Ollama was retired 2026-06-11 and no engine remains to reproduce them on.
-> Read this leaderboard as history, not as a comparison.
+---
 
-> **This is not a leaderboard. No row below is a model score you can rank.** The table tangles
-> engine, model, quantization, decoding method and context in one F1 column — see
-> [`MEASUREMENT_SPACE.md`](MEASUREMENT_SPACE.md) for the full rule. Three rows record a serving
-> failure, not an extraction result, and are labelled COORDINATE FINDING rather than scored. The
-> table below now carries a quantization and decoding column for every row so the confound is
-> visible in the row, not only in this banner, and the "Key Findings" prose that used to draw
-> family-level conclusions from these rows (including "Qwen family dominates") has been removed
-> for the same reason it is banned in MEASUREMENT_SPACE.md: this table cannot show it, true or
-> not. The one comparison that survives — same model, only the engine varies — is kept below,
-> with its own caveat. Real re-qualification numbers on production's current engine and prompt
-> path are in "2026-09-06 re-qualification outcomes" further down, sourced from `docs/BACKLOG.md`.
+## Candidates
 
-## Historical Leaderboard (Quick Benchmark — 2 Test Cases) — HISTORY, not a ranking
+`numbers_f1`, 40 gold articles, production's CoD prompt path, vLLM with `response_format`
+json_schema. n=3 per model unless stated. Higher is better.
 
-Kept as a record of what was run and when. Every row mixes at least engine, quantization (where
-even named) and decoding method — do not compare across rows without reading the footnotes.
+| Model | numbers_f1 | vs production | Engine | Adoption cost |
+|---|---:|---:|---|---|
+| **Gemma 4 31B** (QAT w4a16) | **0.7570** | **+0.2417** | vLLM **0.28.0** | engine bump + a `transformers` 5.16.1 image |
+| **Qwen3.8-27B** (INT4) | **0.7132** | **+0.1979** | vLLM 0.19.0 | must set `ThinkingSuppressionSuffix` |
+| **Gemma 3 27B** (w4a16) | **0.6177** | **+0.1024** | vLLM 0.19.0 | **none — drop-in** |
+| Mistral-Small 24B | 0.5105 | −0.0048 | vLLM 0.19.0 | no gain |
+| *Qwen2.5-32B-AWQ* | *0.5153* (n=5) | — | vLLM 0.19.0 | **currently in production** |
+| Command-R 08-2024 | 0.3178 | −0.1975 | vLLM 0.19.0 | no |
+| EXAONE 4.0 32B | 0.2218 | −0.2935 | vLLM 0.19.0 | no |
+| GLM-4.7-Flash | *no score* | — | vLLM 0.19.0 | degenerate at both grammar settings |
 
-| Model (as run) | Backend | Weight quant (as named)† | Decoding‡ | F1 | census_retail | fed_fomc | Mean Time | Date |
-|---|---|---|---|---:|---:|---:|---:|---|
-| qwen2.5:32b-instruct | llama.cpp | not stated | salvage-parse | 64.6% | 77% | 46% | 102s | 2026-01-24 |
-| qwen3:30b-instruct | llama.cpp | not stated | salvage-parse | 61.1% | 71% | 42% | 14s | 2026-04-03 |
-| qwen3:30b-instruct | Ollama | not stated | Ollama structured-output | 61.1% | 71% | 42% | 16s | 2026-01-24 |
-| Gemma 4 31B (Q4_K_M) | llama.cpp | Q4_K_M | salvage-parse | 59.7% | 69% | 43% | 193s | 2026-04-03 |
-| qwen2.5:32b-instruct | Ollama | not stated | Ollama structured-output | 56.7% | 70% | 35% | 40s | 2026-01-24 |
-| qwen3:32b | Ollama | not stated | Ollama structured-output | 54.8% | 68% | 26% | 89s | 2026-01-24 |
-| mistral-small:24b | Ollama | not stated | Ollama structured-output | 52.1% | 54% | 48% | - | 2026-01-24 |
-| GLM-4.7-Flash (30B MoE) | llama.cpp | not stated | salvage-parse | 48.0% (composite, not a score)§ | 65% | TIMEOUT | 213s | 2026-01-24 |
-| phi4:14b-q4_K_M | Ollama | Q4_K_M | Ollama structured-output | 40.6% | 43% | 37% | 22s | 2026-01-24 |
-| deepseek-r1:32b | Ollama | not stated | Ollama structured-output | 25.7% | 23% | 31% | - | 2026-01-24 |
-| EXAONE 4.0 32B (Q4_K_M) | llama.cpp | Q4_K_M | salvage-parse | **COORDINATE FINDING** (recorded as 0.0% FAIL)⁋ | TIMEOUT | ERROR | FAIL | 2026-04-03 |
-| Command-R 35B (Q4_K_M) | llama.cpp | Q4_K_M | salvage-parse | **COORDINATE FINDING** (recorded as 0.0%)⁋ | TIMEOUT | TIMEOUT | FAIL | 2026-04-03 |
-| Gemma 3 27B | llama.cpp | not stated | salvage-parse | **COORDINATE FINDING** (recorded as 0.0%)⁋ | TIMEOUT | ERROR | FAIL | 2026-01-24 |
-| llama3.3:70b-instruct-q2_K | Ollama | q2_K | Ollama structured-output | **COORDINATE FINDING** (recorded as CRASH)⁋ | - | - | - | 2026-01-24 |
+All three leaders beat production by more than the ~0.06 confound band, so the ranking is real.
+These are **deployment (Q2) comparisons** — each model at its own best serving point, which is the
+question a swap actually asks. They are not model-attribution claims.
 
-† As named in the run record only, never verified against the checkpoint's own `config.json`.
-`MEASUREMENT_SPACE.md`'s 2026-09-06 audit of the checkpoints actually served in production found
-the repo/tag name does **not** reliably state the weight-quantization scheme (two of the three
-checked were misnamed) — the same caution applies retroactively to every "as named" cell here.
-Quantization is stated in six of fourteen row names and absent from the other eight; that
-inconsistency is itself axis 3 surviving as a naming convention, at scale.
+**Mistral-Small is the control.** It lands within noise of production despite being re-measured on
+the same new engine and decoding path as everything else. That is what rules out "these gains are
+just an artifact of the new harness".
 
-‡ **salvage-parse** = grammar-free generation with the JSON extracted from free text after the
-fact by the client. This project bans that mode (constrain the producer via `response_format` /
-a real grammar; never salvage-parse free text). Every llama.cpp row above used it. The Ollama
-rows used Ollama's own structured-output request parameter instead — a different mechanism, on
-an engine this project no longer runs. Neither matches production's current vLLM
-`response_format` json_schema path, so no row in this table was produced the way production
-extracts today.
+---
 
-**Rule stated once, not per row: a composite metric with a non-scored case anywhere inside it
-(TIMEOUT, ERROR, CRASH, OOM) is not itself a score.** When every case in the composite failed
-that way, the row is a COORDINATE FINDING (⁋ below) — there is no feasible-point measurement in
-it at all. When only some of the cases did, the composite still cannot be read as a score, even
-though the surviving case is real data (§ below) — a number that is half quality measurement and
-half wall clock is neither.
+## Adoption cost, in detail
 
-⁋ **COORDINATE FINDING, not a score** [`MEASUREMENT_SPACE.md`, "A FAILURE ON ANOTHER AXIS IS NOT
-A MODEL SCORE"]:
-- **Command-R 35B (Q4_K_M)** — "OOM at 32K context (35B too large for KV cache). At 8K both
-  entries timeout." An axis-4/5 (KV cache / context length) result written into the model
-  column; the model was never scored at a feasible point. The family's *current* build has GQA
-  and serves the full 32K context cleanly — see "2026-09-06 re-qualification outcomes" below.
-- **Gemma 3 27B** — "too slow, times out on both." A wall-clock/serving outcome, not a quality
-  score. Re-qualified at a feasible point on production's current engine, it beats the model
-  currently in production — see below.
-- **llama3.3:70b-instruct-q2_K** — "insufficient VRAM at q2_K." An axis-3 (weight quantization)
-  result: we chose the quant that did not fit and recorded the model as crashing. Sub-4-bit
-  quantization is now banned outright (`CLAUDE.md` §SENTINEL) — "it produces tokens, not
-  answers" — so this coordinate is not one this project would choose to retry.
-- **EXAONE 4.0 32B (Q4_K_M)** — "census_retail timeout, fed_fomc extraction errors after 4
-  retries." A timeout is a wall-clock outcome, same as Gemma 3's; "extraction errors" under
-  salvage-parsing is a decoding artifact, not a model property. Re-qualified 2026-09-06: it
-  **is** schema-compliant with 0 call errors, and fails only to terminate inside a 4,096-token
-  completion budget on 8-9 of 40 articles — see "2026-09-06 re-qualification outcomes" below.
+| | Gemma 3 27B | Qwen3.8-27B | Gemma 4 31B |
+|---|---|---|---|
+| Engine change | none | none | **vLLM 0.19.0 → 0.28.0** |
+| Image change | none | none | **`transformers` ≥ 5.16.1** (stock image cannot parse `model_type: gemma4`) |
+| Config change | none | **`ThinkingSuppressionSuffix` must be set** | none |
+| Serves 32K | yes | yes (fp8_e4m3) | yes |
+| Speed vs production | **faster** (14.28 vs 16.07 s/doc) | comparable | comparable |
+| Open risk | ticker recall unmeasured | ticker recall regression measured on this model | ticker recall unmeasured |
 
-§ **COMPOSITE OF A SCORE AND A FAILURE, not a score:**
-- **GLM-4.7-Flash (30B MoE)** — the 48.0% averages a real 65% on `census_retail` with a
-  `TIMEOUT` on `fed_fomc`. Unlike the rows above, one half of this composite is genuine
-  extraction data; the other half is a wall-clock outcome, and averaging the two produces a
-  number that is not readable as either. Re-qualified 2026-09-06: degenerate at both grammar
-  settings — non-terminating when unconstrained, empty arrays when constrained — a
-  decoding/template interaction, not a family verdict. See "2026-09-06 re-qualification
-  outcomes" below.
+**The Qwen3.8 config change is not optional.** Its vendor chat template enables reasoning by
+default, which consumes production's 4,096-token completion budget and leaves the JSON unclosed on
+**110 of 120 documents**. `CLAUDE.md` D-26 currently keeps `ThinkingSuppressionSuffix` empty — that
+is a Qwen2.5 decision and does not carry to Qwen3.8.
 
-## Key Findings
+**The open risk applies to all three.** `entity_ticker_accuracy` degrades on Qwen3.8 (0.671 → 0.458)
+— a recall loss at SecMaster's door, not mis-resolution: across 15 runs the wrong-ticker count is 0,
+every miss is a null. It has **not** been measured on either Gemma. That is the last gate before a
+swap.
 
-### The one comparison this table can actually make: Backend Comparison (Same Model)
+---
 
-- **llama.cpp outperforms Ollama** with Qwen 2.5 32B: 64.6% vs 56.7% F1, a 7.9pp gap — the model
-  (and, as far as the record states, its quantization) held fixed, only the engine differing.
-- **qwen3:30b-instruct is identical on both backends**: 61.1% F1 either way (14s llama.cpp vs
-  16s Ollama) — no engine advantage for this particular model.
+## Not viable on this hardware
 
-This is, per `MEASUREMENT_SPACE.md`, "the one correctly designed comparison in that file":
-single-axis, and it found a gap four times the measured weight-quant effect (0.019) and larger
-than the ~0.05 effect the current model-swap work is trying to detect. The engine is not a
-detail that can be held constant by luck.
+Recorded as coordinate findings, not scores — the constraint is ours, not the model's.
 
-**Caveat that keeps it honest:** both rows came from the retired `BenchmarkLlamaServerClient`,
-which dropped the request seed on every call (see the top banner). The 7.9pp *magnitude* is
-therefore not reproducible. What survives is that the engine axis is real and large, not that
-7.9pp is the number — do not requote it as a precise effect size.
+| Model | Binding constraint |
+|---|---|
+| llama3.3-70B | 4-bit weights alone are 37–41 GiB on a 31.8 GiB card. Sub-4-bit is banned. No feasible point. |
+| Command-R 35B **v01** | No GQA (640 KiB/token) and `max_position_embeddings` 8192 — never a 32K model. Superseded by the 08-2024 build above. |
+| GLM-4.7-Flash | Non-terminating unconstrained, empty arrays constrained. A decoding/template interaction. |
 
-### Everything else in the leaderboard above is inadmissible as a model comparison
+---
 
-`MEASUREMENT_SPACE.md`'s admissibility rule allows a comparison only when exactly one axis
-differs and the delta is attributed to it, or when it is declared a configuration (Q2) result
-attributed to nothing. No other pair of rows above qualifies — engine, quantization (where even
-named) and decoding method move together across every family boundary in this table.
-"Qwen family dominates — 4 of top 5" was the exact inference that rule forbids, and it has been
-removed from this file: it may still be true, but this table cannot show it — the four Qwen rows
-sit on two different backends at unstated quants, the strongest Gemma row is on a decoding mode
-this project bans, and half the field is Ollama, an engine that no longer exists to re-run.
-The same is true of any claim shaped like "Gemma 4 is a massive improvement over Gemma 3" drawn
-from this table: one side is a real score, the other is a wall-clock coordinate finding, and
-they are not comparable numbers. See "2026-09-06 re-qualification outcomes" below for the
-comparisons that were actually designed to survive this rule.
+## Other measurement tracks
 
-## 2026-09-06 re-qualification outcomes
+**These do not convert to the table above.** Different task, metric or engine.
 
-Six of the nine families this leaderboard eliminated were re-run at a feasible point on
-production's own CoD extraction path (40 gold articles, vLLM, `response_format` json_schema —
-the decoding mode production actually uses, not salvage-parse). **This is `numbers_f1` on
-production's CoD task, a different metric and a different corpus from the Quick Benchmark F1
-above and from the substrate `aggregate_f1` in `docs/BACKLOG.md` "MODEL BASELINES" — the three
-do not convert to one another.** Full coordinates, sampling, engine flags, sample sizes and every
-caveat (including which arms are and are not served alike) live in `docs/BACKLOG.md`; they are
-not restated here. See sections "THE FAMILY RE-QUALIFICATION", "The candidate BEATS the incumbent
-on production's CoD path", "COLIBRI: NO ADMISSIBLE SCORECARD IS POSSIBLE" and "THE PRECISION
-LADDER".
+| Track | What it measures | Qwen3.8 | Gemma 3 | Incumbent |
+|---|---|---:|---:|---:|
+| Substrate `aggregate_f1` | 16 instruction blocks, not production's task | 0.764 | — | 0.443 |
+| GGUF ladder, llama.cpp | chat mode, 8,192/slot, Q4_K_M | 0.6745 | 0.6263 | — |
+| GGUF ladder, llama.cpp | Q6_K | 0.6862 | 0.5985 | — |
+| GGUF ladder, llama.cpp | Q8_0 | 0.6554 | — | — |
 
-- **Gemma 3 27B** — leaderboard above: `0.0% FAIL` (COORDINATE FINDING, wall-clock, on a decoding
-  mode this project bans). Re-qualified: `numbers_f1` **0.6177**, and it **beats the model
-  currently in production by +0.1024** (11.5x se, disjoint runs) on production's own engine
-  (vLLM 0.19.0).
-- **Mistral-Small 24B** — leaderboard above: 52.1% on retired Ollama. Re-qualified on vLLM at
-  0.5105, indistinguishable from the incumbent's 0.5153. This is deliberately **the control**: it
-  shows the Gemma gains above are not a universal "just move it to vLLM" uplift.
-- **Command-R** — leaderboard above marks the 35B v01 build a COORDINATE FINDING (no GQA, an
-  8K-only checkpoint that was never a 32K model). The family's *current* build serves the full
-  32K context cleanly (0 errors) and scores **0.3178**.
-- **EXAONE 4.0 32B** — leaderboard above: `0.0% FAIL, "can't follow extraction format"`.
-  Re-qualified: it **is** schema-compliant (0 call errors) but fails to terminate inside
-  production's 4,096-token completion budget on 8-9 of 40 articles, scoring **0.2218**.
-- **GLM-4.7-Flash** — leaderboard above: 48.0% (one of two test cases timed out). Re-qualified:
-  degenerate at **both** grammar settings — non-terminating when unconstrained, empty arrays when
-  constrained. A second coordinate finding, not an F1.
+Two findings from the ladder that bear on configuration choices:
 
-### Models measured but never in the leaderboard above
+- **Precision is model-dependent.** Q6_K beats Q4_K_M on Qwen3.8 by +0.0117 (overlapping ranges — no
+  measurable difference) but *loses* on Gemma 3 by −0.0278 (12.2× se, disjoint). A precision result
+  does not transfer between models.
+- **llama.cpp is a measurement path, not a deployment one.** 2.54× slower than vLLM on the same 40
+  articles at the same concurrency. It is used here only because vLLM has no usable rung above
+  4-bit at 27B.
 
-Neither was eliminated; both were measured directly on production's CoD path.
+---
 
-| model | numbers_f1 | n | coordinate |
-|---|---:|---|---|
-| Qwen3.8-27B | **0.7132** | 3 | vLLM 0.19.0, fp8_e4m3, 32,768, seqs 16 / util 0.95 |
-| Qwen3.8-27B | 0.7400 | 5 | vLLM 0.19.0, **unquantized KV, 15,360 context** — below the context floor |
-| Qwen3.8-27B | 0.6729 | 5 | as above, plus a thinking-suppression prefill |
-| Gemma 4 31B | **0.7570** | 3 | vLLM **0.28.0** — not production's pinned engine |
+## Comparability rules, short form
 
-`0.7132` is the arm served like the re-qualified models above; the other two Qwen rows are earlier
-coordinates kept because they are cited elsewhere, not because they are comparable.
+Full statement in [`MEASUREMENT_SPACE.md`](MEASUREMENT_SPACE.md).
 
-**Qwen3.8-27B's vendor chat template enables reasoning by default**, which consumes production's
-4,096-token completion budget and leaves the JSON unclosed on 110 of 120 documents. Adopting it
-requires setting `ThinkingSuppressionSuffix`, which `CLAUDE.md` D-26 currently leaves empty.
+1. A score belongs to a **configuration**, not a model. Quote the coordinate with the number.
+2. A comparison is valid only if the arms differ in **one axis**, or if it declares itself a
+   configuration comparison and attributes the delta to nothing.
+3. A cross-family gap **below ~0.06** is not a model result — the chat template alone is worth that,
+   and it cannot be held fixed across families.
+4. **OOM, TIMEOUT and CRASH are not scores.** They are statements about our configuration.
+5. Never infer a quantization scheme from a repo name — two of three checkpoints we serve are named
+   for a scheme they do not use.
 
-On the GGUF ladder — llama.cpp, chat mode, 8,192 tokens per slot, so comparable only to each other
-and not to any row above — Qwen3.8-27B scores Q4_K_M 0.6745, Q6_K 0.6862, Q8_0 0.6554.
+---
 
-None of the above is a shipping decision by itself — `docs/BACKLOG.md` names the blockers
-(context floor, a ticker-recall regression, provisional criteria) for the one candidate closest
-to a swap. `CLAUDE.md` §MODEL_ACCEPTANCE governs what a swap requires.
+## Archived: 2026-01/04 quick-benchmark leaderboard
 
-## Metrics
+<details>
+<summary>14 rows, retained as history — not usable for a decision (click to expand)</summary>
 
-- **F1**: Harmonic mean of precision and recall (primary metric)
-- **census_retail**: Census Bureau retail sales extraction (17 expected values)
-- **fed_fomc**: Federal Reserve FOMC statement extraction (13 expected values)
-- **Mean Time**: Average seconds per test case (300s timeout)
+Every row mixes engine, quantization and decoding in one F1 column. All were produced with
+**salvage-parsing** (grammar-free generation, JSON scraped from free text afterwards) or Ollama's
+structured-output parameter — neither is how production extracts today. Half the rows ran on Ollama,
+retired 2026-06-11. Seeds were dropped, so no row is reproducible.
 
-## Quick Benchmark Threshold
+Six of the nine families here were re-qualified on 2026-09-06 and appear in the tables above. **Not
+one of their eliminations turned out to be a measurement of the model.** Gemma 3, recorded `0.0%
+FAIL — too slow`, now beats production.
 
-Pass criteria: F1 >= 40% AND mean time < 300s per entry
+| Model (as run) | Backend | F1 | census_retail | fed_fomc | Mean Time | Date |
+|---|---|---:|---:|---:|---:|---|
+| qwen2.5:32b-instruct | llama.cpp | 64.6% | 77% | 46% | 102s | 2026-01-24 |
+| qwen3:30b-instruct | llama.cpp | 61.1% | 71% | 42% | 14s | 2026-04-03 |
+| qwen3:30b-instruct | Ollama | 61.1% | 71% | 42% | 16s | 2026-01-24 |
+| Gemma 4 31B (Q4_K_M) | llama.cpp | 59.7% | 69% | 43% | 193s | 2026-04-03 |
+| qwen2.5:32b-instruct | Ollama | 56.7% | 70% | 35% | 40s | 2026-01-24 |
+| qwen3:32b | Ollama | 54.8% | 68% | 26% | 89s | 2026-01-24 |
+| mistral-small:24b | Ollama | 52.1% | 54% | 48% | - | 2026-01-24 |
+| GLM-4.7-Flash (30B MoE) | llama.cpp | *not a score* | 65% | TIMEOUT | 213s | 2026-01-24 |
+| phi4:14b-q4_K_M | Ollama | 40.6% | 43% | 37% | 22s | 2026-01-24 |
+| deepseek-r1:32b | Ollama | 25.7% | 23% | 31% | - | 2026-01-24 |
+| EXAONE 4.0 32B (Q4_K_M) | llama.cpp | *no feasible point* | TIMEOUT | ERROR | FAIL | 2026-04-03 |
+| Command-R 35B (Q4_K_M) | llama.cpp | *no feasible point* | TIMEOUT | TIMEOUT | FAIL | 2026-04-03 |
+| Gemma 3 27B | llama.cpp | *no feasible point* | TIMEOUT | ERROR | FAIL | 2026-01-24 |
+| llama3.3:70b-instruct-q2_K | Ollama | *no feasible point* | - | - | - | 2026-01-24 |
 
-## Running Benchmarks
+The one comparison in this table that was correctly designed holds the model fixed and varies only
+the engine: qwen2.5:32b at 64.6% on llama.cpp vs 56.7% on Ollama — a 7.9pp engine effect. The
+magnitude is not reproducible (dropped seeds); the size of the axis is the point.
 
-`run-benchmarks.sh` takes `--filter` and nothing else — any other flag exits 1. It documented
-`--backend llamacpp` and `--model` for months after both were removed, on a backend (Ollama)
-retired 2026-06-11, and a `--debug` shortcut that set `--filter Category=Debug` against a trait
-no test carries. The model is whatever the server has loaded, because both engines pin theirs at
-server start.
+</details>
 
-**All three `run-*.sh` wrappers are the llama.cpp arm and only the llama.cpp arm.** They
-health-check `llama-server` and pin `BENCHMARK_BACKEND=LlamaServer` for the run, forwarding no
-host variable — so `BENCHMARK_BACKEND=VllmServer ./run-benchmarks.sh` used to run llama.cpp and
-file the number under a vLLM banner. All three now refuse that invocation and print the vLLM
-form below; the refusal is case-insensitive, matching `ParseEnumOrThrow`, so `llamaserver` names
-this arm and is accepted rather than refused with a consequence that cannot happen to it.
+---
+
+## Running the benchmarks
+
+**Python track** (`scripts/`) — production's CoD path, any OpenAI-compatible engine, records the
+full coordinate in every scorecard and refuses to emit a result it cannot attribute. This produces
+the numbers in the tables above.
 
 ```bash
-cd LlmBenchmark
+python3 LlmBenchmark/scripts/run_model.py --task cod --endpoint-mode completions \
+    --prompt-file cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...
+python3 LlmBenchmark/scripts/eval_harness.py --task cod --cod-gold
+```
 
-# QuickBenchmark screen against the running llama.cpp server (2 entries)
-./run-benchmarks.sh
+**C# track** — the quick-benchmark screen, drives SentinelCollector's own clients.
 
-# Full extraction run
-./run-benchmarks.sh --filter "Category=LlmBenchmark"
+```bash
+cd LlmBenchmark && ./run-benchmarks.sh                       # llama.cpp arm, 2 entries
+./run-benchmarks.sh --filter "Category=LlmBenchmark"          # full run
 
-# The vLLM arm: same harness, production's default backend. NOT run-benchmarks.sh --
-# the variable has to reach the container the tests run in. (LlmBenchmark/README.md, "vLLM run")
-cd ../SentinelCollector/.devcontainer
-sudo nerdctl compose up -d
-sudo nerdctl compose exec -T \
-    -e BENCHMARK_BACKEND=VllmServer \
+# vLLM arm — the variable must reach the container, so NOT run-benchmarks.sh
+cd ../SentinelCollector/.devcontainer && sudo nerdctl compose up -d
+sudo nerdctl compose exec -T -e BENCHMARK_BACKEND=VllmServer \
     -e VLLM_ENDPOINT=http://vllm-server:8000 \
     -e BENCHMARK_MODEL=Qwen/Qwen2.5-32B-Instruct-AWQ \
     sentinel-collector-dev \
     dotnet test /workspace/LlmBenchmark/LlmBenchmark.csproj --filter "Category=QuickBenchmark"
 ```
 
-An unrecognised `BENCHMARK_BACKEND` is now REFUSED rather than defaulted away — `llamacpp`,
-`llama` and `LlamaCpp` all used to fall through to vLLM silently and file the numbers under a
-llama.cpp banner.
-
-To compare models, restart the server with each candidate and re-run. Results are displayed in
-the test output; `run-all-benchmarks.sh` and `run-top5-benchmark.sh` write timestamped logs
-beside themselves.
+`run-benchmarks.sh` takes `--filter` and nothing else. All three `run-*.sh` wrappers are the
+llama.cpp arm only and refuse a `BENCHMARK_BACKEND=VllmServer` invocation rather than silently
+running llama.cpp under a vLLM banner.
 
 ## Hardware
 
-- GPU: NVIDIA RTX 5090 (32GB VRAM)
-- CPU: Threadripper-class, 128GB DDR5 RAM (used for CoD / RAG / parallel small-model fan-out)
-- All models in this benchmark ran fully on GPU (no CPU offload). Note: ATLAS production CoD/RAG generation runs on CPU via llama.cpp (`llama-cpu-rag`, which replaced the retired `ollama-cpu-gen` on 2026-06-11); this benchmark file specifically tracks the GPU-served extraction track.
-- Context size: 32K tokens
+RTX 5090, 32 GB VRAM (31.8 GiB usable) · Threadripper 9960X, 24 cores / 48 threads · 125 GB RAM ·
+Context 32K. All benchmark models run fully on GPU. Production CoD/RAG generation also uses CPU
+llama.cpp (`llama-cpu-rag`); this file tracks the GPU-served extraction track.
