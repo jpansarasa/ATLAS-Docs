@@ -16,6 +16,42 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**A DELTA AND A LEVEL ARE THE SAME ROW: `numbers[]` cannot express "dropped 2%" vs "is 2%"**
+[raised 2026-09-07 by the user; IMMATERIAL TO MODEL SCORING and parked on that basis -- every
+candidate faces the identical schema, so this discriminates between no two of them. A data-model
+defect, not a benchmark one.]
+
+CoD stage-1 `numbers[]` has exactly five fields -- `source_text, value, unit, context,
+source_entity` -- and none carries sign, direction, or level-vs-change. `"dropped 2%"` and
+`"is 2%"` both emit `value: "2", unit: "PCT"`.
+
+  - The distinction survives ONLY as free text inside `context`. Real gold, same article:
+    `"total nonfarm payroll employment change"` (a delta) sits beside `"unemployment rate in
+    December"` (a level). Nothing parses that string.
+  - `eval_harness.number_value_accuracy` compares 2 to 2, so a model reading a delta as a level
+    scores a PERFECT HIT. That is why the benchmark cannot surface this.
+  - A column EXISTS: `sentinel.extracted_observations.is_comparison`, required. Production holds
+    **789,386 `false` / 18,657 `true`** (2.3%); the `true` rows stop at **2026-09-04** while
+    `false` continues.
+  - `MergedExtractionService.cs:382` hardcodes `IsComparison: false`. Production does not route
+    there -- `Extraction__Backend=VllmJson` routes to `GpuJsonExtractionService`, which **never
+    mentions `IsComparison` at all**. Neither derives it from the model, because the model is
+    never asked for it.
+  - **Nothing branches on it.** Every reference across SentinelCollector, ThresholdEngine and
+    MacroSubstrate is display or persistence: a review-UI field, admin endpoints echoing it, the
+    parser, the shadow writer. No consumer filters, weights or routes on it.
+
+UNVERIFIED, and it is the question that sizes this: does a delta actually land as a level in
+`matrix_cells`, or does something upstream drop it by accident? Until that is answered this is a
+schema smell; if it is the former it is live data corruption, since `"unemployment dropped 0.2"`
+and `"unemployment is 0.2"` are currently one row.
+
+TWO OPTIONS, different sizes: add a `fact_kind` enum (`level | change | forecast | prior`) to
+`numbers[]` -- prompt + schema change plus a gold relabel; or join `events[]` to the number it
+describes, since `events[].trigger` already captures `"rose by 256,000"` and is otherwise orphaned.
+The second also answers where a direction lives.
+
+
 **THE CORRECTED `source_entity` PROMPT IS IN PRODUCTION, IT STOPPED THE BLANKING, AND ON ARTICLES THAT NAME
 NO SERIES IT PUT THE COUNTRY IN ITS PLACE. 37 rows anchored on a country, 10 of them resolved to an
 instrument, and all 10 are wrong on the FIGURE-to-INSTRUMENT fit** -- an inflation rate is not a quantity of
