@@ -18,18 +18,20 @@ different measurement of the same thing.
 |---|------|------------------------------|----------------------------|
 | 1 | Engine + build + ITS DEPENDENCY STACK | vLLM 0.19.0, 0.28.0, llama.cpp; and the image's own `transformers` version | PARTLY -- engine build is fail-closed (`run_model.probe_engine`); the image's dependency versions are recorded NOWHERE |
 | 2 | Model family + size | 9 families / 14 rows in BENCHMARKS.md; Qwen 2.5-32B, 3-30B, 3-32B, 3.8-27B, Gemma 3-27B, Gemma 4-31B, GLM-4.7-Flash, EXAONE 4.0-32B, Command-R-35B, Mistral-Small-24B, phi4-14B, deepseek-r1-32B, llama3.3-70B | YES, `model` + `model_revision` (HF cache ref) |
-| 3 | Weight quantization | see VERIFIED QUANT COORDINATES below -- the repo names are NOT the schemes | NO -- was inferred from the repo NAME, which is a convention, not a field |
-| 4 | KV cache dtype | fp8_e5m2, fp8_e4m3, unquantized | NO |
-| 5 | Context length | 15360, 32768 | NO |
-| 6 | Concurrency | `--max-num-seqs`, client parallelism | NO |
+| 3 | Weight quantization | see VERIFIED QUANT COORDINATES below -- the repo names are NOT the schemes | YES since #1033 -- `weight_quantization`, read from the checkpoint's own `config.json`, never the repo name |
+| 4 | KV cache dtype | fp8_e5m2, fp8_e4m3, unquantized | YES since #1033 -- declared flag, falsy -> `not_recorded` |
+| 5 | Context length | 15360, 32768, 8192/slot | YES since #1033 -- PROBED from `/v1/models`; null on llama.cpp, which has its own control |
+| 6 | Concurrency | `--max-num-seqs`, client parallelism | YES since #1033 -- both halves checked independently |
 | 7 | Sampling | temp, seed, repetition_penalty, max_tokens | YES, `acceptance_evidence.request_sampling` |
 | 8 | Prompt / schema / template bytes | cod_json_v1 pre- and post-#1017 | YES, sha256 in `request_bytes` |
 | 9 | Task | substrate 16-block vs production CoD path | YES, `production_prompt_path` boolean |
 | 10 | Eval population + alignment key | substrate v6.2, cod-gold 40, 3 recall populations | PARTLY -- `criteria_source` + `substrate_sidecar`, but the KEY CONVENTION is not a field |
 | 11 | **Chat template / system prompt** | production sends none; Qwen's default injects a "helpful assistant" block | NO -- the template's sha256 is recorded, but a DERIVED template is a different string with the same provenance |
 
-Six recorded, four not. The four unrecorded ones are the four that move when we cross model
-families -- which is the only comparison anyone actually wants.
+**CLOSED BY #1033 (merged 2026-09-06): all four are now recorded**, each landing in
+`not_recorded` when it cannot be determined rather than defaulting to a plausible value. What remains
+unrecorded is the ENGINE IMAGE'S DEPENDENCY STACK (axis 1) and whether a chat template was DERIVED
+(axis 11) -- both found the hard way, both still stamped by hand.
 
 ## WHAT THIS EXPLAINS
 
@@ -341,10 +343,9 @@ A comparison between two scorecards is admissible only if ONE of:
     after a bare 0.763 turned out to be the BLOCKED 0.28.0 build; the fix was applied to the
     LABEL and never to the experimental DESIGN.
 
-## THE GAP TO CLOSE
+## THE GAP TO CLOSE [CLOSED for axes 3-6 by #1033; two remain]
 
-Four fields. Until they exist, a scorecard cannot locate itself in the grid, and the rule
-above cannot be checked by anything but memory.
+Axes 3-6 shipped. What is still stamped by hand, and cost a real conclusion each:
 
 | Axis | How to obtain it | Fail mode if guessed |
 |------|------------------|----------------------|
