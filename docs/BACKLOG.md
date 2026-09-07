@@ -3312,27 +3312,58 @@ method: `LlmBenchmark/MEASUREMENT_SPACE.md`. All rows n=3 unless noted, fp8_e4m3
 | Gemma 4 31B QAT w4a16-ct | **0.7570** | 0.0009 | vllm-**0.28.0** | 6 / 0.90 | NOT production's engine -- see caveat |
 | Qwen3.8-27B (armC candidate) | 0.7132 | 0.0109 | vllm-0.19.0 | 16 / 0.95 | |
 | Gemma 3 27B w4a16 | 0.6220 | 0.0151 | vllm-0.19.0 | 16 / 0.95 | n=2 at time of writing; leaderboard says `0.0% FAIL` |
-| Qwen2.5-32B-AWQ (incumbent, n=5) | 0.5153 | 0.0106 | vllm-0.19.0 | 16 / 0.95 | production today |
-| Mistral-Small 24B | 0.5105 | 0.0032 | vllm-0.19.0 | 16 / 0.95 | THE CONTROL -- see below |
+| Mistral-Small 24B | 0.5105 | 0.0032 | vllm-0.19.0 | 16 / 0.95 | |
+| **C3 incumbent, MATCHED control** | **0.4617** | 0.0273 | vllm-0.19.0 | 16 / 0.95 | fp8_e4m3 -- THE CORRECT COMPARATOR |
+| C2 incumbent | 0.4540 | 0.0146 | vllm-0.19.0 | 6 / 0.90 | fp8_e4m3 |
+| C1 incumbent | 0.4545 | 0.0162 | vllm-0.28.0 | 6 / 0.90 | fp8_e4m3 |
+| ~~armA incumbent~~ | ~~0.5153~~ | 0.0106 | vllm-0.19.0 | 16 / **0.92** | **fp8_e5m2** -- NOT a matched baseline |
 | Command-R 08-2024 (current build) | 0.3178 | 0.0098 | vllm-0.19.0 | 16 / 0.95 | |
 | EXAONE 4.0 32B | 0.2218 | 0.0089 | vllm-0.19.0 | 16 / 0.95 | |
 
-**THE MISTRAL ROW IS THE ONE THAT MAKES THE OTHERS CREDIBLE.** It sits at 0.5105 against the
-incumbent's 0.5153 -- indistinguishable, 0.9x se, overlapping runs. Its leaderboard row was 52.1% on
-retired Ollama. So moving a row onto vLLM with `response_format` json_schema is NOT a universal
-uplift, and Gemma's gain is therefore not an artifact of the new harness. Without this row the whole
-sweep would be unfalsifiable.
+**armA WAS A FLATTERING BASELINE AND EVERY ARM WAS COMPARED TO IT.** armA ran at `fp8_e5m2` /
+util 0.92; every sweep arm ran at `fp8_e4m3` / util 0.95. The matched control C3 -- the incumbent at
+the EXACT point gemma3 and mistral ran -- scores **0.4617**, not 0.5153. That two-axis move costs the
+incumbent **-0.0536** (3.3x se), a magnitude matching the ~0.05 KV-dtype effect this file already
+records. Restated against the correct comparator, every gain in this sweep is LARGER than first
+reported:
 
-**GEMMA 4's NUMBER IS NOT YET ATTRIBUTABLE, AND IT MOVES TWO AXES, NOT ONE.** It is the only arm not
-on production's engine (0.28.0, transformers 5.15.1, torch 2.13.0+cu130) because 0.19.0 allocates
-sliding-window layers inefficiently and could not fit it -- that is an ENGINE property, not the
-architecture's, and the agent's own contrary prediction was refuted by measurement (68,892 KV tokens,
-3,070 MiB free). An engine control (incumbent on 0.28.0) is in flight. SEPARATELY, and not flagged in
-the original report: it also ran at **max-num-seqs 6 / util 0.90** against every other arm's 16 / 0.95.
-Continuous batching makes batch composition a real axis, and it is the likeliest explanation for this
-arm's sd of 0.0009 against armC's 0.0109 -- a 12x variance difference. So Gemma4-vs-armC currently
-moves engine + model + quant + concurrency. The engine control must be run at Gemma 4's OWN point, or
-the control isolates nothing.
+| arm | vs armA (WRONG) | vs C3 (correct) | |
+|---|---|---|---|
+| gemma3 | +0.1024 | **+0.1559** | 8.9x se, disjoint |
+| mistral | -0.0048 | **+0.0487** | 3.1x se, disjoint |
+
+**SO THE STRONG FORM OF THE MISTRAL CLAIM IS WITHDRAWN.** An earlier revision of this entry called it
+"THE CONTROL", indistinguishable from the incumbent, proving vLLM + json_schema is not a universal
+uplift. Against the correct baseline Mistral GAINS +0.0487 with disjoint runs, so "no gain" was an
+artifact of the wrong comparator and must not be repeated in that form. The weaker claim survives and
+still does the work: the uplift is **not uniform** -- gemma3 gains 3.2x what mistral gains -- so
+Gemma's result is not a harness artifact. That is the honest version of the argument.
+
+WORTH ISOLATING NEXT, and NOT asserted here: the -0.0536 moved KV dtype AND util together. Util
+should not touch quality at these prompt lengths (~2.1K against a 32K window, 0 truncation both
+sides), which points at `fp8_e4m3` being WORSE than `fp8_e5m2` for this model on this task. If that
+holds under a clean single-axis test it is a real cost on the engine-upgrade path, since
+`CLAUDE.md` §VLLM_UPGRADE mandates e4m3 for 0.28.0. Two axes moved; do not quote it as a dtype
+result until one of them is pinned.
+
+**GEMMA 4 IS NOW ATTRIBUTABLE, AND BOTH FLAGGED CONFOUNDS MEASURED NULL.**
+
+  ENGINE      C1 (0.28.0) 0.4545 vs C2 (0.19.0) 0.4540, identical in every other axis
+              -> +0.0005, 0.0x se. Independently consistent with the -0.0006 for the same engine
+              step on the SUBSTRATE task: two tasks, two golds, the same near-zero answer.
+  CONCURRENCY C2 (seqs 6 / util 0.90) vs C3 (seqs 16 / util 0.95)
+              -> -0.0078, 0.4x se. FIRST TIME THIS PROJECT HAS MEASURED AXIS 6. The supervisor's
+              hypothesis that the 16-vs-6 split discounted Gemma 4 is REFUTED: it does not move
+              this metric. The variance side is a hint only (sd 0.0273 at seqs 16 vs 0.0146 at
+              seqs 6, n=3 each) and does NOT on its own explain Gemma 4's sd of 0.0009.
+
+  vs C1 -- same engine, same serving point, ONLY the model differs:  **+0.3026**, 32.2x se, DISJOINT
+  vs armC candidate:                                                 **+0.0439**,  7.0x se, DISJOINT
+  engine-adjusted 0.7565 vs armC 0.7132 = +0.0434
+
+The weight-quant format axis was never moved against armC either -- both are compressed-tensors
+pack-quantized, read from each model's own `config.json`. **This is the first cross-family
+comparison in this project that survives its own admissibility rule.**
 
 **TWO ELIMINATIONS WERE REFUTED AS FAMILY VERDICTS AND STILL SCORE POORLY, WHICH IS A DIFFERENT FACT.**
 Command-R's "35B too large for KV cache" was true of v01's no-GQA design (640 KiB/token, 8K native)
