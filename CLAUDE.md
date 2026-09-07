@@ -149,6 +149,7 @@ MIGRATIONS [HARD_STOP]:
     ✗ a partial unique index does NOT back a bare `ON CONFLICT (col)` # arbiter inference needs a predicate implying
       the index's; bare raises 42P10 "no unique or exclusion constraint matching". Write `ON CONFLICT (col) WHERE <pred>`
 ANTI: ✗ raw SQL during deployment ✗ bypassing EF to seed/migrate ✗ manual DB fixes
+      ✗ backfill-to-green # writing data to turn a red metric green is fixing the dashboard, not the cause
 
 ## DATA_ML_CONTEXT
 VLLM_STRUCTURED: response_format (openai standard), never guided_json # guided_json broken in vLLM 0.19
@@ -311,14 +312,13 @@ processing: ThresholdEngine | alerting: AlertService | calendar: CalendarService
 substrate: MacroSubstrate | shared: Events/, deployment/, docs/
 mcp: FredCollector/mcp, ThresholdEngine/mcp, FinnhubCollector/mcp, OfrCollector/mcp, SecMaster/mcp, WhisperService/mcp
 
-## SERVICE_ARCHITECTURE [read-first] [HARD_STOP]
-BEFORE reasoning about a service's architecture / API / data-model / resolution flow: READ <Service>/AGENT_README.md.
-  rationale: the card front-loads negative space (does-NOT / on-miss / invariants / DISTINCTIONS / GOTCHAS) that an
-  endpoint catalog cannot convey.
-✗ guess a service's shape from method names or the endpoint table # read the card
-✗ "fix" a symptom by violating a card INVARIANT (bulk-preload, backfill-to-green, raw DB fix)
-cards carry numbered D-entries: touching a guard or contradicting one without a named "supersedes D-n" -> STOP
-cards [READ the card, never a summary of it — a digest here would license skipping the read]:
+## SERVICE_ARCHITECTURE [HARD_STOP]
+READ <Service>/AGENT_README.md before reasoning about a service's architecture, API, data model or
+  resolution flow # the card front-loads negative space (does-NOT / on-miss / invariants /
+  DISTINCTIONS / GOTCHAS) that an endpoint catalog cannot convey
+✗ guess a service's shape from method names or the endpoint table
+✗ "fix" a symptom by violating a card INVARIANT
+cards:
   SecMaster:             SecMaster/AGENT_README.md
   ThresholdEngine:       ThresholdEngine/AGENT_README.md
   SentinelCollector:     SentinelCollector/AGENT_README.md
