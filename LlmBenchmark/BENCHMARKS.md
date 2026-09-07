@@ -24,6 +24,12 @@ a configuration, not to a model.
 | GLM-4.7-Flash | *no score* | — | — | — | vLLM 0.19.0 | Q4_K_M | 32,768 |
 
 All three leaders beat production by more than the ~0.06 confound band, so the ranking is real.
+**Gemma 4 leads by 0.0438 over Qwen3.8 and 0.1393 over Gemma 3.**
+
+One open item, and it is a measurement question rather than an operational one: Gemma 4 is the only
+arm not on production's engine. The 0.19.0 → 0.28.0 step was measured null (+0.0005, 0.0× se) but on
+the INCUMBENT, so applying it to Gemma 4 is a transferability assumption, not a measurement. Scoring
+Gemma 4 on 0.19.0 — if it serves there at all — would close it.
 
 **Mistral-Small is the control.** It lands within noise of production despite being re-measured on
 the same engine and decoding path as everything else — which is what rules out "these gains are an
@@ -36,9 +42,11 @@ Not preferences — without them the score above is not what you get.
 - **Qwen3.8-27B requires thinking disabled.** Its vendor chat template enables reasoning by default;
   at production's 4,096-token completion budget that leaves the JSON unclosed on **110 of 120
   documents** and the run is unscoreable. The 0.7132 is the thinking-off arm.
-- **Gemma 4 31B requires `transformers` ≥ 5.16.1.** The stock vLLM image cannot parse
-  `model_type: gemma4`, so the model does not load at all. vLLM 0.19.0 itself cannot serve it;
-  0.28.0 is the measured engine.
+- **Gemma 4 31B was measured on stock `vllm/vllm-openai:v0.28.0`** (`transformers` 5.15.1). Stock
+  vLLM **0.19.0** ships `transformers` 4.57.6, which cannot parse `model_type: gemma4`, so the model
+  does not load there. **Whether 0.19.0 can serve it with a newer `transformers` is UNTESTED** — the
+  engine registers `Gemma4ForConditionalGeneration`, and a derived 0.19.0 image was built but never
+  produced a scored run. Until that is measured, Gemma 4 is the only arm off production's engine.
 - **EXAONE 4.0 fails to terminate** inside the 4,096-token budget on 8–9 of 40 articles. Those
   score zero and are included in its 0.2218.
 
