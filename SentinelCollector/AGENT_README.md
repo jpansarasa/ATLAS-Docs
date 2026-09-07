@@ -4,6 +4,27 @@ NOTE: this card covers the news->matrix pipeline which spans SentinelCollector A
 
 PURPOSE: news-article -> `(signal x sector)` matrix tilt via GPU vLLM JSON-CoD extraction (Extraction:Backend=VllmJson, Qwen2.5-32B-AWQ) + `:sig:` rows in macro_observations. no gRPC cell push; digest + extraction/CoVe/CoD paths not addressed here. (CPU llama-server DSL extraction = rollback path.)
 
+MODEL_ACCEPTANCE [what may change about the served model, and on what evidence] [HARD_STOP]:
+  BAR: the extraction model, its quantization, its KV dtype and `--max-model-len` change ONLY on a
+    SCORECARD BEATING the incumbent's at an ADMISSIBLE coordinate. ADMISSIBLE is 11 axes and lives in
+    LlmBenchmark/MEASUREMENT_SPACE.md -- open it before quoting any delta; it does not compress to a line.
+  evidence = LlmBenchmark/scripts/run_model.py --task cod THEN eval_harness.py --task cod --cod-gold |
+    LOCAL engine | `production_prompt_path: true` | n>=3 an arm | arms served alike. Results
+    LlmBenchmark/BENCHMARKS.md; coordinates + controls + sample detail docs/BACKLOG.md.
+  ✗ swap on a publisher's claim, a benchmark from elsewhere, or a score with no coordinate.
+  ✗ select on entity_ticker_accuracy # most of its gold tickers appear nowhere in their article, so it
+    scores PRETRAINING RECALL of ticker strings; name->instrument is SecMaster's job.
+  ✗ read a claims or events score as a model result # the gold's arrays do not weigh equally -- two
+    careful human labellers agree 0.302 on events and 0.138 on claims. numbers and entities carry the
+    verdict; events are usable on `subject` alone.
+  NO A PRIORI LIMITS: size, engine, quantization, KV dtype, context and topology are AXES TO MEASURE,
+    never floors to assert. Add a limit only WITH the measurement establishing it, scoped to what was
+    measured # a quantization result on one model says nothing about another.
+  CONTEXT floor: serve more than the longest real document, with headroom. The 40-article gold's worst
+    case is 7,617 tokens and truncation is 0 in every arm run at 8,192 per slot or above. Production's
+    REAL article-length distribution is UNMEASURED and is what must set the floor -- never a round
+    number. NOT the same as D-4's PROMPT budget, which is enforced client-side per request.
+
 DATA MODEL + INVARIANTS:
   INV `:sig:` infix: news row identified SOLELY by literal `:sig:` in source_id (`{rawContentId}:sig:{signalId}`). not schema-enforced — string contract; FOUR artefacts move together: producer (MacroObservationRouter) + projector const (ObservationCellProjector) + consumer (NewsMomentumQueryService) + digest reader (DigestQueryService.ArticleSignalsSql + TryParseRawContentId). change-all-or-none.
   INV signal⊥sector: signal_identity_id=SIGNAL dim gates projection; atlas_sector_code=SECTOR dim does NOT gate. null-signal->never projects (qualitative rows skipped permanently).
@@ -77,6 +98,7 @@ GOTCHAS:
     host mount, which the running container picks up without an image rebuild. The name is a fossil of the
     CPU llama-server DSL path being the ROLLBACK path; it does not scope the prompt.
     ✗ read-`cod`-or-`cpu-cod-prompts`-as-CPU-only ✗ assume-a-cod-prompt-edit-spares-the-GPU-path
+  ✗ swap-the-extraction-model-as-a-config-change # see MODEL_ACCEPTANCE above; the bar is a scorecard
 
 DECISIONS:
   D-1 ingress-junk-filter: INTENT reject non-entity surfaces at the ingress where garbage is BORN (#824) — junk poisoned FRED search (#818), paid Gemini (#823) AND resolution correctness for FREE (wrong-ticker -> corrupt matrix); one source fix covers every consumer / PRECOND reject STRUCTURALLY-invalid only (markup-chars|dotted-id|slug+digit|money/number|metric-abbrev|country|institution|crypto); semantically-ambiguous names Keep -> SecMaster decides (dropping a real equity = the expensive error); destination gates stay defense-in-depth / GUARD EntityResolutionPrepass.ApplySurfaceFilter @ src/Services/EntityResolutionPrepass.cs:386 / TEST EntityResolutionPrepassFilterTests.enforce_mode_removes_junk_candidates_before_secmaster_call · SCOPE [corrected 2026-08-15, measured live — INTENT/PRECOND/GUARD/TEST unchanged and NOT superseded: the guard is real, correctly cited and enforcing. What was false was the COVERAGE claimed for it]: the reject classes above describe what `Classify` ANSWERS, never what the pipeline ASKS it. `Classify` has exactly three production call sites — EntityResolutionPrepass.cs:404 (this guard, the spaCy/regex NER-candidate prepass), DeterministicResolver.cs:651 (D-6, Rule 2.5's paid-Gemini leg ONLY) and GeminiSymbolFallbackService.cs:85 (D-12's V1 mirror). This guard is unconditional — `const string mode = "enforce"` at EntityResolutionPrepass.cs:396, no flag — and live: 30d `sentinel_candidate_surface_filtered_total{mode="enforce"}` carries 12 reason series (institution 9,190, gpe_country 167). But it gates a DIFFERENT POPULATION from the one that attaches instruments. The LLM-extracted `SubjectEntity` is a SECOND ingress (born DslToMergedExtractionAdapter.cs:536, carried V2ExtractionPipeline.cs:78-84), and on it DeterministicResolver Rule 1 (:60) and Rule 2 (:124, RAW SubjectEntity straight to hybrid resolve) call NO filter — only Rule 2.5 (:150) does. Measured over `extracted_at` [2026-07-15, 2026-08-15) reading `OriginalInstrumentId`/`OriginalResolutionMethod`, NEVER the live columns (ReExtract erases those — docs/BACKLOG.md): 45,831 of 47,891 instrument-attaching rows = 95.7% arrive on a leg the filter never sees (llm_candidate_pick 30,575 + hybrid_subject 14,675 + llm_candidate_exact 581); only gemini_fallback's 2,060 = 4.3% passed it. 7,957 = 16.6% of attaching rows carry a subject this filter ALREADY has a verdict on (gpe_country 7,184 across 38 distinct surfaces, crypto 747, institution 26 — replayed in SQL from the exact-match sets only, so a FLOOR: the shape classes were not re-run), and 3,060 country subjects landed on `U` (Unity Software) alone. SAME-ARTICLE CONTROL, raw_content_id=146707: 12 rows, every one `subject_entity='U.S.'`, one process — 9 attached `U` via hybrid_subject while Loki carries exactly 3 `leg=sentinel-v2-direct decision=rejected reason=gpe_country surfaceJson="U.S."` (2026-08-15T03:26-03:27Z, trace b9dd745b5aa5d29976eaf84055a88298). Identical string, identical source, opposite outcomes — because the filter sits AFTER Rule 2 and therefore only ever sees the rows Rule 2 failed to resolve. Uncovered path, its measurement, and the two caveats that make the obvious fix wrong -> docs/BACKLOG.md
