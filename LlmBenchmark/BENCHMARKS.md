@@ -93,42 +93,17 @@ Full statement in [`MEASUREMENT_SPACE.md`](MEASUREMENT_SPACE.md).
 
 ---
 
-## Archived: 2026-01/04 quick-benchmark leaderboard
+## Superseded: the 2026-01/04 quick-benchmark leaderboard
 
-<details>
-<summary>14 rows, retained as history — not usable for a decision (click to expand)</summary>
+Retired 2026-09-07. It ranked 14 rows on a single F1 column that tangled engine, quantization and
+decoding, produced under salvage-parsing or Ollama's structured-output parameter — neither is how
+production extracts — on an engine retired 2026-06-11, with seeds dropped so no row is reproducible.
 
-Every row mixes engine, quantization and decoding in one F1 column. All were produced with
-**salvage-parsing** (grammar-free generation, JSON scraped from free text afterwards) or Ollama's
-structured-output parameter — neither is how production extracts today. Half the rows ran on Ollama,
-retired 2026-06-11. Seeds were dropped, so no row is reproducible.
+Six of its nine families were re-qualified on 2026-09-06 and appear above. **Not one of their
+eliminations was a measurement of the model.** Gemma 3, recorded there as `0.0% FAIL — too slow`,
+now beats production.
 
-Six of the nine families here were re-qualified on 2026-09-06 and appear in the tables above. **Not
-one of their eliminations turned out to be a measurement of the model.** Gemma 3, recorded `0.0%
-FAIL — too slow`, now beats production.
-
-| Model (as run) | Backend | F1 | census_retail | fed_fomc | Mean Time | Date |
-|---|---|---:|---:|---:|---:|---|
-| qwen2.5:32b-instruct | llama.cpp | 64.6% | 77% | 46% | 102s | 2026-01-24 |
-| qwen3:30b-instruct | llama.cpp | 61.1% | 71% | 42% | 14s | 2026-04-03 |
-| qwen3:30b-instruct | Ollama | 61.1% | 71% | 42% | 16s | 2026-01-24 |
-| Gemma 4 31B (Q4_K_M) | llama.cpp | 59.7% | 69% | 43% | 193s | 2026-04-03 |
-| qwen2.5:32b-instruct | Ollama | 56.7% | 70% | 35% | 40s | 2026-01-24 |
-| qwen3:32b | Ollama | 54.8% | 68% | 26% | 89s | 2026-01-24 |
-| mistral-small:24b | Ollama | 52.1% | 54% | 48% | - | 2026-01-24 |
-| GLM-4.7-Flash (30B MoE) | llama.cpp | *not a score* | 65% | TIMEOUT | 213s | 2026-01-24 |
-| phi4:14b-q4_K_M | Ollama | 40.6% | 43% | 37% | 22s | 2026-01-24 |
-| deepseek-r1:32b | Ollama | 25.7% | 23% | 31% | - | 2026-01-24 |
-| EXAONE 4.0 32B (Q4_K_M) | llama.cpp | *no feasible point* | TIMEOUT | ERROR | FAIL | 2026-04-03 |
-| Command-R 35B (Q4_K_M) | llama.cpp | *no feasible point* | TIMEOUT | TIMEOUT | FAIL | 2026-04-03 |
-| Gemma 3 27B | llama.cpp | *no feasible point* | TIMEOUT | ERROR | FAIL | 2026-01-24 |
-| llama3.3:70b-instruct-q2_K | Ollama | *no feasible point* | - | - | - | 2026-01-24 |
-
-The one comparison in this table that was correctly designed holds the model fixed and varies only
-the engine: qwen2.5:32b at 64.6% on llama.cpp vs 56.7% on Ollama — a 7.9pp engine effect. The
-magnitude is not reproducible (dropped seeds); the size of the axis is the point.
-
-</details>
+Recover it with `git show 7d760fdd:LlmBenchmark/BENCHMARKS.md`.
 
 ---
 
