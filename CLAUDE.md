@@ -260,17 +260,26 @@ VLLM_UPGRADE [HARD_STOP before bumping `vllm_image` in deployment/ansible/group_
     docs/BACKLOG.md
   ✓ re-score BOTH models on production's CoD path before ANY engine bump # an engine change is a silent
     quality change until scored
-STAYING IS A DECISION, AND IT IS NOT THE SAFE ONE [the HARD_STOP above is scoped to the FLAG, never to
-  upgrading; reading it as "do not bump" is how 0.19.0 became a floor nobody chose -- measured 2026-09-07]:
-  UPGRADING has a measurable, bounded, single-axis cost # we own the harness that scores it
+TRACK LATEST, ROLL BACK ON FAULT [user direction 2026-09-07. This SUPERSEDES "score before you bump",
+  which still made staying the default and is how 0.19.0 became a floor nobody chose. The HARD_STOP above
+  is scoped to the FLAG, never to upgrading]:
+  THE DEFAULT IS THE LATEST RELEASE. Staying needs a reason; upgrading does not # inverted deliberately
+  rollback IS the safety mechanism, and here it is one variable: revert `vllm_image` in
+    deployment/ansible/group_vars/all.yml and redeploy # bounded, ~4min, no data at risk. When rollback
+    is that cheap, making each upgrade earn its way in is pure loss
   STAYING has a cost that appears on no dashboard: architectures the engine cannot serve (Gemma 4, whose
     infeasibility on 0.19.0 is a MISSING CAPABILITY, not a dependency pin), throughput never claimed, and
     a migration that grows with every version skipped
-  ✗ never price an engine bump as a tax charged against the model that needs it # it is independently
-    worth doing, and doing it DECOUPLES the engine decision from the model decision
+  ✗ never price an engine bump as a tax charged against the model that needs it # independently worth
+    doing, and doing it DECOUPLES the engine decision from the model decision
   ✗ never let the DEPLOYED engine bound the option space # the axis is what is PERMITTED, not INSTALLED
-  ✓ newer is not automatically better either -- 0.28.0 INTRODUCED the fp8_e5m2 fault above. SCORE the
-    bump on a standing cadence # our own data falsifies both "newer is safer" and "older is safer"
+  PRECONDITION WE CURRENTLY FAIL [roll-back-on-fault needs faults to be VISIBLE, and ours are not]:
+    the deploy gate is a /health wait plus ONE SEQUENTIAL 1-token completion, so it cannot see the
+    fp8_e5m2 concurrency fault above, nor any fault needing concurrency >= 2 -- an upgrade PASSES that
+    gate and is still broken. FIX THE GATE (exercise CONCURRENT decode on the real path), never slow
+    the upgrades # the gate is the thing that is wrong here, not the cadence
+  SCORE AFTER THE BUMP, AS A DETECTOR, NEVER AS A GATE # a crash rolls itself back loudly; a silent
+    quality regression does not, and only the harness sees it
   ✓ llama.cpp is already deployed here and is a legitimate GPU arm to SCORE, not only the CPU rollback
     path # user direction 2026-09-07
 VLLM_METRICS [for QUERYING; the rule, dashboard and compose files carry their own edit notes]:
