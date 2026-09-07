@@ -204,12 +204,12 @@ one-shot. Its post-deploy smoke test and `:autofix-prev` image rollback were por
 | `llama_server_url` | `http://llama-server:8080` | llama.cpp GBNF-constrained extraction backend (DSL PoC Phase 2) |
 | `llama_server_ctx_size` | `32768` | llama-server total context (divided across `--parallel` slots) |
 | `llama_server_parallel` | `1` | llama-server concurrent slots; see all.yml header for ctx-vs-parallel math |
-| `vllm_base_model` | `Qwen/Qwen2.5-32B-Instruct-AWQ` | HF model id served by vllm-server (LoRA removed 2026-05-17; served-model-name alias dropped 2026-05-25) |
+| `vllm_base_model` | `google/gemma-4-31B-it-qat-w4a16-ct` | HF model id served by vllm-server, and the id every client sends (Extraction__Model / Extraction__V2Model template from it). Part of a SCORED coordinate, not a config value — SentinelCollector/AGENT_README.md D-29 |
 | `vllm_max_model_len` | `32768` | vLLM context window |
-| `vllm_max_num_seqs` | `16` | Cap concurrent sequences — default 256 OOMs on RTX 5090 with 32B-AWQ + 32K ctx |
-| `vllm_gpu_memory_utilization` | `0.92` | vLLM GPU memory fraction |
+| `vllm_max_num_seqs` | `6` | Batch width the Gemma 4 acceptance run served at — part of a SCORED coordinate (D-29), not a tuning knob. Still bounds sampler-warmup VRAM (default 256 OOMs on the RTX 5090) |
+| `vllm_gpu_memory_utilization` | `0.90` | vLLM GPU memory fraction — the utilization the acceptance run served at (D-29) |
 | `vllm_lora_*` | (forensic) | Retained as historical record; not consumed since LoRA removal |
-| `sentinel_max_concurrent_extractions` | `4` | SentinelCollector → vLLM concurrency cap (~18K KV-cache tokens per slot at 72K budget) |
+| `sentinel_max_concurrent_extractions` | `6` | SentinelCollector → vLLM concurrency cap. The client concurrency the acceptance run drove, and must stay `<= vllm_max_num_seqs` (D-29) |
 | `sentinel_digest_public_base_url` | `http://mercury.elasticdevelopment.com:5091` | Daily-digest ntfy click-through (FQDN — bare `mercury` only resolves on-LAN) |
 | `sentinel_edge_endpoint` / `sentinel_edge_api_key` | from vault | Cloudflare Worker edge endpoint + auth |
 | `ports_external.*` | see below | Host-mapped ports — referenced by compose template + smoke tests |

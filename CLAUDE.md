@@ -241,15 +241,20 @@ ANTI: ✗ read a green run as proof # ask what the tool CANNOT see -- verify-cit
 ## INFERENCE [shared GPU/CPU serving — EXTRACTION rules live in SentinelCollector/AGENT_README.md]
 TOPOLOGY [what is INSTALLED, never what is permitted -- the engine is an AXIS
   (LlmBenchmark/MEASUREMENT_SPACE.md); run_model.py drives any OpenAI-compatible engine BY DESIGN]:
-  GPU: vllm-server (Qwen/Qwen2.5-32B-Instruct-AWQ) -> Sentinel extraction + Reports narrative
+  GPU: vllm-server (google/gemma-4-31B-it-qat-w4a16-ct @ vLLM 0.28.0) -> Sentinel extraction + Reports narrative
+    # the model AND its serving flags are one SCORED coordinate -> SentinelCollector/AGENT_README.md D-29
   CPU: llama-server(GBNF DSL rollback) | llama-cpu-rag(SecMaster RAG) |
     llama-cpu-embed(bge-m3, shared SecMaster + SentinelCollector)
   ✗ propose ollama # no container remains; its GGUF store is a frozen ro-mounted artifact the
     llama.cpp runners read from -- a deployment fact, and the only one here
 ✗ CHANGE THE SERVED MODEL, ITS QUANTIZATION, ITS KV DTYPE OR `--max-model-len` AS A DEPLOY # each is a
   SCORED acceptance decision, not config -> SentinelCollector/AGENT_README.md §MODEL_ACCEPTANCE.
-  Sites that look like config and are not: `vllm_base_model`, `vllm_image` and `vllm_max_model_len` in
-  deployment/ansible/group_vars/all.yml, and the vllm-server `command:` in deployment/artifacts/compose.yaml.j2
+  Sites that look like config and are not: `vllm_base_model`, `vllm_image`, `vllm_max_model_len`,
+  `vllm_max_num_seqs`, `vllm_gpu_memory_utilization` and `sentinel_max_concurrent_extractions` in
+  deployment/ansible/group_vars/all.yml, the vllm-server `command:` in deployment/artifacts/compose.yaml.j2,
+  and `ExtractionOptions.ChatTemplate` + its appsettings.json copy # the template is CLIENT-side and vLLM
+  applies none on /v1/completions, so it is part of the request the score is a property of -- the swap that
+  reset it is D-29, and 16/0.92 was left behind BECAUSE it was unmeasured for the new model
 GPU_OOM: restart vLLM first # model, quantization and context are then measurable tradeoffs, each with a
   scorecard path -- none is off the table, and none is a free edit (line above)
 VLLM_UPGRADE [HARD_STOP before bumping `vllm_image` in deployment/ansible/group_vars/all.yml]:
@@ -257,7 +262,10 @@ VLLM_UPGRADE [HARD_STOP before bumping `vllm_image` in deployment/ansible/group_
     under concurrent decode (CUDA illegal memory access) and stays 503 -- and the deploy gate is a /health
     wait plus one SEQUENTIAL 1-token completion; the fault needs concurrency >= 2, so the gate cannot see
     it. `fp8_e4m3` is the one-flag fix at NO quality cost (measured single-axis, null). Isolation table ->
-    docs/BACKLOG.md
+    docs/BACKLOG.md. DECIDED 2026-09-07, NOT YET DEPLOYED: the REPO is pinned to 0.28.0 + fp8_e4m3
+    (vllm_image, compose.yaml.j2), and vllm-server is stopped -- so read this as "never reintroduce
+    e5m2" for the coordinate being deployed, and check the RUNNING engine before claiming it is
+    already true # `sudo nerdctl container inspect vllm-server` -- bare inspect returns the IMAGE
   ✓ re-score BOTH models on production's CoD path before ANY engine bump # an engine change is a silent
     quality change until scored
 TRACK LATEST, ROLL BACK ON FAULT [user direction 2026-09-07. This SUPERSEDES "score before you bump",

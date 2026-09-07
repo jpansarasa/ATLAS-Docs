@@ -9,7 +9,7 @@ Deep-dives: [MATRIX.md](./MATRIX.md) (signal matrix), [SENTINEL-RLM.md](./SENTIN
 ## 1. Host and resource topology
 
 - mercury: 48 hardware threads, 125 GiB RAM, NVIDIA RTX 5090 (32,607 MiB; 29,776 MiB / ~29.1 GiB
-  held by vLLM at 0.92 gpu-memory-utilization).
+  held by vLLM at 0.90 gpu-memory-utilization).
 - CPU islands via compose `cpuset` (CFS-throttle avoidance; islands sum to all 48 threads):
   llama-server 0-23, llama-cpu-rag 24-39, llama-cpu-embed 40-47.
 - ZFS: `nvme-fast` (models, timeseries DB, dashboards, containers) + `sata-bulk` (logs,
@@ -72,7 +72,7 @@ digests would silently serve stale weights (deploy `/health`+`/props` checks are
 
 | Runtime | Port | Model | Role |
 |---|---|---|---|
-| **vllm-server** (GPU) | 8000 | Qwen/Qwen2.5-32B-Instruct-AWQ (awq_marlin, 32K ctx, max_num_seqs 16, fp8 KV cache) | Sentinel JSON-CoD extraction, news-signal classification, reports narrative |
+| **vllm-server** (GPU) | 8000 | google/gemma-4-31B-it-qat-w4a16-ct (compressed-tensors, vLLM 0.28.0, 32K ctx, max_num_seqs 6, fp8_e4m3 KV cache) | Sentinel JSON-CoD extraction, news-signal classification, reports narrative |
 | llama-server (CPU 0-23) | 11437 | qwen3-30b-a3b-instruct (32K ctx) | CPU GBNF/DSL extraction backend — **rollback path only** (`Extraction__Backend=LlamaServerDsl`) |
 | llama-cpu-rag (CPU 24-39) | 11438 | qwen2.5-7b-instruct q4_K_M (8K ctx, 4 slots) | SecMaster RAG generation (sole consumer) |
 | llama-cpu-embed (CPU 40-47) | 11439 | bge-m3 (16K ctx, batch=ubatch=8192) | Embeddings; pgvector-compatible with all existing rows |
@@ -136,7 +136,8 @@ Detail in `SentinelCollector/README.md`; the matrix-facing half in [MATRIX.md](.
    `DocumentAst` -> deterministic `/verify` span verifier (hard-failed blocks dropped; 12-25% of
    articles is the normal baseline — a quality gate, not an error) -> adapter persists
    observations with sentence-snapped text quotes. Dispatch is continuous streaming with
-   `MaxConcurrent=8`; an `ObservationValueSanitizer` nulls un-storable values (|v| >= 1e16,
+   `MaxConcurrent=6` (the acceptance run's client concurrency, and it must not exceed
+   `vllm_max_num_seqs` — D-29); an `ObservationValueSanitizer` nulls un-storable values (|v| >= 1e16,
    NaN/Inf) rather than clamping.
 3. **Resolution cascade** (per observation): LLM candidate-pick (>=0.7) -> SecMaster hybrid
    resolve -> Gemini fallback (>=0.85, auto-registers new instruments) -> Pending; an async

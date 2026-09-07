@@ -693,7 +693,7 @@ SecMaster's, or it will push `secmaster_rag_degraded_total{reason="timeout"}` an
 SentinelCollector**. Its existing `LlamaServerClient` points at `llama-server` — the `--parallel 1`
 DSL rollback runner — and DI comments warn repeatedly against occupying that slot. Copy the
 established pattern: dedicated named `HttpClient` + `AddSharedCircuitBreaker`, as
-`DependencyInjection.cs:606-641` already does for the sector-tagger.
+`DependencyInjection.cs:608-643` already does for the sector-tagger.
 
 **Output: llama.cpp `json_schema`**, an `enum` over the taxonomy plus an explicit `"abstain"`,
 `temperature 0.0`, `n_predict 24`. Never free-text parsed — the mechanism is proven at

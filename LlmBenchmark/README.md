@@ -89,9 +89,9 @@ Driven by environment variables read by `BenchmarkConfiguration.Default`:
 | `BENCHMARK_BACKEND` | `InferenceBackend` value — `VllmServer`/`VllmJson` drive vLLM, `LlamaServer`/`LlamaServerDsl` drive llama.cpp. Same enum and same split as `Extraction:Backend` | `VllmServer` |
 | `VLLM_ENDPOINT` | vLLM base URL, used when the backend is a vLLM one | `http://localhost:8000` |
 | `LLAMA_SERVER_ENDPOINT` | llama.cpp base URL, used when the backend is a llama.cpp one | `http://localhost:8080` |
-| `BENCHMARK_MODEL` | Model name sent in the request body. vLLM rejects a name it is not serving; llama.cpp ignores it | `Qwen/Qwen2.5-32B-Instruct-AWQ` (what compose serves) |
-| `BENCHMARK_CHAT_TEMPLATE` | Chat template applied client-side, `{0}` placeholder. Empty → prompt sent raw | Qwen2.5 ChatML (`<\|im_start\|>user\n{0}<\|im_end\|>\n<\|im_start\|>assistant\n`) |
-| `BENCHMARK_STOP_TOKENS` | Comma-separated stop tokens | `<\|im_end\|>,<\|endoftext\|>` |
+| `BENCHMARK_MODEL` | Model name sent in the request body. vLLM rejects a name it is not serving; llama.cpp ignores it | `google/gemma-4-31B-it-qat-w4a16-ct` (what compose serves, since 2026-09-07) |
+| `BENCHMARK_CHAT_TEMPLATE` | Chat template applied client-side, `{0}` placeholder. Empty → prompt sent raw | `ExtractionOptions.ChatTemplate` — Gemma 4's own template since 2026-09-07, NOT a copy: the default tracks the production class so a swap moves both |
+| `BENCHMARK_STOP_TOKENS` | Comma-separated stop tokens | `ExtractionOptions.StopTokens` — `<turn\|>,<eos>` since 2026-09-07, tracking the class default for the same reason |
 | `BENCHMARK_THINKING` | `Disabled` or `Enabled` — whether the served model may emit a reasoning block | `Disabled` |
 | `BENCHMARK_THINKING_SUFFIX` | Text appended after the chat template when thinking is `Disabled`. Model-family specific; set it only for a model that actually reasons | empty |
 
@@ -185,7 +185,7 @@ sudo nerdctl compose up -d
 sudo nerdctl compose exec -T \
     -e BENCHMARK_BACKEND=VllmServer \
     -e VLLM_ENDPOINT=http://vllm-server:8000 \
-    -e BENCHMARK_MODEL=Qwen/Qwen2.5-32B-Instruct-AWQ \
+    -e BENCHMARK_MODEL=google/gemma-4-31B-it-qat-w4a16-ct \
     sentinel-collector-dev \
     dotnet test /workspace/LlmBenchmark/LlmBenchmark.csproj --filter "Category=QuickBenchmark"
 ```

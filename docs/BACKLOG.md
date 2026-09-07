@@ -16,6 +16,85 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**Gemma 4 is deployable but not deployed: three residuals the swap PR found and did not fix**
+[2026-09-07]
+
+The Gemma 4 coordinate swap (SentinelCollector/AGENT_README.md D-29) landed in the repo. It has
+NOT been deployed, and three things it surfaced are outside the change:
+
+  1. CLOSED 2026-09-07 -- THE WEIGHTS ARE NOW STAGED, and the entry is rewritten rather than
+     tombstoned because what replaced it is a DIFFERENT and still-open exposure. This read "the
+     weights are NOT on the production mount, and this blocks the deploy", which was true when
+     written and was made false mid-review by an `rsync -a` (mtime-preserving, so the copy does
+     not look recent). Verified:
+     `/opt/ai-inference/models/huggingface-cache/hub/models--google--gemma-4-31B-it-qat-w4a16-ct`
+     is 22G with `refs/main` = `52f3f65bc7a02d555763bc923bd1d9094898219d`, exactly the scored
+     revision. The deploy is no longer blocked on weights.
+
+     HALF-CLOSED 2026-09-07, AND THE DEFERRAL RATIONALE WAS BACKWARDS. This read: neither
+     `--revision` nor `HF_HUB_OFFLINE=1` may be shipped because both "change BOOT behaviour on a
+     path that round could not exercise". The three acceptance boot logs refute that for one of
+     them -- all three ran WITH `HF_HUB_OFFLINE=1` and logged `HF_HUB_OFFLINE is True`, resolving
+     the model id to the on-disk snapshot before any hub call (vLLM's own boot log carries the
+     substitution line). Production
+     setting nothing was the DEVIATION from the measurement, so setting it REPRODUCES the scored
+     serving condition rather than departing from it. Now set in
+     `deployment/artifacts/compose.yaml.j2`, pinned by
+     `ExtractionModelCoordinateTests.should_boot_the_engine_under_the_hub_resolution_the_acceptance_run_used`,
+     and safe because the production snapshot matches the one those boots read file-for-file and
+     byte-for-byte at the same `refs/main`. It also converts two silent failures into loud ones:
+     an unstaged host fails immediately instead of fetching inside a ~4min GPU window, and a
+     hub-side move of `main` can no longer be served in place of the scored revision.
+
+     STILL OPEN: `--revision` is deliberately NOT added, and this is a decision rather than a
+     deferral. No acceptance boot passed it (all three logged `revision=None`), and under
+     `HF_HUB_OFFLINE` the id is replaced by a snapshot PATH before any revision is consulted, so
+     the flag's effect on this path is unmeasured -- adding it would ADD an axis rather than
+     reproduce one, which is the same reasoning that keeps the attention backend unpinned. The
+     residual exposure it would have covered is now only a LOCAL move of `refs/main` (someone
+     running a download on the box), which offline mode does not close. Re-check, which must print
+     the scored sha:
+       `cat /opt/ai-inference/models/huggingface-cache/hub/models--google--gemma-4-31B-it-qat-w4a16-ct/refs/main`
+     and the two flags' state:
+       `grep -c '\-\-revision' deployment/artifacts/compose.yaml.j2`      # 0, by decision
+       `grep -c 'HF_HUB_OFFLINE=1' deployment/artifacts/compose.yaml.j2`  # 1, since 2026-09-07
+     STAGING THE WEIGHTS IS NOW A PRECONDITION of the deploy rather than advice: offline mode
+     cannot fetch what is missing.
+
+  1b. THE COORDINATE SWEEP IS ONE-DIRECTIONAL, and the count is the point of this entry.
+     `ExtractionModelCoordinateTests` hunts the INCUMBENT's literals, so nothing looks at the
+     sites now hardcoding the NEW id. Measured 2026-09-07: **43 lines across 30 tracked files**
+     (`git grep -c gemma-4-31B-it-qat-w4a16-ct -- ':!.claude/worktrees' | wc -l` for the files,
+     drop `-c` and count lines for the 43). Most are prose or evidence; FOUR are read by a run as
+     a default and are therefore live at the NEXT swap:
+     `scripts/sentinel-quality-check/weekly_quality_check.sh:65` (SENTINEL_QC_MODEL),
+     `scripts/sentinel-quality-check/compare_base_vs_resolved.py:67` (DEFAULT_MODEL),
+     `SentinelCollector/tools/gpu-json-shadow/score_shadow_recall.py:251` (JUDGE_MODEL) and
+     `SentinelCollector/agent/agent.py:34` (VLLM_MODEL). All four are env-overridable, which
+     bounds the damage to a run nobody overrode and does not remove it. Closing it means
+     single-sourcing those four from `vllm_base_model` (or from one another) -- deliberately NOT
+     done in the swap PR, which would have been a re-architecture inside a fix round.
+
+  2. `--tool-call-parser hermes` IS QWEN-SHAPED AND SURVIVED THE SWAP. The acceptance run passed
+     neither it nor `--enable-auto-tool-choice`; `hermes` parses Hermes/Qwen `<tool_call>` output,
+     which Gemma 4 does not emit. Deliberately kept (D-29 says why: extraction sends no tools, so
+     it cannot reach the scored path, and removing it deletes a capability the measurement has no
+     verdict on) -- but it means the agent REPL's tool-calling leg is UNMEASURED on this model, and
+     0 requests have exercised it. Re-check by driving one tool-call through
+     `ToolAugmentedChatClient` against the live engine and reading whether `tool_calls` comes back
+     populated or the text arrives unparsed.
+
+  3. THE PROMTOOL FIXTURES STILL CARRY THE OLD MODEL ID. 30 sample series in
+     `deployment/tests/alerts/vllm_test.yml` label `model_name="Qwen/Qwen2.5-32B-Instruct-AWQ"`.
+     Left alone ON PURPOSE and now documented at the top of
+     `deployment/artifacts/monitoring/alerts/vllm.yml`: NO rule selects on `model_name`, so the
+     fixtures passing unchanged is the evidence that a model swap cannot silence an engine alert.
+     They become wrong only if a rule ever adds a `model_name` selector -- which is the thing not
+     to do. Re-check that no RULE has grown one (the two hits in that file are both comment
+     prose, so a bare count answers the wrong question):
+       `grep -v '^\s*#' deployment/artifacts/monitoring/alerts/vllm.yml | grep -c model_name`
+     must stay 0.
+
 **PR #1035's review found more than the three defects that were fixed; the rest were scoped out**
 [2026-09-07]
 
@@ -498,7 +577,7 @@ the engine the "0.28.0 upgrade is BLOCKED by our `fp8_e5m2` KV cache" entry bloc
 
 | model | aggregate_f1 | engine / config |
 |---|---|---|
-| Qwen2.5-32B-AWQ | 0.443 | vllm-0.19.0, fp8_e5m2 KV (production today) |
+| Qwen2.5-32B-AWQ | 0.443 | vllm-0.19.0, fp8_e5m2 KV (production until the 2026-09-07 swap) |
 | Qwen2.5-32B-AWQ | 0.494 | vllm-0.19.0, unquantized KV |
 | Qwen3.8-27B-AWQ-INT4 | 0.764 | vllm-0.19.0 |
 | Qwen3.8-27B-AWQ-INT4 | 0.7634 | vllm-0.28.0 [BLOCKED engine] |
@@ -587,8 +666,14 @@ measured headroom (1,945 req/h capacity vs ~96 req/h actual), so it looks worth 
 the engine we run TODAY, independent of any upgrade or model swap. Unquantized KV still fits 32K on this card
 under 0.19.0 (36,848 tokens of cache vs ~73,712 at fp8), which is ample at ~3K tokens/request and concurrency 8.
 
-NOT YET DONE, and why: measured on the substrate's own 16 instructions, NOT production's cod_json_v1.txt +
-schema path. Confirm on the production prompt before changing vllm_kv_cache_dtype.
+STILL NOT DONE, and the swap did not do it: measured on the substrate's own 16 instructions, NOT production's
+cod_json_v1.txt + schema path. The 2026-09-07 swap moved the KV dtype `fp8_e5m2` -> `fp8_e4m3` (the crash fix,
+measured single-axis at +0.0103, null), which is NOT the change this entry prices -- that one is fp8 -> UNQUANTIZED,
+still unmeasured on the production prompt. And the +0.051 above does not transfer: it was measured on Qwen2.5-32B-AWQ
+at vLLM 0.19.0, neither of which is served any more, so the number has to be re-earned on Gemma 4 at 0.28.0 before it
+argues for anything. There is no `vllm_kv_cache_dtype` group_var to change -- the dtype is a literal in the
+vllm-server `command:` in `deployment/artifacts/compose.yaml.j2`, and it is now pinned by
+`ExtractionModelCoordinateTests`, so moving it is a re-score rather than an edit.
 UNBLOCKED 2026-09-05: the harness scores production's CoD path end to end now, so both KV arms CAN be
 measured on it -- `--task cod` against the 40-article gold, NOT `aggregate_f1` (a CoVe metric the CoD
 scorecard does not carry). The macro-owner convention is DECIDED and in the gold now; while it was
@@ -599,14 +684,19 @@ stop and two ~4min GPU reloads. See MEASUREMENT DEBT, "The CoD gold cannot yet b
 RELATED: this same flag is what crashes vLLM 0.28 (see the entry below), and e5m2 carries 2 mantissa bits to
 e4m3's 3 -- production runs the lower-precision of the two 8-bit formats AND the crash-prone one.
 
-**vLLM 0.28.0 upgrade is BLOCKED by our `fp8_e5m2` KV cache on sm_120; `fp8_e4m3` is the one-flag fix.**
+**vLLM 0.28.0 was BLOCKED by our `fp8_e5m2` KV cache on sm_120; `fp8_e4m3` is the one-flag fix. CLOSED
+2026-09-07** by the Gemma 4 swap, which pins `vllm_image` to 0.28.0 and `--kv-cache-dtype fp8_e4m3` in
+`deployment/artifacts/compose.yaml.j2`, and pins the dtype in CI for the first time
+(`ExtractionModelCoordinateTests.should_serve_the_kv_cache_dtype_the_engine_does_not_fault_on`).
+The measurement below is NOT retired with the entry: CLAUDE.md VLLM_UPGRADE points at this isolation table,
+and the re-check at the foot of it is still owed on the next release.
 Measured 2026-09-04 on the RTX 5090 (sm_120) with production's exact nine flags. 0.28.0 STARTS fine and serves
 single requests, then faults under concurrent decode with `torch.AcceleratorError: CUDA error: an illegal memory
 access` and stays 503. Isolated to one variable:
 
 | vLLM | KV dtype | ctx | conc | result |
 |---|---|---|---|---|
-| 0.19.0 | fp8_e5m2 | 32K | 6 | 597/597 clean, twice (production today) |
+| 0.19.0 | fp8_e5m2 | 32K | 6 | 597/597 clean, twice (production until the 2026-09-07 swap) |
 | 0.28.0 | fp8_e5m2 | 32K | 1 | OK |
 | 0.28.0 | fp8_e5m2 | 32K | 2 / 4 / 6 | crash |
 | 0.28.0 | fp8_e5m2 | 16K | 6 | crash, 17/18 |
@@ -3433,10 +3523,16 @@ is 39x and 24x its own se_diff, and the arms are disjoint at RUN level, `min(B) 
 **PLAN AGAINST B', THE CONSERVATIVE ARM.** B' is the same model with a `ThinkingSuppressionSuffix`
 expressed in the client-side template. PRODUCTION SETS NO SUCH SUFFIX TODAY and this entry does not
 claim it does: `ExtractionOptions.ThinkingSuppressionSuffix` defaults to `string.Empty`
-(`SentinelCollector/src/Configuration/ExtractionOptions.cs:246`), nothing in
+(`SentinelCollector/src/Configuration/ExtractionOptions.cs`, the `ThinkingSuppressionSuffix`
+declaration -- anchored to the symbol because a line number here has now been repaired wrong
+twice), nothing in
 `/opt/ai-inference/compose.yaml` or any appsettings sets it, and D-26 says that emptiness is
-DELIBERATE because the model served today does not reason (D-26,
-`SentinelCollector/AGENT_README.md:117`). So B is what production's CURRENT configuration would
+DELIBERATE (D-26, `SentinelCollector/AGENT_README.md:139`). CORRECTED 2026-09-07 WITH THE GEMMA 4
+SWAP: this passage read "because the model served today does not reason", which was D-26's reason
+at the time and is no longer true of anything. Gemma 4 DOES reason; the suffix stays empty because
+its chat template pre-closes the thinking channel itself, so suppression moved into the template
+rather than being unnecessary. The arm B/B' arithmetic below is UNAFFECTED -- it turns on the
+suffix being empty on the wire, which it still is. So B is what production's CURRENT configuration would
 produce and B' is the arm a reasoning-model deployment might choose. Plan against B' because it is
 the LOWER of the two and the suffix machinery exists precisely for a model like this one -- not
 because anything sets it now. Either way the candidate is ahead: +0.2246 at B, +0.1576 at B'.
@@ -3445,7 +3541,8 @@ THE SUFFIX COSTS 0.0671 `numbers_f1` AND 19% WALL CLOCK HERE, WHICH IS NOT WHAT 
 recorded as an open question, not answered. B and B' differ on the wire by the six prefilled template
 tokens and NOTHING else: same model revision, same seed, same endpoint, same prompt and schema bytes.
 Both arms sent `structured_output: true` -- a `response_format` json_schema
-(`LlmBenchmark/scripts/run_model.py:429-433`) -- so neither arm could have emitted a reasoning block
+(`LlmBenchmark/scripts/run_model.py`, the `response_format` block in `build_payload`) -- so
+neither arm could have emitted a reasoning block
 for the suffix to suppress, yet B' spends 22% more completion tokens (59,613 vs 48,805 mean per
 40-article run) reaching a lower score. Whoever plans the swap should measure whether the suffix is
 needed at all on the GPU JSON path before paying that; D-26 governs the suffix REACHING the wire and
@@ -3536,15 +3633,17 @@ exactly. THE SUBSTRATE WRAPPER IS THE ONE FILE THAT IS NOT REPO-DERIVABLE, and
 that costs nothing HERE: its 40 article texts are byte-identical, in the same order, to the 40
 `content` fields of the committed `LlmBenchmark/cod-gold/cod_stage1_corpus_v1.json` (checked
 40 of 40), and with `--prompt-file` the runner reads only `input.content` and the join key --
-`record["instruction"]` is the FALLBACK the flag overrides (`LlmBenchmark/scripts/run_model.py:406-409`).
+`record["instruction"]` is the FALLBACK the flag overrides (`LlmBenchmark/scripts/run_model.py`,
+in `build_payload`).
 The wrapper's own sha256 is unreproducible because it also carries the v6.2 substrate's
 `instruction` and `output` fields, which this task never reads and which live outside the repo.
 
 `request_sampling`, identical on all fifteen runs: `temperature 0.0`, `seed 42`, `repetition_penalty
 1.1`, `max_tokens 4096`, `top_p/top_k/min_p/presence_penalty null`, `structured_output true`,
 `endpoint_mode completions`, concurrency 6.
-`stop` WAS `null` AND PRODUCTION SENDS `["<|im_end|>", "<|endoftext|>"]`
-(`SentinelCollector/src/Configuration/ExtractionOptions.cs:254`) -- so this is production's prompt
+`stop` WAS `null` AND PRODUCTION SENT `["<|im_end|>", "<|endoftext|>"]` AT THE TIME
+(now `["<turn|>", "<eos>"]` with the Gemma 4 template --
+`SentinelCollector/src/Configuration/ExtractionOptions.cs:294`) -- so this is production's prompt
 path at production's DECODING, still not a byte-for-byte replay of its request. On this corpus the
 omission is observably inert (`truncated 0`, `finish_reason stop` on all 600 records), but the gap is
 real and `--stop` closes it.
@@ -3675,7 +3774,7 @@ method: `LlmBenchmark/MEASUREMENT_SPACE.md`. All rows n=3 unless noted, fp8_e4m3
 | Gemma 4 31B QAT w4a16-ct | **0.7570** | 0.0009 | vllm-**0.28.0** | 6 / 0.90 | NOT production's engine -- see caveat |
 | Qwen3.8-27B (armC candidate) | 0.7132 | 0.0109 | vllm-0.19.0 | 16 / 0.95 | |
 | Gemma 3 27B w4a16 | **0.6177** | 0.0130 | vllm-0.19.0 | 16 / 0.95 | n=3 final; leaderboard says `0.0% FAIL` |
-| Qwen2.5-32B-AWQ (incumbent, armA, n=5) | 0.5153 | 0.0106 | vllm-0.19.0 | 16 / 0.95 | production today -- a VALID baseline |
+| Qwen2.5-32B-AWQ (incumbent, armA, n=5) | 0.5153 | 0.0106 | vllm-0.19.0 | 16 / 0.95 | production until the 2026-09-07 swap -- a VALID baseline |
 | Mistral-Small 24B | 0.5105 | 0.0032 | vllm-0.19.0 | 16 / 0.95 | THE CONTROL -- see below |
 | GLM-4.7-Flash | -- | -- | vllm-0.19.0 | 16 / 0.95 | DEGENERATE at both grammar settings; coordinate finding |
 | Command-R 08-2024 (current build) | 0.3178 | 0.0098 | vllm-0.19.0 | 16 / 0.95 | |
@@ -3958,7 +4057,8 @@ be recovered afterwards from `nerdctl container inspect` and a hand-written engi
 which is this section's whole subject.
 FIX, AND IT IS CHEAPER THAN IT LOOKS -- THE DATA IS ALREADY IN THE PROCESS. `run_model.py` ALREADY
 GETs `/v1/models` and iterates the entries, taking only `d.get("id")`
-(`LlmBenchmark/scripts/run_model.py:284-286`); that same response carries `max_model_len`. The
+(`LlmBenchmark/scripts/run_model.py`, `probe_engine`); that same response carries
+`max_model_len`. The
 engine's `/metrics` exposes `vllm:cache_config_info` with `cache_dtype` and
 `gpu_memory_utilization` as labels. So three of the four are one already-open call and one scrape
 away. Record them, and refuse to stamp `production_prompt_path: true` on a run whose serving config
@@ -4594,8 +4694,8 @@ source_entity.` on stderr and creates nothing -- measured 2026-09-06, no key and
 
 ### `run_model.py --schema-file` silently bypasses `SCHEMA_REQUIRED`, on the model-acceptance path [2026-09-04]
 `build_payload` reads `schema = load_schema(args) or extraction_json_schema()`
-(`LlmBenchmark/scripts/run_model.py:430`), and `load_schema`
-(`LlmBenchmark/scripts/run_model.py:514-517`) returns whatever JSON the
+(`LlmBenchmark/scripts/run_model.py`, `build_payload`), and `load_schema`
+(same file, `load_schema`) returns whatever JSON the
 operator handed `--schema-file`, verbatim. Nothing between there and the wire checks that the supplied
 schema's `required` covers `SCHEMA_REQUIRED`. The derived schema is the only one carrying that coverage
 guarantee, and `--schema-file` is the flag that discards it -- without a word in the output.
@@ -4605,7 +4705,8 @@ invocation a model swap must produce a scorecard from (`--endpoint-mode completi
 cod_json_v1.txt --schema-file cod_json_schema_v1.json --chat-template ...`). The bypass therefore sits on
 the one path that decides whether a candidate model replaces the incumbent.
 
-WHAT IT COSTS is already measured on this harness, at `run_model.py:123-127`: `certainty` was optional in
+WHAT IT COSTS is already measured on this harness, in the comment block above `SCHEMA_REQUIRED`
+(`LlmBenchmark/scripts/run_model.py`): `certainty` was optional in
 the request schema, so the model emitted it on 0 of 2,213 extractions while gold carries it on 5,111 of
 5,111; `eval_harness` counts every omission a miss (`certainty_accuracy` at `eval_harness.py:351`), and
 `certainty_accuracy` scored **-0.85** against threshold. That read as "the model is bad at certainty"
@@ -4638,7 +4739,7 @@ itself as `schema_invalid = record count`. This entry is about the check that do
 supplied schema -- including one that IS array-shaped, scorer-compatible and merely under-specified.
 That case has no tell at all: it scores, it fills in, and the number is a penalty on the request.
 
-CLOSE THIS by making `validate_request_shape` (`run_model.py:743`) refuse a `--schema-file` whose
+CLOSE THIS by making `validate_request_shape` (`LlmBenchmark/scripts/run_model.py`) refuse a `--schema-file` whose
 `required` does not cover `SCHEMA_REQUIRED`, in the same fail-closed-rather-than-default shape it already
 applies to `--chat-template-kwargs` in completions mode -- with the override spelled explicitly so the
 choice lands in provenance. Do NOT close it by merging the supplied schema into the derived one: that

@@ -173,7 +173,7 @@ versus the historical 4% target — there was no automated tripwire.
 | Unscoreable guards | > 40% BROKEN (worse arm) **or** < 20 graded (non-stub usable) rows → exit 1 + high-priority alert, no weekly pulse |
 | NTFY topic | `atlas-claude-ask` on `https://ntfy.elasticdevelopment.com` |
 | Seed | ISO-week (`date -u +%G%V`) — same value all week, fresh weekly. Does **not** make the draw reproducible: the sampler shuffles a table that changes between runs, and four runs sharing seed=202620 overlapped by 0-1 rows of 50 |
-| Model pinned | `Qwen/Qwen2.5-32B-Instruct-AWQ` — the only model vLLM serves. The `sentinel-cove-v6.2` alias was dropped 2026-05-25; leaving it pinned here is what produced eleven consecutive dead runs |
+| Model pinned | `google/gemma-4-31B-it-qat-w4a16-ct` — the only model vLLM serves (`vllm_base_model`, moved off Qwen2.5-32B-AWQ 2026-09-07). A name vLLM does not serve is what produced eleven consecutive dead runs; re-derive it from `curl -s localhost:8000/v1/models`, never from this table |
 
 The wrapper always publishes a low-priority weekly summary so operators
 have a constant pulse on quality (not just regression-only). On regression

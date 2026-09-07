@@ -38,6 +38,42 @@ sentinel-collector extraction/classification, reports-* narrative.
 
 ## Rollback (re-create the standalone container)
 
+**SINCE 2026-09-07 THIS BLOCK ROLLS BACK TWO THINGS AT ONCE, and that is the point.**
+It is the pre-compose-migration launch, which is also the pre-Gemma-4 one: Qwen2.5-32B-AWQ
+on the 0.19-era image at 16 seqs / 0.92 util / `fp8_e5m2`. Running it does NOT merely undo
+the container topology — it puts the INCUMBENT model back, at numbers_f1 0.5131 against
+Gemma 4's 0.7346 (SentinelCollector/AGENT_README.md D-29). Every flag below belongs to that
+coordinate and none may be mixed with the current one: `--quantization awq_marlin` belongs to
+the Qwen AWQ checkpoint, whose `config.json` declares `awq` — on the compressed-tensors Gemma
+checkpoint it forces a method the checkpoint does not declare, and what 0.28.0 does with that
+mismatch is UNESTABLISHED (a 0.28.0 control on the Qwen checkpoint had the flag REWRITTEN to
+`auto_awq` rather than refused, so "it would fail the boot" is not a claim any artifact supports;
+correct 2026-09-07). `fp8_e5m2` is correct on 0.19 and faults under concurrent decode on 0.28.0.
+Roll back the WHOLE block or none of it.
+
+**SINCE 2026-09-07 THE COMPOSE PATH BOOTS WITH `HF_HUB_OFFLINE=1`** (D-29: it reproduces the
+acceptance boots, which all ran offline). A model rollback through compose therefore REQUIRES the
+target's weights already in `/opt/ai-inference/models/huggingface-cache` — it will not fetch. The
+incumbent is staged: 18G at `refs/main` = `5c7cb76a268fc6cfbb9c4777eb24ba6e27f9ee6c`, the revision
+the acceptance run served, so this rollback resolves from cache. Re-check before relying on it:
+`cat /opt/ai-inference/models/huggingface-cache/hub/models--Qwen--Qwen2.5-32B-Instruct-AWQ/refs/main`.
+The manual `nerdctl run` below sets no such variable and is the escape hatch if that check fails.
+
+To roll back only the engine while keeping Gemma 4, do not use this block: revert
+`vllm_image` in `deployment/ansible/group_vars/all.yml` and redeploy — one variable, and
+note that Gemma 4 is NOT servable on 0.19.0 at all, so that path lands nowhere.
+
+**THE MODEL ROLLBACK IS NOT ENGINE-ONLY EITHER, in exactly the way the forward swap is not.**
+Putting Qwen back on the engine — by this block or by reverting `vllm_base_model` — leaves
+`sentinel-collector:latest` still carrying Gemma 4's chat template and stop tokens, because
+`Extraction__ChatTemplate` / `Extraction__StopTokens` are baked in from `src/appsettings.json`
+with no bind mount and no compose env override. A restarted collector would then send a Gemma
+template to a Qwen engine: still valid JSON, still green dashboards, an arm nobody scored. The
+Reports model id is a C# literal and 400s to a heuristic fallback the same way. So a model
+rollback in either direction means rebuilding `sentinel-collector` and the three `reports-*`
+images and RECREATING those containers — the rebuild moves the template, the recreate moves
+the templated `Extraction__Model` env. A scoped `vllm-server` restart does neither.
+
 If the compose service misbehaves, revert this commit + redeploy, or manually:
 
 ```bash

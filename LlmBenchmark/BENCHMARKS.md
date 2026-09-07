@@ -387,7 +387,7 @@ cd LlmBenchmark && ./run-benchmarks.sh                       # llama.cpp arm, 2 
 cd ../SentinelCollector/.devcontainer && sudo nerdctl compose up -d
 sudo nerdctl compose exec -T -e BENCHMARK_BACKEND=VllmServer \
     -e VLLM_ENDPOINT=http://vllm-server:8000 \
-    -e BENCHMARK_MODEL=Qwen/Qwen2.5-32B-Instruct-AWQ \
+    -e BENCHMARK_MODEL=google/gemma-4-31B-it-qat-w4a16-ct \
     sentinel-collector-dev \
     dotnet test /workspace/LlmBenchmark/LlmBenchmark.csproj --filter "Category=QuickBenchmark"
 ```

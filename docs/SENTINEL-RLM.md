@@ -13,7 +13,7 @@ The Sentinel extraction pipeline uses Chain-of-Density (CoD) structured-output p
 | Stage | Backend | Technique | Purpose |
 |-------|---------|-----------|---------|
 | Content normalization | Trafilatura / Markitdown | HTML->markdown, PDF->markdown | Clean input for LLM |
-| JSON-CoD emission | GPU (vLLM, Qwen2.5-32B-AWQ) | JSON-schema `response_format` decode | Structured CoD document (entities / numbers / events / claims) |
+| JSON-CoD emission | GPU (vLLM 0.28.0, Gemma 4 31B QAT w4a16) | JSON-schema `response_format` decode | Structured CoD document (entities / numbers / events / claims) |
 | Parse + grounding | dsl-parser-mcp `/parse_json` | Deterministic Lark/AST lift + v2.3.1 verifier | Same `DocumentAst` contract as the CPU DSL path |
 | News-signal classification | GPU (vLLM) | Per-article classification | `:sig:` signal identities -> `macro_observations` -> matrix projector |
 
@@ -21,27 +21,30 @@ Rollback path: CPU `llama-server` (qwen3-30b-a3b) GBNF-constrained DSL emission 
 
 ## Current Configuration
 
-**GPU Backend**: vLLM serving `Qwen/Qwen2.5-32B-Instruct-AWQ` (base model; the sentinel-cove LoRA adapter is no longer served — retained on disk as a forensic record only)
+**GPU Backend**: vLLM 0.28.0 serving `google/gemma-4-31B-it-qat-w4a16-ct` (base model; the sentinel-cove LoRA adapter is no longer served — retained on disk as a forensic record only). Swapped off Qwen2.5-32B-AWQ 2026-09-07 on a scored comparison — NOT single-axis. What was held constant is the serve flags, byte-identical across all three arms, and the production prompt path; what moves is the model and, ENGINE-FORCED by it rather than chosen, four more axes no arm passed a flag for: compute dtype (`bfloat16` vs `float16`), resolved quantization (`compressed-tensors` vs `auto_awq`), attention backend (`TRITON_ATTN` vs `FLASHINFER`) and `max_num_batched_tokens`. The provenance sidecars carry none of the four, so "19 shared axes identical" was a statement about the sidecar's field set, not about the serving configuration. This weakens the WORD single-axis, not the result — SentinelCollector/AGENT_README.md D-29
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Model | Qwen2.5-32B-Instruct-AWQ | 30B+ required for extraction quality |
+| Model | gemma-4-31B-it-qat-w4a16-ct | numbers_f1 0.7346 vs the incumbent's 0.5131 — paired difference +0.2214, 95% CI [+0.1192, +0.3288], excludes zero against a confound budget measured at the 0.05 scale. NOT single-axis: four engine-forced axes move with the model (D-29) |
 | Context window | 32,768 tokens | Full-document processing; shorter causes quality degradation |
 | Temperature | 0 | Deterministic extraction |
 | Max tokens | 4,096 | Loop guard (with repetition penalty 1.1) — a JSON-CoD doc unclosed by ~4K is looping |
-| Concurrency | `Extraction__MaxConcurrentExtractions=8`, continuous-streaming dispatch | Keeps the vLLM batch (`max_num_seqs=16`) continuously fed |
+| Concurrency | `Extraction__MaxConcurrentExtractions=6`, continuous-streaming dispatch | Keeps the vLLM batch (`max_num_seqs=6`) continuously fed. Both moved with the Gemma 4 swap and must stay equal-or-under (D-29) |
 | Backend | vLLM with PagedAttention | Continuous batching, structured output support |
 | Structured output | JSON schema via `response_format` | Enforces extraction schema at decode time (openai-standard; NOT `guided_json`) |
 
 ## GPU Memory Budget (RTX 5090 / 32GB)
 
-vLLM with PagedAttention manages KV cache dynamically — no fixed slot allocation like Ollama's `NUM_PARALLEL`. The `gpu_memory_utilization` parameter (set to 0.92) controls how much VRAM vLLM reserves for the KV cache pool.
+vLLM with PagedAttention manages KV cache dynamically — no fixed slot allocation like Ollama's `NUM_PARALLEL`. The `gpu_memory_utilization` parameter (set to 0.90, the value the Gemma 4 acceptance run served at — D-29) is a ceiling on the WHOLE allocation, weights included, not a KV-pool share.
 
 ```
-Model weights (AWQ 4-bit): ~18 GB
-KV cache pool (dynamic):   ~11 GB (0.92 * 32GB - weights - overhead)
-Overhead (CUDA, graphs):   ~3 GB
+vLLM's ceiling (0.90 * 32 GB):  ~28.8 GB   weights + activations + KV pool
+Model weights on disk:          22 GB      google/gemma-4-31B-it-qat-w4a16-ct,
+                                           compressed-tensors w4a16 (NOT AWQ)
+KV cache pool:                  the remainder, sized by vLLM at boot
 ```
+
+The 22 GB is measured on the production mount, not derived; the pool is deliberately not given a number here, because the only honest one comes off a booted engine (`vllm:kv_cache_usage_perc`, and note the name — `vllm:gpu_cache_usage_perc` does not exist on this engine). The figures this block carried before the swap described an 18 GB AWQ checkpoint at utilization 0.92, and both had stopped being true.
 
 PagedAttention allocates KV cache in pages on demand per request, avoiding the fixed-slot fragmentation that forced `NUM_PARALLEL=1` on Ollama.
 

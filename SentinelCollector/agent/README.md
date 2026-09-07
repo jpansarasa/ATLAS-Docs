@@ -26,7 +26,7 @@ Commands in the REPL:
 | Variable | Default | Purpose |
 |---|---|---|
 | `VLLM_BASE_URL` | `http://localhost:8000/v1` | vLLM OpenAI-compatible endpoint |
-| `VLLM_MODEL` | `sentinel-cove` | Default model (CoD/CoVe LoRA on Qwen2.5-32B-Instruct-AWQ) |
+| `VLLM_MODEL` | `google/gemma-4-31B-it-qat-w4a16-ct` | The name vllm-server serves (`vllm_base_model`); there is no alias, so any other value earns HTTP 400 |
 | `SEARXNG_URL` | `https://searxng.elasticdevelopment.com` | SearXNG base URL |
 | `SANDBOX_IMAGE` | `sandbox-kernel:latest` | Container image for the persistent IPython kernel |
 | `SANDBOX_NETWORK` | `ai-inference` | nerdctl bridge network the sandbox joins |

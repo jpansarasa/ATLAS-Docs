@@ -31,7 +31,7 @@ python LlmBenchmark/scripts/build_eval_substrate.py
 python3 LlmBenchmark/scripts/run_model.py \
     --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
     --endpoint http://localhost:8000 \
-    --model Qwen/Qwen2.5-32B-Instruct-AWQ \
+    --model google/gemma-4-31B-it-qat-w4a16-ct \
     --out /tmp/preds.jsonl
 
 # 2b. Same runner, HOSTED endpoint -- how a candidate is scored without a GPU reload.
@@ -121,18 +121,62 @@ reports a model that extracted nothing. `provenance.task` records the runner's h
 #    --no-structured-output): it changes only how the RESPONSE is parsed, so left alone
 #    the request still carries the substrate's CoVe instruction and the array-shaped
 #    default schema, and the model would comply and score zero.
-#    --max-tokens 8192 is a floor, not a default: a CoD object over a long article does not
-#    fit in the 4096 this runner defaults to, and a cut-off response fails json.loads, lands
-#    in schema_invalid and reads as bad JSON discipline rather than as a budget finding.
-#    Check `truncated` in the run summary, which counts it separately for that reason.
+#    EVERY SCORED SAMPLING AXIS IS SPELLED OUT rather than inherited, which is why four flags
+#    below carry a value the parser would have supplied anyway. A DEFAULT IS WHAT LET THREE
+#    AXES DRIFT AT ONCE: --concurrency defaults to 8 against a scored 6; --max-tokens defaults
+#    to 4096 while this block asked for 8192; --repetition-penalty defaults to None, meaning
+#    the knob is NOT SENT, while every scorecard records 1.1. Two of the three were still
+#    wrong after the round that fixed the first, because a default is invisible in the command
+#    a reader sees, moves with the parser, and never sits beside the number it must match.
+#    THE VALUES BELONG TO THE SCORECARDS: max_tokens 4096, repetition_penalty 1.1,
+#    temperature 0.0, seed 42, concurrency 6 -- what all twelve arms on
+#    measure/common-coordinate-latest recorded under
+#    acceptance_evidence.request_sampling.recorded, and what D-29's PRECOND carries. Read them
+#    there, not here. At any other value the run is not wrong, it is UNCOMPARABLE to the row it
+#    is checked against -- a re-score under MODEL_ACCEPTANCE, not a tune.
+#    4096 WAS MEASURED SUFFICIENT, not assumed: 480 CoD responses across those twelve arms all
+#    finished `stop`, 0 truncated. An earlier note here called 8192 "a floor" on the theory
+#    that a CoD object does not fit in 4096; the scored runs refute it. A cut-off response does
+#    fail json.loads and land in schema_invalid, which reads as bad JSON discipline rather than
+#    as a budget finding -- so check `truncated` in the run summary, which counts it separately
+#    for exactly that reason, and raise the budget only if it is non-zero (which re-scores).
+#    THE UNSENT KNOBS STAY UNSPELLED, because "not sent" has no flag: top_p, top_k, min_p and
+#    presence_penalty are null in every scorecard, and naming one would ADD an axis.
+#    For the WIDE run that exists to break a sick engine rather than to score a healthy one,
+#    see 1b below.
 python3 LlmBenchmark/scripts/run_model.py --task cod \
     --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
-    --endpoint http://localhost:8000 --model Qwen/Qwen2.5-32B-Instruct-AWQ \
+    --endpoint http://localhost:8000 --model google/gemma-4-31B-it-qat-w4a16-ct \
     --endpoint-mode completions \
     --prompt-file SentinelCollector/src/cod-prompts/cod_json_v1.txt \
     --schema-file SentinelCollector/src/cod-prompts/cod_json_schema_v1.json \
-    --chat-template $'<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n' \
-    --max-tokens 8192 --out /tmp/preds.jsonl
+    --chat-template $'<bos><|turn>user\n{0}<turn|>\n<|turn>model\n<|channel>thought\n<channel|>' \
+    --concurrency 6 --temperature 0.0 --seed 42 --repetition-penalty 1.1 \
+    --max-tokens 4096 --out /tmp/preds.jsonl
+
+# 1b. THE FAULT PROBE -- A DIFFERENT RUN, AND ITS OUTPUT IS NOT A SCORE. One command cannot
+#     do both jobs. The fp8_e5m2 fault class needs concurrent decode (>= 2) to appear at all:
+#     the engine starts fine, serves ONE request, then faults and stays 503 -- and the deploy
+#     gate is a /health wait plus one SEQUENTIAL 1-token completion, so it cannot see it and
+#     reports success over a dead engine. Running WIDE is what surfaces that before production
+#     serves a request.
+#     IT DIVERGES FROM THE SCORED COORDINATE ON THREE AXES, NOT ONE, and naming only the width
+#     would repeat the silent-inheritance defect one level up: width 8 where 6 was scored,
+#     max_tokens 8192 where 4096 was, and no repetition_penalty where the scored runs sent 1.1.
+#     Wide and long is what keeps decode concurrent for longer, which is what surfaces the
+#     fault. So NEVER compare its numbers to a BENCHMARKS.md row or to the acceptance run
+#     above; the output is named fault-probe-* for that reason.
+#     What you read off it is whether the engine SURVIVED: call errors, 503s, truncation, and
+#     whether it finished at all.
+python3 LlmBenchmark/scripts/run_model.py --task cod \
+    --substrate /opt/ai-inference/training-data/eval-substrates/<dated>.json \
+    --endpoint http://localhost:8000 --model google/gemma-4-31B-it-qat-w4a16-ct \
+    --endpoint-mode completions \
+    --prompt-file SentinelCollector/src/cod-prompts/cod_json_v1.txt \
+    --schema-file SentinelCollector/src/cod-prompts/cod_json_schema_v1.json \
+    --chat-template $'<bos><|turn>user\n{0}<turn|>\n<|turn>model\n<|channel>thought\n<channel|>' \
+    --concurrency 8 \
+    --max-tokens 8192 --out /tmp/fault-probe-preds.jsonl
 
 # 2a. SCORE, with gold. Gold rows are {source_file, source_index, gold: {...CoD object...}},
 #     as JSONL, a JSON list, or a build_cod_gold.py artifact carrying them under `articles`

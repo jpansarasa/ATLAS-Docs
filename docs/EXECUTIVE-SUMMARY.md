@@ -43,8 +43,8 @@ SentinelCollector turns headlines into matrix input and human-readable digests:
 
 - **Ingestion**: DB-managed RSS feeds + scheduled SearXNG queries -> Cloudflare edge worker ->
   `raw_content` (180-day retention; articles older than 30 days are not extracted).
-- **Extraction**: GPU vLLM JSON Chain-of-Density (`Qwen2.5-32B-Instruct-AWQ`,
-  `response_format=json_schema`), continuous streaming at 8 concurrent articles; a
+- **Extraction**: GPU vLLM JSON Chain-of-Density (`gemma-4-31B-it-qat-w4a16-ct`,
+  `response_format=json_schema`), continuous streaming at 6 concurrent articles; a
   deterministic sidecar parses and span-verifies every emitted block (12-25% of articles
   failing verification is the normal quality-gate baseline). The former CPU GBNF/DSL path is
   retained as rollback only.
@@ -61,8 +61,9 @@ SentinelCollector turns headlines into matrix input and human-readable digests:
 
 All inference is local; no ollama remains (retired 2026-06-11):
 
-- **GPU**: `vllm-server` (main-compose service since 2026-06-11, RTX 5090) serving Qwen2.5-32B-Instruct-AWQ at
-  32K context — extraction, news-signal classification, report narratives.
+- **GPU**: `vllm-server` (main-compose service since 2026-06-11, RTX 5090) serving
+  gemma-4-31B-it-qat-w4a16-ct on vLLM 0.28.0 at 32K context — extraction, news-signal
+  classification, report narratives.
 - **CPU** (llama.cpp on pinned core islands): `llama-server` (30B, rollback extraction
   backend), `llama-cpu-rag` (7B, SecMaster RAG generation), `llama-cpu-embed` (bge-m3
   embeddings for the pgvector instrument catalog).
