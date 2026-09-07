@@ -240,7 +240,9 @@ MODEL_ACCEPTANCE [SCORED ON PERFORMANCE — the a priori limits were dropped 202
     pre-empted a measurement, and each one measured on 2026-09-06 fell:
       MODEL_SIZE >= 30B     -> retired; a 27B and a 31B both beat the 32B incumbent
       "Gemma is too slow"   -> an engine+decoding artifact; Gemma 3 beats production by 0.1559
-      "Q6 beats Q4"         -> REFUTED, -0.0278 at 12.2x se, and 14% slower
+      "Q6 beats Q4"         -> MODEL-DEPENDENT, not a general answer: Gemma 3 says Q6 LOSES by
+                               0.0278 at 12.2x se; Qwen3.8 says the two are INDISTINGUISHABLE
+                               (+0.0117, 1.2x se, overlapping). Never carry it across models.
       "the engine matters"  -> NULL on this task, 0.0x se (two tasks, two golds, same answer)
       "concurrency matters" -> NULL on this task, 0.4x se
     A limit may be RE-ADDED only with the measurement that establishes it.

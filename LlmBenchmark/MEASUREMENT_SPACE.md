@@ -178,6 +178,39 @@ at all stamp the identical engine coordinate. A model eliminated on this axis wo
 exactly like a model that failed on its merits -- which is how Gemma got eliminated the first
 time.
 
+## THE FIRST MATCHED CROSS-FAMILY COMPARISON [2026-09-06]
+
+Every Gemma-vs-Qwen number before this moved four or more axes. The GGUF ladder holds engine, image,
+publisher, quant format, wire mode, context and sampling fixed, leaving only the MODEL and its
+TEMPLATE:
+
+  at Q4_K_M  Qwen 0.6745 vs Gemma 0.6263  = +0.0482 at 4.9x se  -- INSIDE the ~0.06 axis-11 band,
+                                             so a Q2 configuration claim only
+  at Q6_K    Qwen 0.6862 vs Gemma 0.5985  = +0.0877 at 38.3x se -- OUTRUNS the band, so it survives
+                                             as a model claim
+
+Both rungs point the same way and the second clears the confound. Note this is Gemma **3**, not the
+Gemma 4 that leads on vLLM, and these arms are `production_prompt_path: false` chat-mode at 8,192 per
+slot -- comparable to each other, never to the vLLM rows.
+
+## THE THINKING AXIS IS NOT A NUANCE, IT IS A CLIFF [2026-09-06]
+
+Qwen3.8-27B's vendor template renders an injected `xhigh` reasoning system turn AND an open
+`<think>`; `enable_thinking=false` removes both (one flag, two effects, inseparable without editing
+the artifact). Measured at production's 4,096-token budget:
+
+  thinking OFF   truncated   1/120   schema_invalid   1   numbers_f1 0.6745
+  thinking ON    truncated 110/120   schema_invalid 110   numbers_f1 UNSCOREABLE, at 2.4x wall clock
+
+Two of three ON runs returned `null`; the third's 0.0191 is residue from the 4 documents that closed.
+**That 0.0191 IS NOT A SCORE** -- the finding is the binding constraint: reasoning eats the budget and
+the JSON never closes on 90% of documents. Recording it as an F1 would be the coordinate-finding
+error this file names, one level down.
+
+CONSEQUENCE FOR A SWAP, and it is concrete: `CLAUDE.md` D-26 keeps `ThinkingSuppressionSuffix` EMPTY.
+A swap to Qwen3.8-27B must SET it. D-26 is a Qwen2.5 decision and does not generalise -- axis 11
+again, and the third time tonight a vendor default has been inherited as though it were a setting.
+
 ## AXIS 11 IS STRUCTURALLY CONFOUNDED WITH AXIS 2, AND THAT BOUNDS THE WHOLE METHOD
 
 The chat template CANNOT be held fixed across model families -- each model requires its own. So in
@@ -291,8 +324,8 @@ unmeasured claim about an axis, and it lands on every number this project owns:
 EVERY FIGURE WE HAVE EVER PRODUCED SITS AT ONE POINT ON THE PRECISION AXIS, and 4-bit was never
 chosen against an alternative -- it is what fits, adopted as though it were neutral.
 
-**MEASURED 2026-09-06, AND THE ANSWER IS NO.** Q6_K is a REGRESSION against Q4_K_M on this
-workload. Same model, publisher and release (unsloth/gemma-3-27b-it-GGUF), same
+**MEASURED 2026-09-06 ON GEMMA 3 — AND IT DID NOT TRANSFER. READ THE SECOND MEASUREMENT BELOW
+BEFORE QUOTING THE FIRST.** On Gemma 3, Q6_K is a REGRESSION against Q4_K_M. Same model, publisher and release (unsloth/gemma-3-27b-it-GGUF), same
 `general.quantization_version`, same engine and image (llama.cpp server-cuda b10820), same context,
 KV, constrained decoding, prompt, schema, sampling and gold. The ONLY difference is
 `general.file_type` 15 vs 18, read from the GGUF headers rather than the filenames:
@@ -302,11 +335,26 @@ KV, constrained decoding, prompt, schema, sampling and gold. The ONLY difference
   recall -0.0257 (14.1x se) | precision -0.0297 | entities_f1 -0.0019 (FLAT, 0.5x se)
   latency Q4 38.22 s/doc, Q6 43.58 s/doc -- 14% SLOWER for 5.6 GB more VRAM
 
-So 4-bit is VINDICATED for this workload, by measurement rather than assumption. The number axis
-moved against precision; the entity axis did not move at all. Limits, stated because they bound the
-claim: one model, one task, one publisher, and k-quants are not strictly ordered by bpw (Q4_K_M and
-Q6_K use different per-tensor type mixes), so this compares two real artifacts and not an abstract
-precision dial.
+Those limits were stated when the result was taken — "one model, one task, one publisher" — and the
+first one turned out to be the whole story.
+
+**THE SAME LADDER ON QWEN3.8-27B, SAME PUBLISHER, SAME ENGINE, SAME IMAGE, SAME COORDINATE, ONLY THE
+MODEL CHANGED:**
+
+  Q4_K_M 0.6745 sd 0.0167 [.6667, .6631, .6937]   Q6_K 0.6862 sd 0.0040 [.6819, .6872, .6896]
+  d = +0.0117 at 1.2x se, RANGES OVERLAPPING -- Q4's best run beats every Q6 run
+  Q8_0 0.6554 sd 0.0064, and NOT single-axis: Q4 and Q6 share 1,251 imatrix chunks, Q8_0 has 45,
+    so its -0.0191 moves bpw AND calibration depth. Reported, not attributed.
+
+**SO AXIS 3 IS MODEL-DEPENDENT AND "Q6 IS A REGRESSION" IS A STATEMENT ABOUT GEMMA 3, NOT ABOUT
+PRECISION.** Changing only the model reverses the sign and destroys the separation: -0.0278 at 12.2x
+se disjoint becomes +0.0117 at 1.2x se overlapping. Nor is this "Q6 wins" on Qwen — it is NO
+MEASURABLE DIFFERENCE, which is a third answer and the honest one.
+
+WHAT SURVIVES GENERALLY: nothing about precision. What survives is the METHOD -- a single-axis
+ladder at a matched coordinate answers the question for ONE model, and the answer must be re-taken
+per model. An earlier revision of this file read the Gemma result as a general vindication of 4-bit;
+that was the transfer assumption this document exists to forbid, committed inside the document.
 
 AND THE ENGINE IT TOOK TO ASK THE QUESTION ANSWERS A SECOND ONE. vLLM's 8-bit rung at 27B is not
 merely tight, it is operationally unusable: 27.26 GiB of weights leave a 4,176-token KV pool, below
@@ -368,8 +416,9 @@ by whoever last read it, which is the failure mode that produced the 0.067 sprea
 ✗ never let the repo name stand in for the weight-quant field -- MEASURED: two of the three
   checkpoints we serve are named for a quantization they do not use
 ✗ never treat activation quantization as the same axis as weight quantization
-✗ never call a point feasible because it LOADS -- q2 and sub-3-bit are banned outright; 4-bit
-  is now MEASURED rather than assumed, and Q6_K lost to it by 0.0278 at 12.2x se
+✗ never call a point feasible because it LOADS -- q2 and sub-3-bit are banned outright
+✗ never carry a precision result across models -- MEASURED: Gemma 3 says Q6 loses by 0.0278 at
+  12.2x se, Qwen3.8 says the two are indistinguishable. Same publisher, engine and coordinate
 ✗ never read a within-family single-axis delta as a cross-family result
 ✗ never quote a delta from arms "not served alike" -- fix the serving, do not caveat the number
 ✗ never treat the eval population or the alignment key as a constant; they are axis 10
