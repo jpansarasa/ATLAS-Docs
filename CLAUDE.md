@@ -252,9 +252,8 @@ MODEL_ACCEPTANCE [SCORED ON PERFORMANCE — the a priori limits were dropped 202
       (DECIDED 2026-09-05 by the user; 490 of 518 conform, 6 knowingly non-conformant, 22 open)
     - PIN BEFORE ANY SWAP: entity_ticker_accuracy is a RECALL loss at SecMaster's door on the Qwen
       candidate (0 wrong tickers across 15 runs; every miss is a null), never a mis-resolution risk
-  measured results -> docs/BACKLOG.md. ✗ NEVER quote a model figure from THIS file # the baseline
-    moved 2026-09-06: armA ran fp8_e5m2 / util 0.92 and was FLATTERING by 0.0536 against the matched
-    control, and every figure once written here was scored against it
+  measured results -> docs/BACKLOG.md. ✗ NEVER quote a model figure from THIS file # a figure without
+    its coordinate is not a run, and this file cannot carry a coordinate
 CONTEXT [MEASURED, not asserted]: serve more than the longest real document, with headroom.
   ✗ the old "32K required; reducing it breaks full-document decomposition and causes context rot" was
     never measured # it forbade the cheapest remedy for every OOM on no evidence
@@ -280,10 +279,10 @@ INFERENCE_TOPOLOGY [what RUNS today — a fact about what is installed, NOT a fe
     single-axis vs vLLM), then ktransformers for the >32B RAM-resident region.
 GPU_OOM: restart vLLM first. Then treat model, quantization and context as the MEASURED tradeoffs they
   are # the old "never downgrade the model or reduce context" banned the two cheapest remedies outright
-VLLM_UPGRADE [a STABILITY finding, not a performance limit — the crash is real, the cost is now suspected]:
-  SUSPECTED COST, UNPINNED: the incumbent scored 0.5153 at e5m2/util 0.92 and 0.4617 at e4m3/util 0.95
-    -- -0.0536 across TWO axes, and util should not touch quality at these prompt lengths. If e4m3 owns
-    it, the mandated fix below trades a crash for ~0.05 F1. Pin it single-axis before calling either free.
+VLLM_UPGRADE [a STABILITY finding, not a performance limit — the crash is real and the fix is FREE]:
+  QUALITY COST: NONE. Pinned single-axis 2026-09-06: `fp8_e5m2` vs `fp8_e4m3` is +0.0103, null. An
+    earlier revision suspected ~0.05 here; that gap was the CHAT TEMPLATE (an injected system prompt),
+    not the dtype -> docs/BACKLOG.md "A CORRECTION OF A CORRECTION".
   ✗ carry `--kv-cache-dtype fp8_e5m2` past 0.19 # measured 2026-09-04: 0.28.0 starts fine, serves ONE request,
     then faults under concurrent decode (CUDA illegal memory access) and stays 503. Isolated to the KV DTYPE at
     matched context and concurrency -- not sm_120, not structured output, not CUDA graphs (--enforce-eager still

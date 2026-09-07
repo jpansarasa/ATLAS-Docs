@@ -3311,40 +3311,38 @@ method: `LlmBenchmark/MEASUREMENT_SPACE.md`. All rows n=3 unless noted, fp8_e4m3
 |---|---|---|---|---|---|
 | Gemma 4 31B QAT w4a16-ct | **0.7570** | 0.0009 | vllm-**0.28.0** | 6 / 0.90 | NOT production's engine -- see caveat |
 | Qwen3.8-27B (armC candidate) | 0.7132 | 0.0109 | vllm-0.19.0 | 16 / 0.95 | |
-| Gemma 3 27B w4a16 | 0.6220 | 0.0151 | vllm-0.19.0 | 16 / 0.95 | n=2 at time of writing; leaderboard says `0.0% FAIL` |
-| Mistral-Small 24B | 0.5105 | 0.0032 | vllm-0.19.0 | 16 / 0.95 | |
-| **C3 incumbent, MATCHED control** | **0.4617** | 0.0273 | vllm-0.19.0 | 16 / 0.95 | fp8_e4m3 -- THE CORRECT COMPARATOR |
-| C2 incumbent | 0.4540 | 0.0146 | vllm-0.19.0 | 6 / 0.90 | fp8_e4m3 |
-| C1 incumbent | 0.4545 | 0.0162 | vllm-0.28.0 | 6 / 0.90 | fp8_e4m3 |
-| ~~armA incumbent~~ | ~~0.5153~~ | 0.0106 | vllm-0.19.0 | 16 / **0.92** | **fp8_e5m2** -- NOT a matched baseline |
+| Gemma 3 27B w4a16 | **0.6177** | 0.0130 | vllm-0.19.0 | 16 / 0.95 | n=3 final; leaderboard says `0.0% FAIL` |
+| Qwen2.5-32B-AWQ (incumbent, armA, n=5) | 0.5153 | 0.0106 | vllm-0.19.0 | 16 / 0.95 | production today -- a VALID baseline |
+| Mistral-Small 24B | 0.5105 | 0.0032 | vllm-0.19.0 | 16 / 0.95 | THE CONTROL -- see below |
+| GLM-4.7-Flash | -- | -- | vllm-0.19.0 | 16 / 0.95 | DEGENERATE at both grammar settings; coordinate finding |
 | Command-R 08-2024 (current build) | 0.3178 | 0.0098 | vllm-0.19.0 | 16 / 0.95 | |
 | EXAONE 4.0 32B | 0.2218 | 0.0089 | vllm-0.19.0 | 16 / 0.95 | |
 
-**armA WAS A FLATTERING BASELINE AND EVERY ARM WAS COMPARED TO IT.** armA ran at `fp8_e5m2` /
-util 0.92; every sweep arm ran at `fp8_e4m3` / util 0.95. The matched control C3 -- the incumbent at
-the EXACT point gemma3 and mistral ran -- scores **0.4617**, not 0.5153. That two-axis move costs the
-incumbent **-0.0536** (3.3x se), a magnitude matching the ~0.05 KV-dtype effect this file already
-records. Restated against the correct comparator, every gain in this sweep is LARGER than first
-reported:
+**A CORRECTION OF A CORRECTION, AND THE AXIS IT UNCOVERED.** An earlier revision of this entry
+declared armA a FLATTERING baseline, withdrew the Mistral control on that basis, and restated every
+gain as larger. **That was wrong and is withdrawn.** The -0.0536 gap between armA and the control arm
+was NOT the KV dtype -- pinned single-axis, `fp8_e5m2` vs `fp8_e4m3` is **+0.0103, null**. It was the
+**CHAT TEMPLATE**: the control deriver silently injected Qwen's default "helpful assistant" system
+block, which production does not send. So armA is a valid baseline, and
 
-| arm | vs armA (WRONG) | vs C3 (correct) | |
-|---|---|---|---|
-| gemma3 | +0.1024 | **+0.1559** | 8.9x se, disjoint |
-| mistral | -0.0048 | **+0.0487** | 3.1x se, disjoint |
+  gemma3  vs incumbent  **+0.1024**  11.5x se  DISJOINT   <- as ORIGINALLY reported
+  mistral vs incumbent  **-0.0048**  indistinguishable    <- as ORIGINALLY reported
 
-**SO THE STRONG FORM OF THE MISTRAL CLAIM IS WITHDRAWN.** An earlier revision of this entry called it
-"THE CONTROL", indistinguishable from the incumbent, proving vLLM + json_schema is not a universal
-uplift. Against the correct baseline Mistral GAINS +0.0487 with disjoint runs, so "no gain" was an
-artifact of the wrong comparator and must not be repeated in that form. The weaker claim survives and
-still does the work: the uplift is **not uniform** -- gemma3 gains 3.2x what mistral gains -- so
-Gemma's result is not a harness artifact. That is the honest version of the argument.
+**MISTRAL IS THE CONTROL AGAIN, and it does the job it was claimed to do**: indistinguishable from
+the incumbent, from a leaderboard row of 52.1% on retired Ollama, so moving a model onto vLLM with
+`response_format` json_schema is NOT a universal uplift and Gemma's gain is not a harness artifact.
 
-WORTH ISOLATING NEXT, and NOT asserted here: the -0.0536 moved KV dtype AND util together. Util
-should not touch quality at these prompt lengths (~2.1K against a 32K window, 0 truncation both
-sides), which points at `fp8_e4m3` being WORSE than `fp8_e5m2` for this model on this task. If that
-holds under a clean single-axis test it is a real cost on the engine-upgrade path, since
-`CLAUDE.md` §VLLM_UPGRADE mandates e4m3 for 0.28.0. Two axes moved; do not quote it as a dtype
-result until one of them is pinned.
+**THE SYSTEM PROMPT IS AN AXIS, AND IT IS WORTH ~0.05-0.06 F1** -- larger than the KV dtype, larger
+than the engine step, larger than concurrency, and comparable to the whole effect this epic set out
+to detect. It was invisible because a template deriver injected it by default and the validation that
+should have caught it (`tail -3` on the rendered template) CUT OFF the system block -- a check that
+read the end of the thing whose defect was at the beginning. Record it as axis 11.
+
+**AND THE SUPERVISOR AMPLIFIED IT.** The unpinned attribution was flagged at the time ("two axes
+moved; do not quote it as a dtype result until one is pinned") and the CONCLUSION built on it was
+published anyway, into two files, as fact. Hedging the cause while asserting the conclusion that
+depends on it is not hedging. A correction is the riskiest claim in the room and this one was acted
+on before it was pinned.
 
 **GEMMA 4 IS NOW ATTRIBUTABLE, AND BOTH FLAGGED CONFOUNDS MEASURED NULL.**
 
@@ -3364,6 +3362,8 @@ result until one of them is pinned.
 The weight-quant format axis was never moved against armC either -- both are compressed-tensors
 pack-quantized, read from each model's own `config.json`. **This is the first cross-family
 comparison in this project that survives its own admissibility rule.**
+
+**GLM-4.7-Flash IS A THIRD COORDINATE FINDING**: degenerate at BOTH grammar settings -- non-termination when unconstrained, empty arrays when constrained. Not an F1.
 
 **TWO ELIMINATIONS WERE REFUTED AS FAMILY VERDICTS AND STILL SCORE POORLY, WHICH IS A DIFFERENT FACT.**
 Command-R's "35B too large for KV cache" was true of v01's no-GQA design (640 KiB/token, 8K native)

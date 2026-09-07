@@ -26,6 +26,7 @@ different measurement of the same thing.
 | 8 | Prompt / schema / template bytes | cod_json_v1 pre- and post-#1017 | YES, sha256 in `request_bytes` |
 | 9 | Task | substrate 16-block vs production CoD path | YES, `production_prompt_path` boolean |
 | 10 | Eval population + alignment key | substrate v6.2, cod-gold 40, 3 recall populations | PARTLY -- `criteria_source` + `substrate_sidecar`, but the KEY CONVENTION is not a field |
+| 11 | **Chat template / system prompt** | production sends none; Qwen's default injects a "helpful assistant" block | NO -- the template's sha256 is recorded, but a DERIVED template is a different string with the same provenance |
 
 Six recorded, four not. The four unrecorded ones are the four that move when we cross model
 families -- which is the only comparison anyone actually wants.
