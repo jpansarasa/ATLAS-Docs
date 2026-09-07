@@ -130,15 +130,25 @@ models**; it must be re-taken per model. What generalises is the method, not the
 
 Read from each checkpoint's own `config.json`:
 
-| Repo name | Actual scheme |
-|---|---|
-| `Qwen/Qwen2.5-32B-Instruct-AWQ` | `awq`, 4-bit, group 128 — **the only true AWQ** |
-| `cyankiwi/Qwen3.8-27B-AWQ-INT4` | compressed-tensors `pack-quantized`, 4-bit int, group 32 — **not AWQ** |
-| `unsloth/Qwen3.8-27B-NVFP4` | compressed-tensors `float-quantized`, dynamic **FP8 input activations** |
+| Repo name | Actual scheme | Name? |
+|---|---|---|
+| `Qwen/Qwen2.5-32B-Instruct-AWQ` | `awq`, 4-bit, group 128, asymmetric | agrees |
+| `gghfez/Mistral-Small-3.2-24B-Instruct-hf-AWQ` | `awq`, 4-bit, group 128, asymmetric | agrees |
+| `AMead10/c4ai-command-r-08-2024-awq` | `awq`, 4-bit, group 128, asymmetric | agrees |
+| `LGAI-EXAONE/EXAONE-4.0-32B-AWQ` | `awq`, 4-bit, group 128, asymmetric | agrees |
+| `RedHatAI/gemma-3-27b-it-quantized.w4a16` | compressed-tensors `pack-quantized`, 4-bit int, group **128**, symmetric | substance agrees; the string "w4a16" is not in the config |
+| `google/gemma-4-31B-it-qat-w4a16-ct` | compressed-tensors `pack-quantized`, 4-bit int, group **32**, symmetric, activations unquantized | **neither "qat" nor "w4a16" appears in the config**, and the group is 32 |
+| `cyankiwi/Qwen3.8-27B-AWQ-INT4` | compressed-tensors `pack-quantized`, 4-bit int, group **32**, asymmetric | **not AWQ** |
+| `cyankiwi/GLM-4.7-Flash-AWQ-4bit` | compressed-tensors `pack-quantized`, 4-bit int, group **32**, symmetric | **not AWQ** |
+| `unsloth/Qwen3.8-27B-NVFP4` | compressed-tensors `mixed-precision`: NVFP4 group 16 on the **MLP only**, FP8 per-channel on attention/`lm_head`/layers 56-63, dynamic FP8 input activations, FP8 KV | **overstated** — 15.0B of 27.8B params are 4-bit |
 
-Two of three are named for a quantization they do not use; the third quantizes *activations*, which
-is a different axis from weight quantization. Group 128 against group 32 is a 4x granularity
-difference that stayed invisible while both arms were called "AWQ".
+Three of the nine are named for a quantization they do not use, one overstates it, and one quantizes
+*activations* as well — a different axis from weight quantization. **Group 128 against group 32 is a
+4x granularity difference** that stayed invisible while both arms were called "AWQ", and it is
+exactly the half a repo name omits: every `awq` checkpoint here is group 128, while the five
+`compressed-tensors` ones span three granularities — group 32 for three of them, the RedHat
+gemma-3 at **128** and the unsloth NVFP4 at **16** — so neither the scheme nor the granularity is
+predictable from the name.
 
 ---
 

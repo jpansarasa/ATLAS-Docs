@@ -3707,6 +3707,43 @@ published anyway, into two files, as fact. Hedging the cause while asserting the
 depends on it is not hedging. A correction is the riskiest claim in the room and this one was acted
 on before it was pinned.
 
+**THE REPLICATE sd IS A WITHIN-SERVE-SESSION STATISTIC, AND THE BETWEEN-SESSION TERM IS UNPRICED
+[measured 2026-09-07, opened by #1037].** Gemma 4 was re-run at the coordinate of the 0.7570 row --
+same engine image, revision `52f3f65b`, serve flags, template `7a8a39d2`, gold, substrate, scorer and
+`usage.prompt_tokens` 86,633, with both boots logging an IDENTICAL vLLM engine-config line and the
+same 68,892-token KV -- and scored **0.7346**, -0.0224 or 3.5x that arm's replicate sd. NO AXIS
+DIFFERS; the sd is what misleads. Each triple runs back-to-back against ONE boot, sharing a warm
+prefix cache, so replicates agree on 9-13 / 40 records (pinned) and 13-18 / 40 (the re-run) while
+ACROSS the two sessions the same pairs agree on only **4-11 / 40**. The 0.0009 was three unstable
+output sets scoring alike, not determinism. The incumbent's own cross-session pair at that coordinate
+moved +0.0060 (0.4545 -> 0.4605, 0.29 sd), so the term is there for both models and merely hides
+inside a larger within-session sd.
+  Pooled Gemma 4 at that coordinate, n=6: **mean 0.7458, sd 0.0130, range 0.7280-0.7577**.
+  RE-CHECKABLE: two sessions per model shows the term EXISTS and cannot size it. Sizing it needs
+  >=3 boots per arm with the triples kept separate, which no sweep here has run. Until then quote a
+  replicate sd as decoding jitter within one session and NEVER as reproducibility -- and note the
+  raw artifacts are untracked under `/tmp/sentinel-remediation/{family-requal,common-coordinate-latest}/`,
+  one `tmpwatch` from gone.
+  Nothing already published flips on it: -0.0224 is a third of that arm's article-level CI half-width
+  and an order below its +0.2214 over production.
+
+**AXIS 3 GOES UNRESOLVED WHENEVER THE CHECKPOINT IS OUTSIDE THE DEFAULT HF CACHE [measured
+2026-09-07].** `resolve_weight_quantization()` reads the served model's `config.json` out of the HF
+cache it can find, so every Gemma 4 scorecard -- the pinned 0.7570 triple AND the re-run -- carries
+`weight_quantization: null, source: unresolved` and names it in `not_recorded`, purely because that
+checkpoint was served from `/home/james/hf-requal/hub/` rather than
+`/opt/ai-inference/models/huggingface-cache/hub/`. The two Qwen arms, served from the default cache,
+resolve fine. The value itself is not lost -- `compressed-tensors` `pack-quantized`, 4-bit int, group
+**32**, symmetric, activations unquantized, read directly from the checkpoint and now recorded in
+`LlmBenchmark/BENCHMARKS.md` and `MEASUREMENT_SPACE.md` -- but a scorecard cannot state its own axis
+3, which `MEASUREMENT_SPACE.md` §Admissibility forbids quoting a delta across.
+  THE SCORECARDS WERE DELIBERATELY NOT BACKFILLED: writing the recovered value into
+  `adapter_metadata` would make the artifact claim a resolution the runner never performed, which is
+  the "truthy placeholder" its own contract refuses. Fix the runner (accept the cache root actually in
+  use, e.g. from `HF_HOME`), then re-run; do not edit the artifacts.
+  RE-CHECKABLE: `weight_quantization_source` in any scorecard under `LlmBenchmark/eval-substrate/`
+  -- `unresolved` on an arm whose checkpoint is off the default cache means this is still open.
+
 **GEMMA 4 IS NOW ATTRIBUTABLE, AND BOTH FLAGGED CONFOUNDS MEASURED NULL.**
 
   ENGINE      C1 (0.28.0) 0.4545 vs C2 (0.19.0) 0.4540, identical in every other axis
