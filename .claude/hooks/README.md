@@ -435,8 +435,14 @@ enters a commit incidentally — but `git add -f` still forces it in (git even
 advertises that escape hatch in the error it prints), so this is narrower than
 "cannot be committed".
 
-**Caveat (HEAD^{tree} is committed-only)**: the tree hash is computed from
-`HEAD^{tree}`, which reflects the tree of the most recent commit. Uncommitted
+**Caveat (the tree hash is committed-only, and the two sides read different
+refs)**: `HEAD^{tree}` is the WRITE side — `mark-tests-passed.sh` and
+`scripts/claude-mark-verified` both key the marker on the tree of CWD's most
+recent commit. The READ side resolves a different ref: the push guard keys its
+lookup on `<pushed-branch>^{tree}`, the branch NAMED ON THE `git push` command
+line, and falls back to CWD's HEAD only when the command names no refspec (see
+the hook's `BRANCH RESOLUTION` header block). Either way the hash reflects the
+tree of a commit. Uncommitted
 edits in the working directory do NOT change the tree hash. If you run
 `compile.sh` with a dirty working tree, the marker records HEAD's tree — not
 the actually-tested content. `mark-tests-passed.sh` emits a stderr warning
@@ -951,10 +957,37 @@ produces incomplete migrations missing the required `Designer.cs` file. EF Core 
 2. But does NOT apply the schema changes
 3. Runtime errors like "column X does not exist"
 
-**Correct Process**:
+**Correct Process** (CLAUDE.md `DATABASE > MIGRATIONS` is the authority):
 ```bash
-nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project src/Data
+nerdctl compose exec -T <devcontainer-service> \
+  sh -c "cd /workspace/<Svc>/src && dotnet ef migrations add <Name> --output-dir Data/Migrations"
 ```
+Three things this command does NOT template. The guard's deny message must
+prescribe the same form this block does — that message is what a blocked agent
+acts on next, so a wrong remedy there costs it a second failure:
+
+- **`--project src/Data` is not a thing.** No service has such a PROJECT — `Data/`
+  is a FOLDER under `<Svc>/src/`, and `git ls-files | grep -E '/src/Data/.*\.csproj$'`
+  returns 0. The flag resolves to `<Svc>/src/src/Data`, dies MSB1009, and leaves a
+  stray `src/src/obj` behind. Use `--output-dir`, which is relative to the project:
+  `Data/Migrations` for every service except CalendarService (`Migrations`), and
+  MacroSubstrate, whose project is `src/MacroSubstrate/` — `cd` there first.
+- **`<devcontainer-service>` is not `{svc}-dev`.** Only `fred-collector-dev`,
+  `ofr-collector-dev`, `sentinel-collector-dev` and `threshold-engine-dev` are
+  spelled that way. CalendarService and FinnhubCollector both name theirs plain
+  `dev`; the rest are short slugs (`alphavantage-dev`, `nasdaq-dev`,
+  `secmaster-dev`, `macrosubstrate-dev`, `reports-dev`). Read it from
+  `<Svc>/.devcontainer/compose.yaml`.
+- **`--context <DbContextClass>` is required where a second DbContext is in
+  scope**, and the class is often not `<Svc>DbContext` (SentinelCollector's is
+  `SentinelDbContext`, FinnhubCollector's `FinnhubDbContext`). Measured on
+  SentinelCollector, which project-references MacroSubstrate, so
+  `MacroSubstrateDbContext` is in scope and the bare form fails as ambiguous.
+  FredCollector, OfrCollector and ThresholdEngine reference MacroSubstrate too, so
+  expect the same there — inferred from the reference graph, not measured.
+
+`dotnet tool restore` first if `dotnet-ef` is missing; it is a local tool manifest,
+not a global install.
 
 **Blocked Pattern**: Any Write to `Migrations/[timestamp]_[Name].cs` that isn't
 a Designer.cs or ModelSnapshot.cs. `[Name]` is `[A-Za-z0-9_]+` — it was

@@ -6,7 +6,7 @@ Cross-cutting deployment reference files. Source of truth for conventions that s
 
 | File | Purpose |
 |---|---|
-| `ports.yml` | Reference document — every ATLAS service's port allocation in one place. Split into `external:` (host-mapped) and `internal_only:` (container-network only). Conventions: MCP servers 3100–3199, observability 3000–3099 + 9000–9999, collectors 5000–5099, infrastructure on standard ports. Not auto-imported by Ansible — playbooks + `compose.yaml` hard-code the same numbers; keep this file in sync when allocating a new port. |
+| `ports.yml` | Reference document — every ATLAS service's port allocation in one place. Split into `external:` (host-mapped) and `internal_only:` (container-network only). Conventions: MCP servers 3100–3199 (the trafilatura and dsl-parser sidecars sit here too), observability 3000–3099 + 9000–9999, CPU LLM runners 1143x, infrastructure on standard ports. There is no collectors range — 5000–5099 was reserved for one and has never held a collector; no collector publishes a host port at all. Not auto-imported by Ansible — playbooks + `compose.yaml` hard-code the same numbers; keep this file in sync when allocating a new port. |
 
 ## Conventions
 

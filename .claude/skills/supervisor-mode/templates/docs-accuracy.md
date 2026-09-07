@@ -20,7 +20,8 @@ TRAJECTORY
    main checkout; `bash` is correct either way. Committed mode: `git ls-files -s <script>` —
    on 2026-08-06 `readme-consistency`'s two were 100644, `architecture-cards`' 100755.
    - `bash .claude/skills/architecture-cards/scripts/enumerate-services.sh` -> one service dir
-     per line (source of truth is CLAUDE.md `## SERVICES`, not a glob), then
+     per line (source of truth is CLAUDE.md `## SERVICES`, not a glob; exit 3 = the roster did
+     not parse, so the audit SET is unknown -> STOP, do not audit the partial list), then
      `bash .claude/skills/architecture-cards/scripts/audit.sh <ServiceDir>` per service.
    - same pair under `readme-consistency/scripts/`: `enumerate-projects.sh`, then `audit.sh`.
    Exit 0 clean / 1 with findings, ending `summary: critical=N high=N medium=N low=N`. Exit 1 is

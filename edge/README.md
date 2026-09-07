@@ -153,7 +153,7 @@ edge/
 │   ├── tsconfig.json            # TypeScript config
 │   ├── package.json             # Node dependencies and scripts
 │   └── .devcontainer/
-│       ├── Dockerfile           # node:22-bookworm-slim + wrangler + typescript
+│       ├── Containerfile        # node:22-bookworm-slim + wrangler + typescript
 │       ├── compose.yaml         # nerdctl/docker compose for dev container
 │       ├── devcontainer.json    # VS Code Dev Containers config
 │       ├── build.sh             # Build dev image (nerdctl/docker)

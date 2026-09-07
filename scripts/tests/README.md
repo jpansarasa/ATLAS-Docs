@@ -5,6 +5,7 @@ Guard tests for the tools in `scripts/`. Run them by hand; nothing here is wired
 | File | Covers | Run |
 |---|---|---|
 | `new-epic-selftest.sh` | `../new-epic.sh` | `bash scripts/tests/new-epic-selftest.sh` |
+| `build-deploy-hint-selftest.sh` | the deploy hints printed by `*/.devcontainer/build.sh` | `bash scripts/tests/build-deploy-hint-selftest.sh` |
 | `test_verify_citations.py` | `../verify-citations.py` | needs **pytest**, which is not installed on this host — run it in a venv. `unittest discover` does NOT work on it: the file imports pytest and uses `tmp_path`, fixtures and `parametrize`, so discovery fails at import. |
 
 ## What a case here has to do

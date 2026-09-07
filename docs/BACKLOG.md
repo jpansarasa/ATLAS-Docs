@@ -16,6 +16,80 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**PR #1035's review found more than the three defects that were fixed; the rest were scoped out**
+[2026-09-07]
+
+LANDED at `23a43af5`, under a bypass scoped to the two files -- the gate layer refuses the write that
+repairs it, which is the deadlock this branch set out to relieve. Three fixes to
+`.claude/hooks/ansible-gate-guard.sh` and their rows in
+`.claude/hooks/test/run-advisory-guards-smoke.sh` (470 -> 482 assertions, rc 0), each proven
+RED-then-GREEN by mutation:
+  1. F-CRIT, a deny -> ALLOW regression this branch introduced. `nops` at the
+     `update-index|checkout-index` arm counted TOKENS, so an opaque operand (`"$MODE,$SHA,$P"`,
+     `$(cat /tmp/list)`, `"$P"`, `"$F"`) took an operand slot and then dissolved in `check_token`.
+     Measured against origin/main, full hook trees, no bypass: all four spellings deny -> ALLOW,
+     reopening `hash-object -w` + `update-index --cacheinfo` + `checkout` end to end. Fix tests
+     operand CONCRETENESS, not arity; `git update-index --chmod=+x scripts/tests/foo.sh` still
+     allows. Same shape fixed on the `clean -x` arm.
+  2. F-OPEN, apostrophes inside the single-quoted jq deny-message program, routed through `--arg`.
+  3. F-REMEDY, the deny message cited `run-push-guard-smoke.sh` as taking `PUSH_GUARD_HOOK`; it
+     derives its guard from its own location and IGNORES the variable. Measured:
+     `PUSH_GUARD_HOOK=/nonexistent/not-a-hook.sh bash .../run-push-guard-smoke.sh` -> rc 0, all
+     assertions passed, having exercised the PRISTINE guard. Message now names
+     `run-entry-shape-smoke.sh` (rc 1 on the same probe), with a row asserting it still reads the
+     variable.
+
+WHY IT IS NOT LANDED: `is_gate_path` matches `*.claude/hooks/*.sh`, so the guard refuses the edit
+that fixes the guard AND the edit that adds its rows. Measured 2026-09-07 on the live harness: Edit
+to `.claude/hooks/ansible-gate-guard.sh` -> deny; Bash write -> deny. The sanctioned escape is a
+bypass file, and creating one is the human's decision, not an agent's -- so the fix round handed back
+a patch and the human authorised a bypass scoped to the two paths to land it. This is the gate-layer
+deadlock entry below, reached from the SHARED checkout rather than a worktree: no worktree resolution
+bug is involved, the layer simply gates its own repair.
+RE-CHECK: `bash .claude/hooks/test/run-advisory-guards-smoke.sh` -> 482 assertions, rc 0.
+
+SCOPED OUT of that round, each re-derived in this session against HEAD, none fixed:
+  a. `test-audit.sh` cannot see the LIVE roster SHRINK -- the original bug's own class. Deleting
+     `AlphaVantageCollector` from `CLAUDE.md` `## SERVICES` gives rc 0, 73 PASS, 0 FAIL, and prints
+     `PASS [live roster parses: 10 services]` (was 11) asserting that count against nothing. Shape
+     that would work: assert the live set is a SUPERSET of the 11 the fixtures declare.
+  b. `enumerate-services.sh:43` `if (seg ~ /^(mcp|shared):/) continue` skips the WHOLE segment.
+     `mcp: OfrCollector` -> 10 services, rc 0, EMPTY stderr, OfrCollector silently gone. Fail closed.
+  c. `enumerate-services.sh:44-46` a bare identifier with no role prefix is emitted AS a service:
+     `Reports` on its own line -> 12 services, rc 0, `Reports` in the output. Fail closed.
+  d. `enumerate-services.sh:65` `^[A-Za-z0-9]+$` forbids hyphens, so a hyphenated service dir could
+     never join the roster. Undecided, not a defect yet.
+  e. `build-deploy-hint-selftest.sh` case 6 uses `grep -q -- 'ansible-playbook.*--tags'` over the
+     WHOLE FILE, so the header COMMENT satisfies it: delete both `echo` hint lines from
+     `AlertService/.devcontainer/build.sh` and 0 hint echoes remain while the predicate still matches
+     1 line -> 6/6 pass. Reuse `scan()`'s own line predicate plus a not-a-comment test.
+  f. `build-deploy-hint-selftest.sh:105-138` `f1..f4="$(mkfixture ...)"` under `set -uo pipefail`
+     with no `-e`: mkfixture's fail-closed `exit 1` kills only the subshell, the var goes empty and
+     `scan ""` reads nothing and returns clean. Three "must NOT be flagged" cases can pass on zero
+     bytes. Needs `|| exit 1` and a pass-count floor.
+  g. Two guard mutations survive `run-advisory-guards-smoke.sh` at 470/470 GREEN, so no row covers
+     either: dropping the `..` exclusion from the `bare` test (`cp /tmp/evil
+     /tmp/scratch/hooks/../git-push-guard.sh` -- HEAD deny, mutant none) and dropping `--all` from
+     the `--index-info|--stdin|--all` arm (`git checkout-index --all -- foo` -- HEAD deny, mutant
+     none).
+  h. `scripts/tests/build-deploy-hint-selftest.sh` is committed `100644` while its sibling
+     `new-epic-selftest.sh` is `100755` -- and recording exactly that bit is what the `--chmod`
+     narrowing in item 1 exists to permit.
+  i. The PR body claims `ports.yml` "is now reconciled with a set-equality control". There is none:
+     `grep -rln 'ports.yml' scripts/ deployment/tests/ .github/` is empty.
+  Also unfixed and NOT in that review: `run-advisory-guards-smoke.sh` has no assertion-count floor,
+  `pin()`/`json_ok()` ignore `ATLAS_GATE_HOOK` (so six assertions describe the repo's guard under the
+  workflow the deny message prescribes), and `json_ok` green-lights EMPTY output on rows labelled
+  `(deny)` -- empty output being the exact signature of item 2.
+
+MEASURED AND WORTH KEEPING: the apostrophe defect in item 2 has TWO forms and only one is visible to
+anything dynamic. Restoring the exact shipped spelling (`'ask'`, no space in the interruption) leaves
+the suite 482 PASS / 0 FAIL while the emitted message silently loses the quotes -- source and output
+already differed on HEAD. One keystroke further (`'ask decision'`) the word splits, jq fails to
+compile, stdout is ZERO BYTES, no decision, ALLOW: 157 assertions RED. A source-level control (no
+single-quoted jq program may contain a bare apostrophe) catches both and was built and proven RED on
+HEAD in this session, then dropped by a scope cut; it is not in the patch.
+
 **GOLD DEFECT: 55% of `entity_ticker_accuracy`'s scored cases are labeller world-knowledge, not
 extraction** [2026-09-07]
 
@@ -591,6 +665,17 @@ cheapest form is to let a fragment match the suite that guards it, e.g. by scopi
 its extension, so that one fragment admits the rule and its rows together rather than needing a second by hand.
 Re-check: with a bypass containing `git-push-guard.sh` ONLY, edit
 `.claude/hooks/test/run-pr-verdict-smoke.sh` — it must be refused today.
+**THE DEVELOP-AND-VERIFY-ELSEWHERE ROUTE IS OPEN, and the entry above reads as though it is not.** The gate matches
+a path FRAGMENT, so it closes only scratch paths that themselves contain `.claude/hooks`. Measured 2026-09-07 from a
+worktree with no bypass file, scratch root `/tmp/claude-1000/<session>/scratchpad` (no such fragment):
+`cp -r .claude/hooks <scratch>/hookstree` ALLOWED, and `python3 <script> <scratch>/hookstree` writing the copies
+ALLOWED — so a full patched tree can be built and its suites RUN, which is how that round produced a
+`git apply --check`-clean patch and a red-then-green control instead of docs only. Two spellings still refuse and
+both are over-denials: `cp .claude/hooks/git-push-guard.sh <scratch>/git-push-guard.sh` DENIES on the DESTINATION
+basename (a `.txt` destination is allowed, so this blocks no act), and `python3 <script> .claude/hooks/git-push-guard.sh <b>`
+DENIES although every path after the script name is READ-ONLY argv. Neither is worth a rule change on its own; what
+they cost is the operator's belief that the route is shut. Re-check: from a worktree with no bypass, `cp -r` the
+hooks dir to a scratch path containing no `.claude/hooks` fragment and run one of its suites — both must succeed.
 
 **AN OBSERVATION'S IDENTITY IS THE ENTITY MENTIONED, NOT THE MEASUREMENT TAKEN — so N datapoints
 from one article collapse onto ONE series key, and 74% of everything ever published is in such a
@@ -2543,7 +2628,22 @@ both landed in #1004 (`29846cf0`, 2026-09-05). The running `sentinel-collector` 
 2026-09-06T10:26:43Z from an image built **2026-08-27T14:55:24-04:00** (18:55Z), nine days
 earlier: recreated on the
 CURRENT `:latest`, which nothing rebuilt after #1004. `CLAUDE.md` §DEPLOYMENT already warns that
-`--skip-tags build` does exactly this, and for 21 of 26 service tags it is the only form on offer.
+`--skip-tags build` does exactly this, and for **18 of the 27** service tags it is the only form on
+offer. Re-derived 2026-09-07 by parsing `deployment/ansible/playbooks/deploy.yml` with block-tag
+inheritance and intersecting against the 31 services in `/opt/ai-inference/compose.yaml`: 27 tags
+name a compose service EXACTLY, 18 of them carry nothing but the `build`-tagged task, and 9 carry
+non-build tasks too -- `alert-service`, `llama-cpu-embed`, `llama-cpu-rag`, `llama-server`,
+`secmaster`, `sentinel-collector`, `threshold-engine`, `trafilatura`, `vllm-server`. The
+denominator is a JUDGEMENT, so state which one you mean: `macro-substrate` and `nasdaq-collector`
+are excluded above because neither is an exact compose-service name (`macro-substrate`'s service is
+`migrate-macro-substrate`; `nasdaq-collector` has no service at all, it is disabled in prod), and
+counting them in gives **20 of 29** -- both are build-only, so the ratio worsens either way. Four
+compose services carry no tag of their own at all: `alertmanager`, `markitdown-mcp`,
+`migrate-macro-substrate`, `timescaledb`. Re-check: the parse is ~20 lines of `yaml.safe_load` plus
+a recursive walk that unions each `block:`'s tags onto its children -- a walk that does NOT inherit
+block tags undercounts, which is how the superseded "21 of 26" was produced.
+(`CLAUDE.md` §DEPLOYMENT still carries the stale "21 of 26" at line 95 and is owned elsewhere this
+turn; correcting it there is unfinished work.)
 Read the CONTAINER, never the image -- `nerdctl inspect` resolves the image first and returns the
 BUILD time as `.Created`, which is the trap that makes this invisible. VERIFIED AGAINST
 THE BINARY, not inferred from dates, with a positive control in the same probe so a silent search
@@ -2586,6 +2686,92 @@ sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data -c \
 2026-09-06 -> three rows, ids `164565`-`164567`, `source rss`, `retry_count 0`, `processed_at` null.
 A GROWING count means another outage passed through the undeployed build. An EMPTY result means
 someone reprocessed the rows, which does NOT close this entry -- only the binary probe does.
+
+**THE SENTINELCOLLECTOR CARD IS 4.7x OVER ITS OWN D-ENTRY GATE, AND ITS LINE COUNT HIDES IT**
+[2026-09-07]
+
+`SentinelCollector/AGENT_README.md` measured today: **207,010 bytes, 121 lines, 101 non-blank,
+28 D-entries.** `CARD_TEMPLATE.md` sets the gate at "card <= ~1 page / ~55 non-blank lines" and
+">~6 entries = smell (scope creep dilutes the signal)". That is **4.7x on D-entries** and 1.8x on
+non-blank lines.
+
+The two ratios disagree by a factor of three, and the LINE ratio is the lying one. 207,010 bytes
+over 121 lines is **1,711 bytes per line**; the longest single line is **22,391 characters**, and
+the top three are 22,391 / 22,389 / 20,417. A density gate counted in LINES cannot see this -- a
+card can be driven arbitrarily far past "~1 page" without moving the metric that guards it, just by
+not pressing Enter. Any future check must be on BYTES.
+
+Scale, so the number is not read as normal: SecMaster 85,700 bytes / 12 D is the next largest;
+ThresholdEngine 14,037 / 6 D; AlertService 13,619 / 3 D; FredCollector 8,929 / 2 D. SentinelCollector
+is 2.4x the second-place card and 23x the median.
+
+NOT A SILENT GAP -- a documented one, which is worse in a different way. `.claude/skills/
+architecture-cards/scripts/audit.sh:13-14` says the smell is "deliberately LLM-scope
+(intent-review / human judgment), not script-checked", so the audit passes this card and always
+will. **The reading agent is the only enforcement, and it is the party the card was supposed to
+serve.** A card exists to front-load negative space so an agent does NOT have to read the codebase;
+at 207KB it has become a second codebase. Whether that cost is being paid is unmeasured -- nobody
+has checked whether agents given this card read it, skim it, or truncate it.
+
+  FIX (not done, and it is a judgement call, not a mechanical split): decide which of the 28
+    D-entries are still exception paths / scarce-resource boundaries / non-obvious preconditions and
+    which are ordinary mechanism that accreted, then move the catalog to `README.md` §Reference per
+    the template's own escape hatch. Superseded entries are rewritten in place, never tombstoned.
+  Re-check:
+```
+f=SentinelCollector/AGENT_README.md
+echo "bytes=$(wc -c < $f) nonblank=$(grep -c '[^[:space:]]' $f) D=$(grep -c '^  D-' $f)"
+awk '{print length($0)}' $f | sort -rn | head -3
+```
+2026-09-07 -> `bytes=207010 nonblank=101 D=28`, longest lines `22391 22389 20417`.
+
+
+**SIX DEPLOYED DIRECTORIES HAVE NO CARD, AND THE ROSTER CLAIM THAT COVERS FOR THEM IS FALSE**
+[2026-09-07] [NEEDS A HUMAN DECISION -- recorded, not decided]
+
+`CLAUDE.md` §SERVICE_ARCHITECTURE is a HARD_STOP: read `{Service}/AGENT_README.md` before reasoning
+about a service. Its reach is the §SERVICES roster, and line 319 asserts "every service in SERVICES
+above has one, at that exact path." **That assertion is false as written.** The roster's `mcp:` row
+(line 313) names six paths and *none* of them has a card:
+
+```
+for d in FredCollector/mcp ThresholdEngine/mcp FinnhubCollector/mcp OfrCollector/mcp \
+         SecMaster/mcp WhisperService/mcp; do
+  printf "%-26s card=%s\n" "$d" "$([ -f "$d/AGENT_README.md" ] && echo Y || echo N)"; done
+```
+2026-09-07 -> `card=N` six times. The other 11 roster entries (the collectors, ThresholdEngine,
+AlertService, CalendarService, SecMaster, MacroSubstrate) all do have one, so the claim holds for
+11 of 17 named paths.
+
+SEPARATELY, six directories that are DEPLOYED are not in the roster at all, so the HARD_STOP cannot
+reach them even in principle:
+
+| directory | compose services it ships |
+|---|---|
+| `WhisperService/` | `whisper-service`, `whisper-service-mcp` |
+| `Reports/` | `reports-daily`, `reports-weekly`, `reports-monthly` |
+| `FinBertSidecar/` | `finbert-sidecar` |
+| `markitdownMCP/` | `markitdown-mcp` |
+| `SentinelCollector/dsl-parser-mcp/` | `dsl-parser-mcp` |
+| `edge/sentinel-edge/` | none -- Cloudflare Worker, deployed by the `sentinel-edge` ansible tag |
+
+All six have a plain `README.md` except `edge/sentinel-edge/`, which has neither. That is 8 of the
+31 services in `/opt/ai-inference/compose.yaml`.
+
+THE DECISION IS NOT MINE AND NOT AN AGENT'S. Three coherent answers, and the roster's current
+silence is none of them:
+  (a) they join §SERVICES and owe cards -- the most work, the widest HARD_STOP coverage;
+  (b) the roster's scope is stated explicitly (e.g. "services with their own data model; sidecars
+      and MCP servers inherit their parent's card") and the mcp row is dropped or relabelled, which
+      would also make line 319 true again;
+  (c) MCP sidecars are declared card-exempt by the same reasoning §OBSERVABILITY already uses for
+      them ("MCP sidecars deliberately rely on parent-service telemetry"), leaving only
+      `WhisperService/`, `Reports/`, `FinBertSidecar/` and `edge/sentinel-edge/` owing cards.
+Until one is chosen, the HARD_STOP reads as covering the whole deployment and does not, which is
+the failure mode a HARD_STOP is least able to survive.
+
+  Re-check: `ls */AGENT_README.md` against the §SERVICES roster and against the service list in
+    `/opt/ai-inference/compose.yaml`.
 
 ## MEASUREMENT DEBT [instruments that cannot report their own dullness]
 

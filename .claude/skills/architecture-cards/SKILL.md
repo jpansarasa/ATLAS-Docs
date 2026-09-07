@@ -65,6 +65,10 @@ recursion_guard:
 2. enumerate target services:
    `bash .claude/skills/architecture-cards/scripts/enumerate-services.sh`
    (reads CLAUDE.md `## SERVICES` so the audit set tracks the canonical list, not a glob)
+   EXIT 3 = the roster did not parse and the audit SET IS UNKNOWN -> STOP and fix
+   CLAUDE.md; never audit the partial list. A wrong set is invisible in every finding
+   the audit then prints -- a reflow of `## SERVICES` once cost four services three
+   weeks of coverage at exit 0.
 3. for each service (or the single positional SERVICE):
    `bash .claude/skills/architecture-cards/scripts/audit.sh <dir>`
    collect findings

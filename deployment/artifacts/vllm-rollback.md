@@ -62,6 +62,14 @@ sudo nerdctl run -d --gpus all \
   --tool-call-parser hermes
 ```
 
+**`--kv-cache-dtype fp8_e5m2` above is bound to the digest pinned in this block** (the
+2026-04 / vLLM 0.19-era image), and is correct only there. If you ever re-target this
+rollback at a newer vLLM, the flag must become `fp8_e4m3`: measured 2026-09-04, e5m2 on
+0.28.0 serves one request and then faults under concurrent decode (CUDA illegal memory
+access) and stays 503. A sequential smoke test cannot see it — the failure needs
+concurrency >= 2. e4m3 is the one-flag fix and its quality cost is measured null.
+See CLAUDE.md `VLLM_UPGRADE`.
+
 (Identical to the captured pre-migration config — `sudo nerdctl inspect vllm-server`
 2026-06-11 — except the image is digest-pinned here; the original used the floating
 `:latest` tag, which resolved to this manifest digest `sha256:d9a5c1c1614c…`.
