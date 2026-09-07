@@ -6,52 +6,54 @@ controls and sample-level detail: `docs/BACKLOG.md`. Swap criteria: `CLAUDE.md` 
 
 ---
 
-## Candidates
+## Results
 
 `numbers_f1`, 40 gold articles, production's CoD prompt path, vLLM with `response_format`
-json_schema. n=3 per model unless stated. Higher is better.
+json_schema. Higher is better. Coordinate columns are part of the measurement — a score belongs to
+a configuration, not to a model.
 
-| Model | numbers_f1 | vs production | Engine | Adoption cost |
-|---|---:|---:|---|---|
-| **Gemma 4 31B** (QAT w4a16) | **0.7570** | **+0.2417** | vLLM **0.28.0** | engine bump + a `transformers` 5.16.1 image |
-| **Qwen3.8-27B** (INT4) | **0.7132** | **+0.1979** | vLLM 0.19.0 | must set `ThinkingSuppressionSuffix` |
-| **Gemma 3 27B** (w4a16) | **0.6177** | **+0.1024** | vLLM 0.19.0 | **none — drop-in** |
-| Mistral-Small 24B | 0.5105 | −0.0048 | vLLM 0.19.0 | no gain |
-| *Qwen2.5-32B-AWQ* | *0.5153* (n=5) | — | vLLM 0.19.0 | **currently in production** |
-| Command-R 08-2024 | 0.3178 | −0.1975 | vLLM 0.19.0 | no |
-| EXAONE 4.0 32B | 0.2218 | −0.2935 | vLLM 0.19.0 | no |
-| GLM-4.7-Flash | *no score* | — | vLLM 0.19.0 | degenerate at both grammar settings |
+| Model | numbers_f1 | sd | n | vs production | Engine | Weight quant | Context |
+|---|---:|---:|---:|---:|---|---|---:|
+| **Gemma 4 31B** | **0.7570** | 0.0009 | 3 | **+0.2417** | vLLM 0.28.0 | compressed-tensors w4a16 QAT | 32,768 |
+| **Qwen3.8-27B** | **0.7132** | 0.0109 | 3 | **+0.1979** | vLLM 0.19.0 | compressed-tensors INT4 g32 | 32,768 |
+| **Gemma 3 27B** | **0.6177** | 0.0130 | 3 | **+0.1024** | vLLM 0.19.0 | compressed-tensors w4a16 | 32,768 |
+| Qwen2.5-32B-AWQ | 0.5153 | 0.0106 | 5 | — *(production)* | vLLM 0.19.0 | AWQ 4-bit g128 | 32,768 |
+| Mistral-Small 24B | 0.5105 | 0.0032 | 3 | −0.0048 | vLLM 0.19.0 | AWQ 4-bit | 32,768 |
+| Command-R 08-2024 | 0.3178 | 0.0098 | 3 | −0.1975 | vLLM 0.19.0 | AWQ 4-bit | 32,768 |
+| EXAONE 4.0 32B | 0.2218 | 0.0089 | 3 | −0.2935 | vLLM 0.19.0 | Q4_K_M | 32,768 |
+| GLM-4.7-Flash | *no score* | — | — | — | vLLM 0.19.0 | Q4_K_M | 32,768 |
 
 All three leaders beat production by more than the ~0.06 confound band, so the ranking is real.
-These are **deployment (Q2) comparisons** — each model at its own best serving point, which is the
-question a swap actually asks. They are not model-attribution claims.
 
 **Mistral-Small is the control.** It lands within noise of production despite being re-measured on
-the same new engine and decoding path as everything else. That is what rules out "these gains are
-just an artifact of the new harness".
+the same engine and decoding path as everything else — which is what rules out "these gains are an
+artifact of the new harness".
 
----
+### Serving coordinates required to reproduce these numbers
 
-## Adoption cost, in detail
+Not preferences — without them the score above is not what you get.
 
-| | Gemma 3 27B | Qwen3.8-27B | Gemma 4 31B |
-|---|---|---|---|
-| Engine change | none | none | **vLLM 0.19.0 → 0.28.0** |
-| Image change | none | none | **`transformers` ≥ 5.16.1** (stock image cannot parse `model_type: gemma4`) |
-| Config change | none | **`ThinkingSuppressionSuffix` must be set** | none |
-| Serves 32K | yes | yes (fp8_e4m3) | yes |
-| Speed vs production | **faster** (14.28 vs 16.07 s/doc) | comparable | comparable |
-| Open risk | ticker recall unmeasured | ticker recall regression measured on this model | ticker recall unmeasured |
+- **Qwen3.8-27B requires thinking disabled.** Its vendor chat template enables reasoning by default;
+  at production's 4,096-token completion budget that leaves the JSON unclosed on **110 of 120
+  documents** and the run is unscoreable. The 0.7132 is the thinking-off arm.
+- **Gemma 4 31B requires `transformers` ≥ 5.16.1.** The stock vLLM image cannot parse
+  `model_type: gemma4`, so the model does not load at all. vLLM 0.19.0 itself cannot serve it;
+  0.28.0 is the measured engine.
+- **EXAONE 4.0 fails to terminate** inside the 4,096-token budget on 8–9 of 40 articles. Those
+  score zero and are included in its 0.2218.
 
-**The Qwen3.8 config change is not optional.** Its vendor chat template enables reasoning by
-default, which consumes production's 4,096-token completion budget and leaves the JSON unclosed on
-**110 of 120 documents**. `CLAUDE.md` D-26 currently keeps `ThinkingSuppressionSuffix` empty — that
-is a Qwen2.5 decision and does not carry to Qwen3.8.
+### Secondary metric: `entity_ticker_accuracy`
 
-**The open risk applies to all three.** `entity_ticker_accuracy` degrades on Qwen3.8 (0.671 → 0.458)
-— a recall loss at SecMaster's door, not mis-resolution: across 15 runs the wrong-ticker count is 0,
-every miss is a null. It has **not** been measured on either Gemma. That is the last gate before a
-swap.
+Pre-resolved tickers handed to SecMaster. Measured on two models only.
+
+| Model | entity_ticker_accuracy |
+|---|---:|
+| Qwen2.5-32B-AWQ *(production)* | 0.671 |
+| Qwen3.8-27B | 0.458 |
+| Gemma 3 27B / Gemma 4 31B | **not measured** |
+
+The Qwen3.8 drop is **recall, not mis-resolution**: across 15 runs the wrong-ticker count is 0 —
+every miss is a null. Neither Gemma has been measured on this metric.
 
 ---
 
