@@ -318,20 +318,19 @@ BEFORE reasoning about a service's architecture / API / data-model / resolution 
 ✗ guess a service's shape from method names or the endpoint table # read the card
 ✗ "fix" a symptom by violating a card INVARIANT (bulk-preload, backfill-to-green, raw DB fix)
 cards carry numbered D-entries: touching a guard or contradicting one without a named "supersedes D-n" -> STOP
-cards:
-  SecMaster:         SecMaster/AGENT_README.md         # resolve-entities != ResolveBatch; identity indep of collection; fuzzy-proposes/authoritative-confirms; ✗NotFound="not-in-table"; ✗bulk-preload; ✗gate-non-Equity-sector
-  ThresholdEngine:   ThresholdEngine/AGENT_README.md   # WS3-projector=ONLY wired matrix_cells writer; ObservationEventSubscriber=UNWIRED/dead; Confidence XML-doc"informational only"=FALSE; ✗live-FRED-gRPC-writes-matrix_cells; ✗ascending-projector-read
-  SentinelCollector: SentinelCollector/AGENT_README.md # news->matrix pipeline spans MacroSubstrate; `:sig:` infix=string contract change-all-or-none; signal-dim gates projection sector-dim does NOT; Shadow != Off (same cells written); ✗gate-entry-on-sector; ✗check-Mode-before-concluding-broken
-  FredCollector:     FredCollector/AGENT_README.md     # catalog indep of instrument (SeriesId=FRED mnemonic != instr-id); AlfredBackfillService deliberately does NOT touch LastCollectedAt; ObservationChannel no reader=memory-growth; ✗expect-WARN-GRPC-unset; ✗ALFRED-backfill=advances-LastCollectedAt
-  FinnhubCollector:  FinnhubCollector/AGENT_README.md  # candle/social/insider/calendars=dead-schema (tables empty); quotes reach TE via the TABLE not a push (upsert -> EventRepository -> gRPC), so a "publish" path is NOT the data flow; deadman must watch COLLECTION work, never finnhub_api_requests_total (other services hold it >0 — that is why a 16-day stall was invisible); GetLatestEventTime=UtcNow-on-empty (not a new-data signal); ✗assume-non-Quote-data-flows
-  AlphaVantageCollector: AlphaVantageCollector/AGENT_README.md # stream=scalar-only(Commodity/Economic); OHLCV never emits events; quota=in-mem(restart-wipes); TechnicalIndicator=scaffold; ✗assume-OHLCV-events ✗expect-values-in-Event ✗quota-survives-restart
-  NasdaqCollector:   NasdaqCollector/AGENT_README.md   # DISABLED prod(NDL WAF); EventId=Ulid-per-read (not a stable dedup key); EventTypes filter=dead param; SecMaster Economic GUARD may silently reject; ✗treat-EventId-stable ✗assume-prod-running
-  OfrCollector:      OfrCollector/AGENT_README.md      # FSI indep of gRPC-register; FSI composite+4 patterned subindices->macro_observations (_EQUITY/_SAFE_ASSETS/_US/_AE excluded — no pattern); circuit-breaker=5 CONSECUTIVE fails->60s (not sliding-window); dual-write non-fatal; gRPC GetLatestEventTime=now() placeholder; ✗conflate-gRPC-register-with-REST-tag ✗assume-ALL-FSI-cols->matrix
-  AlertService:      AlertService/AGENT_README.md      # UP by design (Alertmanager->alert-service->ntfy `atlas-alert`); appsettings routing != RoutingOptions class default; dedup=fingerprint-only; autofix rate-limit=static process-wide; ✗assume-202-means-sent
-  CalendarService:   CalendarService/AGENT_README.md   # HTTP-only (no gRPC :5001); FRED allow-list ~18 releases (not all); event_time=synthetic DST-unaware; market endpoints bypass DB; Finnhub worker disabled; ✗assume-gRPC ✗trust-FRED-event_time-real
-  MacroSubstrate:    MacroSubstrate/AGENT_README.md    # write=DO UPDATE heal-on-rewrite (not DO NOTHING); QueryAsync(AsOfDate+MappingVersionLabel simultaneously)->ArgumentException; not a running service (library+migrator only); ✗trust-README-DO-NOTHING ✗set-both-version-axes
-  gemini-resolver:   gemini-resolver-mcp/AGENT_README.md # HOST systemd unit :9300 (not compose, speaks HTTP not MCP) — the CODE is not ansible-deployed (a git pull reaches prod on next restart) but its ALERT RULES are (`--tags monitoring --skip-tags always`), so a code-only pull ships none of them; 3 outcomes not 2 (rejected/accepted/neutral); a Google 429 reaches the caller as 200+symbol=null; burn gauges FALL during a credit outage; ✗read-quiet-burn-as-not-spending ✗restart-to-clear-fail-closed ✗treat-symbol-null-as-failure
-
+cards [READ the card, never a summary of it — a digest here would license skipping the read]:
+  SecMaster:             SecMaster/AGENT_README.md
+  ThresholdEngine:       ThresholdEngine/AGENT_README.md
+  SentinelCollector:     SentinelCollector/AGENT_README.md
+  FredCollector:         FredCollector/AGENT_README.md
+  FinnhubCollector:      FinnhubCollector/AGENT_README.md
+  AlphaVantageCollector: AlphaVantageCollector/AGENT_README.md
+  NasdaqCollector:       NasdaqCollector/AGENT_README.md
+  OfrCollector:          OfrCollector/AGENT_README.md
+  AlertService:          AlertService/AGENT_README.md
+  CalendarService:       CalendarService/AGENT_README.md
+  MacroSubstrate:        MacroSubstrate/AGENT_README.md
+  gemini-resolver:       gemini-resolver-mcp/AGENT_README.md
 ## DATA_FLOW
 Collectors ->gRPC:5001-> ThresholdEngine ->metrics-> Prometheus -> Alertmanager -> AlertService -> ntfy|email
 Collectors ->gRPC:5001-> SecMaster (registration, fire-and-forget)
