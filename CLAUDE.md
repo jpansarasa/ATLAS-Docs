@@ -252,9 +252,11 @@ MODEL_ACCEPTANCE [SCORED ON PERFORMANCE — the a priori limits were dropped 202
       `subject` only, CLAIMS measure noise # two careful human labellers score 0.302 and 0.138
     - `source_entity` for macro series: the macro SERIES owns the number, not the country, not blank
       (DECIDED 2026-09-05 by the user; 490 of 518 conform, 6 knowingly non-conformant, 22 open)
-    - entity_ticker_accuracy is an INDEPENDENT axis, not a tiebreak: the worst extractor measured
-      has the BEST ticker score. Measured on every arm -> LlmBenchmark/BENCHMARKS.md. The Qwen3.8
-      loss is RECALL (0 wrong tickers across 15 runs; every miss is a null), never mis-resolution
+    - ✗ NEVER select a model on entity_ticker_accuracy # 29 of its 53 gold tickers appear NOWHERE
+      in their article (Nvidia->NVDA, Microsoft->MSFT), so it mostly measures PRETRAINING RECALL of
+      ticker symbols. Entity resolution is SecMaster's job and resolves from the NAME; the CoD
+      prompt asks only for a ticker "stated in or directly resolvable from the article". A model
+      omitting MSFT is obeying the prompt. -> LlmBenchmark/BENCHMARKS.md
   measured results -> docs/BACKLOG.md. ✗ NEVER quote a model figure from THIS file # a figure without
     its coordinate is not a run, and this file cannot carry a coordinate
 CONTEXT [MEASURED, not asserted]: serve more than the longest real document, with headroom.
