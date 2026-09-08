@@ -16,6 +16,88 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**Two PRs green apart, `main` red together: the push gate keys to a TREE, so a cross-PR interaction
+is structurally invisible to it** [2026-09-07]
+
+`ExtractionModelCoordinateTests` shipped RED on `main` at 56e6344d -- 19/20, the chat-template sweep
+naming 9 tracked files -- and every gate that ran passed honestly. Neither PR was wrong alone:
+
+  - #1037 (665ba78e) added 12 `LlmBenchmark/eval-substrate/commoncoord-*.scorecard.json` provenance
+    sidecars, 9 of which hit the chat-template needle at their `request_shape.chat_template`,
+    line 60. Only 3 carry it BARE -- 3 embed it behind the Qwen vendor system preamble and 3 belong
+    to a third model (`cyankiwi/Qwen3.8-27B-AWQ-INT4`) with a thinking-suppression suffix appended.
+    All 9 hit because the sweep is a SUBSTRING match, so any template extending ChatML matches.
+    The sweep did not exist in that tree.
+  - #1038 (56e6344d) added the sweep, with `LlmBenchmark/eval-substrate/` exempted from the model-id
+    half of it and not from the chat-template half. Its branch was cut before #1037 merged, so the
+    tree `compile.sh` attested held the sweep and no scorecards, and was green.
+
+THE ONLY TREE IN HISTORY HOLDING BOTH IS THE SQUASH-MERGE RESULT ITSELF, and no `compile.sh` ever ran
+on it. That is the marker's SHAPE rather than an oversight: `.claude/hooks/git-push-guard.sh` matches
+`v2 tree <hash>` against the PUSHED BRANCH's tree, and a merge result is a tree no branch ever had. So
+N PRs green in parallel can land a red `main`, and the first to notice is the next agent the push gate
+blocks -- which is every agent, since the gate is repo-wide.
+
+The instance is fixed (allowlist symmetry, `fix/coordinate-allowlist-symmetry`). THE GAP IS OPEN, and
+it is the FIRST measured occurrence: a SECOND promotes it to
+`.claude/skills/supervisor-mode/LESSONS.md` per CLAUDE.md WHERE_WORK_LANDS.
+
+Re-check -- the interaction reproduces from git alone, and the gap's own measurement is a zero:
+  `git log --diff-filter=A --format=%h -- 'LlmBenchmark/eval-substrate/commoncoord-*'`   # 665ba78e
+  `git log --diff-filter=A --format=%h -- 'SentinelCollector/tests/SentinelCollector.UnitTests/Configuration/ExtractionModelCoordinateTests.cs'`
+                                                                                        # 56e6344d
+  two DIFFERENT introducing commits = no pre-merge tree could have run the sweep over the scorecards.
+  `grep -l dotnet .github/workflows/*.yml | wc -l`    # 0 -- nothing re-runs the .NET suite on `main`
+  after a merge, so the post-merge tree is verified by NOTHING. A fix is either a post-merge run of
+  the touched projects' `compile.sh` on `main`, or a merge-queue that attests the MERGE RESULT's tree
+  instead of the branch's; both are unbuilt.
+
+**Three unfixed edges on the coordinate sweep, none of them the allowlist bug** [2026-09-07]
+
+Found reviewing `fix/coordinate-allowlist-symmetry` (PR #1039) and deliberately left out of it. All
+three are PRE-EXISTING, none is a live hole today, and each fails toward looking fine.
+
+  1. A DOCSTRING CLAIMING COVERAGE IT DOES NOT HAVE, which CLAUDE.md TOOL_UPKEEP ANTI names by
+     description. The comment above `PRODUCTION_CHAT_TEMPLATE_HINT` (`LlmBenchmark/scripts/run_model.py`)
+     says the hint "is swept against the shipped value by SentinelCollector's
+     `ExtractionModelCoordinateTests`". Nothing sweeps it: the constant holds a Gemma 4 value, so
+     NEITHER incumbent needle matches it, and no case in that class reads `run_model.py` at all. The
+     hint sits on the post-deploy regression-detector path CLAUDE.md TRACK LATEST names, so a reader
+     who trusts the claim will not re-verify the value by hand -- and if it drifts, the run scores an
+     arm nobody measured and reports a false regression. CLOSE by adding a case that reads the literal
+     out of `run_model.py` and asserts it against `ExtractionOptions.ChatTemplate`, or by deleting the
+     sentence. Re-check:
+     `grep -rln PRODUCTION_CHAT_TEMPLATE_HINT --include='*.cs' SentinelCollector/`   # 0 = still open
+
+  2. BOTH SWEEP FAILURE MESSAGES SELL "ADD IT TO THE ALLOWLIST" AS UNCONDITIONAL. Each closes with
+     "add the file to `Incumbent{Id,Template}IsHistoryIn` with the reason it is evidence" and stops,
+     never saying the entry must be EARNED -- the file has to still CONTAIN that list's own needle or
+     `.should_still_find_the_incumbent_in_every_path_the_allowlist_exempts` turns one RED case into
+     two. Followed literally on a file carrying only the OTHER needle, the message's own advice makes
+     the suite worse, and the agent reading it is by construction one who has just been shown a
+     failure. CLOSE with one clause in each message. Re-check, against
+     `SentinelCollector/tests/SentinelCollector.UnitTests/Configuration/ExtractionModelCoordinateTests.cs`:
+     `grep -c 'with the reason it is evidence' <that file>`   # 2, neither qualified = still open
+
+  3. THE `LlmBenchmark/eval-substrate/` EXEMPTION IS A DIRECTORY PREFIX WIDER THAN ITS STATED REASON.
+     Both lists justify it as "scorecards ARE the measurement artefact", but the prefix also covers
+     `cod-stage1.criteria.json` -- `DEFAULT_COD_CRITERIA_PATH` (`LlmBenchmark/scripts/eval_harness.py`,
+     lines 102-103), the LIVE scoring thresholds, which is precisely the config class the allowlist's
+     own doc comment excludes ("a default, a config" is what does NOT earn an exemption). It carries
+     NEITHER needle today, so there is no hole now and this is not a regression from #1039; the
+     exposure is that a future edit putting a coordinate literal there is exempt SILENTLY, and it has
+     been open on the id half since 56e6344d. CLOSING IT IS NOT A SHORTER PREFIX, and that is the trap:
+     the two non-scorecard members are `cod-stage1.criteria.json` and
+     `v6.2-cove-plus-negatives-20260510-baseline.criteria.json`, so the wanted predicate is the
+     `.scorecard.json` SUFFIX -- which `Sweep`'s `StartsWith` cannot express. Narrowing to the
+     `commoncoord-` prefix instead is measurably WRONG: `qwen25-32b-awq-vllm-20260903` and
+     `qwen25-32b-awq-unquantkv-vllm019-20260904` are scorecards carrying 2 id hits each and would stop
+     being exempt, taking the id sweep RED. So CLOSE means giving an allowlist entry a suffix or
+     exclusion predicate beside its prefix, not editing the string.
+     Re-check -- count each needle (the two constants declared in the test class) against
+     `cod-stage1.criteria.json`: `0` and `0` today; either going non-zero means the prefix has started
+     hiding a live value.
+
 **Gemma 4 is deployable but not deployed: three residuals the swap PR found and did not fix**
 [2026-09-07]
 
