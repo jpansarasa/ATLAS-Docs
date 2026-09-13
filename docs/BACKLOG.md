@@ -16,6 +16,163 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**Gemma 4 truncates 2-3% of articles at the 4,096-token CoD completion cap, up from under 0.7% under
+Qwen, and the tail past ~80 objects is dropped as a partial "success"** [2026-09-13]
+
+Measured 2026-09-13 over weekday windows, Qwen 2026-08-31..09-04 against Gemma 2026-09-08..09-11 (the
+first Gemma request ~22:48Z on 2026-09-07, #1038). `sentinel_extraction_outcome_total{outcome="truncated_salvaged"}`
+went 3-9/day on the Qwen weekdays -> 36 / 30 / 32 / 26 on UTC days 09-08..09-11 (12 and 11 on the
+weekend). Two denominators, and they differ 2x: ~1.3% of ALL vLLM requests (CoD plus the
+news-signal classifier plus CoVe/Reports), but 2.3-3.2% of GPU-path ARTICLES on weekdays against 0.2-0.7%
+under Qwen, where an article is `sentinel_extraction_outcome_total{outcome=~"success|verify_failure"}`
+(a truncated article ALSO increments `success`, so summing every outcome double-counts it). vLLM's own
+`vllm:request_success_total{finished_reason="length"}` reads 30 / 32 / 26 / 12 / 11 on UTC days 09-09..09-13,
+exact, and 43 on 09-08 where the surplus is non-CoD requests hitting their own caps. `salvage_empty` and `parse_failure` stayed at 0, so this is real truncation, not garbage
+or refusals.
+
+CAUSE, and it is the model's verbosity rather than longer articles. On the truncated set the arithmetic
+is anchored in Loki: `ResponseLength` p50 11,546 chars at the 4,096-token cap over `SalvagedCount` p50 79
+is ~51 tokens per emitted object, where Qwen's truncations landed at ~100 objects, i.e. ~40 -- a longer
+verbatim `text_quote` (132 -> 140 chars mean) and `source_entity` filled on 94% of rows against 70%.
+`sentinel_llm_completion_tokens` (sum/count 450 -> 650 per call) points the same way but is NOT a CoD
+series: `VllmClient.RecordTokensPerSecond` tags every vLLM completion `stage="classifier_llm"`, CoD
+included, so the histogram is a blend of CoD and about as many tiny classifier calls (~0.9x) -- the only
+`stage` value present in 7 days of Prometheus. Do not divide it by observations per article. At
+`JsonMaxCompletionTokens` = 4096 (`SentinelCollector/src/Configuration/CpuCodOptions.cs`, which the GPU
+path reads -- card GOTCHAS) the cap now lands at ~80 objects where Qwen reached ~100. Loki, the 3 days
+to 2026-09-13T17Z: 56 "GPU JSON CoD response did not close" warnings -- the same 56 the counter reads over that
+window, which is the cross-check -- `SalvagedCount` 62..122 (p50 79), `ResponseLength` p50 11,546 chars; 56 "vLLM
+structured response may be truncated" companions (a line-limited query reads half of each; count with
+`count_over_time`). Articles with
+more than 80 observations, per period: 18 vs 18 -- the population of long articles did not move, the cap
+did.
+
+WHAT IS LOST: the objects past the salvage point, on articles that are mostly market wraps and tables.
+Salvage (`SentinelCollector/src/Services/GpuJsonExtractionService.cs`) keeps the prefix and the article
+closes as a partial success (two Warning lines and the `extraction.salvaged` span tag are the only trace).
+The outcome counter is the only METRIC, and no alert keys on it: the
+vLLM rules select `finished_reason=~"error|abort"` only (`deployment/artifacts/monitoring/alerts/vllm.yml`),
+and nothing under `deployment/artifacts/monitoring/alerts/` names `truncated_salvaged`.
+
+NOT A FREE EDIT: the 4,096-token completion budget is the coordinate every row in the Results table of
+`LlmBenchmark/BENCHMARKS.md` was measured through (D-29). Raising it -- context is 32,768 and prompt
+tokens average ~3,300, so 8,192 fits, but it also lowers the D-4 prompt allowance by the same 4,096
+(`VllmClient.PromptTokenAllowance`) -- is a re-score of the incumbent at the new budget, not a config
+change. The alternative is to accept 2-3% partial articles and alert on the per-article rate.
+
+FOLLOW-UP, observability: the GPU path has no per-stage CoD token series. `cod_llm` reaches the token histograms only from
+`LlamaServerClient` (the CPU rollback arm); the `VllmClient` comment saying it "serves the
+NewsSignalClassifier" predates the GPU-JSON role flip. Until that is split, tokens-per-object comes from
+the Loki ratio above, never from the histogram.
+
+Re-check (the two counters must agree; the per-article line is the one to act on, above ~2% on a weekday):
+```
+sum(increase(sentinel_extraction_outcome_total{outcome="truncated_salvaged"}[1d]))
+  / sum(increase(sentinel_extraction_outcome_total{outcome=~"success|verify_failure"}[1d]))
+sum by (outcome) (increase(sentinel_extraction_outcome_total{outcome=~"truncated_salvaged|salvage_empty"}[1d]))
+sum(increase(vllm:request_success_total{finished_reason="length"}[1d]))
+```
+Tokens per object: Loki `{service_name="sentinel-collector"} |= "did not close"`, structured metadata
+`ResponseLength` / `SalvagedCount`, at ~0.35 tokens per char. Count the lines with `count_over_time`, never
+with a line-limited fetch.
+
+**The news-signal feed narrowed under Gemma 4 -- 36% -> 25% of articles carry a `:sig:` row -- and a
+labelled check says that is noise leaving, not recall lost. One id confusion is the only defect**
+[2026-09-13]
+
+Volume first, so the next reader does not file the drop as a regression. `:sig:` rows per processed
+article (psql: `public.macro_observations` with `source_collector='sentinel'`, joined to
+`sentinel.raw_content` by UTC day of `processed_at`): Qwen weekdays 35.6-37.0% of articles carried at
+least one signal, Gemma weekdays 20.7-29.8%; distinct signals fed 78 -> 59 over a 4-day window;
+`sentinel_news_signal_macro_write_total` ~700/day -> ~500/day; digest momentum signals 16/day -> 7-12/day.
+The classifier's own counter reads `outcome="empty"` on 61% -> 75% of requests. `empty` is recorded AFTER
+validation, so it would also absorb articles whose every signal was dropped -- but
+`sentinel_news_signal_classifier_dropped_total` carried only `reason="sub_floor"` in the 14-day window and
+that FELL (17-103/day -> 10-15/day): the model returns empty arrays, it is not being filtered. Per-day rate, 5 Qwen weekdays vs 4 Gemma weekdays,
+the signals that vanished: inflation-expectations 43.0 -> 8.3, vix-index 21.8 -> 3.8, buffett-indicator
+15.4 -> 0.8, usd-cny 13.6 -> 0.3, yield-curve-2s10s 13.4 -> 1.3, us-household-equity-pct 13.4 -> 0,
+sp500-fwd-pe 12.4 -> 2.3, equity-risk-premium 12.2 -> 1.0, challenger-job-cuts 11.8 -> 1.0, job-openings
+9.6 -> 1.5. Went UP: oil-price 94.6 -> 142.8, boj-policy-rate 15.0 -> 25.3, fed-funds-rate 44.2 -> 57.5,
+usd-jpy 13.2 -> 19.5.
+
+THE LABELLED CHECK, 2026-09-13. 30 articles: per period 8 with a `:sig:` row and 7 without, `n_obs >= 3`,
+weekdays 2026-09-01..04 (Qwen) and 2026-09-08..11 (Gemma), ordered by
+`md5('seed-2026-09-13-' || id::text)` within each stratum so the draw is reproducible from psql. Text
+rebuilt through the trafilatura sidecar (`/extract-file`, as `scripts/sentinel-quality-check` does) and
+cut at `NewsSignalExcerptMaxChars` = 12,000 (`SentinelCollector/src/Workers/ExtractionProcessor.cs`),
+i.e. what the classifier saw. Two independent blind labellers -- fresh Claude contexts with no sight of
+either model's output -- tagged catalog ids per article under the production prompt's own rules
+(`SentinelCollector/src/prompts/news_signal_classify.md`: catalog-only ids, tilt frames, synonym bridge,
+"Only include a signal when the article actually informs its direction."; confidence below the 0.5
+`ConfidenceFloor` goes to a `weak` list). Labeller agreement, Jaccard: 0.98 on the Qwen set, 1.00 on the Gemma set. Scored against
+the union (lenient) and the intersection (strict) of the two label sets:
+
+| | Qwen 2.5 | Gemma 4 |
+|---|---|---|
+| signals emitted on the 15 articles | 18 | 12 |
+| precision, strict..lenient | 0.39..0.44 | 0.58 |
+| precision counting same-sign `weak` labels | 0.44 | 0.75 |
+| recall, lenient..strict | 0.80..0.88 | 0.88 |
+| tilt sign agreement, matches where both tilts are non-zero | 5/6 | 7/7 |
+| signal-bearing articles that genuinely carried one | 3/8 | 7/8 |
+| labelled signals across the 7 no-signal articles | 0 | 0 |
+
+Per article (`raw_content.id`; emitted -> labelled; FP = emitted and neither labeller tagged it, even weak):
+  Qwen  163375 jobs-report preview: challenger, claims, job-openings, nonfarm -> the same plus fed-funds from both
+               labellers and unemployment-rate at tilt 0 from one; job-openings was tagged by one labeller and put in
+               `weak` by the other, so it is a lenient match only (MISS fed-funds strict; these feed the 0.80..0.88
+               recall band and the 0.39..0.44 precision band); nonfarm emitted +0.32 against labelled -0.2/-0.3, the one tilt-sign disagreement
+        163465 TSX flat after BoC hold: boc, copper, dxy, nonfarm, oil -> boc, copper, oil (FP dxy, nonfarm)
+        160094 UK manufacturing PMI: global-pmi, initial-jobless-claims -> global-pmi (FP claims: a US series)
+        160250 North Sea licensing opinion: natural-gas, oil -> none (FP both)
+        161136 German income-tax relief: state-local-tax-receipts -> none (FP: wrong country and series)
+        163459 Lululemon cuts guidance: challenger-job-cuts -> none (FP)
+        163582 India GCC growth: global-pmi, state-local-tax-receipts -> none (FP both)
+        163619 Investing.com risk-disclosure boilerplate, NOT an article: fed-funds-rate 0.72 -> none (FP)
+        7 no-signal articles (Netflix, Ito En, Pearson, Viant, US Lime, Bullish, Nepal floods): none -> none
+  Gemma 166642 Iran strikes, Gulf shipping: oil -> oil | 167819 Hyundai Heavy as Brent tops 100: oil -> oil
+        169723 Hormuz talks: oil -> oil | 166831 Target Hospitality: fed-funds, oil -> fed-funds, oil
+        167847 BOJ Masu hawkish: boj, usd-jpy -0.48 -> boj (usd-jpy `weak` -0.3 from both, same sign)
+        169475 ING on BoE hold: boe, oil -0.12 -> boe (FP oil, weak tilt)
+        165775 30-year gilt record yield: boe -0.18 -> none strict (boe `weak` -0.3 from both, same sign)
+        166934 Goldman muni monthly: cpi-headline-yoy +0.24, fed-funds 0.0 -> inflation-expectations
+               (ID CONFUSION: renewed inflation concerns mapped onto the CPI print; cpi `weak` -0.3, sign disagrees)
+        7 no-signal articles (Air Products, Mission Produce, American Eagle, TSA table, MobLand premiere,
+        Blackstone, tax-aware ladders): none -> none
+
+READING: weighting the strata back to population, Qwen delivered ~13% of articles with a genuine signal
+and ~22% with a spurious one; Gemma ~22% genuine and ~3% spurious. The matrix gets MORE true signal than
+before, and the digest's momentum-signal count fell because the noise left. Qwen's false positives were
+wrong-country series and a boilerplate page; Gemma's strict misses were borderline-confidence calls the
+labellers put in `weak` with the same sign.
+
+WHAT IS OPEN:
+  1. ID CONFUSION, n=1 of 12: `inflation-expectations` -> `cpi-headline-yoy` when an article's inflation
+     content is expectations rather than a print. A prompt-clarification candidate; not measured beyond
+     one case.
+  2. ZERO-TILT EMISSIONS (1/18 Qwen, 1/12 Gemma) write `value_numeric = 0` rows: harmless to the decay
+     sum, but they count as signal rows in every volume figure above.
+  3. VOLUME FIGURES NOW MISLEAD: `sentinel_news_signal_macro_write_total`, digest momentum signals, and
+     any panel on `:sig:` counts read the swap as a ~30% degradation. No rule alerts on those counts
+     today (`deployment/artifacts/monitoring/alerts/sentinel.yml` keys on classifier `request_total` by
+     failure outcome and on `dropped_total` by reason, and deliberately excludes `outcome="empty"`);
+     re-baseline before adding one.
+  4. POWER: n=8 per model in the with-signal stratum; the 3/8 vs 7/8 split is Fisher two-sided ~0.12.
+     The load-bearing numbers are the signal-level precision (18 vs 12 emissions) and 0 misses across
+     14 no-signal articles. The labellers are frontier-model judges, not humans.
+
+Re-check (psql is SELECT-only):
+```sql
+-- articles with at least one :sig: row, per UTC day; Gemma weekdays sat at 21-30%
+WITH s AS (SELECT (ingestion_time AT TIME ZONE 'UTC')::date d, count(DISTINCT split_part(source_id, ':sig:', 1)) a
+           FROM public.macro_observations WHERE source_collector = 'sentinel' AND source_id LIKE '%:sig:%'
+             AND ingestion_time >= now() - interval '7 days' GROUP BY 1),
+     r AS (SELECT (processed_at AT TIME ZONE 'UTC')::date d, count(*) n FROM sentinel.raw_content
+           WHERE processed_at >= now() - interval '7 days' AND processing_error IS NULL GROUP BY 1)
+SELECT r.d, r.n, s.a, round(100.0 * s.a / r.n, 1) AS pct FROM r LEFT JOIN s USING (d) ORDER BY 1;
+```
+Redraw the sample with the seed above (8 `has_sig` and 7 without per period, `n_obs >= 3`) to re-label.
+
 **Two PRs green apart, `main` red together: the push gate keys to a TREE, so a cross-PR interaction
 is structurally invisible to it** [2026-09-07]
 
@@ -98,11 +255,12 @@ three are PRE-EXISTING, none is a live hole today, and each fails toward looking
      `cod-stage1.criteria.json`: `0` and `0` today; either going non-zero means the prefix has started
      hiding a live value.
 
-**Gemma 4 is deployable but not deployed: three residuals the swap PR found and did not fix**
-[2026-09-07]
+**Gemma 4 residuals the swap PR found and did not fix (DEPLOYED 2026-09-07 evening; 1b, 2 and 3 still open)**
+[2026-09-07, title corrected 2026-09-13]
 
-The Gemma 4 coordinate swap (SentinelCollector/AGENT_README.md D-29) landed in the repo. It has
-NOT been deployed, and three things it surfaced are outside the change:
+The Gemma 4 coordinate swap (SentinelCollector/AGENT_README.md D-29) landed in the repo and was
+deployed the same evening -- `vllm:request_success_total{model_name}` shows the last Qwen requests in
+the 17:00Z hour and the first Gemma request at ~22:48Z on 2026-09-07 (#1038 merged 22:21Z). Three things it surfaced are outside the change:
 
   1. CLOSED 2026-09-07 -- THE WEIGHTS ARE NOW STAGED, and the entry is rewritten rather than
      tombstoned because what replaced it is a DIFFERENT and still-open exposure. This read "the

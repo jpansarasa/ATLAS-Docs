@@ -262,10 +262,11 @@ VLLM_UPGRADE [HARD_STOP before bumping `vllm_image` in deployment/ansible/group_
     under concurrent decode (CUDA illegal memory access) and stays 503 -- and the deploy gate is a /health
     wait plus one SEQUENTIAL 1-token completion; the fault needs concurrency >= 2, so the gate cannot see
     it. `fp8_e4m3` is the one-flag fix at NO quality cost (measured single-axis, null). Isolation table ->
-    docs/BACKLOG.md. DECIDED 2026-09-07, NOT YET DEPLOYED: the REPO is pinned to 0.28.0 + fp8_e4m3
-    (vllm_image, compose.yaml.j2), and vllm-server is stopped -- so read this as "never reintroduce
-    e5m2" for the coordinate being deployed, and check the RUNNING engine before claiming it is
-    already true # `sudo nerdctl container inspect vllm-server` -- bare inspect returns the IMAGE
+    docs/BACKLOG.md. DECIDED 2026-09-07 AND DEPLOYED that evening (first Gemma 4 request ~22:48Z): the
+    REPO is pinned to 0.28.0 + fp8_e4m3 (vllm_image, compose.yaml.j2) and the RUNNING engine carried
+    `--kv-cache-dtype fp8_e4m3` when checked 2026-09-13 -- so read this as "never reintroduce e5m2", and
+    re-check the RUNNING engine, never the repo, before claiming anything about it
+    # `sudo nerdctl container inspect vllm-server` -- bare inspect returns the IMAGE
   ✓ re-score BOTH models on production's CoD path before ANY engine bump # an engine change is a silent
     quality change until scored
 TRACK LATEST, ROLL BACK ON FAULT [user direction 2026-09-07. This SUPERSEDES "score before you bump",
