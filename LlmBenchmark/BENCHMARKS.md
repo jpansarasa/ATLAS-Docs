@@ -54,7 +54,7 @@ Gemma 4, whose +0.2417 stays a configuration delta with engine and model moving 
 Not preferences — without them the score above is not what you get.
 
 - **Qwen3.8-27B requires thinking disabled.** Its vendor chat template enables reasoning by default;
-  at production's 4,096-token completion budget that leaves the JSON unclosed on **110 of 120
+  at the 4,096-token completion budget the arm was scored at, which leaves the JSON unclosed on **110 of 120
   documents** and the run is unscoreable. The 0.7132 is the thinking-off arm.
 - **Gemma 4 31B needs vLLM 0.28.0, and no *stock-derived* 0.19.0 image serves it** — re-pinned
   wheels, nothing else; patching vLLM source was not tried. Measured 2026-09-07; the arm above
@@ -93,7 +93,7 @@ unrecorded once already.
 *Read back from all twelve provenance sidecars, byte-identical across them* (`engine` `vllm`
 `0.28.0` on a fail-closed probe · `--kv-cache-dtype fp8_e4m3` · `--max-model-len 32768`, **probed**
 from `/v1/models` · `--max-num-seqs 6` · client `--concurrency 6` · temperature 0, seed 42,
-`repetition_penalty` 1.1, `max_tokens` 4096, every other sampling knob `null` = not sent ·
+`repetition_penalty` 1.1, `max_tokens` 4096 (8192 in production since 2026-09-13 -- see *Completion budget 8192* below; on this gold the two are one point), every other sampling knob `null` = not sent ·
 `--task cod --endpoint-mode completions` · `cod_json_v1.txt` sha `0dd66dde…` +
 `cod_json_schema_v1.json` sha `1b971904…` · substrate sha `008c338d…` · `limited: false` ·
 `production_prompt_path: true`). *Read from the run's own coordinate and boot records* —
@@ -362,6 +362,37 @@ Full statement in [`MEASUREMENT_SPACE.md`](MEASUREMENT_SPACE.md).
    difference, and it stayed invisible while both arms were called "AWQ".
 
 ---
+
+---
+
+## Completion budget 8192, same session, one engine [2026-09-13]
+
+Production moved `JsonMaxCompletionTokens` from 4,096 to 8,192 (SentinelCollector D-30) because Gemma 4
+was truncating 2.3-3.2% of weekday articles at 4,096 -- about 51 tokens per emitted object, so the cap
+landed at ~80 objects. **This gold cannot see that axis**: no completion in any arm below exceeds 3,888 tokens,
+under either cap (per-run lengths in `eval-substrate/cap-rescore-20260913.completion-lengths.json`;
+the scorecards carry no per-record length). The re-score is therefore a *control* that nothing else moved, not the
+evidence for the change; the evidence is the production truncation rate, and its re-check lives in
+`docs/BACKLOG.md`.
+
+Six interleaved arms (4096, 8192, 4096, 8192, 4096, 8192), one session, the production engine idle
+(vLLM 0.28.0 at `:8000`, 15 articles/hour), every other axis of D-29 held: concurrency 6,
+`repetition_penalty` 1.1, temperature 0, seed 42, the model's own template, `production_prompt_path: true`.
+All 240 responses finished `stop`, 0 call errors, 0 `schema_invalid`.
+
+| Arm | run 1 | run 2 | run 3 | mean | sd | longest completion |
+|---|---:|---:|---:|---:|---:|---:|
+| `max_tokens` 4096 (control) | 0.7334 | 0.7313 | 0.7584 | 0.7410 | 0.0151 | 3,888 |
+| `max_tokens` 8192 | 0.7411 | 0.7517 | 0.7287 | 0.7405 | 0.0115 | 3,879 |
+
+Paired deltas +0.0077 / +0.0204 / -0.0298, mean -0.0006, no consistent sign; one arm alone spans
+0.7313..0.7584, so the engine's batch-by-arrival nondeterminism is the whole spread. Pooled over the six,
+this coordinate reads **0.7408 sd 0.0120**, against the 0.7458 sd 0.0130 (n=6) pooled figure above. A
+first six-arm session the same afternoon, run before the engine axes were declared to the runner and
+therefore not committed (its sidecars carry `kv_cache_dtype: null`), read 0.7490 vs 0.7382 with paired
+mean -0.0107 -- the same verdict, quoted here only so the twelve runs are not read as six. Scorecards:
+`eval-substrate/cap4096ctl-g4_vendor_r{1,2,3}-vllm028-20260913.scorecard.json` and
+`eval-substrate/cap8192-g4_vendor_r{1,2,3}-vllm028-20260913.scorecard.json`.
 
 ---
 

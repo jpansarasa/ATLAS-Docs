@@ -250,8 +250,8 @@ TOPOLOGY [what is INSTALLED, never what is permitted -- the engine is an AXIS
 ✗ CHANGE THE SERVED MODEL, ITS QUANTIZATION, ITS KV DTYPE OR `--max-model-len` AS A DEPLOY # each is a
   SCORED acceptance decision, not config -> SentinelCollector/AGENT_README.md §MODEL_ACCEPTANCE.
   Sites that look like config and are not: `vllm_base_model`, `vllm_image`, `vllm_max_model_len`,
-  `vllm_max_num_seqs`, `vllm_gpu_memory_utilization` and `sentinel_max_concurrent_extractions` in
-  deployment/ansible/group_vars/all.yml, the vllm-server `command:` in deployment/artifacts/compose.yaml.j2,
+  `vllm_max_num_seqs`, `vllm_gpu_memory_utilization`, `sentinel_max_concurrent_extractions` and
+  `sentinel_cod_json_max_completion_tokens` (D-30) in deployment/ansible/group_vars/all.yml, the vllm-server `command:` in deployment/artifacts/compose.yaml.j2,
   and `ExtractionOptions.ChatTemplate` + its appsettings.json copy # the template is CLIENT-side and vLLM
   applies none on /v1/completions, so it is part of the request the score is a property of -- the swap that
   reset it is D-29, and 16/0.92 was left behind BECAUSE it was unmeasured for the new model

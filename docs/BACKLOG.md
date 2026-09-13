@@ -16,65 +16,73 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
-**Gemma 4 truncates 2-3% of articles at the 4,096-token CoD completion cap, up from under 0.7% under
-Qwen, and the tail past ~80 objects is dropped as a partial "success"** [2026-09-13]
+**FIXED 2026-09-13 by the PR that raised `JsonMaxCompletionTokens` 4,096 -> 8,192 (SentinelCollector D-30); CLOSES when the post-deploy rate confirms it:
+Gemma 4 truncated 2.3-3.2% of weekday articles at the 4,096-token CoD cap, 0.2-0.7% under Qwen, and
+salvage dropped the tail past ~80 objects as a partial "success"** [2026-09-13]
 
-Measured 2026-09-13 over weekday windows, Qwen 2026-08-31..09-04 against Gemma 2026-09-08..09-11 (the
-first Gemma request ~22:48Z on 2026-09-07, #1038). `sentinel_extraction_outcome_total{outcome="truncated_salvaged"}`
-went 3-9/day on the Qwen weekdays -> 36 / 30 / 32 / 26 on UTC days 09-08..09-11 (12 and 11 on the
-weekend). Two denominators, and they differ 2x: ~1.3% of ALL vLLM requests (CoD plus the
-news-signal classifier plus CoVe/Reports), but 2.3-3.2% of GPU-path ARTICLES on weekdays against 0.2-0.7%
-under Qwen, where an article is `sentinel_extraction_outcome_total{outcome=~"success|verify_failure"}`
-(a truncated article ALSO increments `success`, so summing every outcome double-counts it). vLLM's own
-`vllm:request_success_total{finished_reason="length"}` reads 30 / 32 / 26 / 12 / 11 on UTC days 09-09..09-13,
-exact, and 43 on 09-08 where the surplus is non-CoD requests hitting their own caps. `salvage_empty` and `parse_failure` stayed at 0, so this is real truncation, not garbage
-or refusals.
+Kept as the re-checkable record rather than deleted, because the fix is only proven by the rate falling.
+Measured over UTC days, `sentinel_extraction_outcome_total{outcome="truncated_salvaged"}` over
+`{outcome=~"success|verify_failure"}` (a truncated article ALSO increments `success`): Qwen weekdays
+08-31..09-04 = 0.66 / 0.29 / 0.38 / 0.33 / 0.23%, Gemma weekdays 09-08..09-11 = 3.16 / 2.38 / 2.32 / 2.32%,
+counts 36 / 30 / 32 / 26; vLLM `finished_reason="length"` 30 / 32 / 26 / 12 / 11 on 09-09..09-13 (43 on
+09-08, the surplus from non-CoD requests). Cause, anchored in Loki over the 56 warnings of 09-10..13 (the
+same 56 the counter reads over that window): `ResponseLength` p50 11,546 chars at the cap over
+`SalvagedCount` p50 79 (62..122) is ~51 tokens per emitted object against Qwen's ~40, from a longer
+verbatim `text_quote` (132 -> 140 chars) and `source_entity` filled on 94% of rows against 70%. Articles
+with more than 80 observations were 18 vs 18 per period: the population of long articles did not move,
+the cap did. No alert keyed on the outcome; only two Warning lines and the `extraction.salvaged` span tag -- that gap
+stays open as its own entry below, because the raise moves the cliff from ~80 to ~160 objects and nothing fires past it.
 
-CAUSE, and it is the model's verbosity rather than longer articles. On the truncated set the arithmetic
-is anchored in Loki: `ResponseLength` p50 11,546 chars at the 4,096-token cap over `SalvagedCount` p50 79
-is ~51 tokens per emitted object, where Qwen's truncations landed at ~100 objects, i.e. ~40 -- a longer
-verbatim `text_quote` (132 -> 140 chars mean) and `source_entity` filled on 94% of rows against 70%.
-`sentinel_llm_completion_tokens` (sum/count 450 -> 650 per call) points the same way but is NOT a CoD
-series: `VllmClient.RecordTokensPerSecond` tags every vLLM completion `stage="classifier_llm"`, CoD
-included, so the histogram is a blend of CoD and about as many tiny classifier calls (~0.9x) -- the only
-`stage` value present in 7 days of Prometheus. Do not divide it by observations per article. At
-`JsonMaxCompletionTokens` = 4096 (`SentinelCollector/src/Configuration/CpuCodOptions.cs`, which the GPU
-path reads -- card GOTCHAS) the cap now lands at ~80 objects where Qwen reached ~100. Loki, the 3 days
-to 2026-09-13T17Z: 56 "GPU JSON CoD response did not close" warnings -- the same 56 the counter reads over that
-window, which is the cross-check -- `SalvagedCount` 62..122 (p50 79), `ResponseLength` p50 11,546 chars; 56 "vLLM
-structured response may be truncated" companions (a line-limited query reads half of each; count with
-`count_over_time`). Articles with
-more than 80 observations, per period: 18 vs 18 -- the population of long articles did not move, the cap
-did.
+THE GOLD CANNOT SEE THIS AXIS, which is why the fix carries a control rather than a score: the longest
+completion across six same-session arms is 3,888 tokens, so 4096 and 8192 are one point on the gold --
+3 x 4096 numbers_f1 0.7334 / 0.7313 / 0.7584 against 3 x 8192 0.7411 / 0.7517 / 0.7287, paired deltas
++0.008 / +0.020 / -0.030 carrying no sign (`LlmBenchmark/BENCHMARKS.md` *Completion budget 8192*). What moves with the cap: the
+D-4 exact prompt allowance 28,608 -> 24,512 tokens, against a production prompt p99.9 under 10,000.
 
-WHAT IS LOST: the objects past the salvage point, on articles that are mostly market wraps and tables.
-Salvage (`SentinelCollector/src/Services/GpuJsonExtractionService.cs`) keeps the prefix and the article
-closes as a partial success (two Warning lines and the `extraction.salvaged` span tag are the only trace).
-The outcome counter is the only METRIC, and no alert keys on it: the
-vLLM rules select `finished_reason=~"error|abort"` only (`deployment/artifacts/monitoring/alerts/vllm.yml`),
-and nothing under `deployment/artifacts/monitoring/alerts/` names `truncated_salvaged`.
-
-NOT A FREE EDIT: the 4,096-token completion budget is the coordinate every row in the Results table of
-`LlmBenchmark/BENCHMARKS.md` was measured through (D-29). Raising it -- context is 32,768 and prompt
-tokens average ~3,300, so 8,192 fits, but it also lowers the D-4 prompt allowance by the same 4,096
-(`VllmClient.PromptTokenAllowance`) -- is a re-score of the incumbent at the new budget, not a config
-change. The alternative is to accept 2-3% partial articles and alert on the per-article rate.
-
-FOLLOW-UP, observability: the GPU path has no per-stage CoD token series. `cod_llm` reaches the token histograms only from
-`LlamaServerClient` (the CPU rollback arm); the `VllmClient` comment saying it "serves the
-NewsSignalClassifier" predates the GPU-JSON role flip. Until that is split, tokens-per-object comes from
-the Loki ratio above, never from the histogram.
-
-Re-check (the two counters must agree; the per-article line is the one to act on, above ~2% on a weekday):
+Re-check after deploy (the fix is proven when the per-article line sits under 0.5% on a weekday; the
+count line should agree with `finished_reason="length"` day by day):
 ```
 sum(increase(sentinel_extraction_outcome_total{outcome="truncated_salvaged"}[1d]))
   / sum(increase(sentinel_extraction_outcome_total{outcome=~"success|verify_failure"}[1d]))
-sum by (outcome) (increase(sentinel_extraction_outcome_total{outcome=~"truncated_salvaged|salvage_empty"}[1d]))
 sum(increase(vllm:request_success_total{finished_reason="length"}[1d]))
+grep -n 'CpuCod__JsonMaxCompletionTokens' /opt/ai-inference/compose.yaml   # must read 8192
 ```
-Tokens per object: Loki `{service_name="sentinel-collector"} |= "did not close"`, structured metadata
-`ResponseLength` / `SalvagedCount`, at ~0.35 tokens per char. Count the lines with `count_over_time`, never
-with a line-limited fetch.
+Tokens per object, should it move again: Loki `{service_name="sentinel-collector"} |= "did not close"`,
+structured metadata `ResponseLength` / `SalvagedCount` at ~0.35 tokens per char, counted with
+`count_over_time` -- a line-limited fetch reads half of each.
+
+**No alert keys on CoD truncation: `truncated_salvaged` is counted, dashboarded by nobody, and the only re-check is a
+hand-run PromQL** [2026-09-13]
+
+Zero references to `truncated_salvaged` anywhere under `deployment/` -- no rule, no dashboard -- while the outcome was
+2.3-3.2% of weekday articles for a week without anyone seeing it (the entry above). Raising the cap to 8,192 moves the
+cliff from ~80 to ~160 objects; a further verbosity move (a model swap, a prompt asking for longer quotes) walks off it
+again in silence. Proposed rule, P3 notify, same shape as `NewsSignalSubFloorDropHigh` in
+`deployment/artifacts/monitoring/alerts/sentinel.yml` (volume floor + ratio, clamp_min epsilon):
+```
+sum(increase(sentinel_extraction_outcome_total{outcome="truncated_salvaged"}[6h]))
+  / clamp_min(sum(increase(sentinel_extraction_outcome_total{outcome=~"success|verify_failure"}[6h])), 1e-9) > 0.02
+and sum(increase(sentinel_extraction_outcome_total{outcome=~"success|verify_failure"}[6h])) >= 50
+```
+plus the promtool fixture in `deployment/tests/alerts/` and a `selftest.sh` control that breaks it by name.
+Re-check: `grep -rn truncated_salvaged deployment/artifacts/monitoring/alerts/` returns a rule, and the fixture fires it.
+
+**The GPU path has no per-stage CoD token series: `VllmClient` tags every completion
+`stage="classifier_llm"`** [2026-09-13]
+
+`VllmClient.RecordTokensPerSecond` (`SentinelCollector/src/Services/VllmClient.cs`) records
+`sentinel_llm_completion_tokens` and `sentinel_llm_prompt_tokens` under `stage="classifier_llm"` from BOTH
+completion cores, CoD included; its comment still says the client "serves the NewsSignalClassifier",
+which the GPU-JSON role flip made false. `cod_llm` reaches the token histograms only from
+`LlamaServerClient`, the CPU rollback arm. Measured 2026-09-13: the only `stage` value on
+`sentinel_llm_completion_tokens_count` over 7 days is `classifier_llm`, 11,639 samples, and per day the
+sample count is ~ GPU-path articles + classifier requests (about 0.9x each other), so the histogram is a
+blend of ~half tiny classifier completions and its mean (450 -> 650 per call across the Gemma swap) is
+not a CoD figure. Until the stage is split, tokens per object comes from the Loki ratio above, never from
+the histogram. Re-check:
+```
+count by (stage) (sentinel_llm_completion_tokens_count)   # one value = still blended
+```
 
 **The news-signal feed narrowed under Gemma 4 -- 36% -> 25% of articles carry a `:sig:` row -- and a
 labelled check says that is noise leaving, not recall lost. One id confusion is the only defect**
@@ -4336,11 +4344,11 @@ and an effect inside the swing would have decided nothing.
 
 QUOTE THE SAMPLING WITH THE FIGURE. THIS IS A CAVEAT, NOT A RETRACTION -- the +0.1873 is real and it
 SURVIVES the move to production's decoding. Both arms above ran `repetition_penalty: null,
-max_tokens: 8192`; production sends **1.1 / 4096** (`CpuCod__JsonRepetitionPenalty` and
+max_tokens: 8192`; production sent **1.1 / 4096** at the time (8192 since D-30) (`CpuCod__JsonRepetitionPenalty` and
 `CpuCod__JsonMaxCompletionTokens` in `/opt/ai-inference/compose.yaml`, defaulted at
 `SentinelCollector/src/Configuration/CpuCodOptions.cs:91` and
-`SentinelCollector/src/Configuration/CpuCodOptions.cs:102`, forwarded at
-`SentinelCollector/src/Services/GpuJsonExtractionService.cs:222`). The fourth cell -- OLD prompt at
+`SentinelCollector/src/Configuration/CpuCodOptions.cs:109`, forwarded at
+`SentinelCollector/src/Services/GpuJsonExtractionService.cs:223`). The fourth cell -- OLD prompt at
 production's sampling -- was measured 2026-09-06 and makes the comparison same-sampling: `numbers_f1`
 **0.3446 -> 0.5152 = +0.1707**, arms still DISJOINT at worst-case **+0.1357**. So the prompt's number
 holds under the guard; what does NOT hold across the sampling axis is the entity story two entries
@@ -4725,10 +4733,10 @@ the two arms the entry above budgets for its own two.
 ### Production's `repetition_penalty` 1.1 -- NOT the token cap -- costs `entities_recall` 0.5545 -> 0.3809, and that bill is being paid TODAY [2026-09-06]
 NEW FINDING, and the only one on this path that is about PRODUCTION rather than about the benchmark.
 The loop guard is not free and its price had never been measured. `CpuCod__JsonRepetitionPenalty=1.1`
-and `CpuCod__JsonMaxCompletionTokens=4096` are live in `/opt/ai-inference/compose.yaml`
+and `CpuCod__JsonMaxCompletionTokens=4096` were live in `/opt/ai-inference/compose.yaml` (4096 until D-30)
 (`SentinelCollector/src/Configuration/CpuCodOptions.cs:91` and
-`SentinelCollector/src/Configuration/CpuCodOptions.cs:102` carry the defaults and the rationale;
-forwarded at `SentinelCollector/src/Services/GpuJsonExtractionService.cs:222`). Measured
+`SentinelCollector/src/Configuration/CpuCodOptions.cs:109` carry the defaults and the rationale;
+forwarded at `SentinelCollector/src/Services/GpuJsonExtractionService.cs:223`). Measured
 2026-09-06 on the 40 gold articles, three runs per cell, the SAME prompt either side so the only axis is
 sampling:
 
@@ -4756,7 +4764,7 @@ SCOPE THAT SENTENCE, because the full corpus contradicts its general form: the `
 records **9 of 597** substrate articles hitting `finish_reason: length` at 4,096 AT PRODUCTION'S OWN
 SAMPLING. So the cap IS reached in production, on ~1.5% of articles, and "nothing reaches the cap" is
 true of the 40 gold articles and FALSE of the corpus. Whether those 9 are loopers (which
-`CpuCodOptions.cs:96` argues -- a JSON-CoD document not closed by ~4K tokens is in a repetition loop) or
+`CpuCodOptions.cs:96` argued at the time -- a JSON-CoD document not closed by ~4K tokens is in a repetition loop; the line reads ~8K since D-30) or
 legitimate long documents is NOT settled here, and the recall figures above do not depend on it: they are
 measured on the 40, where the cap binds on nothing.
 The cap still earns its place on the OTHER side: unguarded, NINE records over the eight runs exceeded
@@ -5034,7 +5042,7 @@ to REVERSE a finding's sign, so the omission was not cosmetic.
 while production always sends `CpuCodOptions.JsonRepetitionPenalty` = 1.1 -- the IDENTICAL shape to
 `--stop` below, and the entry "Production's `repetition_penalty` 1.1 ... costs `entities_recall`"
 measures what it is worth: -0.17 recall on the prompt production runs. `--max-tokens` does NOT belong on
-this list: it defaults to 4096 and production sends 4096.
+this list: it defaults to 8192 and production sends 8192 (both were 4096 until D-30 moved them together).
 `--stop` exists but defaults to none while production always sends
 `ExtractionOptions.StopTokens`; and `--min-p` forwards `min_p` into the vLLM payload though
 `VllmCompletionRequest` has no such field (`ExtractionOptions.MinP` is documented "llama.cpp min_p"

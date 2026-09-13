@@ -28,7 +28,7 @@ Rollback path: CPU `llama-server` (qwen3-30b-a3b) GBNF-constrained DSL emission 
 | Model | gemma-4-31B-it-qat-w4a16-ct | numbers_f1 0.7346 vs the incumbent's 0.5131 — paired difference +0.2214, 95% CI [+0.1192, +0.3288], excludes zero against a confound budget measured at the 0.05 scale. NOT single-axis: four engine-forced axes move with the model (D-29) |
 | Context window | 32,768 tokens | Full-document processing; shorter causes quality degradation |
 | Temperature | 0 | Deterministic extraction |
-| Max tokens | 4,096 | Loop guard (with repetition penalty 1.1) — a JSON-CoD doc unclosed by ~4K is looping |
+| Max tokens | 8,192 | Loop-guard backstop behind repetition penalty 1.1 — a JSON-CoD doc unclosed by ~8K is looping. Raised from 4,096 on 2026-09-13 (D-30): Gemma 4 spends ~51 tokens per emitted object and truncated 2-3% of weekday articles at the old cap |
 | Concurrency | `Extraction__MaxConcurrentExtractions=6`, continuous-streaming dispatch | Keeps the vLLM batch (`max_num_seqs=6`) continuously fed. Both moved with the Gemma 4 swap and must stay equal-or-under (D-29) |
 | Backend | vLLM with PagedAttention | Continuous batching, structured output support |
 | Structured output | JSON schema via `response_format` | Enforces extraction schema at decode time (openai-standard; NOT `guided_json`) |
