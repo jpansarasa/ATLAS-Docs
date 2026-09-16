@@ -2396,14 +2396,16 @@ in `run-advisory-guards-smoke.sh`.
 Re-check (feed as INPUT to the guard, never execute — each writes the path it names):
 `echo cp /tmp/evil /opt/ai-inference/compose.yaml > /tmp/run.sh` must deny on its own, with no second segment.
 
-**Four of the six series Sentinel is PRIMARY SOURCE for have not published since April 2026, and FOUR of the six
+**Three of the six series Sentinel is PRIMARY SOURCE for have not published since April 2026 (CHALLENGER_JOB_CUTS resumed
+2026-09-16 under D-32, #1044/#1045), and FOUR of the six
 emit no freshness gauge — three have no pattern (`ADP_EMPLOYMENT`, `INDEED_POSTINGS`, `REDBOOK_SALES`) and
 `BDIY`'s pattern file is disabled — so no overdue alarm, so a death there is silent. Two of the four already died
-that way; the other two are not dead, and the two dead series that WERE noticed are the two that are gauged.**
+that way; the other two are not dead, and the one dead series that WAS noticed (TRUFLATION_CPI) is gauged; CHALLENGER_JOB_CUTS was
+the other noticed one and is live again since 2026-09-16.**
 Measured 2026-08-19 across the D-18 owned set
 (`SentinelCollector/AGENT_README.md` D-18) — last publish, pattern status:
-- `CHALLENGER_JOB_CUTS` **2026-04-23 05:01:12** — 3 live patterns (`challenger-layoff-surge`,
-  `challenger-vs-payroll`, `sentinel-challenger-divergence`) — dead, visible. **THE THIRD CAUSE, measured
+- `CHALLENGER_JOB_CUTS` **2026-04-23 05:01:12** at measurement; **2026-08-31 (published 2026-09-16 18:05:55Z)** since D-32 — 3 live
+  patterns (`challenger-layoff-surge`, `challenger-vs-payroll`, `sentinel-challenger-divergence`) — was dead, visible; now live. **THE THIRD CAUSE, measured
   2026-09-16:** the August report, ingested THREE times on `challenger-rss` (raw_content 162281 on 2026-09-03, 165045 on
   09-07, 170999 on 09-14), extracted its headline correctly (52,881) each time and attached nothing, by two mechanisms — on 170999
   `cod_json_v1.txt` told the model the publisher is never the owner, so the row was labelled "U.S.-based employers"
@@ -2415,14 +2417,21 @@ Measured 2026-08-19 across the D-18 owned set
   the feed re-serves the PREVIOUS month's report in the same batch (162282 July with 162281 August; 165046 with
   165045), so the last writer, not the latest month, would reach ThresholdEngine's `GetLatest`. 11 challenger-rss documents in 30 days, 0 on the owned
   key. Fixed by D-32 (provenance keys the series; prompt addendum; Rule 0; ambiguity-denies; plausibility bound;
-  same-day detector). CONFIRMATION is still owed: reprocess 170999 ONLY after deploy (its rows are all Pending and `/admin/reprocess`
-  deletes Pending non-quarantined rows; 162281 and 165045 carry AutoClosed 52,881 rows that survive a reprocess and
-  would be duplicated by one). The reprocess deletes the 14 wrong-ticker rows but NOT the one point already
-  published downstream (row 886616, value 41 on BA, published 2026-09-14): that data point stays in
-  ThresholdEngine's cache until its own retention. Then read a `sentinel.events` row on `CHALLENGER_JOB_CUTS`
-  carrying 52881 whose `payload->'seriesCollected'->'dataPoints'->0->>'date'` is `2026-08-31T00:00:00Z`, plus
-  `owned_key_attached` on `sentinel_known_source_report_total` — until then treat the feed as unconfirmed exactly
-  as before.
+  same-day detector). CONFIRMED 2026-09-16 (#1044 deployed 17:15Z, #1045 18:04Z), by three reprocesses of 170999: runs 1 and 2 (17:17Z, 17:19Z, two
+  addendum wordings) attached NOTHING -- all 60 numbers reached Rule 0 as "Challenger job cuts", the plausibility bound cleared 30
+  and ambiguity denied 30, and `sentinel_known_source_report_total{outcome="no_owned_key"}` counted both within a minute (the
+  same-day detector working as designed). The cause was not the prompt: `DslToMergedExtractionAdapter` gives a slot-less number the
+  document's lede ENT as its subject, and the addendum makes the owner surface that lede ENT (D-15 requires it in entities[]). #1045
+  feeds Rule 0 the row's own slot on a registered source. Run 3 (18:05Z): exactly one row `source_keyed` on CHALLENGER_JOB_CUTS,
+  52,881, `period_end` 2026-08-31, published 18:05:55Z; the other 59 `source_no_owner`; `sentinel.events` 160933 dated
+  `2026-08-31T00:00:00Z` value 52881; the counter reads `owned_key_attached` 1; `challenger-layoff-surge` evaluates Signal -0.7627
+  = -(52881-30000)/30000 on data 16 days old, ending the 2026-04-23 freeze. The reprocess deleted the 14 wrong-ticker rows but
+  NOT the point one of them had already published (row 886616 went with the reprocess; `sentinel.events` 152022, `SENTINEL:NUM:BA`,
+  41, dated 2026-09-14T12:12Z, stays in ThresholdEngine's cache until its own retention). Do NOT reprocess 170999 again: row 912393
+  is review-Pending with published_at set and would go the way of 886616. `SentinelKnownSourceReportUnattached` will show the two
+  failed runs for their 24h window and then clear. Confirmed on a reprocess; the first ORGANIC arrival, and the first two-document
+  batch (the prior month re-served beside the current one), is the early-October report. STILL OPEN: the other five owned series
+  (three dead; four of the five ungauged) are untouched by D-32, which covers only a series with a dedicated feed.
 - `TRUFLATION_CPI` **2026-04-23 04:43:57** — 1 live pattern (`truflation-vs-cpi`) — dead, visible.
 - `INDEED_POSTINGS` **2026-04-16 13:35:19** and `REDBOOK_SALES` **2026-04-23 08:26:30** — no pattern — dead, invisible.
 - `ADP_EMPLOYMENT` **2026-07-10 12:24:50** — no pattern — **NOT dead**: 11 rows published after 2026-05-01, 40 days
