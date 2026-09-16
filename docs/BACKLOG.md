@@ -1426,72 +1426,28 @@ candidate, two increments, ratio pinned at exactly 0.5. Only the pre-discovery s
 Fix the double-count, not the threshold; an alert tuned around a miscount hides the miscount.
 Metric gotcha: OTEL appends `_total`, so alert on `secmaster_fred_search_skipped_total`, not the bare name.
 
-**`SentinelLowResolutionRate` spends its life oscillating pending -> inactive, and fixing only the window would
-make it scream instead.** Measured 2026-08-14 over 6h at 5m steps: 9 of 18 samples are NaN
-(`sum(rate(...[5m]))` denominator empty during the idle gaps between bursts) and the other 9 are exactly `0` — so
-it rarely holds the `for: 15m` dwell. 24 pending cycles and 0 fires in 24h, straight through a real resolution
-rate of ~3%.
-THAT ZERO-FIRE COUNT IS TRUE FOR ITS WINDOW AND ONLY FOR ITS WINDOW — re-confirmed 2026-08-20,
-`count_over_time(ALERTS{alertname="SentinelLowResolutionRate",alertstate="firing"}[2d])` at 2026-08-15T00:00:00Z
-is empty, so nothing fired on 08-13 or 08-14. RUN THE CONTROL ALONGSIDE IT — empty is ambiguous on its face
-between "did not fire" and "the series was never recorded". Re-run the identical query at `alertstate="pending"`:
-it returned **1,423** at that same instant, which proves the series WAS being recorded and is what makes the
-emptiness mean something. The rule is NOT structurally unable to fire: the entry below
-measures five firing episodes in the 7 days to 2026-08-20. Do NOT widen the window to make it fire — it already
-does, on burst shape rather than on resolution health.
-THREE defects, and the window is only the first. (2) The denominator includes the sector-grounding statuses
-`no_subject_match` (4,263/24h) and `matched_no_sector` (1,622/24h), emitted by `DeterministicResolver.LiftSector`
-with `resolution_state="no_sector"` — those can never carry `status="resolved"`, so they structurally depress the
-ratio. (3) The numerator misses the successes: `ResolutionWorker` resolves with method `async_finnhub` and
-increments `SecMasterResolutionCounter` only on its REJECTION paths, so `sentinel_secmaster_resolution_total` is a
-failure-biased counter — `status="resolved"` totalled 2 in 24h while the DB recorded ~180 real resolutions/day.
-THE MECHANISM IN (3) IS RIGHT BUT THE RESOLVER NAMED IS NOT: the entry below measures `async_finnhub` at **0** rows
-over 7 days and identifies `DeterministicResolver` as the live leg, with the shortfall an order larger.
-Fix needs a per-observation outcome counter at the persist boundary, landed WITH the rule; a window-only fix swaps
-a near-silent alert for a permanently-firing one on a ratio that does not mean what it says.
-Both DB figures above (~3% real rate, ~180 real resolutions/day) are POST-erasure `instrument_id` readings and are
-therefore FLOORS — see the `ReExtractBackgroundService` entry below. The three alert defects are unaffected; the
-magnitudes understate by an unknown margin.
-
-**`SentinelLowResolutionRate` does not measure a resolution rate: 49 of 16,030 real resolutions — 0.31% — ever
-touch the counter it divides.** The rule is Prometheus-native — loaded by the `rule_files` glob at
-`deployment/artifacts/monitoring/prometheus.yml:12`, not Grafana unified alerting.
-`deployment/artifacts/monitoring/alerts/sentinel.yml:277-288`:
-`sum(rate(sentinel_secmaster_resolution_total{status="resolved"}[5m]))` divided by
-`sum(rate(sentinel_secmaster_resolution_total[5m]))`, `< 0.5`, `for: 15m`. The other 99.7% of real resolutions are
-invisible to BOTH numerator and denominator, so the ratio is not a degraded measurement of resolution — it measures
-something else.
-CORRECTS THE ENTRY ABOVE, which named the wrong resolver and understated the magnitude by an order.
-`ResolutionWorker`'s `async_finnhub` is not the active leg: **0** rows in 7 days, in `resolution_method` AND in
-`"OriginalResolutionMethod"`. That entry's three MECHANISMS all stand — the 5m rate genuinely does go NaN and
-break the dwell — and its 2026-08-14 zero-fire count is correct for the window it measured. What does NOT stand is
-the generalisation drawn from it: "cannot fire" / "never holds the dwell" is falsified by the five firing episodes
-below. The numerator's cause and size change as well.
-- The live leg is `DeterministicResolver`, called at `SentinelCollector/src/Services/V2ExtractionPipeline.cs:78`.
-  Its only consumer is `BuildObservationFromV2Result` (`SentinelCollector/src/Services/V2ExtractionPipeline.cs:173-242`),
-  an `internal static` PURE BUILDER — it does NOT touch the database. It sets `instrument_id` and
-  `resolution_state` on an in-memory `ExtractedObservation` (`UpdateResolution` / `SetResolutionState`), returns it
-  into `observations` at `SentinelCollector/src/Services/V2ExtractionPipeline.cs:98`, and the row reaches
-  `ExtractionProcessor` on `V2PipelineResult` to be persisted downstream. It calls
-  `SentinelMeter.SecMasterResolutionCounter.Add` for **no** outcome — neither success nor failure; the whole file
-  has **zero** call sites (`grep -c SecMasterResolutionCounter` = 0). That is the whole defect: the resolution
-  OUTCOME is decided here and metered nowhere, so nothing between the decision and the persist is counted.
-- Inside `DeterministicResolver` the counter has FIVE emission sites and exactly one carries `status="resolved"`:
-  `SentinelCollector/src/Services/DeterministicResolver.cs:496` (`TryExactCandidateMatchAsync` success,
-  `llm_candidate_exact`). The other four are refusals or non-resolutions — `:253` (`LiftSector`; ONE site whose
-  status is a ternary over `no_subject_match` / `matched_no_sector`, always `resolution_state="no_sector"`), `:437`
-  (`TryExactCandidateMatchAsync` co-mention rejection, `exact_rejected_name`), `:521` and `:538`
-  (`TryHybridResolveAsync` guard rejections).
-- `ExtractionProcessor.cs` never calls `DeterministicResolver` — **zero** grep hits — and its own two
-  `status="resolved"` emissions (`SentinelCollector/src/Workers/ExtractionProcessor.cs:1376` `ticker_in_quote`,
-  `:1419` `cove_*`) have not fired in prod for 30 days. Those two cite the `status` label line, one BELOW their
-  `.Add(`; the `DeterministicResolver` citations above cite the `.Add(1,` line itself. Both land inside the correct
-  emission block — do not "fix" either to match the other. A sixth site outside the resolver,
-  `SentinelCollector/src/Workers/ReExtractResolutionAdapter.cs:195`, emits only `comention_rejected`.
-- Over 30 days the metric carries EIGHT `(method, status)` pairs in total, and `llm_candidate_exact`/`resolved` is
-  the only resolved one; `ticker_in_quote` appears solely as `comention_rejected`. Re-check:
-  `count by (method, status) (increase(sentinel_secmaster_resolution_total[30d]))`.
-
+**Sentinel has NO resolution-rate alert: `SentinelLowResolutionRate` was RETIRED 2026-09-16 because it measured
+nothing, and the replacement it needs is still unbuilt.** The rule divided
+`sum(rate(sentinel_secmaster_resolution_total{status="resolved"}[5m]))` by the same counter unfiltered, `< 0.5`,
+`for: 15m`. That counter is failure-biased: `DeterministicResolver` (the live leg, called at
+`SentinelCollector/src/Services/V2ExtractionPipeline.cs:78`) meters NO success outcome, so only
+`llm_candidate_exact` ever carried `status="resolved"` — 14 of 10,040 increments in the 24h to 2026-09-16, 49 of
+39,523 over the 7 days to 2026-08-20 — while 70-78% of the denominator is `sector_grounding`, which by
+construction can never resolve. The ratio therefore read 0 or NaN (5m windows with no events, most of them, since
+extraction runs in bursts), and `for: 15m` completed only when a burst happened to span 15 uninterrupted minutes:
+in the 7 days to 2026-09-16 the rule spent 12,976 scrape samples pending against 1,526 firing across ~65 episodes
+of 1-10 minutes each, every one a firing+resolved ntfy pair on the warning route (repeat 2h), and none of them a
+resolution event. Its text named two suspects (symbol mapping, SecMaster availability) that were in neither side
+of the expression. Removing it demotes no signal because it carried none; the `sentinel_secmaster_resolution_total`
+counter itself stays, as do its dashboard panels.
+STILL OWED, unchanged since 2026-08-20: a per-observation OUTCOME counter at the persist boundary (one increment
+per row, `resolved|unresolved` x method x source feed), landed WITH a rule over it that carries a minimum-volume
+guard on the denominator (no NaN flapping on idle windows) and a per-feed label so a dead source is nameable. The
+notification must then carry the discriminators an operator needs — current rate, `gemini_resolver_cap_refused_total`
+increase, SecMaster `up` — because the two failure modes measured 2026-09-16 (the Gemini cap reached at 06:03Z;
+a host reboot at 11:00Z) were invisible to the retired rule and would be to any ratio without them. Re-check that
+nothing fills the gap yet: `grep -rn resolution_rate deployment/artifacts/monitoring/alerts/` returns 0. The
+ground truth the replacement must agree with is below.
 METRIC VS GROUND TRUTH, 7 days to 2026-08-20T17:27Z. The expression evaluates to NaN, exactly 0, or small
 positives; `max_over_time(<expr>[7d:5m])` = **0.111**. `sum(increase(...{status="resolved"}[7d]))` = **50.0**
 (raw cumulative counter **49**, all `llm_candidate_exact`) against `sum(increase(...[7d]))` = **39,523** — a
@@ -1529,14 +1485,6 @@ over eight methods, and is the ONLY place `cove_VectorSearch` (544), `ticker_in_
 appear — those are what the re-extract adapter wrote, not what resolved the row. **Never mix the two columns in one
 total**: a breakdown taken from the naive column under the corrected headline is short by 2,665 and still reads as a
 plausible list. `async_finnhub` is **0** in both.
-
-WHY IT FIRED ON 2026-08-20. Pending 16:32:30 to 16:47:30 — **900s, exactly the `for: 15m`** — bridged by a rare
-uninterrupted extraction burst; firing 16:47:30 to ~16:49:00, then inactive the moment the burst ended and
-`rate[5m]` went NaN. Two notifications, one fire: the 16:52:55 notification is Alertmanager's group re-flush at
-`group_interval` 5m while `resolve_timeout` 5m still held it active. Across the 7 days the rule spent **7,935**
-scrape samples pending (~33h) against **118** firing (~30 min) over **five** separate episodes — so it is not that
-the dwell timer never completes, it is that completion is decided by burst shape rather than by resolution health.
-Re-check: `count_over_time(ALERTS{alertname="SentinelLowResolutionRate",alertstate="firing"}[7d])`.
 
 CONSEQUENCE, and this is the point. The exact row shape PR #980 documented — a single publisher-organisation
 candidate, no resolution — is wired to NEITHER side of the ratio, so **a source dying 100% does not move this metric
@@ -1713,29 +1661,39 @@ Re-check, run 2026-09-05 from `SentinelCollector/tests/SentinelCollector.UnitTes
   # A THIRD name appearing is a new class that skipped the collection — that is the regression to catch,
   # and it is invisible to a suite run, which goes green ~half the time either way.
 
-**`ReExtractBackgroundService`'s overwrite is still destructive — the age floor bounds WHO it reaches, not WHAT it
-does.** The live-traffic half is CLOSED (D-21: `MinRowAgeDays` default 7 on the cohort predicate, plus the
-`instrument_lost` outcome the enum previously could not express). What is NOT closed: `ApplyReExtraction` still
-assigns `ResolutionMethod`/`InstrumentId` unconditionally from its own one-shot resolve — NULL on a miss, overwriting
-a good value rather than declining to write. `ReExtractResolutionAdapter.ResolveOnlyAsync` is a STRICTLY NARROWER
-cascade than the live one (ticker-in-quote plus `ResolveLocalFromQuoteAsync` with `enableRag=false`, and none of the
-`DeterministicResolver` legs), so it structurally cannot reproduce what those legs ground. Measured 2026-08-15 over
-all 671,571 rows: of the 84,531 claimed more than 7d after their `extracted_at` — i.e. genuinely aged rows, the
-population the floor still admits — **49,616 lost an instrument against 213 that gained one**. So a row resolved by
-`llm_candidate_pick` is still stripped, just 7 days later. The fix is to make the overwrite conditional on the new
-resolve being BETTER (never null out a held instrument on a miss); it is a separate decision from the floor and was
-deliberately not bundled with it. Re-check with the `instrument_lost` outcome now that it exists —
-`sum(rate(sentinel_reextract_rows_processed_total{outcome="instrument_lost"}[1h]))` — rather than by diffing
-`OriginalInstrumentId` against `instrument_id`, which is how this had to be found the first time.
-Two traps that survive the fix. (1) Do not re-check the ratio against `outcome="recovered"`: `ClassifyOutcome` emits
-`Recovered` only when the SYMBOL CHANGES, so a row that gains an instrument under an unchanged symbol is classed
-`Unchanged` — the counter undercounts recoveries by construction, and a cumulative read is worthless for hours after
-any container restart. (2) `NoResolutionSweepWorker` is EXONERATED and should not be re-suspected: it only calls
-`SetReviewStatus`.
-Historical note for the POST-erasure caveats referenced above: the erasure already happened, so `instrument_id`
-readings taken before 2026-08-15 understate the real resolution rate by an unknown margin. At the time of the fix the
-historical backfill was DRAINED (0 of 671,571 rows had a null watermark) and every row claimed in the preceding 7 days
-was extracted the same day — 100% of the worker's throughput was live traffic, which is what the floor stopped.
+**`ReExtractBackgroundService`'s three watermark-only legs can lift a quarantine without a re-resolve.** The null-`RawContent`,
+zero-extractions and empty-`Description` legs (`SentinelCollector/src/Workers/ReExtractBackgroundService.cs:384`, `:456`,
+`:601`) pass the row's OWN `InstrumentId`/`Symbol` back into `ApplyReExtraction` as a watermark-only stamp. On a QUARANTINED
+row that still holds both, that input is `grounded`, so the `recovered` branch fires: `QuarantinedAt` is cleared and a
+`[re-extract] recovered` note appended by a leg that did no resolution work, while the metric records `error`. Identical
+on main (the predicate was logically the same before D-31, which changed only the retain side); found by the round-4
+reviewer of PR 1042 (2026-09-16) and left unfixed there because the population is empty: 45,386 quarantined rows,
+**0** holding an instrument. It sits against D-31's framing that clearing needs a positive signal. Re-check before
+relying on it: `SELECT count(*) FROM sentinel.extracted_observations WHERE quarantined_at IS NOT NULL AND instrument_id
+IS NOT NULL AND re_extracted_at IS NULL;` -- non-zero means the `:601` leg (documented as the path for legacy
+quarantines with cleared text) can now reach it. Fix shape: the watermark-only legs should stamp the watermark
+without evaluating recovery, i.e. `recovered` must require a re-resolve to have happened, not merely a grounded input.
+
+**`ReExtractBackgroundService` POST-erasure caveat for the `instrument_id` readings cited above.** The sweep wrote a
+miss back as NULL over held instruments until D-31 (SentinelCollector/AGENT_README.md) made a miss retain, so
+`instrument_id` readings taken before that understate the real resolution rate by an unknown margin (measured
+2026-08-15: 49,616 of 84,531 genuinely-aged rows had lost one against 213 gained; 2026-09-16: 3,829 lost vs 80 labelled
+`recovered` in 24h, most of which were replacements).
+The rows already erased stay erased — nothing here backfills them. Two traps for anyone re-measuring the sweep.
+(1) Do not read the ratio against `outcome="recovered"`: `ClassifyOutcome` emits `Recovered` only when the SYMBOL
+CHANGES, so a row that gains an instrument under an unchanged symbol is classed `Unchanged` — the counter undercounts
+recoveries by construction, and a cumulative read is worthless for hours after any container restart. The miss rate
+on held rows is now `outcome="retained"`; a quarantined row's intended clear is `outcome="quarantine_cleared"`; a held
+attachment swapped by a grounded re-resolve is `outcome="replaced"` (the D-28 hazard's own counter, formerly 48% of
+`recovered` on the instrument axis; a same-symbol swap still reads `unchanged`); and `instrument_lost` should read 0 and is the tripwire that the guard was bypassed. A SecMaster outage
+now reads as retained+still_null with nothing grounded — alerted by SentinelReExtractGroundingNothing. (2) `NoResolutionSweepWorker` is
+EXONERATED and should not be re-suspected: it only calls `SetReviewStatus`. (3) `"OriginalInstrumentId" IS NOT NULL`
+does NOT mean "held an instrument at extraction": `ApplyReExtraction` writes the `Original*` columns only when all
+three are still null (earliest re-extract wins), but `Quarantine()` and `QuarantineInPlace()` assign them
+UNCONDITIONALLY, so the column reports the state at the LATEST quarantine, or at the first re-extract if the row
+was never quarantined after it.
+At the time of the D-21 floor the historical backfill was DRAINED (0 of 671,571 rows had a null watermark) and every
+row claimed in the preceding 7 days was extracted the same day — 100% of the worker's throughput was live traffic.
 
 **The candidate surface filter gates 4.3% of the rows that attach instruments; 95.7% resolve without ever meeting
 it.** The guard is not broken and does not need fixing — `EntityResolutionPrepass.ApplySurfaceFilter` is
@@ -1746,7 +1704,7 @@ gpe_country 167). It is POSITIONED wrong. `Classify` has three production call s
 mirror (`GeminiSymbolFallbackService.cs:85`, D-12) — while the LLM-extracted `SubjectEntity` reaches
 `DeterministicResolver` through Rule 1 (`:60`) and Rule 2 (`:124`, raw `SubjectEntity` straight to hybrid resolve),
 neither of which consults it. Measured over `extracted_at` [2026-07-15, 2026-08-15) reading
-`OriginalInstrumentId`/`OriginalResolutionMethod` — **never the live columns; ReExtract erases those, see the two
+`OriginalInstrumentId`/`OriginalResolutionMethod` — **never the live columns; ReExtract erased those until D-31, see the two
 entries above** — **45,831 of 47,891 instrument-attaching rows (95.7%) take an unfiltered leg** (llm_candidate_pick
 30,575 + hybrid_subject 14,675 + llm_candidate_exact 581; only gemini_fallback's 2,060 passed the filter), and
 **7,957 (16.6%) carry a subject the filter already has a verdict on** (gpe_country 7,184 over 38 distinct surfaces,
@@ -2060,10 +2018,10 @@ filtered in prod)" — landed 2026-07-05 in #852 (`d91f1a50`). An earlier revisi
 banner is LogInformation" and "prod has no record any worker started"; both were false, and the second would have
 sent the next reader looking for a precedent that was two files away. Corrected 2026-08-15.
 The 10 still at `LogInformation` (measured over the 16 classes deriving from `BackgroundService`/`IHostedService`):
-`ReExtractBackgroundService.cs:119-122`, `ExtractionProcessor.cs:74`, `MirrorSearchWorker.cs:79`,
+`ReExtractBackgroundService.cs:120-123`, `ExtractionProcessor.cs:74`, `MirrorSearchWorker.cs:79`,
 `ResolutionWorker.cs:51`, `StaleContentPrunerService.cs:85`, `RssFeedCollectorWorker.cs:31`, `EdgeSyncWorker.cs:27`,
 `SearxngCollectionScheduler.cs:60`, `ValidationEventConsumerWorker.cs:35`, `ValidationQueryExecutorWorker.cs:27`
-— plus ReExtract's disabled-by-flag banner (`:93-95`) and its stop banner (`:183`). The remaining 4 emit no startup
+— plus ReExtract's disabled-by-flag banner (`:94-96`) and its stop banner (`:184`). The remaining 4 emit no startup
 banner at all, which is the same blind spot wearing a different shape and should get one.
 ReExtract is the one that prompted this: it logs Mode, Cohort, **MinRowAgeDays**, RowsPerMinute, BatchSize and
 BackpressureThreshold at Information, so prod cannot confirm the worker started or which `MinRowAgeDays` it read —
@@ -2443,23 +2401,24 @@ FROM sentinel.extracted_observations WHERE coalesce("Symbol","OriginalSymbol") I
 'CHALLENGER_JOB_CUTS','INDEED_POSTINGS','REDBOOK_SALES','TRUFLATION_CPI') GROUP BY 1;`
 
 **READ BEFORE SELECTING ANY POPULATION: a NULL `instrument_id` today does NOT mean resolution failed at extraction
-time.** `ApplyReExtraction` (`SentinelCollector/src/Entities/ExtractedObservation.cs:316`) snapshots the prior
-resolution into the `Original*` columns **only when all three are still null** (`:260-268`, preserving the EARLIEST
+time.** `ApplyReExtraction` (`SentinelCollector/src/Entities/ExtractedObservation.cs:342`) snapshots the prior
+resolution into the `Original*` columns **only when all three are still null** (`:384-391`, preserving the EARLIEST
 snapshot across repeat runs — guarded by
-`SentinelCollector.UnitTests/Workers/ReExtractBackgroundServiceTests.cs:585`
-`should_preserve_earliest_audit_snapshot_on_second_re_extract`), then overwrites `InstrumentId`/`Symbol` with the
-new result **including NULL**. `Quarantine()` (`:220`) and `QuarantineInPlace()` (`:331`) write the same three
+`SentinelCollector.UnitTests/Workers/ReExtractBackgroundServiceTests.cs:670`
+`should_preserve_earliest_audit_snapshot_on_second_re_extract`), then — until D-31 — overwrote `InstrumentId`/`Symbol`
+with the new result **including NULL** (since D-31 a non-grounded re-resolve RETAINS an unquarantined held instrument; only a
+grounded one, instrument AND symbol, replaces). `Quarantine()` (`:303`) and `QuarantineInPlace()` (`:468`) write the same three
 columns, so a quarantine can be the snapshot event a later re-extract then declines to overwrite.
-Only two of the five call sites can null a resolved row:
-`SentinelCollector/src/Workers/ReExtractBackgroundService.cs:496` (full re-extract) and `:663` (resolve-only, **the
-leg prod runs**) pass the shim's result through, and that result may be null. The other three — `:369` (null
-`RawContent`), `:438` (zero extractions), `:573` (empty `Description`) — pass `observation.InstrumentId`/
+Only two of the five call sites could null a resolved row:
+`SentinelCollector/src/Workers/ReExtractBackgroundService.cs:512` (full re-extract) and `:698` (resolve-only, **the
+leg prod runs**) pass the shim's result through, and that result may be null. The other three — `:384` (null
+`RawContent`), `:456` (zero extractions), `:601` (empty `Description`) — pass `observation.InstrumentId`/
 `observation.Symbol` straight back in: watermark-only stamps that cannot change a row's instrument or symbol — they
 still run the full `ApplyReExtraction` body, which recomputes `ResolutionState` from the passed-back instrument
-(`SentinelCollector/src/Entities/ExtractedObservation.cs:380`, flipping a Resolved-with-null-instrument row to
-`NoResolution`) and can clear `QuarantinedAt` (`:304`). So a sweep turns resolved rows into `instrument_id IS NULL,
+(`SentinelCollector/src/Entities/ExtractedObservation.cs:424`, flipping a Resolved-with-null-instrument row to
+`NoResolution`) and can clear `QuarantinedAt` (`:440`). So a sweep turned resolved rows into `instrument_id IS NULL,
 resolution_state='NoResolution'` while `published_at` still stands, but
-only via `:487`/`:663`. Measured 2026-08-19: **329 of 329** Challenger rows carry `re_extracted_at` and only
+only via `:512`/`:698`, and only before D-31. Measured 2026-08-19: **329 of 329** Challenger rows carry `re_extracted_at` and only
 **4** still hold an instrument — and those same 4 now carry a DIFFERENT `Symbol` than the key they were filed under
 (ids **10714**, **10716**, **17490** = `UNRATE`, id **12528** = `BLK`; OPEN LEAD, unexplained), which is also why
 `WHERE "OriginalSymbol"='CHALLENGER_JOB_CUTS'` returns **329** rows while the `coalesce("Symbol","OriginalSymbol")`
@@ -2472,9 +2431,10 @@ only the remaining **11** were first snapshotted at the sweep itself). ADP rows 
 **Any population keyed on current `instrument_id` mixes "never resolved" with "resolved, then re-extracted to null";
 no conclusion drawn that way is safe.** Separate them: `SELECT re_extracted_at IS NOT NULL, "OriginalInstrumentId"
 IS NOT NULL, count(*) FROM sentinel.extracted_observations WHERE instrument_id IS NULL AND extracted_at >= '<from>'
-GROUP BY 1,2;` Read the second axis precisely: because the snapshot is first-writer-wins across `Quarantine()`,
-`QuarantineInPlace()` and `ApplyReExtraction()`, `"OriginalInstrumentId" IS NOT NULL` means **"held an instrument at
-the EARLIEST snapshot event"** — NOT "at extraction", and NOT "immediately before the latest re-extract". On a row
+GROUP BY 1,2;` Read the second axis precisely: `ApplyReExtraction()` snapshots the `Original*` columns only when all
+three are still null, but `Quarantine()` and `QuarantineInPlace()` assign them UNCONDITIONALLY, so
+`"OriginalInstrumentId" IS NOT NULL` means **"held an instrument at the LATEST quarantine, or at the first re-extract
+if never quarantined after it"** — NOT "at extraction", and NOT "immediately before the latest re-extract". On a row
 quarantined first, the column reports the pre-quarantine state and says nothing about what the re-extract found.
 CONFOUND, not cause — **the April trigger remains unestablished.**
 
@@ -2607,8 +2567,8 @@ THREE THINGS ARE CALLED "Symbol": (1) the COLUMN `sentinel.extracted_observation
 the resolved catalog symbol, NULL until resolution succeeds; (2) the KEY `"Symbol"` INSIDE `candidate_symbols_json`
 — an LLM-minted slug of the proposed entity's name (`Challenger_Gray_Christmas`), not a catalog symbol and usually
 absent from SecMaster; (3) the AXIS — any query or index keyed on (1). `"OriginalSymbol"` is NOT a fallback identity
-for (1): it is written only by `Quarantine()` (`SentinelCollector/src/Entities/ExtractedObservation.cs:299`),
-`ApplyReExtraction()` (`:265`) and `QuarantineInPlace()` (`:331`), each as `OriginalSymbol = Symbol`, making it a
+for (1): it is written only by `Quarantine()` (`SentinelCollector/src/Entities/ExtractedObservation.cs:305`),
+`ApplyReExtraction()` (`:389`) and `QuarantineInPlace()` (`:473`), each as `OriginalSymbol = Symbol`, making it a
 PRE-REMEDIATION AUDIT SNAPSHOT — keying on it selects rows that were quarantined or re-extracted, NOT "the feed"
 (**620,174** rows are `NoResolution` and **358,398** of those carry a NON-NULL `"OriginalSymbol"`). Rows with neither
 column populated are invisible to every symbol-keyed query; reach them through the CANDIDATE or the description, and
@@ -4814,7 +4774,7 @@ should write the predictions where the tree can reach them BEFORE quoting the nu
 `ExtractedObservation.ApplyReExtraction`'s `newSecMasterMethod` became REQUIRED in #1030, so the next
 caller must CHOOSE a value. It cannot make them choose the right one. The three watermark-only skip
 legs -- null `RawContent`, zero extractions, empty `Description`, at
-`SentinelCollector/src/Workers/ReExtractBackgroundService.cs:369`, `:441` and `:583` -- pass
+`SentinelCollector/src/Workers/ReExtractBackgroundService.cs:384`, `:456` and `:601` -- pass
 `observation.SecMasterMethod` to re-assert the row's OWN tier, and that VALUE CHOICE is the thing
 standing between a no-op re-extract and silent erasure of the column. Measured 2026-09-06: zero
 assertions on `observation.SecMasterMethod` anywhere in `ReExtractBackgroundServiceTests.cs`, and no

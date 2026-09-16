@@ -283,8 +283,8 @@ places. `[M]` The fixtures assert the author's belief about the producer, never 
    real deserializer and real adapter — not a fabricated fixture. Symmetric halves on both sides of the
    language boundary, so either side moving alone goes red. → Step A1.
 2. A **funnel-ratio alert** on extracted → resolved → written. There is no alert anywhere on this funnel
-   today: `deployment/artifacts/monitoring/alerts/sentinel.yml` has 18 rules, and the closest,
-   `SentinelLowResolutionRate` (`:197-208`), covers SecMaster instrument resolution, not the substrate
+   today: `deployment/artifacts/monitoring/alerts/sentinel.yml` has 22 rules, and the closest,
+   `SentinelLowResolutionRate`, covered SecMaster instrument resolution (and was retired 2026-09-16 as measuring nothing — docs/BACKLOG.md), not the substrate
    leg. `grep -rln "sentinelcollector_macro_observations" deployment/` returns **nothing** — no rule, no
    panel. `[M]` → Step A2.
 
