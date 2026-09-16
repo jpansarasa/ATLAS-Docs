@@ -218,6 +218,10 @@ A SIGNAL CAN ALSO BE DEMOTED WITH NOBODY DECIDING TO: before removing or changin
 HEALTH IS TEMPO, NOT LOKI: prod log level defaults to Warning, so a HEALTHY container emits NOTHING — silence is the
   designed steady state, never a defect. Health = Tempo span status + Prometheus metrics; Loki carries the CONTENT
   once something is known wrong. MCP sidecars deliberately rely on parent-service telemetry.
+LOKI service_name HAS NO DERIVABLE PATTERN: values are MIXED (`SecMaster`, `sentinel-collector`, `finnhub-collector-service`,
+  `threshold-engine-service`, `reports-daily-host`), and a wrong label returns the SAME empty result as a healthy
+  Warning-level service. Enumerate `list_loki_label_values` for `service_name` first, never infer it from a container
+  or tag name # measured 2026-08-17 and 2026-09-07
 
 ## TOOL_UPKEEP [sharpen while you cut] [HARD_STOP]
 Tools are maintained DURING the work that uses them, never batched into a phase of their own # that is regrinding, after months of dull cuts
