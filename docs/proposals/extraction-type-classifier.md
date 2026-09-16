@@ -465,7 +465,7 @@ bag. There are exactly three:
 
 | consumer | what it does with a null-sector entity |
 |---|---|
-| `DeterministicResolver.LiftSector` (`DeterministicResolver.cs:261`) | `.Where(e => !string.IsNullOrWhiteSpace(e.AtlasSectorCode) && …)` — **excluded** |
+| `DeterministicResolver.LiftSector` (`DeterministicResolver.cs:306`) | `.Where(e => !string.IsNullOrWhiteSpace(e.AtlasSectorCode) && …)` — **excluded** |
 | `MacroObservationRouter.DeriveArticleSector` (`MacroObservationRouter.cs:246-249`) | `if (string.IsNullOrWhiteSpace(code)) continue;` — **excluded** |
 | `ResolvedEntitiesRenderer.Render` (`ResolvedEntitiesRenderer.cs:43`) | renders one markdown row with empty Ticker / AtlasSector / NAICS — **a prompt table row** |
 
@@ -768,7 +768,7 @@ alarming"). So fail-open is only acceptable with:
    `ALERTS` series, never `alert_rule_test` + `exp_alerts`.
 
 **Precedent that this is not paranoia — and the finding worth acting on independently of this
-spec:** `sentinel_candidate_surface_filtered_total` (`SentinelMeter.cs:1009-1010`, tags
+spec:** `sentinel_candidate_surface_filtered_total` (`SentinelMeter.cs:1029-1030`, tags
 `reason`+`mode`) is **metered but entirely unwatched**. Re-verified 2026-08-06: `grep -rn
 "candidate_surface_filtered" deployment/` returns **zero files**, across 13 alert files, 22
 dashboards, the provisioning/alerting tree **and** the live `/opt/ai-inference/monitoring/` mount
@@ -1033,7 +1033,7 @@ directions: it fires when the ratio collapses with volume present, and it does *
 volume itself goes to zero. A test for only the first direction would pass on a can't-fail alert.
 
 *Incidental defect found while specifying this:* the counter's own XML doc
-(`SentinelMeter.cs:1002-1006`) lists a **stale** reason set — it omits the four largest live
+(`SentinelMeter.cs:1022-1026`) lists a **stale** reason set — it omits the four largest live
 reasons (`market_jargon`, `truncated_span`, `multiline_fragment`, `bare_corporate_suffix`) and
 lists a `garbled_fragment` that never fires. Fix it in the same PR.
 

@@ -37,7 +37,7 @@ Extraction__UseV2Pipeline=true        # flipped 2026-05-16 (PR #340)
 81da1ed4 2026-05-16 ops(sentinel): ... broaden V2 sources to all (#341)
 ```
 
-- `CreateSectorEvent` has exactly ONE production call site: `ExtractionProcessor.cs:919`
+- `CreateSectorEvent` has exactly ONE production call site: `ExtractionProcessor.cs:941`
 - that site is inside `ProcessSingleArticleAsync`, AFTER the v2 early return at `:614`
 - `RunV2ProductionAsync` (`:1850`) never calls it
 - every August source with published rows is in `V2EnabledSources`:
@@ -67,7 +67,7 @@ adversarial claim-check; both errors below were the supervisor's):
 
 - `AtlasSectorCode` **is** a persisted column, added by migration
   `20260509234900_AddAtlasSectorCodeToObservation` on 2026-05-09 and populated even on the
-  v2 path (`V2ExtractionPipeline.cs:216`). The original claim came from a column enumeration
+  v2 path (`V2ExtractionPipeline.cs:274`). The original claim came from a column enumeration
   piped through `head -40` against a 47-column table -- a truncated probe read as complete.
   **Consequence: the loss is directly recoverable.** 4,324 rows since the 81da1ed4 cutover
   satisfy the sector gate as the code writes it. That is the backlog of lost sector events and
@@ -325,7 +325,7 @@ theory that today's matrix numbers are wrong because of it.
   (`GUARD SentinelSeriesKey.ForNumeric applied @ src/Publishers/EventPublisher.cs:112`).
   D-18 opens, verbatim: *"D-18 sentinel-series-key-ownership: INTENT a series key belongs to
   whoever MEASURED the number, and Sentinel is on BOTH sides of that line."* The full entry is
-  ~2,000 words at `SentinelCollector/AGENT_README.md:103` -- **read it in full before designing**;
+  ~2,000 words at `SentinelCollector/AGENT_README.md:114` -- **read it in full before designing**;
   it is heavily guard-tested and it shipped 2026-08-13 on measured production breakage.
   Per CLAUDE.md INTENT_FIDELITY: a brief that contradicts a D-entry without a NAMED supersession
   is a **STOP-and-escalate**, not an agent decision -- never route around it, never obey a stale

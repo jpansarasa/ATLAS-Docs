@@ -16,6 +16,20 @@ Routing for everything else: `CLAUDE.md` §WHERE_WORK_LANDS.
 
 ## KNOWN DEFECTS
 
+**The SecMaster catalog the resolver searches is three-quarters dead weight, and every fuzzy attachment pays for it.**
+Measured 2026-09-16 on `atlas_secmaster.instruments`: **28,698** instruments, **21,418** with no `source_mappings` row
+(nothing collects them), **1,308** carrying "(DISCONTINUED)" in the name, **28,607** flagged `is_active`. Sentinel has
+ever attached to **4,381** distinct instruments. So a vector query competes against ~21,000 series nobody reads, which
+is why a search for the publisher name "Challenger, Gray & Christmas" returns "Spliced Business Formations for Georgia
+(DISCONTINUED)" at 69% as its top hit, and why sector nouns from the August 2026 Challenger report landed on FISI, TDS,
+KNX, XLP, WMT, NA and BA. D-32 (SentinelCollector card) removes inference for the ONE feed that has a dedicated source;
+it does not touch this. GIGO, source side: the fix is catalog SCOPE for resolution (an index predicate or `is_active`
+over instruments something collects or a pattern reads, with discontinued series excluded), which is a SecMaster data
+decision, not a Sentinel rule, and the measure of success is the share of attached rows on fuzzy legs (75.5% of the
+7 days to 2026-09-16 on `llm_candidate_hybrid` alone) falling because the neighbourhood stopped offering junk. Re-check:
+`SELECT count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM source_mappings sm WHERE sm.instrument_id = i.id)),
+count(*) FILTER (WHERE name ILIKE '%DISCONTINUED%'), count(*) FROM instruments i;` against `atlas_secmaster`.
+
 **FIXED 2026-09-13 by the PR that raised `JsonMaxCompletionTokens` 4,096 -> 8,192 (SentinelCollector D-30); CLOSES when the post-deploy rate confirms it:
 Gemma 4 truncated 2.3-3.2% of weekday articles at the 4,096-token CoD cap, 0.2-0.7% under Qwen, and
 salvage dropped the tail past ~80 objects as a partial "success"** [2026-09-13]
@@ -620,7 +634,7 @@ Settling THAT needs the model's `entities[].ent_type`, which no column persists;
 over these `raw_content_id`s.
 
 DOWNSTREAM. A country ENT is excluded from the Rule 1 shortlist by `NonInstrumentEntTypes`, so the row falls
-to Rule 2 (`DeterministicResolver.cs:154`), which hands the RAW `SubjectEntity` to hybrid resolve and consults
+to Rule 2 (`DeterministicResolver.cs:199`), which hands the RAW `SubjectEntity` to hybrid resolve and consults
 NO surface filter. That uncovered leg is already measured -- `SentinelCollector/AGENT_README.md` D-1 counts
 7,184 instrument-attaching rows carrying a `gpe_country` subject, 3,060 landing on `U` (Unity Software),
 **over ONE 31-day window, `extracted_at` [2026-07-15, 2026-08-15), and a FLOOR rather than a total** because
@@ -644,7 +658,7 @@ at a time:
 | budget deficit projection for France and Germany | 5.5 PCT | Germany | `hybrid_subject` | `EWG` |
 
 The `UNRATE` and `UKNGDP` rows arrived on Rule 2b (`hybrid_subject_description`,
-`DeterministicResolver.cs:172`) -- the leg added to RESCUE macro series, which off a country anchor reaches
+`DeterministicResolver.cs:217`) -- the leg added to RESCUE macro series, which off a country anchor reaches
 the wrong COUNTRY's series. Note also that the same France/Germany figure was emitted twice, once per country,
 and only the `Germany` copy attached.
 
@@ -661,7 +675,7 @@ OTHER path that reaches hybrid resolve with a country string still lands here.
 
 THE PAID GEMINI RUNG COSTS NOTHING HERE, BUT THE ROWS DO REACH IT -- an earlier revision of this entry said
 "not one country-anchored row reached it", which is false and was refuted by the counter that exists to say
-so. `Classify` runs INSIDE Rule 2.5 (`DeterministicResolver.cs:675`, D-6) and the rejection is metered at
+so. `Classify` runs INSIDE Rule 2.5 (`DeterministicResolver.cs:791`, D-6) and the rejection is metered at
 `:684`: `sentinel_gemini_resolver_calls_total{outcome="surface_filtered"}` reset at the restart and read
 **29** by 10:58Z, against `secmaster_match` 6 and `below_threshold_or_null` 2. So country rows DO enter the
 rung and are refused at its gate before any paid call -- the mechanism working as designed, and none of the 10
@@ -694,7 +708,7 @@ delivered 53" on `BA` is a Boeing operating metric, not a quantity of the BA sec
 call that right.
 
 CONTAINMENT, and it is partial. Every wrong row sits `review_status='Pending'` on a method NOT in
-`AutoApproveMethods` (`ExtractionOptions.cs:396` -- only `ticker_in_quote` and `llm_candidate_exact`), so it
+`AutoApproveMethods` (`ExtractionOptions.cs:396` -- only `ticker_in_quote`, `llm_candidate_exact` and, since D-32, `source_keyed`), so it
 is held. It is not held forever: `AutoApprovePolicy` default-accepts a held row after `ReviewGraceDays` = 3
 (`ExtractionOptions.cs:409`), metered as `GraceDefaultAccept`. The XML doc at `ExtractionOptions.cs:405-406`
 claims `extracted_observations` feed only the qualitative digest and NOT the WS3 matrix -- recorded here as
@@ -1532,9 +1546,9 @@ investigation into the extraction path instead of the writer. Read `OriginalReso
 `ticker_in_quote` 6,702, `cove_FuzzySql` 235) are readings of that same post-erasure column and carry the same caveat.
 A SECOND column carries the same circularity, and it is a distinct trap: the value Rule 1 gates on is never PERSISTED
 (`extracted_observations.resolution_confidence` holds the resolver OUTCOME's value —
-`DeterministicResolver.cs:371-375`), so that column cannot answer what Rule 1 received, and querying it is circular.
+`DeterministicResolver.cs:416-420`), so that column cannot answer what Rule 1 received, and querying it is circular.
 It is observable, just not in the DB: PR #963 added `sentinel_resolver_rule1_input_confidence` ("ResolutionConfidence
-as received by Rule 1", `SentinelMeter.cs:1625-1627`, recorded at `DeterministicResolver.cs:393`), which is the only
+as received by Rule 1", `SentinelMeter.cs:1738-1740`, recorded at `DeterministicResolver.cs:473`), which is the only
 thing that sees the input value — and is where the 0.850 reading below comes from.
 Not to be re-derived: the `ExtractionSchemaV2 required[]` hypothesis was DISPROVEN by probing vLLM with the shipped
 schema, which emitted `resolution_confidence` non-null 5/5.
@@ -1612,7 +1626,7 @@ windows: 136 in-window rows, of which `Dow Jones`|`Dow_Jones`|`DIA` **77** and `
 = **91 attaching**, plus 45 that attached nothing. The slug's endpoint response is indeed `RagSynthesis` with a null
 `instrumentId` — but the endpoint is not the outcome: it returns hypothesis `DIA`, and
 `TryHybridResolveAsync`'s materialisation branch looks that up (`GetInstrumentBySymbolAsync`,
-`DeterministicResolver.cs:552`) and attaches it. `DIA` is the catalog's quote stub, literally named "DIA (Quote)";
+`DeterministicResolver.cs:703`) and attaches it. `DIA` is the catalog's quote stub, literally named "DIA (Quote)";
 `DOW` is `DOW INC`, the chemicals company (`MATERIALS`, NAICS 325211), which is the RAG candidate list's top entry at
 0.730. So one slug produces three different outcomes — `DIA`, `DOW`, nothing — and the pair still IMPROVES, because
 the Name resolves deterministically to `DJIA` ("Dow Jones Industrial Average", `FuzzySql` 0.9), the index the surface
@@ -1623,7 +1637,7 @@ landed on `S` (SentinelOne) and 528 on `SP500` off the SAME slug, which is the n
 Follow-up, NOT decided here: an exact-symbol-first leg at Rule 1 would keep `INTC`, but nothing measures what it
 would cost — it is a new ungated exact path and would need D-8's subject-overlap companion, which is its own PR.
 NOT DONE and deliberately so: `SubjectNameNormalizer.SharedTokenCount` scores 0 for all four bad pairs above and is
-already invoked at `DeterministicResolver.cs:477` and `:509`. "Never on this branch" was the wrong compression and
+already invoked at `DeterministicResolver.cs:522` and `:554`. "Never on this branch" was the wrong compression and
 is corrected here to match D-22 in the card: `:430` is D-8's leg, which Rule 1 never reaches. `:509` IS reachable
 from Rule 1 — it sits on the RagSynthesis hypothesis-materialisation branch inside `TryHybridResolveAsync`, which
 the id-less Rule 1 leg calls — but a DTO already carrying an instrument id bypasses it, and the whole guard is
@@ -1632,12 +1646,12 @@ The 77 `DIA` rows above went straight through it: `SharedTokenCount("Dow Jones",
 flag on they would have been refused. Adding a THIRD call behind that same disabled flag would read as protection
 that does not exist. Deciding the flag's fate is the prerequisite, and it is its own entry's worth of work.
 TWO GAPS #969 LEFT OPEN, recorded rather than fixed because both need a decision this PR is not the place for.
-(a) The `!candidate.InstrumentId.HasValue &&` exemption on the blank-Name refusal (`DeterministicResolver.cs:408`)
+(a) The `!candidate.InstrumentId.HasValue &&` exemption on the blank-Name refusal (`DeterministicResolver.cs:453`)
 has NO test. It is dead code today — 0 non-null candidate ids across 503,446 rows carrying candidates — so nothing
 exercises it, and it activates the day SecMaster's search endpoint starts returning ids: a SERVER-SIDE change with
 no compile-time signal here, on a branch whose whole point is that the two producers disagree. Same blind spot as
 the id-carrying Rule 1 branch, which at least has a test.
-(b) The `ResolutionConfidence` contract for the new hybrid leg (`IDeterministicResolver.cs:63-79`) has no test
+(b) The `ResolutionConfidence` contract for the new hybrid leg (`IDeterministicResolver.cs:67-83`) has no test
 either. The FALSE half of that comment is fixed in #969 — it claimed res_conf is null on "the null-instrument
 hybrid/gemini fall-throughs", which is not true of the leg #969 created (it coalesces to
 `input.ResolutionConfidence`, so a null-instrument `llm_candidate_hybrid` row still carries the LLM's PICK
@@ -1700,7 +1714,7 @@ it.** The guard is not broken and does not need fixing — `EntityResolutionPrep
 unconditional (`const string mode = "enforce"`, `EntityResolutionPrepass.cs:396`, no flag) and live: 30d
 `sentinel_candidate_surface_filtered_total{mode="enforce"}` carries 12 reason series (institution 9,190,
 gpe_country 167). It is POSITIONED wrong. `Classify` has three production call sites — the NER-candidate prepass
-(`EntityResolutionPrepass.cs:404`), Rule 2.5's paid-Gemini leg (`DeterministicResolver.cs:651`, D-6) and its V1
+(`EntityResolutionPrepass.cs:404`), Rule 2.5's paid-Gemini leg (`DeterministicResolver.cs:767`, D-6) and its V1
 mirror (`GeminiSymbolFallbackService.cs:85`, D-12) — while the LLM-extracted `SubjectEntity` reaches
 `DeterministicResolver` through Rule 1 (`:60`) and Rule 2 (`:124`, raw `SubjectEntity` straight to hybrid resolve),
 neither of which consults it. Measured over `extracted_at` [2026-07-15, 2026-08-15) reading
@@ -1871,7 +1885,7 @@ Re-check (run 2026-09-05): `grep -rn '403' --include=*.cs SecMaster/src FinnhubC
 `accepted + rejected + below_floor`. One-line fix, and it must land before anyone builds that Grafana panel.
 
 **A third histogram still carries the SDK default buckets a [0,1] value cannot use.**
-`sentinel_chunk_extraction_dedup_ratio` (`SentinelCollector/src/Telemetry/SentinelMeter.cs:253`, unit `{ratio}`) has
+`sentinel_chunk_extraction_dedup_ratio` (`SentinelCollector/src/Telemetry/SentinelMeter.cs:273`, unit `{ratio}`) has
 no `AddView`, so it keeps the SDK boundaries `[0, 5, 10, 25, ...]` and every observation of a `1 - post/pre` fraction
 would land in `le=5.0` — the identical collapse #963 fixed on `sentinel_dsl_adapter_resolution_confidence` and
 `sentinel_resolver_rule1_input_confidence`. Nothing is misled TODAY: measured 2026-08-15 UTC, the metric has NO series
@@ -1926,7 +1940,7 @@ reload, and confirm `thresholdengine_pattern_severe_overdue_threshold_days` for 
 `max(3 * SecMaster-derived freq, 14)` — the authored number must not appear anywhere.
 
 **TRIPWIRE, green by design: a NEW `BrokenCircuitException` orphaning cohort.** The classification gap itself is
-closed (SentinelCollector D-27, `SentinelCollector/AGENT_README.md:118`) and both known cohorts are disposed of: 55
+closed (SentinelCollector D-27, `SentinelCollector/AGENT_README.md:151`) and both known cohorts are disposed of: 55
 rows orphaned 2026-07-19..07-24, left as won't-do on alpha decay; 223 rows orphaned 2026-09-04 while `vllm-server`
 was stopped for a vLLM 0.28.0 evaluation, recovered same-day by `POST /admin/reprocess`. The query is kept because
 it is the standing detector for a THIRD cohort, and because the predicate matches EVERY breaker-open event ever
@@ -1969,7 +1983,7 @@ expected steady state and NOT evidence the fix works — the fix is evidenced by
 `ExtractionProcessorCircuitOpenRequeueTests`, not by this query.
 
 **DEFECT, pre-existing and now the ONLY leg outside D-27's gate: the qualitative dispatch path still orphans on a
-dependency outage.** `TryDispatchQualitativeAsync`'s extract-stage catch (`SentinelCollector/src/Workers/ExtractionProcessor.cs:2753`)
+dependency outage.** `TryDispatchQualitativeAsync`'s extract-stage catch (`SentinelCollector/src/Workers/ExtractionProcessor.cs:2897`)
 calls `MarkRawContentProcessedAsync(..., ex.Message, ...)` for EVERY exception, so a `BrokenCircuitException` writes
 `processing_error` and the row leaves the queue with nothing re-driving it — the original D-27 failure mode, on this
 one leg. It is not reachable by the gate BY CONSTRUCTION: the gate lives in the article catch, and this catch runs
@@ -2018,7 +2032,7 @@ filtered in prod)" — landed 2026-07-05 in #852 (`d91f1a50`). An earlier revisi
 banner is LogInformation" and "prod has no record any worker started"; both were false, and the second would have
 sent the next reader looking for a precedent that was two files away. Corrected 2026-08-15.
 The 10 still at `LogInformation` (measured over the 16 classes deriving from `BackgroundService`/`IHostedService`):
-`ReExtractBackgroundService.cs:120-123`, `ExtractionProcessor.cs:74`, `MirrorSearchWorker.cs:79`,
+`ReExtractBackgroundService.cs:120-123`, `ExtractionProcessor.cs:96`, `MirrorSearchWorker.cs:79`,
 `ResolutionWorker.cs:51`, `StaleContentPrunerService.cs:85`, `RssFeedCollectorWorker.cs:31`, `EdgeSyncWorker.cs:27`,
 `SearxngCollectionScheduler.cs:60`, `ValidationEventConsumerWorker.cs:35`, `ValidationQueryExecutorWorker.cs:27`
 — plus ReExtract's disabled-by-flag banner (`:94-96`) and its stop banner (`:184`). The remaining 4 emit no startup
@@ -2389,7 +2403,26 @@ that way; the other two are not dead, and the two dead series that WERE noticed 
 Measured 2026-08-19 across the D-18 owned set
 (`SentinelCollector/AGENT_README.md` D-18) — last publish, pattern status:
 - `CHALLENGER_JOB_CUTS` **2026-04-23 05:01:12** — 3 live patterns (`challenger-layoff-surge`,
-  `challenger-vs-payroll`, `sentinel-challenger-divergence`) — dead, visible.
+  `challenger-vs-payroll`, `sentinel-challenger-divergence`) — dead, visible. **THE THIRD CAUSE, measured
+  2026-09-16:** the August report, ingested THREE times on `challenger-rss` (raw_content 162281 on 2026-09-03, 165045 on
+  09-07, 170999 on 09-14), extracted its headline correctly (52,881) each time and attached nothing, by two mechanisms — on 170999
+  `cod_json_v1.txt` told the model the publisher is never the owner, so the row was labelled "U.S.-based employers"
+  and Rule 1 fuzzy-missed on that; on 162281 (extracted 09-03, before #1017 shipped that rule) and 165045 (09-07, after it) the
+  model named the publisher ("Challenger, Gray & Christmas", rows 807762 / 827727, since AutoClosed) and Rule 1
+  fuzzy-missed on the publisher name. Either way it
+  returned WITHOUT reaching Rule 2b (#988), so #988 was never exercised on the path the article takes. A fourth
+  fault would have followed an attach: the JSON path carries no period, the point would publish ingest-dated, and
+  the feed re-serves the PREVIOUS month's report in the same batch (162282 July with 162281 August; 165046 with
+  165045), so the last writer, not the latest month, would reach ThresholdEngine's `GetLatest`. 11 challenger-rss documents in 30 days, 0 on the owned
+  key. Fixed by D-32 (provenance keys the series; prompt addendum; Rule 0; ambiguity-denies; plausibility bound;
+  same-day detector). CONFIRMATION is still owed: reprocess 170999 ONLY after deploy (its rows are all Pending and `/admin/reprocess`
+  deletes Pending non-quarantined rows; 162281 and 165045 carry AutoClosed 52,881 rows that survive a reprocess and
+  would be duplicated by one). The reprocess deletes the 14 wrong-ticker rows but NOT the one point already
+  published downstream (row 886616, value 41 on BA, published 2026-09-14): that data point stays in
+  ThresholdEngine's cache until its own retention. Then read a `sentinel.events` row on `CHALLENGER_JOB_CUTS`
+  carrying 52881 whose `payload->'seriesCollected'->'dataPoints'->0->>'date'` is `2026-08-31T00:00:00Z`, plus
+  `owned_key_attached` on `sentinel_known_source_report_total` — until then treat the feed as unconfirmed exactly
+  as before.
 - `TRUFLATION_CPI` **2026-04-23 04:43:57** — 1 live pattern (`truflation-vs-cpi`) — dead, visible.
 - `INDEED_POSTINGS` **2026-04-16 13:35:19** and `REDBOOK_SALES` **2026-04-23 08:26:30** — no pattern — dead, invisible.
 - `ADP_EMPLOYMENT` **2026-07-10 12:24:50** — no pattern — **NOT dead**: 11 rows published after 2026-05-01, 40 days
@@ -2401,7 +2434,7 @@ FROM sentinel.extracted_observations WHERE coalesce("Symbol","OriginalSymbol") I
 'CHALLENGER_JOB_CUTS','INDEED_POSTINGS','REDBOOK_SALES','TRUFLATION_CPI') GROUP BY 1;`
 
 **READ BEFORE SELECTING ANY POPULATION: a NULL `instrument_id` today does NOT mean resolution failed at extraction
-time.** `ApplyReExtraction` (`SentinelCollector/src/Entities/ExtractedObservation.cs:342`) snapshots the prior
+time.** `ApplyReExtraction` (`SentinelCollector/src/Entities/ExtractedObservation.cs:347`) snapshots the prior
 resolution into the `Original*` columns **only when all three are still null** (`:384-391`, preserving the EARLIEST
 snapshot across repeat runs — guarded by
 `SentinelCollector.UnitTests/Workers/ReExtractBackgroundServiceTests.cs:670`
@@ -2415,7 +2448,7 @@ leg prod runs**) pass the shim's result through, and that result may be null. Th
 `RawContent`), `:456` (zero extractions), `:601` (empty `Description`) — pass `observation.InstrumentId`/
 `observation.Symbol` straight back in: watermark-only stamps that cannot change a row's instrument or symbol — they
 still run the full `ApplyReExtraction` body, which recomputes `ResolutionState` from the passed-back instrument
-(`SentinelCollector/src/Entities/ExtractedObservation.cs:424`, flipping a Resolved-with-null-instrument row to
+(`SentinelCollector/src/Entities/ExtractedObservation.cs:429`, flipping a Resolved-with-null-instrument row to
 `NoResolution`) and can clear `QuarantinedAt` (`:440`). So a sweep turned resolved rows into `instrument_id IS NULL,
 resolution_state='NoResolution'` while `published_at` still stands, but
 only via `:512`/`:698`, and only before D-31. Measured 2026-08-19: **329 of 329** Challenger rows carry `re_extracted_at` and only
@@ -2456,7 +2489,7 @@ compares with a strict `>` (`deployment/artifacts/monitoring/alerts/thresholdeng
 
 **The publish gate, and why a plausible symbol does not survive it.** The gate is
 `o.InstrumentId.HasValue && o.ResolutionConfidence >= 0.8f && o.Certainty is Definite or Expected`
-(`SentinelCollector/src/Workers/ExtractionProcessor.cs:878` v1, `:2116` v2). **`Symbol` is not in the predicate**, so
+(`SentinelCollector/src/Workers/ExtractionProcessor.cs:900` v1, `:2255` v2). **`Symbol` is not in the predicate**, so
 a row carrying a plausible symbol and no instrument is dropped without a trace on the symbol axis. Nor is
 `"InstrumentId": null` inside `candidate_symbols_json` the defect: **0 of 3,650,818** candidates all-time carry a
 non-null value there, including every candidate on every row that published successfully. That field is the
@@ -2511,7 +2544,7 @@ are ids **11152**, **12344**, **12815** (`resolution_state='Resolved'`, `publish
 a forward block either. `SELECT "OriginalSymbol", count(*), count(published_at) FROM sentinel.extracted_observations
 WHERE "QuarantinedAt"='2026-04-24 00:18:52.867997+00' GROUP BY 1 ORDER BY 2 DESC;`
 Its origin is INFERRED — do not repeat this search expecting to close it. `ExtractedObservation.Quarantine()`
-(`SentinelCollector/src/Entities/ExtractedObservation.cs:218`) has never had a production call site in git history,
+(`SentinelCollector/src/Entities/ExtractedObservation.cs:223`) has never had a production call site in git history,
 and `QuarantineInPlace()` (`:326`) is called only from `SentinelCollector/src/Endpoints/AdminEndpoints.cs:1589`,
 added in `1040861f` on 2026-05-15 — three weeks AFTER the event. Likely a manual script or interactive session.
 
@@ -2567,7 +2600,7 @@ THREE THINGS ARE CALLED "Symbol": (1) the COLUMN `sentinel.extracted_observation
 the resolved catalog symbol, NULL until resolution succeeds; (2) the KEY `"Symbol"` INSIDE `candidate_symbols_json`
 — an LLM-minted slug of the proposed entity's name (`Challenger_Gray_Christmas`), not a catalog symbol and usually
 absent from SecMaster; (3) the AXIS — any query or index keyed on (1). `"OriginalSymbol"` is NOT a fallback identity
-for (1): it is written only by `Quarantine()` (`SentinelCollector/src/Entities/ExtractedObservation.cs:305`),
+for (1): it is written only by `Quarantine()` (`SentinelCollector/src/Entities/ExtractedObservation.cs:310`),
 `ApplyReExtraction()` (`:389`) and `QuarantineInPlace()` (`:473`), each as `OriginalSymbol = Symbol`, making it a
 PRE-REMEDIATION AUDIT SNAPSHOT — keying on it selects rows that were quarantined or re-extracted, NOT "the feed"
 (**620,174** rows are `NoResolution` and **358,398** of those carry a NON-NULL `"OriginalSymbol"`). Rows with neither
@@ -2835,12 +2868,12 @@ mechanism:
   `numbers[]` items are `(context, source_entity, source_text, unit, value)`, and
   `"additionalProperties": false` is set on the item schemas and the envelope (recorded above), so
   there is no field for the model to emit one into.
-- BUT `SentinelCollector/src/Services/V2ExtractionPipeline.cs:192` DOES assign
+- BUT `SentinelCollector/src/Services/V2ExtractionPipeline.cs:250` DOES assign
   `Period = extraction.Period`. "The v2 adapter forgot to map the field" is therefore already false,
   and anyone repeating it has not run the grep. What fills `extraction.Period` on the CoD path is
   the open question.
 WHAT WOULD SETTLE IT IS A CODE READ, NOT ANOTHER QUERY: read `V2ExtractionPipeline.cs` and
-`GpuJsonExtractionService.cs` against the v1 assignment at `Workers/ExtractionProcessor.cs:728` --
+`GpuJsonExtractionService.cs` against the v1 assignment at `Workers/ExtractionProcessor.cs:750` --
 the only other `Period =` site in the service -- and establish what populates the field on each path.
 NOBODY HAS READ THAT CODE. Do not assert a mechanism from this entry.
 
@@ -2904,7 +2937,7 @@ orphaned three articles on 2026-09-06.** Taking the GPU for the A/B in MEASUREME
 candidate BEATS the incumbent on production's CoD path", stopped production's vLLM for 32m56s (engine
 snapshots: incumbent healthy `18:12:19Z`, candidate serving `18:15:50Z`, incumbent restored and
 healthy `18:45:15Z`). Three `raw_content` rows were permanently failed inside that window, in
-EXACTLY the pre-spend orphan shape D-27 says can no longer occur (`SentinelCollector/AGENT_README.md:118`)
+EXACTLY the pre-spend orphan shape D-27 says can no longer occur (`SentinelCollector/AGENT_README.md:151`)
 -- `ProcessingError` written on a row nothing finished:
 
 | id | source | collected_at (UTC) | retry_count | processed_at | processing_error |
@@ -2962,7 +2995,7 @@ scoped deploy. This entry closes when the probe above prints a non-zero `Article
 
 DO NOT "FIX" THIS IN THE `isTransient` ALLOW-LIST. The obvious reading of the evidence --
 `BrokenCircuitException` is absent from the transient set
-(`SentinelCollector/src/Workers/ExtractionProcessor.cs:1155-1161`), so add it -- is the remedy D-27
+(`SentinelCollector/src/Workers/ExtractionProcessor.cs:1183-1189`), so add it -- is the remedy D-27
 MEASURED AND REJECTED: it leaves MaxRetries to be spent and the row orphaned anyway, and D-27 records
 three named tests going RED on it. The design answer is the spend ledger, and it already exists.
 
@@ -3735,7 +3768,7 @@ claim it does: `ExtractionOptions.ThinkingSuppressionSuffix` defaults to `string
 declaration -- anchored to the symbol because a line number here has now been repaired wrong
 twice), nothing in
 `/opt/ai-inference/compose.yaml` or any appsettings sets it, and D-26 says that emptiness is
-DELIBERATE (D-26, `SentinelCollector/AGENT_README.md:139`). CORRECTED 2026-09-07 WITH THE GEMMA 4
+DELIBERATE (D-26, `SentinelCollector/AGENT_README.md:150`). CORRECTED 2026-09-07 WITH THE GEMMA 4
 SWAP: this passage read "because the model served today does not reason", which was D-26's reason
 at the time and is no longer true of anything. Gemma 4 DOES reason; the suffix stays empty because
 its chat template pre-closes the thinking channel itself, so suppression moved into the template
@@ -4308,7 +4341,7 @@ max_tokens: 8192`; production sent **1.1 / 4096** at the time (8192 since D-30) 
 `CpuCod__JsonMaxCompletionTokens` in `/opt/ai-inference/compose.yaml`, defaulted at
 `SentinelCollector/src/Configuration/CpuCodOptions.cs:91` and
 `SentinelCollector/src/Configuration/CpuCodOptions.cs:109`, forwarded at
-`SentinelCollector/src/Services/GpuJsonExtractionService.cs:223`). The fourth cell -- OLD prompt at
+`SentinelCollector/src/Services/GpuJsonExtractionService.cs:228`). The fourth cell -- OLD prompt at
 production's sampling -- was measured 2026-09-06 and makes the comparison same-sampling: `numbers_f1`
 **0.3446 -> 0.5152 = +0.1707**, arms still DISJOINT at worst-case **+0.1357**. So the prompt's number
 holds under the guard; what does NOT hold across the sampling axis is the entity story two entries
@@ -4696,7 +4729,7 @@ The loop guard is not free and its price had never been measured. `CpuCod__JsonR
 and `CpuCod__JsonMaxCompletionTokens=4096` were live in `/opt/ai-inference/compose.yaml` (4096 until D-30)
 (`SentinelCollector/src/Configuration/CpuCodOptions.cs:91` and
 `SentinelCollector/src/Configuration/CpuCodOptions.cs:109` carry the defaults and the rationale;
-forwarded at `SentinelCollector/src/Services/GpuJsonExtractionService.cs:223`). Measured
+forwarded at `SentinelCollector/src/Services/GpuJsonExtractionService.cs:228`). Measured
 2026-09-06 on the 40 gold articles, three runs per cell, the SAME prompt either side so the only axis is
 sampling:
 
@@ -5510,7 +5543,7 @@ future sweep reports and need their own before/after counts, exactly as the `_EX
 debt.** The live instance of the drift class above, found by hand in review of PR #1004 and deliberately NOT
 repaired there: they sit in the `DeterministicResolver` / `ExtractionProcessor` D-entries as a -35 cluster from an
 old un-followed insertion plus -74, -30 and -4, and one is a NAMING error rather than a number --
-a GUARD reads `ResolveAsync @ src/Services/DeterministicResolver.cs:637` while `ResolveAsync` is the thin
+a GUARD reads `ResolveAsync @ src/Services/DeterministicResolver.cs:753` while `ResolveAsync` is the thin
 wrapper at `:47` and the enclosing method at the cited leg is `ResolveCoreAsync` (`:82`). Present at base
 `eb5aa3e3` with the identical offsets, and six of the nine were among the 21 AGENT_README citations that PR
 "repaired" -- i.e. shifted while already 35 lines short, which is what makes a repair sweep no evidence at all.

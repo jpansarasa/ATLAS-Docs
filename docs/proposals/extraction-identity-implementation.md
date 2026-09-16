@@ -49,7 +49,7 @@ they will collide on merge. Verified 2026-08-26:
 | story | region of `ExtractionProcessor.cs` | also touches |
 |---|---|---|
 | S2 | `RunV2ProductionAsync` `:1746` + its XML doc `:1741-1745` | -- |
-| S3 | v1 `new ExtractedObservation` block `:687` | `V2ExtractionPipeline.cs:181`, `ReExtractBackgroundService.cs:485` and `:631`, the entity class, the adapter |
+| S3 | v1 `new ExtractedObservation` block `:687` | `V2ExtractionPipeline.cs:239`, `ReExtractBackgroundService.cs:485` and `:631`, the entity class, the adapter |
 
 **How to handle it: do NOT sequence the agents.** The edits are ~1,050 lines apart and touch
 different members, so this is a textual collision, not a semantic one -- git merges it cleanly in
@@ -253,7 +253,7 @@ destroys the before/after reading that makes the fix provable.
 
 **The defect, verbatim for the brief:**
 
-> `CreateSectorEvent` has exactly one production call site, `ExtractionProcessor.cs:919`, inside
+> `CreateSectorEvent` has exactly one production call site, `ExtractionProcessor.cs:941`, inside
 > `ProcessSingleArticleAsync`. The v2 branch returns at `:614`, before reaching it.
 > `RunV2ProductionAsync` (`:1850`) never calls it. Every August source with published rows is in
 > `V2EnabledSources`, so 100% of published extraction has taken the v2 path since `81da1ed4`
@@ -626,7 +626,7 @@ paraphrased into a brief:
 > D-18 sentinel-series-key-ownership: INTENT a series key belongs to whoever MEASURED the number,
 > and Sentinel is on BOTH sides of that line.
 
-The full entry runs ~2,000 words at `SentinelCollector/AGENT_README.md:103`. **Whoever authors the
+The full entry runs ~2,000 words at `SentinelCollector/AGENT_README.md:114`. **Whoever authors the
 S4 spec reads it end to end first.** It shipped 2026-08-13 against measured production breakage,
 it is heavily guard-tested, and it turns on a polarity ("is this a series Sentinel OWNS?" rather
 than "does this key collide?") that a naive re-key would silently invert.
