@@ -33,6 +33,7 @@ Defects with a measurement that makes them re-checkable.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| A | 2026-09-16 | OPEN | 107 of 141 active GeminiFallback instruments are named by the query surface, not a title |
 | A | 2026-09-16 | OPEN | Corrected source_entity prompt puts the COUNTRY in the owner slot; catalog matches it |
 | A | 2026-09-16 | AWAITING-DECISION | Observation identity is the entity, not the measurement: N datapoints collapse to one key |
 | A | 2026-09-16 | OPEN | Apparent identity collisions are partly mis-resolutions; proxy 6.6% and rising |
@@ -43,6 +44,7 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-16 | OPEN | Production's CoD prompt carries two defects no labeller can work around |
 | A | 2026-09-07 | OPEN | A DELTA AND A LEVEL ARE THE SAME ROW: numbers[] cannot express dropped 2% vs is 2% |
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
+| B | 2026-09-16 | OPEN | Scoped secmaster deploy also recreates llama-cpu-rag and the shared llama-cpu-embed |
 | B | 2026-09-16 | OPEN | NameAppearsInContext demands the catalog NAME verbatim in the context; good hits return NONE |
 | B | 2026-09-16 | OPEN | Production CoD loses ~74 gold entities per run to its loop guard (repetition_penalty 1.1) |
 | B | 2026-09-16 | OPEN | matrix_cells provenance columns are written on 0 rows; no cell traces to its observations |
@@ -101,6 +103,94 @@ Defects with a measurement that makes them re-checkable.
 | E | 2026-09-16 | OPEN | Two SecMaster comments still call a Finnhub 403 transient (permanent, arrives as NULL) |
 | E | 2026-09-16 | OPEN | SentinelCollector card is 5.3x over its D-entry gate and its line count hides it |
 | E | 2026-09-16 | AWAITING-DECISION | Six deployed directories have no card and sit outside the SERVICES roster (HARD_STOP gap) |
+
+**107 OF THE 141 ACTIVE `GeminiFallback` INSTRUMENTS ARE NAMED BY THE QUERY SURFACE THAT FOUND THEM, NOT BY A TITLE
+OF THE INSTRUMENT, AND ALL 141 ARE EMBEDDED AND PROPOSABLE.** `A824RE1A156NBEA` (FRED: national defense as a share of
+GDP) is named `Mark Rutte`; `CUUR0200SA0`, `CUUR0300SA0` and `CUUR0400SA0` are each named `Kevin Warsh`. Measured
+2026-09-16 on `atlas_secmaster`.
+
+MECHANISM, confirmed in code. Before #874 (merged 2026-07-18T18:15Z) the V2 Gemini leg self-seeded with
+`Name: input.SubjectEntity ?? input.Description ?? symbol` and `Description: dto.Rationale` (`git show
+8ea3103c^:SentinelCollector/src/Services/DeterministicResolver.cs`, the `Collector: "GeminiFallback"` request), and
+SecMaster stores a register's name verbatim (`SecMaster/src/Endpoints/InstrumentEndpoints.cs:127`). The exemplar has
+exactly that shape: name = the article's subject, description = the model's rationale. The SOURCE is closed for new
+rows: both legs now send the confirmation's name, keeping the surface only as a fallback
+(`DeterministicResolver.cs:961`, `ExtractionProcessor.cs:1742`), and `GeminiSelfSeedGate` refuses a Name-less
+confirmation, which keeps that fallback unreachable (`GeminiSelfSeedGate.cs:66`). The rows split on that date exactly:
+all 107 surface-named rows were created 2026-06-25 .. 2026-07-18T13:25Z, all 34 title-named rows 2026-07-21 onward.
+The history was REVIEWED by two migrations, and neither rewrote a name.
+`SecMaster/src/Data/Migrations/20260718133628_QuarantineGeminiJunkInstruments.cs` checked each `fred_series` symbol
+against FRED. It deactivated the 8 symbols FRED rejected (`MCRFPC1` among them; plus one non-Gemini row), and kept the
+real series active with `asset_class` corrected and the name left as it was. Its header says: "All carry a junk
+NER-surface name". `SecMaster/src/Data/Migrations/20260718152925_QuarantineGeminiEquityEtfJunk.cs` checked each
+Equity/ETF surface against the ticker's issuer or fund mandate. It deactivated the 82 whose surface is unrelated and
+KEPT 20 whose surface does name the issuer or mandate: 5 equities (`DB`, `NMR`, `CCORF`, `RILY`, `EVR`), 14
+single-country ETFs and `NOBL`, "flagged for review". Deactivating them "is the dangerous direction (false-positive
+on a genuine instrument)". The 90 inactive rows are exactly those 8 + 82. No automated path rewrites the names: the
+D-10 repair allowlist is `entity_resolution:gemini` alone (`SecMaster/src/Services/CatalogNameRepairService.cs:35`),
+and the enrichment fill-gaps repair only an empty or `==Symbol` name (SecMaster D-2), which a surface is not.
+
+THE CLASS, and how it was counted:
+- `discovery_source = 'GeminiFallback'`: 231 rows, 141 active (0 retired, 141 embedded), 231 with 0 source mappings.
+- `entity_resolution:gemini`: 2,410 rows, all active, all with 0 source mappings, and NOT this defect: every one of the
+  1,171 pre-#914 rows is D-10-stamped (1,090) or floored to its ticker (82, one of them also stamped). Proxy: of its
+  1,175 rows with an OpenFIGI TICKER hit in `openfigi_lookup_cache`, 6 names share no 3+-char token with
+  `canonical_name` (inc/corp/adr-style suffixes excluded), and all 6 are artefacts on reading (a floored ticker,
+  `AT&T INC`, `Oersted`/`ORSTED`). The same proxy reaches only 38 of the 141 active `GeminiFallback` rows (a FRED
+  series id is not an OpenFIGI ticker) and flags 4 of them, so it cannot size THIS class.
+- Hence a by-eye read of ALL 141 active `GeminiFallback` names (a census, one reader): 34 are an issuer title
+  (OpenFIGI-style, e.g. `TEUCRIUM WHEAT FUND`), 107 are not. Of the 107: 25 name a DIFFERENT entity (16 people;
+  `FIFA World Cup`, `Calculated Risk` x2, `Wall Street Breakfast`, `Strait of Hormuz`, `Third Street Expressway`; and
+  `Japan`, `Iran`, `Colombia` on `DX`, `PALL`, `KC`), 68 are a bare geography (`US`, `U.S.`, `Indiana` x3, `Brazil`),
+  14 are a short surface that happens to describe the underlying (`gold` on `GC`, `Deutsche Bank` on `DB`). The
+  25/68/14 split is a judgement and soft at its edges; the 107/34 split is not, because it matches the #874 date.
+  The four country-named rows the `source_entity` entry below cites (`TUR`, `NGDPXDCCNA`, `UKNGDP`, `EWG`) are in
+  the 68; its `UUP` = "Italy" row is the INACTIVE one, and the active `UUP` has carried its OpenFIGI name since
+  2026-08-20.
+- The 107 are NOT all unreviewed. 20 were judged real with a related name by `20260718152925`: `CCORF`, `DB`, `EVR`,
+  `NMR`, `RILY`, `ARGT`, `EIS`, `EPHE`, `EWC`, `EWD`, `EWG`, `EWN`, `EWT`, `EWW`, `EWY`, `EWZ`, `GREK`, `NOBL`, `QAT`,
+  `TUR`. In the census above, 13 of them are bare geographies and 7 are descriptive surfaces; none is a
+  different-entity name. 74 are series that `20260718133628` judged real while recording their names as junk. 13
+  (`CT`, `DEXCAUS`, `DEXINUS`, `DEXKOUS`, `DEXUSAL`, `DGS30`, `DHOILNYH`, `DX`, `EXTAUS`, `GC`, `GS10`, `KC`, `PALL`)
+  appear in neither migration's lists. Derivation: the 20 are the pre-#874 active Equity/ETF rows. Every pre-#874
+  Equity/ETF row on the migration's quarantine list is inactive, so the active remainder is its KEPT set.
+  `SELECT symbol, name FROM instruments WHERE discovery_source = 'GeminiFallback' AND is_active AND asset_class IN
+  ('Equity','ETF') AND created_at < TIMESTAMPTZ '2026-07-19' ORDER BY symbol;` -> 20 rows on 2026-09-16.
+
+CONSEQUENCE. The name is embedded (`{Name} ({Symbol})`, SecMaster D-2) and exact-matchable, so the row answers to the
+surface instead of the series. D-13's deploy (2026-09-16 ~23:01Z) surfaced it: with retired rows gone from the vector
+neighbourhood, the resolution-regression probe row `defense spending | 3.5%` now resolves `A824RE1A156NBEA` at
+0.7608, and all five candidates for that query are this class (`US` 0.7508, `Austan Goolsbee` 0.7446, `US` 0.7419,
+`U.S.` 0.7418). `run.sh` (probe) exits rc 1 while `run.sh --live` stays rc 0, because NameAppearsInContext drops
+`Mark Rutte` against `3.5%`. Production exposure, correctness NOT judged here: in the 30 days to 2026-09-16T23:12Z,
+3,888 `sentinel.extracted_observations` rows attached to 75 of the 107 (2,133 of them to `GC`), and 578 to 9 of the
+25 different-entity rows. Impact A because 8 of the 10 wrong attachments in the `source_entity` entry below landed
+on 4 instruments of this class (`TUR` x5, `NGDPXDCCNA`, `UKNGDP`, `EWG`). Those attachments are wrong FOR THE ARTICLE
+(the figure is not a quantity the instrument measures), NOT wrong instruments. All four are real, and `TUR` and `EWG`
+are among the 20 judged real above. What reaches them is the bare country name matching a country anchor. This entry
+replaces the deferred "17 person-named catalog rows" entry: its rows are the 16 active people above plus the inactive
+`MCRFPC1` = "Justin Trudeau", and its rule carries over: scope any remedy on PROVENANCE, never on series. No remedy is
+chosen, and a manual DB edit is not one. A remedy must START from the two migrations' recorded judgements rather than
+treat all 107 as unreviewed. Deactivating one of the 20 is the direction `20260718152925` calls dangerous, and the 74
+FRED series are real series. Only the name is in question for the 94 reviewed rows, while the 13 have no recorded
+review.
+
+Re-check (psql is SELECT-only; `atlas_secmaster`): `SELECT is_active, count(*) FILTER (WHERE created_at <
+TIMESTAMPTZ '2026-07-19') AS surface_era, count(*) AS total, count(*) FILTER (WHERE retired_at IS NOT NULL) AS retired
+FROM instruments WHERE discovery_source = 'GeminiFallback' GROUP BY is_active;` -> `t | 107 | 141 | 0` and
+`f | 90 | 90 | 0` on 2026-09-16. The inactive rows are counted so the folded-in exemplar `MCRFPC1` stays visible; all
+90 predate #874, none is proposable, and their names were NOT read. The date split only holds while nothing renames
+these rows, so read the names as well: `SELECT is_active, symbol, name FROM instruments WHERE discovery_source =
+'GeminiFallback' AND created_at < TIMESTAMPTZ '2026-07-19' ORDER BY is_active DESC, name;`.
+The observations figure spans two databases, so it takes two SELECTs. On `atlas_secmaster` (psql `-At`):
+`SELECT string_agg(quote_literal(id::text), ',') FROM instruments WHERE discovery_source = 'GeminiFallback' AND
+is_active AND created_at < TIMESTAMPTZ '2026-07-19';`. Then on `atlas_data`, with that output as `<ids>`:
+`SELECT count(*), count(DISTINCT instrument_id) FROM sentinel.extracted_observations WHERE instrument_id IN (<ids>)
+AND extracted_at >= TIMESTAMPTZ '2026-08-17 23:12Z' AND extracted_at < TIMESTAMPTZ '2026-09-16 23:12Z';` ->
+`3888 | 75`. `instrument_id` is written after extraction and can change (the table carries `OriginalInstrumentId` and
+`CorrectedInstrumentId`), so a different figure is not by itself a refutation. In
+`SentinelCollector/scripts/resolution-regression/run.sh` (probe mode), the line `FAIL defense spending ... ->
+A824RE1A156NBEA` is this defect.
 
 **THE CORRECTED `source_entity` PROMPT IS IN PRODUCTION, IT STOPPED THE BLANKING, AND ON ARTICLES THAT NAME
 NO SERIES IT PUT THE COUNTRY IN ITS PLACE. 37 rows anchored on a country, 10 of them resolved to an
@@ -673,6 +763,36 @@ STILL OPEN, three items:
     `Extraction__GuardsEnabled=false` (`/opt/ai-inference/compose.yaml:1269`), so it is inert; deciding that flag's
     fate is the prerequisite, and a third call behind the same disabled flag would read as protection that does not
     exist.
+
+**The CLAUDE.md "SCOPED" `secmaster` deploy also recreates `llama-cpu-rag` and `llama-cpu-embed`, and
+`llama-cpu-embed` is shared with SentinelCollector.** This comes from the tags, not from chance: the blocks
+`Bring up llama-cpu-rag (SecMaster RAG generation runner)` and `Bring up llama-cpu-embed (SecMaster embedding runner)`
+in `deployment/ansible/playbooks/deploy.yml` carry `tags: [llama-cpu-rag, secmaster]` and
+`tags: [llama-cpu-embed, secmaster, models]`. Their `Start/recreate llama-cpu-rag container` and
+`Start/recreate llama-cpu-embed container` tasks run `nerdctl compose up -d <svc>` with no `when:`, and
+`-e "scoped_restart=true scoped_services=secmaster"` scopes only the compose-file restart, not these tasks. CLAUDE.md
+DEPLOYMENT lists `secmaster` among the tags that carry non-build tasks but never says which; `deployment/README.md`
+names `secmaster` as an alias of `llama-cpu-rag` and leaves it off `llama-cpu-embed`.
+Measured 2026-09-16 with `ansible-playbook playbooks/deploy.yml --tags secmaster --skip-tags build -e
+"scoped_restart=true scoped_services=secmaster"`: `nerdctl container inspect` Created = `secmaster` 23:00:40Z,
+`llama-cpu-rag` 23:01:00Z, `llama-cpu-embed` 23:01:12Z. Tempo has two error spans on
+`http://llama-cpu-embed:8080/v1/embeddings`, both `service.name=SecMaster` in trace `f27d0cf14bb139b7723a2b4805650f3e`:
+23:01:10Z (no response) and 23:01:14Z (503 while loading). In that trace the last 200 before them is at 23:01:06Z and
+the next at 23:01:18Z, so SecMaster's failure window was about 8s (23:01:10-23:01:18Z). SentinelCollector was NOT hit
+on this run, but only because of timing: it calls `llama-cpu-embed` in bursts (1,090 spans in 811 traces, 22:04-23:11Z).
+Its last call before the recreate was at 22:48:22Z, closing a burst of 17 calls from 22:48:10Z (2 of them errors,
+13 minutes before the recreate), and its next was at 23:04:23Z. If a burst overlaps the recreate, its embedding calls
+fail. That is exposure, not an observed loss. This is the SECOND occurrence: the 2026-08-15 `secmaster` scoped deploy
+recreated the same two containers (PRACTICE NOTES, "Scoped-deploy collateral"). That `compose up -d` recreates an
+UNCHANGED service does not rest on those two runs: the playbook records it for nerdctl 1.7.7, the version running here,
+at `deployment/ansible/playbooks/deploy.yml:1217-1218` ("recreates unconditionally here") and
+`deployment/ansible/playbooks/deploy.yml:1509-1510` ("recreates every transitive dep unconditionally (no config-hash
+skip)", the cascade incident). The two runs agree with it. Class B, not D: the harm is a shared dependency restarted
+without notice, with its failures landing in other services' traces.
+Re-check: `grep -nE 'tags: \[([^]]*, )?secmaster(,|\])' deployment/ansible/playbooks/deploy.yml` lists both
+`llama-cpu-*` blocks while this holds. After a scoped `secmaster` deploy,
+`sudo nerdctl container inspect secmaster llama-cpu-rag llama-cpu-embed --format '{{.Name}} {{.Created}}'` shows all
+three within a minute (`container` is load-bearing: bare `inspect` returns the IMAGE).
 
 **`HybridResolutionService.NameAppearsInContext` is a literal substring test of the catalog NAME in the context string,
 and it gates every live hybrid tier -- so a good catalog hit returns NONE unless the instrument's catalog name appears
@@ -2952,7 +3072,6 @@ Work decided and not yet scheduled, with the decision that deferred it.
 |---|---|---|---|
 | A | 2026-09-16 | OPEN | FRED name-drift propagation into retired_at: a rename after the D-13 migration stays proposable |
 | A | 2026-09-16 | AWAITING-DECISION | Extraction__GuardsEnabled=false -- awaiting an owner decision |
-| A | 2026-09-16 | OPEN | 17 person-named catalog rows remain in the GeminiFallback bucket |
 | A | 2026-09-16 | OPEN | The staleness stamp measures a successful FETCH, not an advancing quote (design call) |
 | A | 2026-09-04 | OPEN | Labeller quality at n=5 through production's CoD prompt+schema, 2026-09-04 |
 | B | 2026-09-16 | OPEN | Alert-continuity acceptance (sentinel-resolution-signal) re-measured: still NOT met |
@@ -3012,14 +3131,6 @@ Re-check: `hybrid_resolve` on a private-company surface (`OpenAI`, `Anthropic`, 
 returns a non-null `resolution`. `SubjectNameNormalizer.SharedTokenCount("OpenAI", "BigBear.ai Holdings")`
 scores 0 and WOULD reject that pair; the guard simply does not run. It needs
 no deploy.
-
-**17 person-named catalog rows remain in the `GeminiFallback` bucket** — 16 active all-series, plus one inactive
-series `MCRFPC1` = "Justin Trudeau". #961's repair allowlist keyed on `entity_resolution:gemini` only, so these were
-out of scope by construction. **Scope any remedy on PROVENANCE, never on series.** Remedy (deactivate / rename /
-delete) not yet chosen.
-Re-check (psql is SELECT-only; database `atlas_secmaster`): `SELECT symbol, name, is_active, discovery_source FROM
-instruments WHERE symbol = 'MCRFPC1';` -> `MCRFPC1 | Justin Trudeau | f | GeminiFallback` on 2026-09-16, so the
-exemplar is still present; a count on `discovery_source = 'GeminiFallback'` reads the bucket.
 
 **The staleness stamp measures a successful FETCH, not an advancing quote — needs a design call, not a reflex fix.**
 `QuoteCollectionWorker.cs:179` upserts and stamps on any non-null quote and never consults `quote.Timestamp`.
@@ -3666,21 +3777,25 @@ Checks that keep being skipped.
 | impact | measured | status | entry |
 |---|---|---|---|
 | E | 2026-09-16 | OPEN | A defect found in a branch is not a defect on main |
+| E | 2026-09-16 | OPEN | Scoped-deploy collateral: read the tag's blocks first, then record what actually moved |
 | E | 2026-08-27 | OPEN | An empty INSTANT query on a cumulative counter is not evidence the counter never fired |
-| E | 2026-08-15 | OPEN | Scoped-deploy collateral is CONDITIONAL -- record what moved, do not derive a rule |
 
 **A defect found in a branch is not a defect on main.** Three fail-opens in one session were reported as live on
 main and were not. The settling check is one command — `git branch --contains` on the commit that introduced the
 line — and it was never run until a reviewer ran it.
 
-**An empty INSTANT query on a cumulative counter is not evidence the counter never fired.** Range-query it (or
-`increase()` over the window) before concluding absence; the trap was hit on the pruner counter (2026-08-27, #995).
-
-**Scoped-deploy collateral is CONDITIONAL — record what actually moved, do not derive a rule.** Two runs on
-2026-08-15: the `secmaster` scoped deploy ALSO recreated `llama-cpu-rag` and `llama-cpu-embed`; the
-`sentinel-collector` one recreated nothing else. Two runs cannot say which services drag which neighbours, and a
-general rule written off this sample would be wrong in one direction or the other — so no rule goes in
-CLAUDE.md. The practice that survives either explanation: after any scoped deploy, enumerate what actually
-restarted and record it WITH the run. A third and fourth agreeing observation is when a rule is earned.
+**Scoped-deploy collateral: read the tag's blocks first, then record what actually moved.** On 2026-08-15 this note
+called collateral CONDITIONAL because two runs disagreed: the `secmaster` scoped deploy ALSO recreated
+`llama-cpu-rag` and `llama-cpu-embed`, while the `sentinel-collector` one recreated nothing else. The playbook
+explains the difference. Both `llama-cpu-*` blocks carry the `secmaster` tag, and no neighbour's block carries
+`sentinel-collector` (KNOWN DEFECTS, "Scoped secmaster deploy also recreates llama-cpu-rag and the shared
+llama-cpu-embed"; it recurred 2026-09-16). What still holds: before a scoped deploy, grep `deploy.yml` for blocks
+tagged with that tag; after it, list what actually restarted and record it WITH the run. That `compose up -d`
+recreates even an unchanged service is recorded in the playbook for nerdctl 1.7.7
+(`deployment/ansible/playbooks/deploy.yml:1217-1218` and `deployment/ansible/playbooks/deploy.yml:1509-1510`, the
+cascade incident), and both runs agree with it.
 Re-check: `sudo nerdctl container inspect <svc> --format '{{.Created}}'` per service — `container` is
 load-bearing (CLAUDE.md VERIFY_TRAP: bare `inspect` resolves the IMAGE and hands back the BUILD time).
+
+**An empty INSTANT query on a cumulative counter is not evidence the counter never fired.** Range-query it (or
+`increase()` over the window) before concluding absence; the trap was hit on the pruner counter (2026-08-27, #995).
