@@ -238,9 +238,10 @@ payload). `fix/secmaster-no-surface-as-name` = 4 commits, 6 files, +272/-6, HEAD
 include the D-2 per-field amendment. Both are checked out in other agent worktrees, one of them locked.
 
 **2.7 Quarantine leaves the vector, but search already filters it.** `is_active=false` never deletes an
-embedding — there is no delete path outside migrations and the cascade on *hard* delete — and **90
+embedding — when measured there was no delete path outside migrations and the cascade on *hard* delete;
+SecMaster D-13 has since added one, the backfill poll's prune of embeddings whose row is inactive or retired — and **90
 inactive self-seeded rows retain embeddings right now**. `[M]` But vector search filters inactive rows
-at hydration (`EmbeddingService.cs:412-419`, with a comment naming exactly this failure mode). So
+at hydration (`EmbeddingService.cs:447-456`, with a comment naming exactly this failure mode). So
 dropping the vector is hygiene and defence-in-depth, **not** the correctness requirement the brief
 implies. `[I→M]`
 
