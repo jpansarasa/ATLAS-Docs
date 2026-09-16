@@ -165,7 +165,7 @@ three fill, the row is gone too. `[M]`
 inherited figure is lower, and I could not reconstruct its exact predicate — §8.)
 
 **Embeddings.** `instrument_embeddings` coverage of the self-seeded set is **1,694 / 1,694 = 100%**,
-and the embedded text is name-bearing (`EmbeddingService.cs:605`:
+and the embedded text is name-bearing (`EmbeddingService.cs:641`:
 `instrument.Name + " (" + instrument.Symbol + ")"`). `[M]` They self-heal after a name repair:
 `EmbeddingBackgroundService.cs:103-113` marks stale on `i.UpdatedAt > e.CreatedAt` — **cross-table**
 (instrument's `UpdatedAt` vs the embedding row's `CreatedAt`), not one row's two columns as inherited.

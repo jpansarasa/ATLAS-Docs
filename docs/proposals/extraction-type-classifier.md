@@ -602,7 +602,7 @@ different reasons.)*
 |---|---|---|
 | **macro signals** (rates, CPI, oil, FX, indices) | **85 `signal_identities`, via `NewsSignalClassifier` over the whole article** | **YES — already, at ~3,900 rows/7d. Nothing at the entity ingress is involved.** |
 | **economic-series** via cascade Step 5 | 33 `macro` signal identities | Resolves, but to a **sectorless prompt row** (above). Not to the substrate |
-| economic-series → FRED search | `CatalogService.cs:147` | **NO — deliberately off.** `EntityResolutionService.cs:836` passes `allowEconomicDiscovery: false` ("a news surface is never a FRED economic series"). This is #818's fix; re-opening it per-type would need a named supersession |
+| economic-series → FRED search | `CatalogService.cs:148` | **NO — deliberately off.** `EntityResolutionService.cs:836` passes `allowEconomicDiscovery: false` ("a news surface is never a FRED economic series"). This is #818's fix; re-opening it per-type would need a named supersession |
 | **equity / issuer** | the full cascade | **YES** — today's default sink for everything, and the one path that produces a sector |
 | **commodity** | 4 `commodity` signal identities + 23 `Commodity` instruments | `oil-price` is the **highest-volume** substrate signal (452/7d) — via the classifier, not the ingress. No name→AlphaVantage-series path from the ingress exists |
 | **currency** | 4 `fx` signal identities | `usd-jpy` 129/7d, `dxy-dollar-index` 163/7d — again via the classifier |

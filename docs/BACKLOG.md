@@ -33,7 +33,6 @@ Defects with a measurement that makes them re-checkable.
 
 | impact | measured | status | entry |
 |---|---|---|---|
-| A | 2026-09-16 | OPEN | SecMaster catalog is three-quarters dead weight; every fuzzy attachment pays for it |
 | A | 2026-09-16 | OPEN | Corrected source_entity prompt puts the COUNTRY in the owner slot; catalog matches it |
 | A | 2026-09-16 | AWAITING-DECISION | Observation identity is the entity, not the measurement: N datapoints collapse to one key |
 | A | 2026-09-16 | OPEN | Apparent identity collisions are partly mis-resolutions; proxy 6.6% and rising |
@@ -44,6 +43,7 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-16 | OPEN | Production's CoD prompt carries two defects no labeller can work around |
 | A | 2026-09-07 | OPEN | A DELTA AND A LEVEL ARE THE SAME ROW: numbers[] cannot express dropped 2% vs is 2% |
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
+| B | 2026-09-16 | OPEN | NameAppearsInContext demands the catalog NAME verbatim in the context; good hits return NONE |
 | B | 2026-09-16 | OPEN | Production CoD loses ~74 gold entities per run to its loop guard (repetition_penalty 1.1) |
 | B | 2026-09-16 | OPEN | matrix_cells provenance columns are written on 0 rows; no cell traces to its observations |
 | B | 2026-09-16 | OPEN | SecMasterDiscoveryTimeoutsElevated cannot fire: per-candidate deadline double-increments |
@@ -102,24 +102,10 @@ Defects with a measurement that makes them re-checkable.
 | E | 2026-09-16 | OPEN | SentinelCollector card is 5.3x over its D-entry gate and its line count hides it |
 | E | 2026-09-16 | AWAITING-DECISION | Six deployed directories have no card and sit outside the SERVICES roster (HARD_STOP gap) |
 
-**The SecMaster catalog the resolver searches is three-quarters dead weight, and every fuzzy attachment pays for it.**
-Measured 2026-09-16 on `atlas_secmaster.instruments`: **28,698** instruments, **21,418** with no `source_mappings` row
-(nothing collects them), **1,308** carrying "(DISCONTINUED)" in the name, **28,607** flagged `is_active`. Sentinel has
-ever attached to **4,381** distinct instruments. So a vector query competes against ~21,000 series nobody reads, which
-is why a search for the publisher name "Challenger, Gray & Christmas" returns "Spliced Business Formations for Georgia
-(DISCONTINUED)" at 69% as its top hit, and why sector nouns from the August 2026 Challenger report landed on FISI, TDS,
-KNX, XLP, WMT, NA and BA. D-32 (SentinelCollector card) removes inference for the ONE feed that has a dedicated source;
-it does not touch this. GIGO, source side: the fix is catalog SCOPE for resolution (an index predicate or `is_active`
-over instruments something collects or a pattern reads, with discontinued series excluded), which is a SecMaster data
-decision, not a Sentinel rule, and the measure of success is the share of attached rows on fuzzy legs (75.5% of the
-7 days to 2026-09-16 on `llm_candidate_hybrid` alone) falling because the neighbourhood stopped offering junk. Re-check:
-`SELECT count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM source_mappings sm WHERE sm.instrument_id = i.id)),
-count(*) FILTER (WHERE name ILIKE '%DISCONTINUED%'), count(*) FROM instruments i;` against `atlas_secmaster`.
-
 **THE CORRECTED `source_entity` PROMPT IS IN PRODUCTION, IT STOPPED THE BLANKING, AND ON ARTICLES THAT NAME
 NO SERIES IT PUT THE COUNTRY IN ITS PLACE. 37 rows anchored on a country, 10 of them resolved to an
 instrument, and all 10 are wrong on the FIGURE-to-INSTRUMENT fit** -- an inflation rate is not a quantity of
-an equity ETF. [2026-09-06; catalog co-cause re-verified 2026-09-16] That is a judgement made by reading each row
+an equity ETF. [2026-09-06; catalog co-cause re-verified 2026-09-16 -- catalog SCOPE is now `SecMaster/AGENT_README.md` D-13, which retires the DISCONTINUED rows and leaves the country-named rows below in place] That is a judgement made by reading each row
 against its article, not a measured label, and it is FOUR articles' worth of evidence (two Turkish macro, one Chinese
 gold, one European budget, all naming no series): 10 wrong of 10 could be four articles' worth of bad luck, and it
 needs a day of articles before the rate means anything. #1017's prompt reached prod 2026-09-06T10:26:43Z; window is
@@ -130,7 +116,8 @@ the prompt forbids -- `SentinelCollector/src/cod-prompts/cod_json_v1.txt:57-58` 
 rows that attach instruments" measures the opposite half: country subjects ALSO produce defensible resolutions --
 `Brazil` -> `EWZ` 446, `Germany` -> `DAX` 345, `China` -> `GXC` 190. That entry judges country -> instrument, this
 one judges number -> instrument. The fix this points at is the prompt's contradictory bullet and the catalog naming
-below, NEVER a reject rule that entry already refutes in three caveats.
+below (scope for the catalog as a whole landed as `SecMaster/AGENT_README.md` D-13; the country-named rows are outside
+it), NEVER a reject rule that entry already refutes in three caveats.
 
 THE MECHANISM IS A HYPOTHESIS, recorded as one. `cod_json_v1.txt:56-58` tells the model to emit the series "under
 the name THE ARTICLE gives it" and that `""` is NOT the answer; `:60-63` says to emit `""` when the article "never
@@ -686,6 +673,21 @@ STILL OPEN, three items:
     `Extraction__GuardsEnabled=false` (`/opt/ai-inference/compose.yaml:1269`), so it is inert; deciding that flag's
     fate is the prerequisite, and a third call behind the same disabled flag would read as protection that does not
     exist.
+
+**`HybridResolutionService.NameAppearsInContext` is a literal substring test of the catalog NAME in the context string,
+and it gates every live hybrid tier -- so a good catalog hit returns NONE unless the instrument's catalog name appears
+verbatim in the quote.** First occurrence, recorded so the next NONE-with-a-good-catalog-hit is recognisable; NOT a
+defect this epic fixes. `SecMaster/src/Services/HybridResolutionService.cs:564-571` is
+`context.Contains(name, StringComparison.OrdinalIgnoreCase)` (`:571`), applied in `ResolveLocalAsync` to the ExactSql
+result (`:76`), the FuzzySql top hit (`:115`) and every Vector candidate (`:184`); an empty context passes everything
+through, a non-empty one demands the NAME, and the refusal is one Information line (invisible at the Warning prod
+level). Measured 2026-09-16 with the resolution-regression harness in `--live` mode (`q=<subject>`,
+`context=<description>`, `minScore=0.75`, the Rule 2 leg): corpus row 1, `Challenger, Gray & Christmas` /
+`job cuts in July` (the July 2026 headline print in the August report), returns NONE for exactly that reason -- the
+catalog name `Challenger Job Cut Announcements` does not occur in that description. Moot for `challenger-rss`, which D-32 (`SentinelCollector/AGENT_README.md`)
+keys from provenance and never sends through this leg; live for every other subject whose description names the
+publisher but not the series. Re-check: `SentinelCollector/scripts/resolution-regression/run.sh --live` row 1 (branch
+`tooling/resolution-regression-harness`, PR #1048, until it merges).
 
 **Production's CoD extraction loses ~74 gold entities per run to its own loop guard, TODAY.**
 `entities_recall` 0.5529 -> 0.4348 on the prompt production actually runs (the #1017 prompt, on the host mount since
@@ -1275,7 +1277,7 @@ retired ticker from impossible into optional, and `CatalogService` and `EntityRe
 REFUSE deliberately, because resolution time, per candidate, silently, is the worst place to take a catalog-repair
 decision. Decide per PATH whether a quarantined (`is_active=false`) ticker may be re-acquired: an operator-curated
 config and a collector registration are authoritative in a way a news-surface self-seed is not.
-CONSEQUENCE while undecided: `CatalogService.cs:206` drops a quarantined discovery item with a bare `continue` (a
+CONSEQUENCE while undecided: `CatalogService.cs:207` drops a quarantined discovery item with a bare `continue` (a
 LogWarning, no metric), so a CompanyName candidate loses its ticker PROPOSAL and every news mention of one of the 82
 real quarantined tickers pays the full confirm cascade up to the paid Gemini leg (D-1); also reachable from the
 `search_catalog` MCP tool. `quarantined_skip` is a FLOOR on wall-hits, emitted at one of four self-seed skip paths
@@ -2948,6 +2950,7 @@ Work decided and not yet scheduled, with the decision that deferred it.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| A | 2026-09-16 | OPEN | FRED name-drift propagation into retired_at: a rename after the D-13 migration stays proposable |
 | A | 2026-09-16 | AWAITING-DECISION | Extraction__GuardsEnabled=false -- awaiting an owner decision |
 | A | 2026-09-16 | OPEN | 17 person-named catalog rows remain in the GeminiFallback bucket |
 | A | 2026-09-16 | OPEN | The staleness stamp measures a successful FETCH, not an advancing quote (design call) |
@@ -2976,6 +2979,21 @@ Work decided and not yet scheduled, with the decision that deferred it.
 | E | 2026-08-17 | OPEN | __EFMigrationsHistory is one shared table for every ATLAS service in atlas_data |
 | E | 2026-08-16 | OPEN | The README's bare '41 shapes' for #935: its provenance (series lives in LESSONS L15) |
 | E | 2026-08-15 | OPEN | A do-not-merge DECISION on #935 went unread through four rounds (first occurrence) |
+
+**FRED name-drift propagation into `retired_at` -- deferred, not wired.** FRED discontinues a series by renaming it in
+place (the name gains "(DISCONTINUED)"), so a row registered BEFORE the rename keeps its live name and stays inside
+`InstrumentSearchScope.Proposable` (`SecMaster/AGENT_README.md` D-13) until that renamed name is next persisted here,
+where `InstrumentRetirementStamp` stamps it at the SaveChanges boundary. No collector SIGNAL retires a row at runtime:
+FredCollector's `/api/series` payload carries no discontinued flag, and its 90-day `IsDiscontinued` heuristic was
+measured to flag every annual series, so it is NOT wired as a writer. Deferred by D-13's own "what this does NOT do"
+clause until FRED exposes the state or the collector carries the name through. Measured 2026-09-16 (`atlas_secmaster`,
+psql SELECT-only): 1,308 of 28,732 instruments carry the marker, and 1,182 of those still hold an ACTIVE
+`FredCollector` source mapping (plus 11 `SentinelCollector`) -- the mapping is untouched by D-13, so exact lookups
+and `ResolveBatch` still resolve them (D-11); only the PROPOSING tiers stop seeing them. Re-check after deploy:
+`SELECT count(*) FROM instruments WHERE name LIKE '%(DISCONTINUED)%' AND retired_at IS NULL;` -- expected 0, and any
+growth is a rename that arrived through a path the persist-boundary stamp does not see. Mapping count:
+`SELECT count(DISTINCT i.id) FROM instruments i JOIN source_mappings sm ON sm.instrument_id = i.id WHERE i.name LIKE
+'%(DISCONTINUED)%' AND sm.collector = 'FredCollector' AND sm.is_active;` -> 1,182.
 
 **`Extraction__GuardsEnabled=false` — AWAITING AN OWNER DECISION.** A deliberate experiment, not an accident:
 `/opt/ai-inference/compose.yaml:1269` carries it dated 2026-05-03 (re-read 2026-09-16, still `false`; the line

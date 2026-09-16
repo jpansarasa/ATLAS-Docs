@@ -45,6 +45,9 @@ FILTERED RUN: nerdctl compose exec -T {svc}-dev dotnet test --filter 'DisplayNam
   DisplayName and FullyQualifiedName, NOT Name. `Name~` matches ZERO tests and STILL EXITS 0, so a run
   that tested nothing reads as a pass. Run it in the devcontainer: dotnet exists on the HOST too, and a
   bare `dotnet test` silently becomes a host run
+  4 test projects set xunit methodDisplay=method (`git grep -l '"methodDisplay": "method"'`); there DisplayName
+  is the bare method name, so `DisplayName~<ClassName>` ALSO matches ZERO tests and exits 0 -> filter a class
+  with `FullyQualifiedName~<ClassName>`
 OWNED: each compile.sh (+ sentinel-edge typecheck.sh/dev.sh) owns a compose project keyed to its worktree
   (scripts/devcontainer-owner.sh): atlas-<sha1(worktree)[0:12]>-<slug>, the same key mark-tests-passed.sh uses.
   N agents in N worktrees compile SIMULTANEOUSLY # never sequence them, never wait
