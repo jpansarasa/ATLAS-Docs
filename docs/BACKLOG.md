@@ -1444,7 +1444,7 @@ Metric gotcha: OTEL appends `_total`, so alert on `secmaster_fred_search_skipped
 nothing, and the replacement it needs is still unbuilt.** The rule divided
 `sum(rate(sentinel_secmaster_resolution_total{status="resolved"}[5m]))` by the same counter unfiltered, `< 0.5`,
 `for: 15m`. That counter is failure-biased: `DeterministicResolver` (the live leg, called at
-`SentinelCollector/src/Services/V2ExtractionPipeline.cs:78`) meters NO success outcome, so only
+`SentinelCollector/src/Services/V2ExtractionPipeline.cs:99`) meters NO success outcome, so only
 `llm_candidate_exact` ever carried `status="resolved"` — 14 of 10,040 increments in the 24h to 2026-09-16, 49 of
 39,523 over the 7 days to 2026-08-20 — while 70-78% of the denominator is `sector_grounding`, which by
 construction can never resolve. The ratio therefore read 0 or NaN (5m windows with no events, most of them, since
@@ -1766,7 +1766,7 @@ wrong, so no surface filter at any position can help. By contrast `U.S.` -> `U` 
 (243) are entirely `hybrid_subject`, i.e. genuinely subject-driven and in scope for a seam.
 TWO CANDIDATE SEAMS, not chosen — measure before picking. **Seam A**: hoist `Classify` out of
 `TryGeminiResolveAsync` up to `ResolveAsync` entry (~`DeterministicResolver.cs:47`). `_surfaceFilter` is already
-injected and `ResolveAsync` has one production caller (`V2ExtractionPipeline.cs:78`), so the change is small — but
+injected and `ResolveAsync` has one production caller (`V2ExtractionPipeline.cs:99`), so the change is small — but
 it puts every false-positive in caveat (2) directly on the resolution path. **Seam B**:
 `DslToMergedExtractionAdapter.cs:499`, where `SubjectEntity` is born, which is where GIGO says to clean and which
 covers SecMaster, Gemini, `extracted_observations.source_entity` and the matrix in one edit (the D-15 precedent) —
@@ -2868,7 +2868,7 @@ mechanism:
   `numbers[]` items are `(context, source_entity, source_text, unit, value)`, and
   `"additionalProperties": false` is set on the item schemas and the envelope (recorded above), so
   there is no field for the model to emit one into.
-- BUT `SentinelCollector/src/Services/V2ExtractionPipeline.cs:250` DOES assign
+- BUT `SentinelCollector/src/Services/V2ExtractionPipeline.cs:271` DOES assign
   `Period = extraction.Period`. "The v2 adapter forgot to map the field" is therefore already false,
   and anyone repeating it has not run the grep. What fills `extraction.Period` on the CoD path is
   the open question.
