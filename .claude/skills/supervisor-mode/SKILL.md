@@ -96,11 +96,21 @@ ORACLE_ROUTING [HUGGING FACE INFERENCE, standing route as of 2026-09-05, user-co
   ✓ MEASURED best pair for gold labelling: `deepseek-ai/DeepSeek-V4-Pro-0813` **@ deepinfra**, zero
     reasoning tokens, ~$0.00013/call observed. Cross-check arm = a different FAMILY on deepinfra,
     NOT a different provider.
+  MEASURED cross-check 2026-09-17, n=150 D-33+sweep rows (all 87 DeepSeek/Qwen disagreements + 63 seeded agreements,
+    0 adjudicated): `openai/gpt-oss-120b` @ deepinfra best_action kappa vs Qwen 0.879 [0.786,0.948] population-weighted,
+    0.742 [0.642,0.826] raw on the enriched set; sides with Qwen on 48/68 disagreements; 0/150 invalid; $0.075/1000
+    records vs Qwen $8.18. Meets the 0.80/0.70 gate weighted only; Scout@nscale 0.654 and Hy3 0.797 fail. Label
+    CORRECTNESS unadjudicated. Evidence at /tmp/sentinel-remediation/hf-models/trial/ is TRANSIENT scratch, cleared on
+    reboot; the PR adding this line carries the full per-candidate table.
+  STANDING cross-check stays `Qwen/Qwen3.8-2.4T-A95B` @ deepinfra; gpt-oss-120b replaces it only after scoring against
+    ADJUDICATED best_action labels, never on the weighted-only pass above
   ✗ never assume the provider: STRICT schema enforcement is a per-PROVIDER property. The SAME model
     on zai-org's own endpoint ignores the schema and returns invented fields with HTTP 200, while on
     deepinfra it obeys. `providers[].supports_structured_output` PREDICTED all 7 measured outcomes but
     is a CLAIM -- zai-org advertises `false` and still returns 200. Re-run the ZZZ enum+pattern probe
     as PRE-FLIGHT before each batch.
+  live catalogue `GET https://router.huggingface.co/v1/models` gives per-provider pricing, supports_structured_output and
+    context_length (web view https://huggingface.co/inference/models?asc_sort=modelId); that field is a CLAIM, the probe decides
   ✗ enforcement is PARTIAL even where real: Anthropic enforced `pattern` and still violated
     `maxLength`, and rejects `maxItems` outright. VALIDATE returned output; never trust "strict".
   BUDGET [HARD_STOP]: $19.26 remaining 2026-09-05; the account AUTO-RECHARGES below $5.00, and the
