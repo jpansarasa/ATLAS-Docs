@@ -53,6 +53,7 @@ analysis is not a review record -> SKILL.md MERGE_GATE, fail-closed by `.claude/
 one merge act per Bash invocation -> `.claude/hooks/git-push-guard.sh` denies any command carrying more than one + SKILL.md RED_FLAGS # was L5
 prose quoting a gated push or merge form trips that gate; pass long text by path -> `.claude/hooks/README.md` Accepted cost # was L6; only the merge denies and the two-pushes deny name the remedy
 squash merge makes commit reachability answer NO for work that landed -> SKILL.md RED_FLAGS; ask the PR's state or compare CONTENT # was L7
+a per-worktree devcontainer does not isolate what its tests share on a server outside it: a fixed database name dropped on the shared timescaledb collides across worktrees and across services -> each integration project's `Infrastructure/IntegrationDatabaseName`, which refuses to run without the owner key `scripts/devcontainer-owner.sh` hands over. A default `compile.sh` runs its `IntegrationDatabaseNameTests` only in SecMaster; the other six services run them only under `compile.sh --integration`, which the push marker does not require. A new fixture that CREATEs or DROPs a database names it there
 
 ## LESSONS
 

@@ -47,6 +47,7 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-16 | OPEN | Production's CoD prompt carries two defects no labeller can work around |
 | A | 2026-09-07 | OPEN | A DELTA AND A LEVEL ARE THE SAME ROW: numbers[] cannot express dropped 2% vs is 2% |
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
+| B | 2026-09-17 | AWAITING-DECISION | Test databases on the shared timescaledb: 9 fixed-name orphans, per-worktree leaks on kill, each holds a TimescaleDB worker slot |
 | B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
 | B | 2026-09-17 | OPEN | backfill_unresolved_rate_high never detected a fault: constant on main, crossed by growth on D-17 |
 | B | 2026-09-17 | OPEN | The D-10 name repair still rewrites the whole metadata column from a load older than its API calls |
@@ -81,7 +82,7 @@ Defects with a measurement that makes them re-checkable.
 | C | 2026-09-17 | OPEN | Finnhub catalog enrichment re-enriches and re-embeds ~240 rows/hour; its cooldowns never persist |
 | C | 2026-09-16 | OPEN | gemini-resolver saturates its 1500/day cap; intent says dozens/day (INTENT_FIDELITY) |
 | C | 2026-09-16 | AWAITING-DECISION | Quarantined-ticker re-acquisition is an undecided policy: Gemini cost + un-alerted 23505 |
-| D | 2026-09-17 | OPEN | Two worktrees running one service's integration suite drop each other's test database |
+| D | 2026-09-17 | OPEN | Integration suites behind `compile.sh --integration` never reach the marker; 4 of 6 are red |
 | D | 2026-09-16 | OPEN | Gemma 4 swap residuals: one-directional coordinate sweep, hermes parser, promtool fixtures |
 | D | 2026-09-16 | OPEN | D-23 thin-draw gate cannot deny: Bind() appends to the Engines default (inert until wired) |
 | D | 2026-09-16 | OPEN | Static-meter flake: two ExtractionProcessor test classes still outside SentinelMeterStatic |
@@ -790,6 +791,50 @@ STILL OPEN, three items:
     `Extraction__GuardsEnabled=false` (`/opt/ai-inference/compose.yaml:1269`), so it is inert; deciding that flag's
     fate is the prerequisite, and a third call behind the same disabled flag would read as protection that does not
     exist.
+
+**Integration test databases on the SHARED timescaledb outlive their runs, and each one holds a TimescaleDB
+background-worker slot.** [2026-09-17] Integration fixtures now use per-worktree names
+(`<base>_<ATLAS_WORKTREE_ID>_<service>`, `IntegrationDatabaseName`) and drop their database on dispose. Three
+things that change does not cover:
+- A KILLED RUN LEAKS ITS DATABASES. A TERM to compile.sh's process group skips xUnit disposal. Measured at
+  13:19:01Z with FredCollector `--integration`: one `atlas_integration_test_a9f3f277dc97_fred_collector` was left,
+  and PR #1065's review saw three `*_53d9b29d969f_fred_collector` after a TERM. A run in the same worktree reclaims
+  them: the bases drop an existing name before creating it, and the per-test fixtures reuse the name and drop it
+  after each test. The measured leak was gone after one rerun (per-worktree count 0 at 13:24Z). A TERM sent after
+  the Database collection had already finished left nothing, so the size of the leak depends on when the kill
+  lands. `scripts/devcontainer-owner.sh`'s reaper removes containers, networks, volumes and images, never
+  databases (`grep -c 'DROP DATABASE\|psql\|pg_database' scripts/devcontainer-owner.sh` = 0). So a killed run in a
+  worktree that is then deleted leaks for good.
+- THE NINE PRE-FIX FIXED-NAME DATABASES ARE STILL THERE, and no code references them any more:
+  atlas_integration_test, atlas_api_integration_test, atlas_grpc_integration_test, atlas_macro_idempotency_test,
+  atlas_matrix_idempotency_test, atlas_latest_cells_query_test, atlas_secmaster_integration_test,
+  finnhub_integration_test, ofr_integration_test (9 present, 2026-09-17T13:11Z).
+- EACH DATABASE HOLDS A WORKER SLOT. Every database with the extension gets its own TimescaleDB scheduler. At rest
+  (2026-09-17T13:11Z) `timescaledb.max_background_workers` was 16, with 14 schedulers running, 9 of them on those
+  orphans. All 127 "out of background workers" warnings in the 24h to 13:11Z were `failed to launch job 3 "Job
+  History Log Retention Policy [3]"`. There were 64 at the four 6-hourly boundaries (18:00, 00:00, 06:00, 12:00Z),
+  when every database's job 3 fires at once, and 63 between 12:06 and 13:03Z, while integration runs were live.
+  A run adds one scheduler per test database it holds open. None of the four production databases checked carries
+  a user policy job (job_id >= 1000: 0 in atlas_data, atlas_secmaster, calendar_data and financial_news), so job 3
+  is the only job refused so far. A compression or retention policy added later would compete for the same two
+  free slots.
+DECISION NEEDED, and no agent may make it: nothing here may be dropped by hand. psql is SELECT-only (CLAUDE.md
+DATABASE), and a pattern reaper was ruled out when the per-worktree names shipped. Freeing the slots needs either a
+human decision to drop the orphans, or an app-owned path, such as a fixture-side sweep of its own worktree's names
+at start, or raising `max_background_workers` through IaC.
+Re-check (SELECT only):
+  `SELECT count(*) FROM pg_database WHERE datname ~ '_[0-9a-f]{12}_[a-z_]+$';`   -- per-worktree names (0 at 13:11Z)
+  `SELECT count(*) FROM pg_database WHERE datname IN ('atlas_integration_test', 'atlas_api_integration_test',
+     'atlas_grpc_integration_test', 'atlas_macro_idempotency_test', 'atlas_matrix_idempotency_test',
+     'atlas_latest_cells_query_test', 'atlas_secmaster_integration_test', 'finnhub_integration_test',
+     'ofr_integration_test');`                                                     -- fixed names (9)
+  `SELECT (SELECT setting FROM pg_settings WHERE name = 'timescaledb.max_background_workers') AS max_workers,
+     count(*) FILTER (WHERE backend_type = 'TimescaleDB Background Worker Scheduler') AS schedulers,
+     count(*) FILTER (WHERE backend_type = 'TimescaleDB Background Worker Scheduler'
+       AND datname ~ '(_integration_test|_idempotency_test|_query_test|_[0-9a-f]{12}_[a-z_]+)$') AS test_db_schedulers
+   FROM pg_stat_activity;`                                                         -- 16 | 14 | 9 at rest
+  `SELECT job_id, proc_name, schedule_interval FROM timescaledb_information.jobs;` per database
+  `sudo nerdctl logs --since 24h timescaledb 2>&1 | grep -c 'out of background workers'`   -- 127
 
 **SecMaster's `EmbeddingCache` keys on `Trim().ToLowerInvariant()`, but bge-m3 is case-sensitive, so a query's
 vector neighbours depend on which spelling of it the process met first.** First occurrence. `EmbeddingCache.Normalize`
@@ -1570,18 +1615,25 @@ Re-check: `sum by (result)(secmaster_entity_resolution_self_seed_total)` (2026-0
   `SELECT indexname, indexdef FROM pg_indexes WHERE indexname LIKE 'idx_instruments_symbol%'
      OR indexname LIKE 'idx_source_mappings_collector_source%';`
 
-**Two worktrees running one service's integration suite drop each other's test database, so a run can go RED
-(or abort) on a defect that is not in its tree.** First occurrence, 2026-09-17 ~11:25Z: during a SecMaster mutation
-sweep in one worktree, a filtered integration run failed `ListingScopeTests` with `3D000: database
-"atlas_secmaster_integration_test" does not exist` and `57P01: terminating connection due to administrator command`, on
-a mutation that does not touch that class, which passed in the runs immediately before and after. `DatabaseFixture` DROPS and
-re-creates a FIXED database name at the start of every run (`SecMaster/tests/SecMaster.IntegrationTests/Infrastructure/DatabaseFixture.cs`,
-`TestDatabaseName`), and the devcontainer ownership that lets N worktrees compile at once (CLAUDE.md VERIFY, OWNED)
-keys the compose project, the nuget volume and the marker, never the database. The other suites have the same shape:
-`grep -rn 'TestDatabaseName\s*=' --include=*.cs .` lists ten fixed names, and FredCollector, AlphaVantageCollector
-and NasdaqCollector share one (`atlas_integration_test`), so two DIFFERENT services collide as well.
-Consequence: a spurious RED blocks a push, and a spurious RED counted as a mutation KILL overstates a guard test. Re-check: that grep; the fix derives the
-name from `ATLAS_WORKTREE_ID`, which `scripts/devcontainer-owner.sh` already exports.
+**Six services keep their integration suite behind `compile.sh --integration`, so the push marker never sees it,
+and four of the six are red.** [2026-09-17] The six are ThresholdEngine, FredCollector, OfrCollector,
+NasdaqCollector, AlphaVantageCollector and FinnhubCollector; SecMaster moved its suite into the gate after #900.
+Measured on the per-worktree database-name branch, and no failure below touches a database name:
+- FredCollector, 10 of 123 fail. Seven `EventStreamIntegrationTests` stream zero events
+  (`GetEventsSince_RespectsLimit`: expected 20, found 0), and a control run with the pre-fix gRPC base from
+  `c4b86adb` failed the same 7 of 8. Three `MacroObservationIdempotencyTests` throw in EF model validation, before
+  any SQL: `NewsArticleEmbeddingEntity.Embedding` (pgvector `Vector`) "could not be mapped", and the test's
+  `UseNpgsql` options configure no `UseVector()`.
+- OfrCollector, 3 of 64: its `MacroObservationIdempotencyTests` fail with the same model-validation error.
+- AlphaVantageCollector, 39 of 45 fail "DB_PASSWORD environment variable is required": its
+  `.devcontainer/compose.yaml` sets no `DB_*` variable, and the fixture's user fallback is `ai_inference`.
+- FinnhubCollector, 32 of 38 fail "Name or service not known": its compose file sets no `DB_HOST`, and the
+  fixture falls back to `finnhub-timescaledb`, which no compose file defines.
+In AlphaVantage and Finnhub, the passing six are the naming unit tests, which need no database.
+ThresholdEngine (67) and NasdaqCollector (28) are green. The consequence is that a regression only an integration
+suite can catch ships behind a valid push marker. #900 found that class on SecMaster: four tests silently red since #231.
+Re-check: `bash <Service>/.devcontainer/compile.sh --integration`, then read the `Failed!` line of the
+`*.IntegrationTests.dll`.
 
 **Gemma 4 residuals the swap PR found and did not fix (DEPLOYED 2026-09-07 evening; 1b, 2 and 3 still open)**
 [2026-09-07, title corrected 2026-09-13, file count re-measured 2026-09-16]
