@@ -164,11 +164,11 @@ REST endpoints are split across the following endpoint groups under `src/Endpoin
 |----------|--------|-------------|
 | `/api/instruments/` | GET | List all instruments (`?activeOnly=` filter) |
 | `/api/instruments/` | POST | Create instrument |
-| `/api/instruments/{id:guid}` | GET | Get by ID |
+| `/api/instruments/{id:guid}` | GET | Get by ID. The instrument body carries `discoverySource` (string or null, stamped at discovery and never rewritten) and `createdAt` (ISO-8601 UTC, `Z` suffix): the provenance a caller bounds a population by |
 | `/api/instruments/{id:guid}` | PUT | Update instrument |
 | `/api/instruments/{id:guid}` | DELETE | Delete instrument |
 | `/api/instruments/{id:guid}/sources` | GET | Get source mappings for instrument |
-| `/api/instruments/by-symbol/{symbol}` | GET | Get by symbol |
+| `/api/instruments/by-symbol/{symbol}` | GET | Get the ACTIVE row by symbol (upper-cased server-side); same body as by-ID, incl. `discoverySource` + `createdAt` |
 | `/api/instruments/{instrumentId:guid}/sector-override` | GET | Active sector override (404 when none) |
 | `/api/instruments/{instrumentId:guid}/sector-override` | POST | Set / supersede active sector override |
 | `/api/instruments/{instrumentId:guid}/sector-overrides/history` | GET | Override history for an instrument |
@@ -182,7 +182,7 @@ REST endpoints are split across the following endpoint groups under `src/Endpoin
 | `/api/search/` | GET | Fuzzy text search |
 | `/api/semantic/search` | GET | Vector similarity search |
 | `/api/semantic/resolve` | GET | Hybrid resolution (SQL → Vector → RAG, with upstream discovery) |
-| `/api/semantic/resolve-local` | GET | Hybrid resolution restricted to local catalog (no upstream discovery) |
+| `/api/semantic/resolve-local` | GET | Hybrid resolution restricted to local catalog (no upstream discovery). Body adds `degraded` (bool) + `degradedTiers` (string[]): a consulted tier failed soft, so a no-match may be an outage, not a miss, and `method`/`hypothesis`/`candidates` are not evidence. Values: `"rag"`, and `"vector"` only for a zero-magnitude query embedding; every other failure is a 500. See AGENT_README.md D-15 |
 | `/api/semantic/ask` | POST | Natural language Q&A with RAG synthesis |
 | `/api/semantic/embed/{instrumentId:guid}` | POST | Force-embed a single instrument |
 | `/api/semantic/embed/backfill` | POST | Backfill embeddings for missing/stale rows |

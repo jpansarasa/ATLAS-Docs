@@ -165,7 +165,7 @@ three fill, the row is gone too. `[M]`
 inherited figure is lower, and I could not reconstruct its exact predicate — §8.)
 
 **Embeddings.** `instrument_embeddings` coverage of the self-seeded set is **1,694 / 1,694 = 100%**,
-and the embedded text is name-bearing (`EmbeddingService.cs:641`:
+and the embedded text is name-bearing (`EmbeddingService.cs:681`:
 `instrument.Name + " (" + instrument.Symbol + ")"`). `[M]` They self-heal after a name repair:
 `EmbeddingBackgroundService.cs:103-113` marks stale on `i.UpdatedAt > e.CreatedAt` — **cross-table**
 (instrument's `UpdatedAt` vs the embedding row's `CreatedAt`), not one row's two columns as inherited.
@@ -247,7 +247,7 @@ retired-or-inactive embedding in one step (1,399 = 1,308 retired + 91 inactive),
 prunes any embedding whose row is retired or quarantined later. At 2026-09-16T23:34Z, 0 of 27,345
 embeddings belonged to a retired or inactive row, and the prune had never fired (no `pruned` or
 `prune_refused` series in 24h). The guard is now the instruments join inside the vector CTE, before the
-LIMIT. The hydration filter (`EmbeddingService.cs:447-456`) is the belt, not the guard: it covers only a row
+LIMIT. The hydration filter (`EmbeddingService.cs:472-481`) is the belt, not the guard: it covers only a row
 retired or quarantined between the two statements. `[M]`
 
 **2.8 The review queue has never been drained.** 72,544 rows, **all 72,544 `is_open`**, none ever

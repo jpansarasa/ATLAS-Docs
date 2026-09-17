@@ -34,6 +34,7 @@ Defects with a measurement that makes them re-checkable.
 | impact | measured | status | entry |
 |---|---|---|---|
 | A | 2026-09-17 | OPEN | 107 of 141 active GeminiFallback instruments are named by the query surface, not a title |
+| A | 2026-09-17 | OPEN | LLM breaker open -> resolve-local emits hypothesis "RAG" from SecMaster's own fallback text |
 | A | 2026-09-16 | OPEN | Corrected source_entity prompt puts the COUNTRY in the owner slot; catalog matches it |
 | A | 2026-09-16 | AWAITING-DECISION | Observation identity is the entity, not the measurement: N datapoints collapse to one key |
 | A | 2026-09-16 | OPEN | Apparent identity collisions are partly mis-resolutions; proxy 6.6% and rising |
@@ -146,6 +147,20 @@ discovery_source = 'GeminiFallback' AND created_at < TIMESTAMPTZ '2026-07-19' AN
 count(DISTINCT instrument_id) FROM sentinel.extracted_observations WHERE instrument_id IN (<ids>) AND extracted_at >=
 TIMESTAMPTZ '2026-08-17 23:12Z' AND extracted_at < TIMESTAMPTZ '2026-09-16 23:12Z';` on `atlas_data` -> `3888 | 75`.
 `instrument_id` can change after extraction, so a different figure is not by itself a refutation.
+
+**WHILE THE LLM CIRCUIT IS OPEN, RESOLVE-LOCAL RETURNS HYPOTHESIS `RAG`, READ OUT OF SECMASTER'S OWN FALLBACK ANSWER.**
+`RagService.QueryAsync`'s `BrokenCircuitException` arm answers `"RAG temporarily unavailable."`, and
+`HybridResolutionService` hands that answer to `TickerHypothesisExtractor.Extract`, whose regex takes `RAG` as the first
+ticker-shaped token (not a stop word). Measured in `ResolveLocalDegradedTests.should_flag_rag_degraded_when_the_llm_circuit_is_open`
+(2026-09-17): the body is `{"method":"RagSynthesis","instrumentId":null,"symbol":null,"hypothesis":"RAG",...,"degraded":true}`.
+LATENT, not harmless: `SELECT count(*) FROM instruments WHERE upper(symbol) = 'RAG';` on `atlas_secmaster` -> 0. And no
+circuit opened in the week to 2026-09-17T02:44Z: `sum(count_over_time(secmaster_rag_abstain_total[7d]))` returns no
+series for ANY reason, while `sum(count_over_time(secmaster_rag_degraded_total{reason="timeout"}[7d]))` returns 7,551
+samples whose earliest is 2026-09-10T02:44Z, so the scrape covered the whole window and the absence is real, not a gap
+(the abstain counter is not zero-initialised, so it has no series until its first increment). The consequence arrives with either a catalog row named `RAG`
+(SentinelCollector's hypothesis leg looks the symbol up and attaches) or the Pending path confirming `RAG` upstream.
+Since D-15 the same body carries `degraded: true`, so a caller that refuses degraded bodies never reads it; one that
+reads `hypothesis` first does. Fix at the source (an answer the extractor cannot read, or null), not with a stop word.
 
 **THE CORRECTED `source_entity` PROMPT IS IN PRODUCTION, IT STOPPED THE BLANKING, AND ON ARTICLES THAT NAME
 NO SERIES IT PUT THE COUNTRY IN ITS PLACE. 37 rows anchored on a country, 10 of them resolved to an
@@ -604,7 +619,7 @@ whether they resolve -- so a resolution quoted without NAMING its endpoint is un
 refuted; do not re-raise it without re-reading this: CFIGY (`CHALLENGER LTD-UNS ADR`, created 2026-08-18 by
 `discovery_source='entity_resolution:gemini'`) is proposed on NEITHER route for `q=Challenger, Gray & Christmas`.
 Mechanics: the semantic endpoints take `q`, not `query` (HTTP 400 on both); `/api/semantic/resolve-local` has no
-`resolution` or `answer` field (`SecMaster/src/Endpoints/SemanticSearchEndpoints.cs:341`); `secmaster` has `curl`,
+`resolution` or `answer` field (`SecMaster/src/Endpoints/SemanticSearchEndpoints.cs:348`); `secmaster` has `curl`,
 `secmaster-mcp` does not. Re-check (atlas_secmaster): `SELECT a.alias FROM aliases a JOIN instruments i ON
 i.id=a.instrument_id WHERE i.symbol='CHALLENGER_JOB_CUTS'` -> 12 rows.
 
@@ -812,9 +827,9 @@ three within a minute (`container` is load-bearing: bare `inspect` returns the I
 **`HybridResolutionService.NameAppearsInContext` is a literal substring test of the catalog NAME in the context string,
 and it gates every live hybrid tier -- so a good catalog hit returns NONE unless the instrument's catalog name appears
 verbatim in the quote.** First occurrence, recorded so the next NONE-with-a-good-catalog-hit is recognisable; NOT a
-defect this epic fixes. `SecMaster/src/Services/HybridResolutionService.cs:564-571` is
-`context.Contains(name, StringComparison.OrdinalIgnoreCase)` (`:571`), applied in `ResolveLocalAsync` to the ExactSql
-result (`:76`), the FuzzySql top hit (`:115`) and every Vector candidate (`:184`); an empty context passes everything
+defect this epic fixes. `SecMaster/src/Services/HybridResolutionService.cs:584-593` is
+`context.Contains(name, StringComparison.OrdinalIgnoreCase)` (`:592`), applied in `ResolveLocalAsync` to the ExactSql
+result (`:76`), the FuzzySql top hit (`:115`) and every Vector candidate (`:197`); an empty context passes everything
 through, a non-empty one demands the NAME, and the refusal is one Information line (invisible at the Warning prod
 level). Measured 2026-09-16 with the resolution-regression harness in `--live` mode (`q=<subject>`,
 `context=<description>`, `minScore=0.75`, the Rule 2 leg): corpus row 1, `Challenger, Gray & Christmas` /
