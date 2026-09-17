@@ -128,8 +128,8 @@ Collectors register series at startup via gRPC streaming (fire-and-forget). Cons
 | `InstrumentClassificationBackfill__RunOnStartup` | Run classification backfill on startup (skips already-classified rows) | `true` |
 | `InstrumentClassificationBackfill__ForceRerun` | Re-classify every instrument regardless of current `classification_source` | `false` |
 | `InstrumentClassificationBackfill__IntervalHours` | Periodic re-run cadence (null = startup-only) | null |
-| `InstrumentClassificationBackfill__UnresolvedAlertThreshold` | Warning-log threshold (fraction of cycle Total unresolved) | `0.20` |
-| `InstrumentClassificationBackfill__UnresolvedAlertMinTotal` | Minimum cycle Total before alert threshold fires | `50` |
+| `InstrumentClassificationBackfill__UnresolvedAlertThreshold` | Warning-log threshold (fraction of in-scope rows left unresolved; out-of-scope rows excluded; set above the measured 46% steady state, not an EDGAR-outage detector) | `0.50` |
+| `InstrumentClassificationBackfill__UnresolvedAlertMinTotal` | Minimum in-scope rows in a cycle before the threshold fires | `50` |
 | `Kestrel__HttpPort` | REST API port | `8080` |
 | `Kestrel__GrpcPort` | gRPC port | `5001` |
 | `OpenTelemetry__OtlpEndpoint` | OTLP exporter target (Loki / Tempo / Prometheus via collector) | `http://otel-collector:4317` |

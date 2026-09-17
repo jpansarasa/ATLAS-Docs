@@ -142,8 +142,8 @@ Sector-tagged Sentinel observations do reach the matrix: 291 rows across all 11 
 ### 1.3 Not built — the data repair
 
 The 1,694 rows do not self-heal. Enrichment is fill-gap only, at **two** sites with an identical
-predicate — `OpenFigiEnrichmentBackgroundService.cs:280-286` and
-`CatalogEnrichmentBackgroundService.cs:357-363`:
+predicate — `OpenFigiEnrichmentBackgroundService.cs:278-284` and
+`CatalogEnrichmentBackgroundService.cs:380-386`:
 
 ```csharp
 if (mapping.Name is not null &&

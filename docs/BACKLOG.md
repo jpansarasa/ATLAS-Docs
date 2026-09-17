@@ -33,6 +33,7 @@ Defects with a measurement that makes them re-checkable.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
 | A | 2026-09-17 | OPEN | 107 of 141 active GeminiFallback instruments are named by the query surface, not a title |
 | A | 2026-09-17 | OPEN | D-18 reclassifies 82 mislabelled rows (T3 item 3); 16 unconfirmed FRED ids, WEAT, ^TNX, EURUSD remain |
 | A | 2026-09-17 | OPEN | LLM breaker open -> resolve-local emits hypothesis "RAG" from SecMaster's own fallback text |
@@ -47,6 +48,8 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-07 | OPEN | A DELTA AND A LEVEL ARE THE SAME ROW: numbers[] cannot express dropped 2% vs is 2% |
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
 | B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
+| B | 2026-09-17 | OPEN | backfill_unresolved_rate_high never detected a fault: constant on main, crossed by growth on D-17 |
+| B | 2026-09-17 | OPEN | The D-10 name repair still rewrites the whole metadata column from a load older than its API calls |
 | B | 2026-09-17 | OPEN | Merged SecMaster PRs sat undeployed 10 days; D-13's deploy shipped them unannounced |
 | B | 2026-09-16 | OPEN | Scoped secmaster deploy also recreates llama-cpu-rag and the shared llama-cpu-embed |
 | B | 2026-09-16 | OPEN | NameAppearsInContext demands the catalog NAME verbatim in the context; good hits return NONE |
@@ -75,8 +78,10 @@ Defects with a measurement that makes them re-checkable.
 | B | 2026-08-17 | OPEN | Pattern publicationFrequencyDays is dead config: silently overwritten by Max(series freq) |
 | B | 2026-08-15 | OPEN | Rule 1 outcome erased downstream (D-31 fixed): read Original*; input confidence constant |
 | B | 2026-08-15 | OPEN | sentinel_chunk_extraction_dedup_ratio keeps SDK default buckets a [0,1] value cannot use |
+| C | 2026-09-17 | OPEN | Finnhub catalog enrichment re-enriches and re-embeds ~240 rows/hour; its cooldowns never persist |
 | C | 2026-09-16 | OPEN | gemini-resolver saturates its 1500/day cap; intent says dozens/day (INTENT_FIDELITY) |
 | C | 2026-09-16 | AWAITING-DECISION | Quarantined-ticker re-acquisition is an undecided policy: Gemini cost + un-alerted 23505 |
+| D | 2026-09-17 | OPEN | Two worktrees running one service's integration suite drop each other's test database |
 | D | 2026-09-16 | OPEN | Gemma 4 swap residuals: one-directional coordinate sweep, hermes parser, promtool fixtures |
 | D | 2026-09-16 | OPEN | D-23 thin-draw gate cannot deny: Bind() appends to the Engines default (inert until wired) |
 | D | 2026-09-16 | OPEN | Static-meter flake: two ExtractionProcessor test classes still outside SentinelMeterStatic |
@@ -107,6 +112,20 @@ Defects with a measurement that makes them re-checkable.
 | E | 2026-09-16 | OPEN | Two SecMaster comments still call a Finnhub 403 transient (permanent, arrives as NULL) |
 | E | 2026-09-16 | OPEN | SentinelCollector card is 5.3x over its D-entry gate and its line count hides it |
 | E | 2026-09-16 | AWAITING-DECISION | Six deployed directories have no card and sit outside the SERVICES roster (HARD_STOP gap) |
+
+**D-17's `ClearOutOfScopeUsAuthorityStamps` names its rows by id as read at 2026-09-17T12:52:35Z, and production keeps
+writing out-of-scope stamps until that migration deploys; a row written in between stays.** Measured 2026-09-17,
+atlas_secmaster SELECT-only. The pre-S2 code gave DAN (Danieli, IM) Dana Inc's EDGAR CONS_DISC at 12:27:34Z, after a
+first authoring at 10:54Z had read A4b as 33, so the lists were re-read at the migration's `AuthoredAt` (5 macro, 34
+foreign, 150 home exchange). Rate: 4 of the listed stamps were written in the 30 days before `AuthoredAt` (FPH, SIG,
+SKG, DAN), and the home-exchange list read 150 identical rows at both instants. At `AuthoredAt`,
+`ClearOutOfScopeUsAuthorityStamps.UnclearedRowsSql` returned 0 stamps plus the 150 listed home exchanges the migration
+has not yet moved; with its instant moved back to 10:54Z it also returned DAN. Consequence: a leftover keeps its wrong
+sector, and post-deploy A4a, A4b and A4c read above 2, 0 and 0, which looks like a D-17 guard leak. After the deploy,
+run that SELECT (`SecMaster/src/Data/Migrations/20260917110542_ClearOutOfScopeUsAuthorityStamps.cs`): each stamp it
+returns classified before the deploy instant, and each home exchange, is a leftover; one classified after it is an A4f
+leak, not this entry. It returns a leftover -> dispatch a follow-up EF data migration over those ids with the same
+compare-and-swaps (`ClearStampsSql`, `MoveHomeExchangeSql`), never a predicate. It returns none -> close this entry.
 
 **107 OF THE 141 ACTIVE `GeminiFallback` INSTRUMENTS ARE NAMED BY THE QUERY SURFACE THAT FOUND THEM, NOT BY A TITLE.
 THE REPAIR IS DECIDED AND WRITTEN AS MIGRATIONS (#1053), NOT YET DEPLOYED; GC'S NAME AND THE OBSERVATIONS REMAIN.**
@@ -784,6 +803,39 @@ article carried `NASDAQ`. The mechanism is shown;
 that this pair caused that row is inferred, not isolated. Impact on attachments is unmeasured. Re-check: embed both
 spellings as above; the defect is closed when the cache key preserves case or the embedder input is case-folded too.
 
+**`backfill_unresolved_rate_high` has never detected a fault: on main it fired on every run, and D-17's in-scope
+rate stays under its 0.50 threshold through an EDGAR outage, then crosses it on catalog growth alone.** Measured
+2026-09-17 (Loki `{service_name="SecMaster"} |= "backfill_unresolved_rate_high"` over 30d; atlas_secmaster SELECT-only).
+Main's form (unresolved over every active row, threshold 0.20) fired on all 7 runs in 30 days at 84.06-84.20%; with
+every EDGAR lookup empty it would read 84.7% (24,299 of 28,702), so it was a constant. D-17's form (unresolved over
+EDGAR-owned rows, `InstrumentClassificationBackfillOptions.UnresolvedAlertThreshold` 0.50): steady state 3,768 of 8,180
+(46.1%); every EDGAR lookup empty 3,938 of 8,180 (48.1%); `ListingScope`'s venue arm deleted 4,253 of 8,699 (48.9%).
+Neither fault crosses 0.50, and no threshold separates either from the steady state. Growth does: in-scope rows by
+creation month are unresolved Jul 749 of 1,355, Aug 932 of 1,613, Sep (to the 17th) 434 of 650, 58.5% pooled, so about
+3,800 more rows at that rate cross 0.50, some 80 days at the 46 rows/day those months averaged. A cohort's rate falls as
+its rows pick up a Finnhub sector (May 381 of 1,364, Jun 977 of 2,176), so that is an estimate, not a date. Consequence:
+the first firing reads as an incident and is growth. Kept, not deleted (CLAUDE.md OBSERVABILITY: nobody decided to
+demote it); the fix is a signal an outage moves, such as the share of in-scope rows whose filer lookup hits. Re-check,
+per creation month (drop the GROUP BY for the whole-population rate):
+  `select to_char(created_at,'YYYY-MM'), count(*) filter (where classification_source is null and not exists (select 1 from instrument_sector_overrides o where o.instrument_id = i.id and o.is_active) and not exists (select 1 from edgar_filers f where upper(f.ticker) = upper(trim(i.symbol)) and coalesce(f.derived_naics_code,'') <> '')), count(*) from instruments i where is_active and asset_class in ('Equity','ETF','Stock') and (strpos(symbol,'.') = 0 or symbol ~ '^[A-Za-z]+\.[ABC]$') and (exchange is null or exchange !~ '^[A-Z]{2}$' or exchange = 'US') and not exists (select 1 from source_mappings m where m.instrument_id = i.id and m.is_active and m.is_primary and m.collector in ('FredCollector','FRED','BLS','OFR','OfrCollector')) group by 1 order by 1;`
+
+**The D-10 name repair still rewrites the whole `instruments.metadata` column from a copy loaded before its OpenFIGI
+and Finnhub calls, so an applied run erases any metadata an enrichment cycle saved meanwhile.** Measured 2026-09-17,
+atlas_secmaster SELECT-only: 81 active rows in its population lack `name_repair_completed_at`, and 80 of them also sit
+in the OpenFIGI pool (listed, `figi` NULL). `CatalogNameRepairService.Stamp` copies `Metadata` and reassigns it, and the
+pass saves once after every API call. D-17 moved both enrichers to `InstrumentMetadataMerge`, which closes the race
+between those two and not this one. Not a one-line swap: the pass is one save behind a dry-run gate, and a merge is its
+own statement. Consequence: on those 80 rows
+an OpenFIGI enrichment landing during an applied run loses its composite and share-class FIGI for good, because the
+`figi` column survives. A second whole-column writer, also unfixed: `InstrumentRepository.UpdateAsync` calls
+`Instruments.Update`, which marks every column modified, metadata included. Its window is one request, not a pass:
+each caller loads the row and saves it with no external call between (`PUT /api/instruments/{id}`, `RegistrationService`'s
+sector dual-write onto a sectorless row, `FredCatalogReconciliationService.ReactivateAsync` on an inactive row, which
+neither enrichment pool selects), so a key is lost only when an enrichment commits inside those milliseconds. Measured
+2026-09-17 over 7 days (Prometheus): 0 `PUT /api/instruments/{id}` requests (`http_server_request_duration_seconds_count`),
+and no `secmaster_sector_name_mapping_total{source="registration"}` series. Re-check:
+  `select count(*) filter (where not metadata ? 'name_repair_completed_at' and asset_class in ('Equity','ETF','Stock') and figi is null) from instruments where is_active and lower(discovery_source) = 'entity_resolution:gemini' and created_at < '2026-08-07T12:00:00Z';`
+
 **Merged SecMaster PRs sat undeployed for 10 days, and a later deploy shipped them unannounced, so the D-13
 post-deploy acceptance first charged #1030's latency cost to D-13.** First occurrence. #1029, #1031 and #1030
 merged 2026-09-06 (15:56Z-17:53Z). The `secmaster` image running until 2026-09-16 was built 2026-08-25T00:53Z, one
@@ -1444,6 +1496,29 @@ emitting. The entry exists so that the first time it does, the collapse is alrea
 Fix: add the name to the same `AddView` list in `SentinelCollector/src/Program.cs` that already applies
 `confidenceBuckets` — the [0,1] boundaries suit a ratio unchanged.
 
+**Finnhub catalog enrichment re-enriches and re-embeds the same rows every cycle, and none of its cooldown state
+persists.** Measured 2026-09-17T10:57Z (atlas_secmaster SELECT-only, Prometheus): `sum by (result)
+(increase(secmaster_catalog_enrichment_total[24h]))` = enriched 34,286, no_data 558, error 540, against a candidate pool
+of 18,002 rows. 241 pool rows had `updated_at` in the last hour, all with `atlas_sector_code` NULL, and the head of the
+pool is the rows the previous cycle just enriched. Two mechanisms, both in `CatalogEnrichmentBackgroundService`:
+- The pool selects a NULL sector and orders by `updated_at` DESC, and an enriched row gets `updated_at` bumped. A row
+  whose profile gives no mappable industry therefore returns at the head of the next cycle: one Finnhub call and one
+  re-embed every interval, for good.
+- The no_data cooldown (`finnhub_enrichment_attempted_at`) and the failure back-off (`finnhub_enrichment_fail_count`,
+  `finnhub_enrichment_next_retry_at`) are written into the jsonb `Metadata` dictionary IN PLACE, which EF never saves
+  (no value comparer; `OpenFigiEnrichmentMetadataPersistenceTests` pins the same trap for OpenFIGI). 0 active
+  Equity/ETF rows carried any `finnhub_*` key. `RetryAfterDays` and the back-off options are inert.
+D-17 (`SecMaster/AGENT_README.md`) made `ApplyProfile`'s own keys persist as a jsonb merge, and left the
+no_data and back-off writes alone on purpose: fixing them moves the Finnhub call rate that D-17's acceptance reads as
+unchanged. The fix writes those keys with `InstrumentMetadataMerge.MergeInstrumentMetadataAsync`
+(`SecMaster/src/Data/InstrumentMetadataMerge.cs`), as the success path does, NEVER by reassigning `Metadata`: that
+persists, but as a whole-column write from a load older than the Finnhub call, erasing the OpenFIGI keys saved
+meanwhile, and `EnrichmentMetadataRaceTests.should_keep_the_openfigi_keys_saved_while_a_finnhub_cycle_got_no_profile`
+and `..._failed` go RED on it. Cost: Finnhub quota and llama-cpu-embed CPU on the same rows all day.
+Re-check:
+  `select count(*) from instruments where is_active and asset_class in ('Equity','ETF') and updated_at > now() - interval '1 hour' and atlas_sector_code is null;`
+  `select count(*) from instruments where metadata ? 'finnhub_enrichment_attempted_at' or metadata ? 'finnhub_enrichment_fail_count';`
+
 **gemini-resolver runs at 100% of its daily cap while its gate rejects ~1 call in 3,000.** Measured 2026-08-14:
 `gemini_resolver_live_calls_24h` 1500 against `gemini_resolver_daily_cap` 1500, `gemini_resolver_gated_24h` 1 of 3,076
 calls, and 877 of SecMaster's 3,425 dispatches/24h refused as `cap_exhausted`; refusal is first-come-first-served, so
@@ -1494,6 +1569,19 @@ Re-check: `sum by (result)(secmaster_entity_resolution_self_seed_total)` (2026-0
 `inserted` 126, `quarantined_skip` 32, and no `error` series -- the 23505s are gone) and
   `SELECT indexname, indexdef FROM pg_indexes WHERE indexname LIKE 'idx_instruments_symbol%'
      OR indexname LIKE 'idx_source_mappings_collector_source%';`
+
+**Two worktrees running one service's integration suite drop each other's test database, so a run can go RED
+(or abort) on a defect that is not in its tree.** First occurrence, 2026-09-17 ~11:25Z: during a SecMaster mutation
+sweep in one worktree, a filtered integration run failed `ListingScopeTests` with `3D000: database
+"atlas_secmaster_integration_test" does not exist` and `57P01: terminating connection due to administrator command`, on
+a mutation that does not touch that class, which passed in the runs immediately before and after. `DatabaseFixture` DROPS and
+re-creates a FIXED database name at the start of every run (`SecMaster/tests/SecMaster.IntegrationTests/Infrastructure/DatabaseFixture.cs`,
+`TestDatabaseName`), and the devcontainer ownership that lets N worktrees compile at once (CLAUDE.md VERIFY, OWNED)
+keys the compose project, the nuget volume and the marker, never the database. The other suites have the same shape:
+`grep -rn 'TestDatabaseName\s*=' --include=*.cs .` lists ten fixed names, and FredCollector, AlphaVantageCollector
+and NasdaqCollector share one (`atlas_integration_test`), so two DIFFERENT services collide as well.
+Consequence: a spurious RED blocks a push, and a spurious RED counted as a mutation KILL overstates a guard test. Re-check: that grep; the fix derives the
+name from `ATLAS_WORKTREE_ID`, which `scripts/devcontainer-owner.sh` already exports.
 
 **Gemma 4 residuals the swap PR found and did not fix (DEPLOYED 2026-09-07 evening; 1b, 2 and 3 still open)**
 [2026-09-07, title corrected 2026-09-13, file count re-measured 2026-09-16]
@@ -2033,7 +2121,7 @@ Re-verified 2026-09-16: both prefixes still present in `SentinelMeter.cs` (6 hit
 alerts, so it needs a deliberate PR.
 
 **TWO uncorrected copies of the Finnhub transient-only claim, not four.**
-`SecMaster/src/Configuration/EnrichmentOptions.cs:14` and `SecMaster/src/Services/CatalogEnrichmentBackgroundService.cs:187`
+`SecMaster/src/Configuration/EnrichmentOptions.cs:14` and `SecMaster/src/Services/CatalogEnrichmentBackgroundService.cs:183`
 both call "Finnhub 403 for foreign tickers" a TRANSIENT enrichment failure. A 403 is plan-uncovered and permanent, and
 it arrives as a NULL profile rather than an exception -- which `SecMasterMeter.cs:243` and
 `SecMaster/src/Services/IFinnhubCollectorClient.cs:33` already say correctly, so this is a finished conversion with
