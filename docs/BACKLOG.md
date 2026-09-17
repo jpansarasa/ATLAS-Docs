@@ -740,8 +740,9 @@ merged 2026-09-06 (15:56Z-17:53Z). The `secmaster` image running until 2026-09-1
 minute after `8bac67a7` (#987) merged, so all three first reached production in the D-13 (#1049) deploy at
 2026-09-16T23:01Z. Neither #1049's PR body nor #1051's diff names #1029-#1031 or ef_search. #1030 raised `hnsw.ef_search` from 40 to 400. The acceptance saw
 vector-SQL latency rise and first read it as the new D-13 join. A live SELECT-only A/B then put it on ef_search: p50
-1.28 / 1.38 ms without / with the join at 40, and 6.91 / 7.02 ms at 400. The figures and the open keep-or-tune
-decision are in `docs/RELEASES.md` `d13-retired-scope-done`. The harness readings from that deploy mix the same two
+1.28 / 1.38 ms without / with the join at 40, and 6.91 / 7.02 ms at 400. The figures are in `docs/RELEASES.md`
+`d13-retired-scope-done`; the keep-or-tune decision it left open was settled at 200 on 2026-09-17
+(`SemanticSearchOptions.HnswEfSearch`). The harness readings from that deploy mix the same two
 changes. Re-tested 2026-09-17T00:02Z, with no retired embeddings left, `CHALLENGER_JOB_CUTS` is outside the top 5
 for the probe query `Challenger, Gray & Christmas` at ef_search 40 and rank 1 at 400. Its return is #1030's, and only
 the DISCONTINUED count is D-13's.
