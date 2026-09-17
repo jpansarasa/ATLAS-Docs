@@ -237,13 +237,18 @@ producer/consumer contract test (`DslNumSlotContractTests`, 246 lines, replaying
 payload). `fix/secmaster-no-surface-as-name` = 4 commits, 6 files, +272/-6, HEAD `3b12e724`, and it does
 include the D-2 per-field amendment. Both are checked out in other agent worktrees, one of them locked.
 
-**2.7 Quarantine leaves the vector, but search already filters it.** `is_active=false` never deletes an
-embedding — when measured there was no delete path outside migrations and the cascade on *hard* delete;
-SecMaster D-13 has since added one, the backfill poll's prune of embeddings whose row is inactive or retired — and **90
-inactive self-seeded rows retain embeddings right now**. `[M]` But vector search filters inactive rows
-at hydration (`EmbeddingService.cs:447-456`, with a comment naming exactly this failure mode). So
-dropping the vector is hygiene and defence-in-depth, **not** the correctness requirement the brief
-implies. `[I→M]`
+**2.7 Quarantine left the vector, but search already filtered it.** When measured (2026-08-06),
+`is_active=false` never deleted an embedding — there was no delete path outside migrations and the cascade
+on *hard* delete — and **90 inactive self-seeded rows retained embeddings**. `[M]` But vector search
+filtered inactive rows at hydration, so dropping the vector was hygiene and defence-in-depth, **not** the
+correctness requirement the brief implied. `[I→M]`
+SecMaster D-13 (deployed 2026-09-16 ~23:01Z) changed both halves. Its migration deleted every
+retired-or-inactive embedding in one step (1,399 = 1,308 retired + 91 inactive), and the backfill poll now
+prunes any embedding whose row is retired or quarantined later. At 2026-09-16T23:34Z, 0 of 27,345
+embeddings belonged to a retired or inactive row, and the prune had never fired (no `pruned` or
+`prune_refused` series in 24h). The guard is now the instruments join inside the vector CTE, before the
+LIMIT. The hydration filter (`EmbeddingService.cs:447-456`) is the belt, not the guard: it covers only a row
+retired or quarantined between the two statements. `[M]`
 
 **2.8 The review queue has never been drained.** 72,544 rows, **all 72,544 `is_open`**, none ever
 resolved. `[M]` Top surfaces: `Investing.com` (6,665), `Reuters` (5,991), `InvestingPro` (3,285),

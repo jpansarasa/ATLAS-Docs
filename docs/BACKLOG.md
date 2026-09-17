@@ -44,6 +44,7 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-16 | OPEN | Production's CoD prompt carries two defects no labeller can work around |
 | A | 2026-09-07 | OPEN | A DELTA AND A LEVEL ARE THE SAME ROW: numbers[] cannot express dropped 2% vs is 2% |
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
+| B | 2026-09-17 | OPEN | Merged SecMaster PRs sat undeployed 10 days; D-13's deploy shipped them unannounced |
 | B | 2026-09-16 | OPEN | Scoped secmaster deploy also recreates llama-cpu-rag and the shared llama-cpu-embed |
 | B | 2026-09-16 | OPEN | NameAppearsInContext demands the catalog NAME verbatim in the context; good hits return NONE |
 | B | 2026-09-16 | OPEN | Production CoD loses ~74 gold entities per run to its loop guard (repetition_penalty 1.1) |
@@ -763,6 +764,66 @@ STILL OPEN, three items:
     `Extraction__GuardsEnabled=false` (`/opt/ai-inference/compose.yaml:1269`), so it is inert; deciding that flag's
     fate is the prerequisite, and a third call behind the same disabled flag would read as protection that does not
     exist.
+
+**Merged SecMaster PRs sat undeployed for 10 days, and a later deploy shipped them unannounced, so the D-13
+post-deploy acceptance first charged #1030's latency cost to D-13.** First occurrence. #1029, #1031 and #1030
+merged 2026-09-06 (15:56Z-17:53Z). The `secmaster` image running until 2026-09-16 was built 2026-08-25T00:53Z, one
+minute after `8bac67a7` (#987) merged, so all three first reached production in the D-13 (#1049) deploy at
+2026-09-16T23:01Z. Neither #1049's PR body nor #1051's diff names #1029-#1031 or ef_search. #1030 raised `hnsw.ef_search` from 40 to 400. The acceptance saw
+vector-SQL latency rise and first read it as the new D-13 join. A live SELECT-only A/B then put it on ef_search: p50
+1.28 / 1.38 ms without / with the join at 40, and 6.91 / 7.02 ms at 400. The figures and the open keep-or-tune
+decision are in `docs/RELEASES.md` `d13-retired-scope-done`. The harness readings from that deploy mix the same two
+changes. Re-tested 2026-09-17T00:02Z, with no retired embeddings left, `CHALLENGER_JOB_CUTS` is outside the top 5
+for the probe query `Challenger, Gray & Christmas` at ef_search 40 and rank 1 at 400. Its return is #1030's, and only
+the DISCONTINUED count is D-13's.
+Nothing records merged-but-undeployed. The images carry no revision label (`org.opencontainers.image.version` only),
+so the gap can only be rebuilt from build times, and that rebuild is blind in both directions. An image built from a
+PR branch shows that PR's own merge as "after the build" (calendar-service below). An image built AFTER a merge from
+an older checkout hides the merge.
+Drift measured 2026-09-17T00:05Z, and re-checked at 00:24Z with the corrected check below, for every running compose
+service with a `<Project>/.devcontainer/build.sh`. `NasdaqCollector` and `edge/sentinel-edge` also have a `build.sh`
+but no running compose service, so they are out. On a container, `.Image` is the TAG (`docker.io/library/<image>:latest`),
+not an image id. `image inspect <tag>` therefore returns the build the tag names NOW, which is the running build
+only if that build is older than the container. On all 12 rows the tag's `.Created` is older than the container's
+`.Created`, so the build time in the table is taken as the running one. A commit counts when it is on `origin/main`,
+touches `<Project>/`, and was committed after that build. Shared paths such as `Events/` and `deployment/` are NOT
+counted.
+
+| service | image built (UTC) | last merge on `<Project>/` | after build: all / non-`.md` | what the non-`.md` commits touch |
+|---|---|---|---|---|
+| alert-service | 2026-07-22T03:14Z | 2026-09-07T15:37Z | 4 / 2 | `.devcontainer/` only (#920, #1035) |
+| alphavantage-collector | 2026-07-22T01:52Z | 2026-09-07T15:37Z | 4 / 2 | `.devcontainer/` only (#920, #1035) |
+| calendar-service | 2026-07-31T20:34Z | 2026-09-07T15:37Z | 4 / 3 | `.devcontainer/` (#920, #1035); `src/Containerfile` (#905), merged 83 s AFTER this build |
+| finbert-sidecar | 2026-06-17T23:36Z | 2026-05-28T00:37Z | 0 / 0 | none |
+| finnhub-collector | 2026-08-17T15:53Z | 2026-09-07T15:37Z | 2 / 2 | `.devcontainer/` (#1035); a comment-only edit to `src/Telemetry/FinnhubMeter.cs` (#976) |
+| fred-collector | 2026-07-31T20:32Z | 2026-09-07T15:37Z | 4 / 3 | `.devcontainer/` (#920, #1035); `.cursorrules` (#1005) |
+| migrate-macro-substrate | 2026-07-31T20:32Z | 2026-09-07T15:37Z | 4 / 2 | `.devcontainer/` only (#920, #1035) |
+| ofr-collector | 2026-07-31T20:37Z | 2026-09-07T15:37Z | 4 / 2 | `.devcontainer/` only (#920, #1035) |
+| secmaster | 2026-09-16T22:59Z | 2026-09-16T23:19Z | 1 / 1 | a comment-only edit to `src/Data/Entities/InstrumentEntity.cs` (#1050) |
+| sentinel-collector | 2026-09-16T18:03Z | 2026-09-16T23:39Z | 3 / 3 | `scripts/resolution-regression/` (#1048, #1051); a comment-only edit to `src/Workers/ExtractionProcessor.cs` (#1050) |
+| threshold-engine | 2026-07-31T20:37Z | 2026-09-07T15:37Z | 4 / 3 | `.devcontainer/` (#920, #1035); `PatternMnemonicFormatValidator` (#953), whose only callers are in `tests/` |
+| whisper-service | 2026-06-17T23:35Z | 2026-09-07T15:37Z | 3 / 2 | `.devcontainer/` only (#920, #1035) |
+
+11 of 12 services have a merged commit newer than their running image: 37 service-commit pairs (shared commits such
+as #1035 count once per service), 25 of them touching something other than `.md`. Read diff by diff, none of the 25
+is an undeployed runtime change. One cannot be settled from
+timestamps: calendar-service's `Containerfile` fix merged after its image was built, which fits a build from the PR
+branch but was not verified against the image. So there is no drift in behaviour today, but the SecMaster gap
+went unseen for ten days, and nothing would show the next one. The consequence is misattribution: a deploy's
+acceptance charges whatever it measures to the PR its brief names. Class B, not D, because the blind spot is in
+what production runs, not in a harness.
+Re-check, per service (fields verified on nerdctl 1.7.7):
+(1) `sudo nerdctl container inspect <svc> --format '{{.Image}} {{.Created}}'` gives the tag and the container's
+creation time. `container` is load-bearing: bare `inspect` returns the IMAGE.
+(2) `sudo nerdctl image inspect <tag> --format '{{.Created}}'` gives the build the tag names now.
+(3) If that image is NEWER than the container, the tag was rebuilt after the container started. The running build
+is UNKNOWN: report the service as NOT deployed and stop, because reading on would count merged code as running.
+This happens after any `build.sh` without a deploy, and inside every deploy's own window. The D-13 deploy had it
+from 22:59:56Z, when the new `secmaster:latest` was built, to 23:00:40Z, while the 11:00:31Z container still ran the
+2026-08-25 build.
+(4) Otherwise, `git log --oneline --since=<image Created> origin/main -- <Project>/`. Any output is a merge newer
+than the running build; read its diff before calling it undeployed behaviour.
+Still blind: a tag re-pointed to an OLDER build after the container started (a rollback retag) passes step (3).
 
 **The CLAUDE.md "SCOPED" `secmaster` deploy also recreates `llama-cpu-rag` and `llama-cpu-embed`, and
 `llama-cpu-embed` is shared with SentinelCollector.** This comes from the tags, not from chance: the blocks
