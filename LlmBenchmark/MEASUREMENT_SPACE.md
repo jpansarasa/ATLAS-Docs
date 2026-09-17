@@ -27,7 +27,7 @@ A figure without its coordinate does not identify a run.
 | 5 | Context length | Yes — probed from `/v1/models`; null on llama.cpp |
 | 6 | Concurrency (`--max-num-seqs` + client) | Yes — both halves checked independently |
 | 7 | Sampling | Yes — `request_sampling` |
-| 8 | Prompt / schema / template bytes | Yes — sha256 in `request_bytes` |
+| 8 | Prompt / schema / template bytes, and any frozen candidate list the prompt carries | Yes — sha256 in `request_bytes`; a candidate list's sha256, generator + version, k and catalog snapshot under `candidates` (`run_model.py --candidates-file`) |
 | 9 | Task | Yes — `production_prompt_path` |
 | 10 | Eval population + alignment key | Partly — sources recorded, the **key convention** is not a field |
 | 11 | Chat template / system prompt | **No** — the sha256 is recorded, but a *derived* template is a different string with the same provenance |

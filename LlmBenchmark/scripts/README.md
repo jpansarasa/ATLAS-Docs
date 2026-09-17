@@ -8,7 +8,8 @@ Python harness scripts for the Sentinel extraction-LoRA acceptance-criteria pipe
 |---|---|
 | `build_eval_substrate.py` | Deterministically builds the evaluation substrate (positives + negatives) for the Sentinel extraction acceptance-criteria harness. Writes the merged substrate plus a sidecar `criteria.json` documenting construction. Substrate itself is ~10 MB (10,185,438 bytes, measured 2026-09-04) and lives under `/opt/ai-inference/training-data/eval-substrates/` (not committed). |
 | `run_model.py` | Drives a substrate through any **OpenAI-compatible** endpoint (vLLM, SGLang, llama.cpp `/v1`) and emits the predictions JSONL `eval_harness.py --predictions` consumes, plus a provenance sidecar recording the engine build, the **sha256 of the prompt and schema files whose bytes actually reached a request**, and of the chat template string it applied (a path is not a prompt — see below). Takes the same **`--task`** as the scorer and must agree with it: `cove` (default) keeps the extraction array under `predicted_extractions`, `cod` keeps production's stage-1 object under `prediction`. Stdlib only. |
-| `eval_harness.py` | Scores predictions against an eval substrate, on **either of two tasks** (`--task`). `cove` (default): the 18 pinned metrics over the v6.2 substrate's own `{text_quote, value, period, certainty}` shape — a task production does not run. `cod`: production's CoD stage-1 shape `{article_type, entities, numbers, events, claims}`. Both scorers are pure functions (no vLLM / GPU / network — unit-testable); they score `--predictions`, or `--mock` gold-tautology predictions. It does **not** call a model — that is `run_model.py`'s job, and keeping them apart is what keeps the scorer offline-testable. |
+| `eval_harness.py` | Scores predictions against an eval substrate, on **either of two extraction tasks** (`--task`), plus `--task attach` (which catalog instrument each gold owner landed on -- see **Scoring attachment** below). `cove` (default): the 18 pinned metrics over the v6.2 substrate's own `{text_quote, value, period, certainty}` shape — a task production does not run. `cod`: production's CoD stage-1 shape `{article_type, entities, numbers, events, claims}`. Both scorers are pure functions (no vLLM / GPU / network — unit-testable); they score `--predictions`, or `--mock` gold-tautology predictions. It does **not** call a model — that is `run_model.py`'s job, and keeping them apart is what keeps the scorer offline-testable. |
+| `attach_candidates.py` | The FROZEN candidate file shared by `run_model.py --task pick` and `eval_harness.py --task attach`: its loader/validator (owners `E1..E60`, each owner's own list `C1..Cm` with m <= k <= 20, uuid ids, the four coordinate axes required, `catalog_snapshot` an ISO-8601 UTC timestamp), the `{{owners}}`/`{{candidates}}` block rendering, and `pick_schema()`, which `LlmBenchmark/attach-pick/pick_schema.json` must equal. Stdlib only. See **Scoring attachment** below. |
 | `test_run_model.py` | Unit tests over the runner: strict parsing (never salvage), the outbound payload, engine identification, and that a CoD response is **kept** under the key the scorer reads — the contract test imports `eval_harness._cod_object` and asserts the join rather than restating the key. Fully offline — the HTTP boundary is stubbed. |
 | `test_eval_harness.py` | Unit tests over both scorers, the scorecard builder and the control arms. Fully offline. One guard test per metric, each constructing the wrong-pairing case; the CoD alignment-key test asserts the OLD key scores 1.0 on it, so the trap it replaces is measured rather than asserted. |
 | `check_staleness.py` | Grades the committed scorecards against what is running now: engine build, attribution, age. **One verdict is a pass** (`CURRENT`) and it requires a live comparison actually to have happened — with no reachable `--endpoint` every scorecard is `DRIFT_UNCHECKED` and the exit code is non-zero. Runs a known-bad control over its own classifier first and aborts (exit 3) if that control fails — the control uses its OWN fixed threshold, never `--max-age-days`. A file it cannot examine (unparseable, or parsing with no scorecard shape) is graded `UNEXAMINED` and COUNTED **whatever it is called**, because a file skipped in silence takes the denominator with it; the ONLY files it passes over are the named sidecars `*.criteria.json` and `*.provenance.json`. Not recursive, and that gap is open -- a card in a SUBDIRECTORY is never looked for (docs/BACKLOG.md MEASUREMENT DEBT). |
@@ -254,6 +255,107 @@ copy of itself, and scores as a false positive **and** a false negative. That pe
 invisible and reads as a missed fact, so it is published as
 `diagnostics.identityless_predicted_items` — measured `{events: 150/2520, claims: 38/2351,
 numbers: 5/7045, entities: 0/5527}`, which accounts for each ceiling exactly.
+
+## Scoring attachment (`--task pick` -> `--task attach`)
+
+Story 2 of the candidates-in-extraction-prompt plan: the harness for scoring which catalog row a
+number's OWNER is attached to. The gold is built separately; everything here is offline.
+
+**Candidates are an input, never a live lookup.** `run_model.py --candidates-file` reads a frozen
+file and substitutes `{{owners}}` and `{{candidates}}` per record. Provenance records the file's
+sha256 (null when no request carried it), `generator`, `generator_version`, `k` and
+`catalog_snapshot` under `candidates`. The runner refuses (exit 2, before any inference) a file
+missing an axis, a `catalog_snapshot` that is not an ISO-8601 UTC timestamp, a substrate record with
+no frozen entry, a prompt placeholder with no file, and a file no placeholder would carry. An
+article with no owners gets no call (production makes none) and a `no_call` row.
+
+**Labels are per-owner namespaces.** Each owner's own list is `C1..Cm`, `m <= k <= 20`, and `C2`
+means THAT owner's second row. One deduped block per article would need an enum of owners x k: the
+committed CoD gold's largest article has 21 named owners, and 21 x 20 = 420 overran the 200-label
+enum this harness first shipped. `C1..C20` is the enum size plan M3 compiled and accept-tested under
+xgrammar 0.2.3; 1,200 labels (60 owners x 20) was never measured. It also makes another owner's row
+unspellable. The cost: a row listed under two owners is printed twice.
+
+```json
+{"generator": "...", "generator_version": "...", "k": 20, "catalog_snapshot": "2026-09-17T10:24:55Z",
+ "articles": [{"source_file": "...", "source_index": 0,
+   "owners": [{"label": "E1", "owner": "Danieli", "quote": "...",
+     "candidates": [{"label": "C1", "id": "<instrument uuid>", "symbol": "DAN.MI",
+                     "name": "Danieli & C Officine Meccaniche SpA", "asset_class": "Equity",
+                     "exchange": "IM", "country": "IT"}]}]}]}
+```
+
+`--task pick` keeps `{"picks": [{"owner": "E1", "pick": "C7" | "none"}]}` under `prediction`, with
+the committed clean-arm prompt and the FIXED schema (`E1..E60`, `C1..C20` + `none`, one schema for
+every article):
+
+```bash
+python3 LlmBenchmark/scripts/run_model.py --task pick --endpoint-mode completions \
+    --prompt-file LlmBenchmark/attach-pick/pick_prompt_clean.txt \
+    --schema-file LlmBenchmark/attach-pick/pick_schema.json \
+    --candidates-file <frozen.json> --chat-template <production template> \
+    --substrate <same> --endpoint http://localhost:8000 --model <served> --out /tmp/pick.jsonl
+
+python3 LlmBenchmark/scripts/eval_harness.py --task attach --substrate <same> \
+    --attach-gold <gold.json> --candidates <frozen.json> --predictions /tmp/pick.jsonl \
+    --adapter-meta /tmp/pick.jsonl.provenance.json --out /tmp/attach-scorecard.json
+    # G1 (the 40-article CoD gold): add --cod-gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json
+    #   --extraction-predictions <the CoD run whose owners were frozen>
+```
+
+**Gold** rows are `{source_file, source_index, owners: [{owner, accept: [instrument uuids], verdict:
+INSTRUMENT | NONE_IN_CATALOG | NO_SINGLE_OWNER, catalog_at, rationale}]}` (JSONL, a list, or under
+`articles`). Refused with exit 2 and the problem named: a missing label key, an unknown verdict,
+INSTRUMENT with an empty `accept`, a NONE verdict with a non-empty one, a non-uuid id, a `catalog_at`
+without a timezone, a blank rationale, a duplicated article or owner.
+
+**What the scorer refuses (exit 2, named).** Pick predictions without `--candidates`, or without
+`--adapter-meta` recording `candidates.sha256`, or with a `--candidates` file whose sha differs from
+the recorded one. A gold `catalog_at` more than 24 h from the file's `catalog_snapshot`: the plan's
+staleness rule re-checks accepted ids for RETIREMENT before scoring, but nothing catches a row ADDED
+between labelling and freezing, and the window bounds that (measured 2026-09-17: 83.7 instruments
+created per day over 14 d, peak 121, on 27,391 active). The human output prints whether the file was
+verified against the run and the catalog drift; the scorecard carries both, with the gold's
+`catalog_at` range.
+
+**Alignment.** One-to-one. Without G1 inputs, exact after normalising case and whitespace: "Apple"
+never matches "Apple Hospitality REIT". For G1, through the CoD number alignment (`_number_key`), so
+an extraction that wrote "Apple" can own gold's "Apple Inc."; when an extraction MERGED two gold
+owners under one surface, the one with fewer aligned numbers is an extraction miss, never a second
+recipient of the same pick. A predicted owner matched twice raises. Each gold owner resolves to one of
+`correct`, `wrong` (judged against ITS OWN accept set), `abstained`, `refused` (a label outside THAT
+owner's list, an owner skipped or picked twice), `unavailable` (the call failed) or `extraction_miss`
+(no predicted owner reached the pick). An unmatched blank gold owner is `abstained`: no pick is made
+for `""` by contract. A predicted owner no gold owner matched that was ATTACHED is an invented owner
+(`NOT_IN_GOLD`), counted as a wrong attachment. Predictions may instead carry
+`{"attachments": [{owner, instrument_id | null}]}` (a baseline such as production's stored rows).
+
+**Metrics** (value, numerator/denominator, article-cluster percentile bootstrap 95% CI): wrong-
+attachment rate over gold owners plus invented attachments (an attachment on a NONE owner is wrong),
+invented-owner attachment rate on the same base, correct-attachment recall, precision (over all
+attachments), and per gold owner: attach rate, abstain rate, abstain accuracy on NONE owners, NONE
+owner attach rate, extraction-miss rate, candidate recall of the frozen lists, pick accuracy given
+the right row is listed, forced-neighbour rate given it is not. `numbers_f1` (G1) is a diagnostic
+point value. The bootstrap record carries the seed (an int; None is refused), resamples, articles,
+draws and the sha256 of every replicate value, so two runs can be shown to have drawn alike. Token,
+latency and fallback counts are run properties in the provenance; paired A0 comparisons are not
+computed here.
+
+**Controls, run every invocation, built from the gold owners alone** so every arm exercises them
+identically: `oracle` (last accepted id of each set, NONE owners abstain: recall 1, precision 1,
+wrong 0), `all_none` (recall 0, wrong 0), `shuffled_picks` (each owner given an accepted id of
+another article, skipping its own set: the wrong count must EQUAL the attachments made, every verdict
+class exercised) and `accept_swap` (each owner given the accepted id of ANOTHER owner of the SAME
+article: the wrong count must rise from the oracle's by exactly the swaps made, at least one
+INSTRUMENT owner swapped). Any verdict other than `OK` writes the scorecard with `valid: false` and
+exits 3.
+
+**What the controls do not see.** They judge and aggregate; they do not align or resolve labels. An
+alignment defect that hands one predicted owner to two gold owners raises (exit 1). Any other defect
+there, or in a metric's population (a miss counted as an abstention, a refusal as an abstention, a
+denominator that drops misses or invented owners), leaves every control green and exits 0: unit
+tests pin those, and at real size (a 467-owner G2-shaped and a 172-owner G1-shaped fixture) only an
+independent re-derivation of the counts shows them.
 
 ## Why the runner records the engine build
 
