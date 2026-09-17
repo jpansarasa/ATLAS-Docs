@@ -146,7 +146,7 @@ the wrong *shape* for a money boundary, not a defective implementation.
 `secmaster_gemini_resolver_calls_total` ≈ **2,984** (`success` 1,672, `cap_exhausted` 1,005,
 `no_response` 304, `cancelled` 2) vs `sentinel_gemini_resolver_calls_total` ≈ **1,347**. SecMaster
 never calls `CandidateSurfaceFilter` — it has its own gate, `ShouldResolveViaGemini`
-(`IdentifierConfirmationService.cs:276`). Any control placed on only the Sentinel leg
+(`IdentifierConfirmationService.cs:277`). Any control placed on only the Sentinel leg
 misses the majority of dispatches.
 
 ---

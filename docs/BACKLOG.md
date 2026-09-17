@@ -47,6 +47,8 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-16 | OPEN | Production's CoD prompt carries two defects no labeller can work around |
 | A | 2026-09-07 | OPEN | A DELTA AND A LEVEL ARE THE SAME ROW: numbers[] cannot express dropped 2% vs is 2% |
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
+| B | 2026-09-17 | OPEN | SecMaster D-16 drops Gemini fred_series answers for the 16 FRED ids D-18 leaves Equity (10 in 7d) |
+| B | 2026-09-17 | OPEN | SentinelCollector self-seed sends Gemini's holding class: ETFs GSG, PALL, WEAT stored Commodity |
 | B | 2026-09-17 | AWAITING-DECISION | Test databases on the shared timescaledb: 9 fixed-name orphans, per-worktree leaks on kill, each holds a TimescaleDB worker slot |
 | B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
 | B | 2026-09-17 | OPEN | backfill_unresolved_rate_high never detected a fault: constant on main, crossed by growth on D-17 |
@@ -107,6 +109,7 @@ Defects with a measurement that makes them re-checkable.
 | D | 2026-08-15 | OPEN | Human-placed bypass scoped to a guard's basename excludes that guard's tests |
 | D | 2026-08-15 | OPEN | Merge gate: a cut character inside a nested sh -c string hides -R from every scan |
 | D | 2026-08-15 | OPEN | Merge gate: a PR number piped via xargs leaves the span empty; fallback merges wrong PR |
+| E | 2026-09-17 | OPEN | gemini-resolver-mcp cache.py docstring cites SecMaster lines D-16 moved (:173, :166) |
 | E | 2026-09-16 | OPEN | Three live sites still teach the retired MODEL_SIZE >= 30B floor, one in production code |
 | E | 2026-09-16 | OPEN | docs/BACKLOG.md has no out-flow that runs: 3,849 -> 4,187 -> 6,470 lines in eleven days |
 | E | 2026-09-16 | OPEN | Metric prefix inconsistency: sentinel_candidate_surface_* vs sentinelcollector_semantic_* |
@@ -791,6 +794,44 @@ STILL OPEN, three items:
     `Extraction__GuardsEnabled=false` (`/opt/ai-inference/compose.yaml:1269`), so it is inert; deciding that flag's
     fate is the prerequisite, and a third call behind the same disabled flag would read as protection that does not
     exist.
+
+**SECMASTER D-16 DROPS GEMINI'S `fred_series` ANSWERS FOR THE 16 FRED-LABELLED IDS D-18 LEAVES `Equity`: 10 IN 7 DAYS.**
+D-18 relabels 74 of the 91 LISTED rows claiming exchange FRED and leaves 16 ids FRED search does not return (the list
+and their undecided disposition: the D-18 entry above) plus OWLT, which is Owlet Inc and correctly Equity. Until an id
+has a disposition, a Gemini `fred_series` answer naming it meets a LISTED row and D-16 drops it as
+`class_conflict_skip`; whether that drop is right is the disposition's question. Measured by replaying D-16's
+self-seed decision over a read-only copy of `/opt/ai-inference/gemini-resolver-cache.db` taken 2026-09-17T13:18Z: 10 of
+the 3,385 answers written in the 7 days to 13:43Z (NAHB 6, NAPM 3, WCSSTUS1 1), 78 of all 40,148. An upper bound: the
+self-seed meets a Gemini answer only after every cheaper tier missed. Close in the PR that disposes of the last id.
+Re-check (psql is SELECT-only; `atlas_secmaster`): `SELECT count(*) FROM instruments WHERE is_active AND
+lower(asset_class) IN ('equity', 'etf', 'stock') AND symbol IN ('CPIW', 'GOLDPMGBD228NLBM', 'HHDEBT', 'MPMIUSSA',
+'NAHB', 'NAPM', 'NATURALR', 'PCEPILFE_PC1', 'PRS85000001', 'RSTAR', 'SPRSTOC', 'US30Y', 'USMCE', 'USQCEWEMP',
+'WCESTUS1', 'WCSSTUS1');` -> 16 on 2026-09-17, before and after the D-18 deploy, one fewer per disposition. It names the
+ids because the exchange-FRED filter also matches OWLT.
+
+**SENTINELCOLLECTOR'S GEMINI SELF-SEED SENDS THE CLASS OF WHAT A FUND HOLDS, SO 3 LIVE ETF ROWS ARE STORED AS
+`Commodity` (D-18 RELABELS 2 OF THEM), AND THE SENDER STILL RUNS.** Both register legs send `SelfSeedAssetClass.Clamp(<Gemini asset_class>)` to
+SecMaster `POST /api/instruments` as collector `GeminiFallback`: V2 at `SentinelCollector/src/Services/DeterministicResolver.cs:1051`,
+V1 at `SentinelCollector/src/Workers/ExtractionProcessor.cs:1746`. The clamp
+(`SentinelCollector/src/Services/SelfSeedAssetClass.cs:36`) keeps any member of SecMaster's D-4 allowlist, so Gemini's
+`commodity` for a commodity ETF is sent as `Commodity` while the V2 leg sends `etf` as the instrument type
+(`DeterministicResolver.cs:1077`). The clamp is SentinelCollector D-12's SENDER CLAMP, which upholds SecMaster D-4
+and only makes a register pass that allowlist; which of Gemini's two fields decides the class is SecMaster D-16's
+`GeminiAssetClass`, and the sender does not apply it. Still running: `GSG` was created 2026-09-10T12:33Z (`WEAT`
+2026-07-27, `PALL` 2026-06-29), and the newest `GeminiFallback` row of any class 2026-09-13T05:27Z.
+Readers it misleads: SecMaster D-16's family check, which trusts the stored class, so Gemini's correct ETF answers
+for these tickers meet a NON-LISTED row and drop as `class_conflict_skip` (24 cached answers on 2026-09-17); and
+`EmbeddingService`'s identity sentence, which vectorises "is a Commodity etf". Blind spot: the V1 leg sends
+`InstrumentType: null` (`ExtractionProcessor.cs:1753`), so a row IT mislabels is invisible to the query below.
+Not fixed in PR 1061, which changes no SentinelCollector code; the fix is the sender's, letting the vehicle decide.
+Relabelling rows is not that fix: SecMaster D-18 moves GSG and PALL to ETF once deployed, WEAT stays Commodity (its
+entry above), and the sender can store the next one the same way.
+Re-check (psql is SELECT-only; `atlas_secmaster`): `SELECT count(*), string_agg(symbol, ', ' ORDER BY symbol) FROM
+instruments WHERE is_active AND discovery_source = 'GeminiFallback' AND lower(instrument_type) IN ('etf', 'etn',
+'common_stock', 'preferred_stock', 'adr', 'closed_end_fund', 'mutual_fund') AND asset_class NOT IN ('Equity', 'ETF',
+'Stock');` -> `3 | GSG, PALL, WEAT` on 2026-09-17, `1 | WEAT` once D-18 deploys, and any row beyond those is this
+sender still at work; `SELECT max(created_at) FROM instruments WHERE discovery_source =
+'GeminiFallback';` -> 2026-09-13T05:27Z.
 
 **Integration test databases on the SHARED timescaledb outlive their runs, and each one holds a TimescaleDB
 background-worker slot.** [2026-09-17] Integration fixtures now use per-worktree names
@@ -1602,16 +1643,17 @@ CONSEQUENCE while undecided: `CatalogService.cs:207` drops a quarantined discove
 LogWarning, no metric), so a CompanyName candidate loses its ticker PROPOSAL and every news mention of one of the 82
 real quarantined tickers pays the full confirm cascade up to the paid Gemini leg (D-1); also reachable from the
 `search_catalog` MCP tool. `quarantined_skip` is a FLOOR on wall-hits, emitted at one of four self-seed skip paths
-(`EntityResolutionService.cs:1038`); the other three and the `:206` drop are silent.
+(`EntityResolutionService.cs:1080`); the other three and the `:206` drop are silent.
 POPULATION: 91 quarantined rows = 82 real tickers + 9 macro-junk (the D-4 class) that sit in NEITHER enrichment pool
 and need their own disposition (`SELECT asset_class, count(*) FROM instruments WHERE is_active=false GROUP BY 1;` in
 `atlas_secmaster` -> Equity 74 / ETF 8 / fred_series 8 / Economic Indicator 1, 2026-09-05).
 HAZARD, un-alerted: `idx_instruments_symbol` is `UNIQUE ... WHERE (is_active = true)` but
 `idx_source_mappings_collector_source` is STILL UNIQUE on `(collector, source_id)` GLOBALLY with no predicate
-(unchanged 2026-09-16), so `RegistrationService.cs:391` raises a 23505 the moment a quarantined row carries a mapping
+(unchanged 2026-09-16), so the source-mapping insert in `RegistrationService.RegisterCoreAsync` raises a 23505 the moment a quarantined row carries a mapping
 -- 1 of 91 does (`GSV.NE`) -- and nothing alerts when that stops being harmless.
 Re-check: `sum by (result)(secmaster_entity_resolution_self_seed_total)` (2026-09-05: `idempotent_skip` 4625,
-`inserted` 126, `quarantined_skip` 32, and no `error` series -- the 23505s are gone) and
+`inserted` 126, `quarantined_skip` 32, and no `error` series -- the 23505s are gone; every result is zero-initialised
+  at boot since SecMaster D-16, so read `error` by its VALUE, never by the series being present) and
   `SELECT indexname, indexdef FROM pg_indexes WHERE indexname LIKE 'idx_instruments_symbol%'
      OR indexname LIKE 'idx_source_mappings_collector_source%';`
 
@@ -2147,6 +2189,17 @@ answers with the CURRENT BRANCH's approved PR while `xargs` hands gh the piped o
 shape the comment and `$N` rules close, arriving by a route that leaves the span EMPTY rather than unreadable — which
 is why the fallback's "provably names NO identity" precondition holds and lets it run. Re-check with that one command.
 
+**`gemini-resolver-mcp/gemini_resolver/cache.py`'s `make_cache_key` docstring cites SecMaster lines that SecMaster
+D-16 (PR 1061) moved.** At `cache.py:173` the docstring points at line 289 of `IdentifierConfirmationService.cs` for the
+`$`-leading surface gate, which now sits at line 290, so it lands on the comment above the gate. At `cache.py:166` it
+points at line 999 of `EntityResolutionService.cs` for `PersistConfirmedInstrumentAsync`, now at line 1026. (Written
+without the colon form on purpose, so a citation sweep does not read these stale numbers as this entry's own claims.)
+PR 1061 changed only SecMaster; fixing the docstring there would have meant running the gemini-resolver-mcp suite
+too. The citation sweep cannot see it: it reads `*.md` files only. Re-check: `grep -n "s\[0\] == '\$'"
+SecMaster/src/Services/IdentifierConfirmationService.cs` and `grep -n "Task<bool> PersistConfirmedInstrumentAsync"
+SecMaster/src/Services/EntityResolutionService.cs` against the two numbers in `cache.py`. Close by citing the construct
+(`ShouldResolveViaGemini`, `PersistConfirmedInstrumentAsync`) instead of a line.
+
 **THREE live sites outside CLAUDE.md still teach the retired `MODEL_SIZE >= 30B` floor, and one of them is
 PRODUCTION CODE.** [2026-09-06, re-counted 2026-09-16] The ROOT `README.md` asserts ">=30B-parameter models" for
 Sentinel extraction and links the CLAUDE.md section that RETIRED the floor; `docs/SENTINEL-RLM.md` carries a
@@ -2175,7 +2228,7 @@ alerts, so it needs a deliberate PR.
 **TWO uncorrected copies of the Finnhub transient-only claim, not four.**
 `SecMaster/src/Configuration/EnrichmentOptions.cs:14` and `SecMaster/src/Services/CatalogEnrichmentBackgroundService.cs:183`
 both call "Finnhub 403 for foreign tickers" a TRANSIENT enrichment failure. A 403 is plan-uncovered and permanent, and
-it arrives as a NULL profile rather than an exception -- which `SecMasterMeter.cs:243` and
+it arrives as a NULL profile rather than an exception -- which `SecMasterMeter.cs:310` and
 `SecMaster/src/Services/IFinnhubCollectorClient.cs:33` already say correctly, so this is a finished conversion with
 two comment fixes left.
 Re-check (2026-09-05, reproduced 2026-09-16):
@@ -2243,6 +2296,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | impact | measured | status | entry |
 |---|---|---|---|
 | A | 2026-09-06 | OPEN | Three watermark-only ReExtract legs re-assert the row's tier; nothing pins that they do |
+| B | 2026-09-17 | OPEN | SecMaster D-16 self-seed and discovery refusals are counted but unalerted; their rate is unmeasured |
 | B | 2026-09-16 | OPEN | Alert rules and their metrics ship on different schedules; rule-first pages a healthy system |
 | B | 2026-09-16 | OPEN | QuoteStalenessSeeder resolves its repository OUTSIDE the try: DI failure kills startup |
 | B | 2026-09-16 | OPEN | The staleness-origin fallback degrades the dead-man SILENTLY -- no log line, no metric |
@@ -2309,6 +2363,30 @@ Re-check (no database, no engine): `grep -c 'SecMasterMethod\.Should()' Sentinel
 already returns 1 today, matching the `newSecMasterMethod: null` ARGUMENT this entry's own PR added
 at `:606`, so the obvious predicate reads CLOSED while the hole is open. That draft shipped in this
 entry for one revision.
+
+### SecMaster D-16 self-seed and discovery refusals are counted but unalerted; their rate is unmeasured [2026-09-17]
+SecMaster D-16 refuses a class-family conflict at four write sites. The two register sites also count under
+`secmaster_registration_rejected_total{reason="class_family_conflict"}` and so ride the wired
+`SecMasterRegistrationRejectionsSustained`, asserted firing in `deployment/tests/alerts/secmaster_test.yml`. The
+self-seed and discovery sites emit only `secmaster_identity_conflict_total{site="self_seed"|"discovery"}` plus an
+Information log, which prod's Warning floor drops, so NOTHING watches them. A regression that makes either site
+refuse most confirmations drops those resolutions silently.
+Why no rule yet: the conflict share of those streams has never been measured, and a hold chosen without the
+distribution paged ~10 times in 7 healthy days on a bursty signal (the PR 1042 round 3 note in
+`deployment/tests/alerts/expected-counts.yml`). The pre-image, measured 2026-09-17T10:57:55Z over 7d:
+`secmaster_entity_resolution_self_seed_total` idempotent_skip 7,068, inserted 190, quarantined_skip 48; idempotent_skip
+per 30m at 5m steps has median 17.1 and max 85.7. class_conflict_skip is carved out of what used to count as
+idempotent_skip, so that max is the ceiling for the self-seed site.
+The query whose distribution decides the rule:
+`sum by (site) (increase(secmaster_identity_conflict_total{site=~"self_seed|discovery"}[30m]))`
+Take the distribution only after SecMaster D-18 deploys, which removes the drops on 74 FRED-labelled rows; the drops
+it leaves are the KNOWN DEFECTS entry on the 16 FRED ids D-18 leaves Equity. A refused candidate no longer
+reaches D-3's review-queue enqueue or its Error span, so it adds nothing to a post-deploy Tempo error rate.
+To close: at deploy+24h record that query's per-site value here; after 7d take its distribution at 1-5m
+(`max_over_time` and `quantile_over_time` over `[7d:1m]`), choose threshold and `for:` from it, add the rule with a
+promtool firing case on burst-shaped input, and delete this entry in that PR.
+Re-check: `grep -cE '^\s*expr:.*secmaster_identity_conflict_total' deployment/artifacts/monitoring/alerts/secmaster.yml`
+returns 0 while this is open. Match the `expr:` line, not the name: a comment naming the metric would read CLOSED.
 
 ### Alert rules and their metrics ship on different schedules; rule-first pages a healthy system [2026-09-16]
 **Alert rules and the metrics they read ship on different schedules, and rule-first pages a healthy system.**
