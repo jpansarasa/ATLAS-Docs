@@ -33,7 +33,7 @@ Defects with a measurement that makes them re-checkable.
 
 | impact | measured | status | entry |
 |---|---|---|---|
-| A | 2026-09-16 | OPEN | 107 of 141 active GeminiFallback instruments are named by the query surface, not a title |
+| A | 2026-09-17 | OPEN | 107 of 141 active GeminiFallback instruments are named by the query surface, not a title |
 | A | 2026-09-16 | OPEN | Corrected source_entity prompt puts the COUNTRY in the owner slot; catalog matches it |
 | A | 2026-09-16 | AWAITING-DECISION | Observation identity is the entity, not the measurement: N datapoints collapse to one key |
 | A | 2026-09-16 | OPEN | Apparent identity collisions are partly mis-resolutions; proxy 6.6% and rising |
@@ -105,93 +105,47 @@ Defects with a measurement that makes them re-checkable.
 | E | 2026-09-16 | OPEN | SentinelCollector card is 5.3x over its D-entry gate and its line count hides it |
 | E | 2026-09-16 | AWAITING-DECISION | Six deployed directories have no card and sit outside the SERVICES roster (HARD_STOP gap) |
 
-**107 OF THE 141 ACTIVE `GeminiFallback` INSTRUMENTS ARE NAMED BY THE QUERY SURFACE THAT FOUND THEM, NOT BY A TITLE
-OF THE INSTRUMENT, AND ALL 141 ARE EMBEDDED AND PROPOSABLE.** `A824RE1A156NBEA` (FRED: national defense as a share of
-GDP) is named `Mark Rutte`; `CUUR0200SA0`, `CUUR0300SA0` and `CUUR0400SA0` are each named `Kevin Warsh`. Measured
-2026-09-16 on `atlas_secmaster`.
+**107 OF THE 141 ACTIVE `GeminiFallback` INSTRUMENTS ARE NAMED BY THE QUERY SURFACE THAT FOUND THEM, NOT BY A TITLE.
+THE REPAIR IS DECIDED AND WRITTEN AS MIGRATIONS (#1053), NOT YET DEPLOYED; GC'S NAME AND THE OBSERVATIONS REMAIN.**
+Mechanism, per-class authority and every fetched value: `SecMaster/AGENT_README.md` D-14 and the headers of
+`SecMaster/src/Data/Migrations/20260917011551_RepairGeminiFallbackSurfaceNames.cs` and
+`20260917013629_DisposeGeminiFallbackFuturesRoots.cs`. `A824RE1A156NBEA` (FRED: national defense as a share of GDP)
+is still named `Mark Rutte` in production until that deploy. Measured 2026-09-17 on `atlas_secmaster`.
 
-MECHANISM, confirmed in code. Before #874 (merged 2026-07-18T18:15Z) the V2 Gemini leg self-seeded with
-`Name: input.SubjectEntity ?? input.Description ?? symbol` and `Description: dto.Rationale` (`git show
-8ea3103c^:SentinelCollector/src/Services/DeterministicResolver.cs`, the `Collector: "GeminiFallback"` request), and
-SecMaster stores a register's name verbatim (`SecMaster/src/Endpoints/InstrumentEndpoints.cs:127`). The exemplar has
-exactly that shape: name = the article's subject, description = the model's rationale. The SOURCE is closed for new
-rows: both legs now send the confirmation's name, keeping the surface only as a fallback
-(`DeterministicResolver.cs:961`, `ExtractionProcessor.cs:1742`), and `GeminiSelfSeedGate` refuses a Name-less
-confirmation, which keeps that fallback unreachable (`GeminiSelfSeedGate.cs:66`). The rows split on that date exactly:
-all 107 surface-named rows were created 2026-06-25 .. 2026-07-18T13:25Z, all 34 title-named rows 2026-07-21 onward.
-The history was REVIEWED by two migrations, and neither rewrote a name.
-`SecMaster/src/Data/Migrations/20260718133628_QuarantineGeminiJunkInstruments.cs` checked each `fred_series` symbol
-against FRED. It deactivated the 8 symbols FRED rejected (`MCRFPC1` among them; plus one non-Gemini row), and kept the
-real series active with `asset_class` corrected and the name left as it was. Its header says: "All carry a junk
-NER-surface name". `SecMaster/src/Data/Migrations/20260718152925_QuarantineGeminiEquityEtfJunk.cs` checked each
-Equity/ETF surface against the ticker's issuer or fund mandate. It deactivated the 82 whose surface is unrelated and
-KEPT 20 whose surface does name the issuer or mandate: 5 equities (`DB`, `NMR`, `CCORF`, `RILY`, `EVR`), 14
-single-country ETFs and `NOBL`, "flagged for review". Deactivating them "is the dangerous direction (false-positive
-on a genuine instrument)". The 90 inactive rows are exactly those 8 + 82. No automated path rewrites the names: the
-D-10 repair allowlist is `entity_resolution:gemini` alone (`SecMaster/src/Services/CatalogNameRepairService.cs:35`),
-and the enrichment fill-gaps repair only an empty or `==Symbol` name (SecMaster D-2), which a surface is not.
+DECIDED 2026-09-17. Descriptions are nulled on the pre-#874 rows only. The 28 post-#874 rows that carry a correct
+title and a pre-#1031 rationale description (`EGO`, `UUP`, `IUSG`, ...) are left as they are. The observations already
+attached under the junk names are re-resolved (story 5, being built).
 
-THE CLASS, and how it was counted:
-- `discovery_source = 'GeminiFallback'`: 231 rows, 141 active (0 retired, 141 embedded), 231 with 0 source mappings.
-- `entity_resolution:gemini`: 2,410 rows, all active, all with 0 source mappings, and NOT this defect: every one of the
-  1,171 pre-#914 rows is D-10-stamped (1,090) or floored to its ticker (82, one of them also stamped). Proxy: of its
-  1,175 rows with an OpenFIGI TICKER hit in `openfigi_lookup_cache`, 6 names share no 3+-char token with
-  `canonical_name` (inc/corp/adr-style suffixes excluded), and all 6 are artefacts on reading (a floored ticker,
-  `AT&T INC`, `Oersted`/`ORSTED`). The same proxy reaches only 38 of the 141 active `GeminiFallback` rows (a FRED
-  series id is not an OpenFIGI ticker) and flags 4 of them, so it cannot size THIS class.
-- Hence a by-eye read of ALL 141 active `GeminiFallback` names (a census, one reader): 34 are an issuer title
-  (OpenFIGI-style, e.g. `TEUCRIUM WHEAT FUND`), 107 are not. Of the 107: 25 name a DIFFERENT entity (16 people;
-  `FIFA World Cup`, `Calculated Risk` x2, `Wall Street Breakfast`, `Strait of Hormuz`, `Third Street Expressway`; and
-  `Japan`, `Iran`, `Colombia` on `DX`, `PALL`, `KC`), 68 are a bare geography (`US`, `U.S.`, `Indiana` x3, `Brazil`),
-  14 are a short surface that happens to describe the underlying (`gold` on `GC`, `Deutsche Bank` on `DB`). The
-  25/68/14 split is a judgement and soft at its edges; the 107/34 split is not, because it matches the #874 date.
-  The four country-named rows the `source_entity` entry below cites (`TUR`, `NGDPXDCCNA`, `UKNGDP`, `EWG`) are in
-  the 68; its `UUP` = "Italy" row is the INACTIVE one, and the active `UUP` has carried its OpenFIGI name since
-  2026-08-20.
-- The 107 are NOT all unreviewed. 20 were judged real with a related name by `20260718152925`: `CCORF`, `DB`, `EVR`,
-  `NMR`, `RILY`, `ARGT`, `EIS`, `EPHE`, `EWC`, `EWD`, `EWG`, `EWN`, `EWT`, `EWW`, `EWY`, `EWZ`, `GREK`, `NOBL`, `QAT`,
-  `TUR`. In the census above, 13 of them are bare geographies and 7 are descriptive surfaces; none is a
-  different-entity name. 74 are series that `20260718133628` judged real while recording their names as junk. 13
-  (`CT`, `DEXCAUS`, `DEXINUS`, `DEXKOUS`, `DEXUSAL`, `DGS30`, `DHOILNYH`, `DX`, `EXTAUS`, `GC`, `GS10`, `KC`, `PALL`)
-  appear in neither migration's lists. Derivation: the 20 are the pre-#874 active Equity/ETF rows. Every pre-#874
-  Equity/ETF row on the migration's quarantine list is inactive, so the active remainder is its KEPT set.
-  `SELECT symbol, name FROM instruments WHERE discovery_source = 'GeminiFallback' AND is_active AND asset_class IN
-  ('Equity','ETF') AND created_at < TIMESTAMPTZ '2026-07-19' ORDER BY symbol;` -> 20 rows on 2026-09-16.
+WHAT THE MIGRATIONS DO. 82 FRED series and 21 US listings get their title and lose the rationale description. `DX`
+and `KC` are quarantined: their tickers belong to Dynex Capital and Kingsoft Cloud. `CT` is curated to
+`Cotton No. 2 Futures`. Every write is compare-and-swapped on the name recorded at authoring.
 
-CONSEQUENCE. The name is embedded (`{Name} ({Symbol})`, SecMaster D-2) and exact-matchable, so the row answers to the
-surface instead of the series. D-13's deploy (2026-09-16 ~23:01Z) surfaced it: with retired rows gone from the vector
-neighbourhood, the resolution-regression probe row `defense spending | 3.5%` now resolves `A824RE1A156NBEA` at
-0.7608, and all five candidates for that query are this class (`US` 0.7508, `Austan Goolsbee` 0.7446, `US` 0.7419,
-`U.S.` 0.7418). `run.sh` (probe) exits rc 1 while `run.sh --live` stays rc 0, because NameAppearsInContext drops
-`Mark Rutte` against `3.5%`. Production exposure, correctness NOT judged here: in the 30 days to 2026-09-16T23:12Z,
-3,888 `sentinel.extracted_observations` rows attached to 75 of the 107 (2,133 of them to `GC`), and 578 to 9 of the
-25 different-entity rows. Impact A because 8 of the 10 wrong attachments in the `source_entity` entry below landed
-on 4 instruments of this class (`TUR` x5, `NGDPXDCCNA`, `UKNGDP`, `EWG`). Those attachments are wrong FOR THE ARTICLE
-(the figure is not a quantity the instrument measures), NOT wrong instruments. All four are real, and `TUR` and `EWG`
-are among the 20 judged real above. What reaches them is the bare country name matching a country anchor. This entry
-replaces the deferred "17 person-named catalog rows" entry: its rows are the 16 active people above plus the inactive
-`MCRFPC1` = "Justin Trudeau", and its rule carries over: scope any remedy on PROVENANCE, never on series. No remedy is
-chosen, and a manual DB edit is not one. A remedy must START from the two migrations' recorded judgements rather than
-treat all 107 as unreviewed. Deactivating one of the 20 is the direction `20260718152925` calls dangerous, and the 74
-FRED series are real series. Only the name is in question for the 94 reviewed rows, while the 13 have no recorded
-review.
+WHAT REMAINS.
+- `GC` (named `gold`, 2,133 observations in the 30 days to 2026-09-16T23:12Z) is untouched and awaits the user's
+  choice of name. The literal-name gates (CoVe full-name grounding, SecMaster NameAppearsInContext) would stop gold
+  news attaching under an exchange-style name such as the CFTC's `GOLD - COMMODITY EXCHANGE INC.`.
+- Story 5: re-resolving the attached observations. In the 30 days to 2026-09-16T23:12Z, 3,888
+  `sentinel.extracted_observations` rows attached to 75 of the 107, and a rename re-resolves none of them.
+  `/admin/reprocess` is not the route: it has no dry-run, it deletes Pending rows and it can reach Gemini.
+- The executable bar: `SecMaster/scripts/junk-name-audit.sh` (PR #1054), which checks names against their title
+  source rather than this entry's date split.
+- Until the deploy, the resolution-regression probe row `defense spending | 3.5%` still resolves `A824RE1A156NBEA`
+  (`SentinelCollector/scripts/resolution-regression/corpus.tsv`, KNOWN PROBE FAIL). Close this entry, and rewrite that
+  comment, once the plan's AFTER measurement has run against the deployed migrations.
 
-Re-check (psql is SELECT-only; `atlas_secmaster`): `SELECT is_active, count(*) FILTER (WHERE created_at <
-TIMESTAMPTZ '2026-07-19') AS surface_era, count(*) AS total, count(*) FILTER (WHERE retired_at IS NOT NULL) AS retired
-FROM instruments WHERE discovery_source = 'GeminiFallback' GROUP BY is_active;` -> `t | 107 | 141 | 0` and
-`f | 90 | 90 | 0` on 2026-09-16. The inactive rows are counted so the folded-in exemplar `MCRFPC1` stays visible; all
-90 predate #874, none is proposable, and their names were NOT read. The date split only holds while nothing renames
-these rows, so read the names as well: `SELECT is_active, symbol, name FROM instruments WHERE discovery_source =
-'GeminiFallback' AND created_at < TIMESTAMPTZ '2026-07-19' ORDER BY is_active DESC, name;`.
-The observations figure spans two databases, so it takes two SELECTs. On `atlas_secmaster` (psql `-At`):
-`SELECT string_agg(quote_literal(id::text), ',') FROM instruments WHERE discovery_source = 'GeminiFallback' AND
-is_active AND created_at < TIMESTAMPTZ '2026-07-19';`. Then on `atlas_data`, with that output as `<ids>`:
-`SELECT count(*), count(DISTINCT instrument_id) FROM sentinel.extracted_observations WHERE instrument_id IN (<ids>)
-AND extracted_at >= TIMESTAMPTZ '2026-08-17 23:12Z' AND extracted_at < TIMESTAMPTZ '2026-09-16 23:12Z';` ->
-`3888 | 75`. `instrument_id` is written after extraction and can change (the table carries `OriginalInstrumentId` and
-`CorrectedInstrumentId`), so a different figure is not by itself a refutation. In
-`SentinelCollector/scripts/resolution-regression/run.sh` (probe mode), the line `FAIL defense spending ... ->
-A824RE1A156NBEA` is this defect.
+Re-check (psql is SELECT-only; `atlas_secmaster`). Deployed: `SELECT "MigrationId" FROM "__EFMigrationsHistory"
+WHERE "MigrationId" LIKE '%GeminiFallback%';` -> 2 rows. Rows: `SELECT count(*), count(*) FILTER (WHERE name =
+'Mark Rutte'), count(*) FILTER (WHERE description IS NOT NULL AND symbol NOT IN ('DB', 'EVR', 'NMR', 'RILY', 'PALL',
+'GC')) FROM instruments WHERE discovery_source = 'GeminiFallback' AND is_active AND created_at < TIMESTAMPTZ
+'2026-07-19';` -> `107 | 1 | 101` on 2026-09-17T01:52Z, `105 | 0 | 0` after the deploy. `DX` and `KC` leave the
+active population. The five listings are excluded because the EDGAR classification backfill writes their SIC
+description into the NULL at the same startup, and `GC` keeps its description until its name is decided.
+Observations: the ids come from `SELECT string_agg(quote_literal(id::text), ',') FROM instruments WHERE
+discovery_source = 'GeminiFallback' AND created_at < TIMESTAMPTZ '2026-07-19' AND (is_active OR symbol IN ('DX',
+'KC'));` on `atlas_secmaster` (107 ids; DX and KC are the only rows of their symbols), then `SELECT count(*),
+count(DISTINCT instrument_id) FROM sentinel.extracted_observations WHERE instrument_id IN (<ids>) AND extracted_at >=
+TIMESTAMPTZ '2026-08-17 23:12Z' AND extracted_at < TIMESTAMPTZ '2026-09-16 23:12Z';` on `atlas_data` -> `3888 | 75`.
+`instrument_id` can change after extraction, so a different figure is not by itself a refutation.
 
 **THE CORRECTED `source_entity` PROMPT IS IN PRODUCTION, IT STOPPED THE BLANKING, AND ON ARTICLES THAT NAME
 NO SERIES IT PUT THE COUNTRY IN ITS PLACE. 37 rows anchored on a country, 10 of them resolved to an
