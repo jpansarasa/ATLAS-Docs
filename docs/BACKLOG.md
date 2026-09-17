@@ -34,6 +34,7 @@ Defects with a measurement that makes them re-checkable.
 | impact | measured | status | entry |
 |---|---|---|---|
 | A | 2026-09-17 | OPEN | 107 of 141 active GeminiFallback instruments are named by the query surface, not a title |
+| A | 2026-09-17 | OPEN | D-18 reclassifies 82 mislabelled rows (T3 item 3); 16 unconfirmed FRED ids, WEAT, ^TNX, EURUSD remain |
 | A | 2026-09-17 | OPEN | LLM breaker open -> resolve-local emits hypothesis "RAG" from SecMaster's own fallback text |
 | A | 2026-09-16 | OPEN | Corrected source_entity prompt puts the COUNTRY in the owner slot; catalog matches it |
 | A | 2026-09-16 | AWAITING-DECISION | Observation identity is the entity, not the measurement: N datapoints collapse to one key |
@@ -148,6 +149,42 @@ discovery_source = 'GeminiFallback' AND created_at < TIMESTAMPTZ '2026-07-19' AN
 count(DISTINCT instrument_id) FROM sentinel.extracted_observations WHERE instrument_id IN (<ids>) AND extracted_at >=
 TIMESTAMPTZ '2026-08-17 23:12Z' AND extracted_at < TIMESTAMPTZ '2026-09-16 23:12Z';` on `atlas_data` -> `3888 | 75`.
 `instrument_id` can change after extraction, so a different figure is not by itself a refutation.
+
+**D-18 RECLASSIFIES 82 MISLABELLED ROWS BY AUTHORITY, WHICH COMPLETES T3 ITEM 3 AS WRITTEN; NOT YET DEPLOYED. 19 ROWS
+NO AUTHORITY SETTLES REMAIN MISLABELLED.** Mechanism, authority and every id: `SecMaster/AGENT_README.md` D-18 and the
+header of `SecMaster/src/Data/Migrations/20260917124624_ReclassifyFredSeriesLabelledEquity.cs`. Measured 2026-09-17 on
+`atlas_secmaster`. The plan of record named 5 FredCollector primaries labelled Equity, and GSG and PALL -> ETF; all 7
+are in the migration. The larger population is SecMaster's own Gemini self-seed, which labelled fred_series answers
+Equity: 91 active LISTED rows claim exchange FRED, and FRED search confirms 74 of the ids as series. BTC-USD (Equity ->
+Crypto, every OpenFIGI line Curncy/Crypto) is the eighty-second. Deploy it with the D-16 class-family refusal (#1061):
+replaying that check over the gemini-resolver cache copied 2026-09-17T12:58Z, answers meeting the other family on these
+82 rows fall from 123 in the prior 7 days to 0, and from 375 older ones to 1.
+
+WHAT REMAINS.
+- 16 ids for which FredCollector search returns no series at all: CPIW, GOLDPMGBD228NLBM, HHDEBT, MPMIUSSA, NAHB, NAPM,
+  NATURALR, PCEPILFE_PC1, PRS85000001, RSTAR, SPRSTOC, US30Y, USMCE, USQCEWEMP, WCESTUS1, WCSSTUS1. Each is still Equity,
+  and its disposition is undecided (quarantine as unconfirmed, or a class from another authority). Gemini still answers
+  three of them as fred_series (NAHB 6, NAPM 3, WCSSTUS1 1 in the 7 days to 12:40Z), so D-16 refuses answers for ids
+  FRED does not serve.
+- WEAT (`TEUCRIUM WHEAT FUND`, Commodity, 18 cached ETF answers): no EDGAR filer holds its ticker, and the only Teucrium
+  filer is Teucrium Commodity Trust (CIK 0001471824) under ticker BTCK, so the plan's authority does not hold. OpenFIGI
+  TICKER WEAT/US answers securityType ETP, which would settle it if that authority is accepted.
+- `^TNX` (Equity, exchange CBOE): OpenFIGI has no line for `^TNX` or `TNX` as an Index; TICKER TNX is TENX PROTOCOLS INC
+  and TENAX INTERNATIONAL SPA. `EURUSD` (Equity, no exchange): no Curncy or US line; TICKER EURUSD is EUROPEAN LITHIUM
+  LTD (exchange ER). Both wait for an authority that names the index or the pair.
+- OWLT is Owlet Inc and correctly Equity; its exchange `NYSE | NASDAQ | AMEX | OTC | FRED | null` is why it matches the
+  FRED query below.
+- A1 does not move: 280 before and 280 after, because the SentinelCollector mapping each FredCollector primary also holds
+  enters it as the FredCollector mapping leaves (T3 item 4).
+
+Re-check (psql is SELECT-only; `atlas_secmaster`). Deployed: `SELECT "MigrationId" FROM "__EFMigrationsHistory" WHERE
+"MigrationId" LIKE '%ReclassifyFredSeries%';` -> 1 row. Rows: `SELECT count(*) FROM instruments WHERE is_active AND
+lower(asset_class) IN ('equity','etf','stock') AND exchange ILIKE '%FRED%';` -> 91 on 2026-09-17T12:49Z, 17 after the
+deploy (the 16 and OWLT); `SELECT count(DISTINCT i.id) FROM instruments i JOIN source_mappings sm ON sm.instrument_id =
+i.id WHERE i.is_active AND lower(i.asset_class) IN ('equity','etf','stock') AND sm.collector = 'FredCollector' AND
+sm.is_active;` -> 5, then 0; `SELECT symbol, asset_class FROM instruments WHERE is_active AND symbol IN ('GSG', 'PALL',
+'WEAT', 'BTC-USD', '^TNX', 'EURUSD') ORDER BY 1;` -> Commodity x3 and Equity x3 on 2026-09-17T12:57Z, then ETF for GSG
+and PALL and Crypto for BTC-USD. Close this entry when the 16, WEAT, ^TNX and EURUSD each have a disposition.
 
 **WHILE THE LLM CIRCUIT IS OPEN, RESOLVE-LOCAL RETURNS HYPOTHESIS `RAG`, READ OUT OF SECMASTER'S OWN FALLBACK ANSWER.**
 `RagService.QueryAsync`'s `BrokenCircuitException` arm answers `"RAG temporarily unavailable."`, and
