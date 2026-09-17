@@ -2318,6 +2318,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | D | 2026-09-16 | AWAITING-DECISION | The documented citation sweep is .md-ONLY, so a line shift rots citations it cannot see |
 | D | 2026-09-16 | OPEN | verify-citations.py skips off-allowlist extensions, and bare :NN continuations sans --bare |
 | D | 2026-09-16 | OPEN | Patches drop the exec bit, core.fileMode=false hides it, a disarmed hook fails SILENTLY |
+| D | 2026-09-17 | OPEN | Attachment gold residue: slash terms unsearchable by symbol, 6-term cap, yen rows, CI, IXIC |
 | D | 2026-09-16 | OPEN | Stage 2 has a gold now, and it prices three things a comparison must clear |
 | D | 2026-09-16 | OPEN | The CoD gold cannot yet back a model swap: macro-owner DECIDED, the key's swing is not |
 | D | 2026-09-07 | OPEN | The replicate sd is a within-serve-session statistic; the between-session term is unpriced |
@@ -2795,6 +2796,42 @@ Re-check reads the INDEX; silence is the pass (silent on 2026-09-16, `core.fileM
 `git ls-files -s -- .claude/hooks scripts/claude-pr-verdict scripts/claude-mark-verified | awk '$4 !~ /\.md$/ && $1 != "100755" { print "NOT 100755 IN THE INDEX:", $1, $4 }'`
 CONTROL: pipe one fabricated `100644 <sha> 0<TAB>.claude/hooks/git-push-guard.sh` line into that same `awk`;
 it must name that file back. Verified both ways 2026-08-17.
+
+### Attachment gold residue: slash terms unsearchable by symbol, 6-term cap, yen rows, CI, IXIC [2026-09-17]
+`LlmBenchmark/attach-gold/` (built by `LlmBenchmark/scripts/build_attach_gold.py`, PR #1064) carries five
+known defects that were measured and left open. None changes a scored owner label today, which is why they
+are open rather than fixed. Each can mislead the next rebuild or a later scorer.
+1. SLASH-JOINED TERMS NEVER REACH THE SYMBOL LEG. `sought_terms` stopped splitting on "/" because
+   "USD/JPY" became the term "USD" and exact-matched the ProShares ETF for 13 currency owners; the live
+   `probe_check` now refuses that regression. The cost of the fix: a term with "/" fails the symbol regex
+   in `notinpool_sql` (`^?[A-Za-z0-9.=-]{1,12}`), so a pair or joined symbols ("GBP/USD exchange rate",
+   "USDMXN / DEXMXUS") reach only the trigram and vector legs. Measured on
+   `labeller-runs/matchcheck.json`: 38 of 244 whole-catalog checks carry 56 slash-joined terms.
+   Re-check: `python3 -c "import json;m=json.load(open('LlmBenchmark/attach-gold/labeller-runs/matchcheck.json'));print(sum(any('/' in t for t in c['terms']) for c in m['checks'].values()))"` -> 38.
+   Fix: split joined SYMBOLS on "/" only when each side is itself a symbol-shaped token AND not a bare
+   ISO currency code.
+2. `sought_terms` KEEPS 6 TERMS. 6 of 244 checks had more distinct terms and lost the rest. On
+   g2:170614:u8 the 7th was PPIFIS, the right row; its owner went unresolved and is now an override.
+   Others cut: AWHALL (g1 ...0:u19), ETH-USD (g2:156161:u4), 2317.TW (g2:164606:u2). Re-check: rebuild
+   the uncapped term list from each owner's `provenance` `sought` strings in the committed gold and count
+   lists longer than 6. Fix: rank symbol-shaped terms first and raise the cap; each extra term is one more
+   trigram scan and 5 vector rows.
+3. TWO EMPTY-OWNER USD/JPY ROWS ARE NONE_IN_CATALOG WHILE DEXJPUS EXISTS. g2:156597:u14 ("the dollar was
+   higher at JPY159.37") and g2:158337:u4 ("strengthened 0.45% to 160.11") give yen per dollar, which is
+   DEXJPUS (Japanese Yen to U.S. Dollar Spot Exchange Rate, active). The labellers never saw it. It is
+   unscored today because the scorer reads only `owners`; it becomes a wrong gold row when empty-owner
+   rows are scored. Re-check: `SELECT symbol, is_active, retired_at FROM instruments WHERE symbol='DEXJPUS'`
+   (psql is SELECT-only), plus both units' `verdict` in `attach_gold_g2_v1.json`.
+4. THE BUILDER SELFTEST IS NOT IN CI. `build_attach_gold.py selftest` (43 controls, including `decide`,
+   `none_against_exact`, `pool_leg_blind` and the "/" controls) runs only before a paid batch. Re-check:
+   `grep -c build_attach_gold .github/workflows/python-tests.yml` -> 0. Fix: add it beside the CoD and
+   CoVe gold selftests. It needs no network and no credential.
+5. A LABEL FOLLOWS THE QUOTE, NOT THE OWNER, WHEN THE EXTRACTION MIS-COPIED IT. g2:168826:u12 has owner
+   "gold" but carries only the quote "Dow and S&P 500 -0.6 per cent, Nasdaq -1 per cent.", so gold accepts
+   IXIC and NASDAQCOM. An arm that attaches "gold" to a gold row scores WRONG on an owner the extraction
+   named correctly. Known limitation of per-owner labels. Re-check: that unit's `owner`, `quotes` and
+   `accept_symbols`. Fix: label per (owner, quote) where an owner's quotes name a different thing, or
+   mark such owners `NO_SINGLE_OWNER` with the mismatch recorded.
 
 ### Stage 2 has a gold now, and it prices three things a comparison must clear [2026-09-07]
 `--task cove` is the metric every `aggregate_f1` in this repo is quoted in. `LlmBenchmark/cove-gold/`
