@@ -480,7 +480,7 @@ without evaluating recovery, i.e. `recovered` must require a re-resolve to have 
 **The candidate surface filter gates 4.3% of the rows that attach instruments; 95.7% resolve without ever meeting
 it.** `EntityResolutionPrepass.ApplySurfaceFilter` is unconditional (`const string mode = "enforce"`,
 `EntityResolutionPrepass.cs:396`, no flag) and live, but POSITIONED after Rule 2: `Classify` runs on the NER-candidate
-prepass and on the paid-Gemini legs (`DeterministicResolver.cs:802`, `GeminiSymbolFallbackService.cs:85`), while the
+prepass and on the paid-Gemini legs (`DeterministicResolver.cs:897`, `GeminiSymbolFallbackService.cs:85`), while the
 LLM-extracted `SubjectEntity` reaches Rule 1 and Rule 2 unfiltered. Measured over `extracted_at` [2026-07-15,
 2026-08-15) via the `Original*` columns: **45,831 of 47,891 instrument-attaching rows (95.7%) took an unfiltered leg**
 (only `gemini_fallback`'s 2,060 met the filter), and **7,957 (16.6%, a floor -- exact-match sets only)** carry a
@@ -595,7 +595,7 @@ sentinel.extracted_observations WHERE instrument_id IS NULL AND extracted_at >= 
 Read the second axis precisely: `ApplyReExtraction()` snapshots the `Original*` columns only when all three are
 still null (preserving the EARLIEST snapshot; guarded by `ReExtractBackgroundServiceTests.cs`
 `should_preserve_earliest_audit_snapshot_on_second_re_extract`), but `Quarantine()`
-(`SentinelCollector/src/Entities/ExtractedObservation.cs:308`) and `QuarantineInPlace()` (`:475`) assign them
+(`SentinelCollector/src/Entities/ExtractedObservation.cs:308`) and `QuarantineInPlace()` (`:464`) assign them
 UNCONDITIONALLY, so `"OriginalInstrumentId" IS NOT NULL` means "held an instrument at the LATEST quarantine, or at
 the first re-extract if never quarantined after it" -- NOT "at extraction". CONFOUND, not cause -- the April trigger
 remains unestablished.
@@ -723,13 +723,13 @@ STILL OPEN, three items:
     `nerdctl exec secmaster curl -s "http://localhost:8080/api/semantic/resolve-local?q=<surface>&enableRag=true&limit=5"`
     (`Dow Jones` is the counter-case: the slug produced `DIA`, `DOW` or nothing nondeterministically, 91 attaching
     rows; the Name resolves to `DJIA` deterministically, so that pair IMPROVES by removing a wrong answer).
-(2) No test on the `!candidate.InstrumentId.HasValue &&` exemption (`DeterministicResolver.cs:488`; dead today, 0
+(2) No test on the `!candidate.InstrumentId.HasValue &&` exemption (`DeterministicResolver.cs:520`; dead today, 0
     non-null candidate ids across 503,446 rows, and it activates the day SecMaster's search endpoint returns ids -- a
     server-side change with no compile-time signal here) nor on the hybrid leg's `ResolutionConfidence` contract
-    (`IDeterministicResolver.cs:67-83`: a null-instrument `llm_candidate_hybrid` row still carries the LLM's pick
+    (`IDeterministicResolver.cs:100-116`: a null-instrument `llm_candidate_hybrid` row still carries the LLM's pick
     confidence, and the >= 0.8f event-publish predicate reads that field).
 (3) `SubjectNameNormalizer.SharedTokenCount` scores 0 for all four bad pairs above and is reachable from Rule 1 on
-    the RagSynthesis materialisation branch (`DeterministicResolver.cs:707`), but the whole guard sits behind
+    the RagSynthesis materialisation branch (`DeterministicResolver.cs:788`), but the whole guard sits behind
     `Extraction__GuardsEnabled=false` (`/opt/ai-inference/compose.yaml:1269`), so it is inert; deciding that flag's
     fate is the prerequisite, and a third call behind the same disabled flag would read as protection that does not
     exist.
@@ -1374,10 +1374,10 @@ POST-erasure state and cannot distinguish "never set" from "overwritten" (this e
 about the resolver). For any row re-extracted before 2026-09-16 read `OriginalResolutionMethod` /
 `OriginalInstrumentId` alongside the live columns, always.
 A SECOND circular column: `extracted_observations.resolution_confidence` holds the resolver OUTCOME's value
-(`DeterministicResolver.cs:416-420`), not what Rule 1 received; the input is visible only in
-`sentinel_resolver_rule1_input_confidence` (`SentinelMeter.cs:1739`, from #963). Every observation of it sits at
+(`DeterministicResolver.cs:446-450`), not what Rule 1 received; the input is visible only in
+`sentinel_resolver_rule1_input_confidence` (`SentinelMeter.cs:1757`, from #963). Every observation of it sits at
 exactly 0.850 = `DslPreselectionConfidence`, a hardcoded constant, so the `< 0.7` gate can never trip: an absent
-`below_threshold` series on `sentinel_resolver_rule1_decision_total` (`SentinelMeter.cs:1720`) is a property of the
+`below_threshold` series on `sentinel_resolver_rule1_decision_total` (`SentinelMeter.cs:1738`) is a property of the
 constant, not evidence about the data, and `bucket{le="0.7"}` reads 0 indefinitely.
 Not to be re-derived: the `ExtractionSchemaV2 required[]` hypothesis was DISPROVEN by probing vLLM with the shipped
 schema, which emitted `resolution_confidence` non-null 5/5.
