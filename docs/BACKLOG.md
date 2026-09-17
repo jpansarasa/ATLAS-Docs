@@ -45,6 +45,7 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-16 | OPEN | Production's CoD prompt carries two defects no labeller can work around |
 | A | 2026-09-07 | OPEN | A DELTA AND A LEVEL ARE THE SAME ROW: numbers[] cannot express dropped 2% vs is 2% |
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
+| B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
 | B | 2026-09-17 | OPEN | Merged SecMaster PRs sat undeployed 10 days; D-13's deploy shipped them unannounced |
 | B | 2026-09-16 | OPEN | Scoped secmaster deploy also recreates llama-cpu-rag and the shared llama-cpu-embed |
 | B | 2026-09-16 | OPEN | NameAppearsInContext demands the catalog NAME verbatim in the context; good hits return NONE |
@@ -619,7 +620,7 @@ whether they resolve -- so a resolution quoted without NAMING its endpoint is un
 refuted; do not re-raise it without re-reading this: CFIGY (`CHALLENGER LTD-UNS ADR`, created 2026-08-18 by
 `discovery_source='entity_resolution:gemini'`) is proposed on NEITHER route for `q=Challenger, Gray & Christmas`.
 Mechanics: the semantic endpoints take `q`, not `query` (HTTP 400 on both); `/api/semantic/resolve-local` has no
-`resolution` or `answer` field (`SecMaster/src/Endpoints/SemanticSearchEndpoints.cs:348`); `secmaster` has `curl`,
+`resolution` or `answer` field (`SecMaster/src/Endpoints/SemanticSearchEndpoints.cs:423`); `secmaster` has `curl`,
 `secmaster-mcp` does not. Re-check (atlas_secmaster): `SELECT a.alias FROM aliases a JOIN instruments i ON
 i.id=a.instrument_id WHERE i.symbol='CHALLENGER_JOB_CUTS'` -> 12 rows.
 
@@ -733,6 +734,18 @@ STILL OPEN, three items:
     `Extraction__GuardsEnabled=false` (`/opt/ai-inference/compose.yaml:1269`), so it is inert; deciding that flag's
     fate is the prerequisite, and a third call behind the same disabled flag would read as protection that does not
     exist.
+
+**SecMaster's `EmbeddingCache` keys on `Trim().ToLowerInvariant()`, but bge-m3 is case-sensitive, so a query's
+vector neighbours depend on which spelling of it the process met first.** First occurrence. `EmbeddingCache.Normalize`
+(`SecMaster/src/Services/EmbeddingCache.cs`) serves the cached vector of whichever of `NASDAQ` / `Nasdaq` arrived
+first to both. Measured 2026-09-17T11:12Z on llama-cpu-embed: cosine("Nasdaq", "NASDAQ") = 0.7685 (control:
+cosine("Nasdaq", "Nasdaq") = 1.0). The recall sample's 50 articles alone carry six such pairs (`Core CPI` / `core CPI`,
+`S&P 500 Index` / `S&P 500 index`, ...). Observed consequence: GET /api/semantic/candidates run in a fresh process and
+the same lists rebuilt from production's long-lived process agreed on 298 of 300 lists; both differences are one row,
+at position 16 of its two k=20 lists that read the article's names, on an article carrying `Nasdaq` while an earlier
+article carried `NASDAQ`. The mechanism is shown;
+that this pair caused that row is inferred, not isolated. Impact on attachments is unmeasured. Re-check: embed both
+spellings as above; the defect is closed when the cache key preserves case or the embedder input is case-folded too.
 
 **Merged SecMaster PRs sat undeployed for 10 days, and a later deploy shipped them unannounced, so the D-13
 post-deploy acceptance first charged #1030's latency cost to D-13.** First occurrence. #1029, #1031 and #1030

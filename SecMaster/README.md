@@ -183,6 +183,7 @@ REST endpoints are split across the following endpoint groups under `src/Endpoin
 | `/api/semantic/search` | GET | Vector similarity search |
 | `/api/semantic/resolve` | GET | Hybrid resolution (SQL → Vector → RAG, with upstream discovery) |
 | `/api/semantic/resolve-local` | GET | Hybrid resolution restricted to local catalog (no upstream discovery). Body adds `degraded` (bool) + `degradedTiers` (string[]): a consulted tier failed soft, so a no-match may be an outage, not a miss, and `method`/`hypothesis`/`candidates` are not evidence. Values: `"rag"`, and `"vector"` only for a zero-magnitude query embedding; every other failure is a 500. See AGENT_README.md D-15 |
+| `/api/semantic/candidates` | GET | Up to `k` (1-50, default 10) PROPOSABLE catalog rows for `q`: fuzzy (D-9 order) and vector neighbours interleaved fuzzy-first, deduped by id. Repeated `fill` names (at most 60) keep `q`'s top `k/2` and fill the rest round-robin; `q`'s remainder tops a short list up. Each row: `instrumentId`, `symbol`, `name`, `assetClass`, `exchange`, `country`, `currency`. Body adds `degraded` + `degradedTiers`: `"vector"` when any surface's query embedding was zero-magnitude, so the list is incomplete; every other failure is a 500. Proposes only, never resolves. See AGENT_README.md D-15 |
 | `/api/semantic/ask` | POST | Natural language Q&A with RAG synthesis |
 | `/api/semantic/embed/{instrumentId:guid}` | POST | Force-embed a single instrument |
 | `/api/semantic/embed/backfill` | POST | Backfill embeddings for missing/stale rows |
