@@ -2849,10 +2849,10 @@ Re-check reads the INDEX; silence is the pass (silent on 2026-09-16, `core.fileM
 CONTROL: pipe one fabricated `100644 <sha> 0<TAB>.claude/hooks/git-push-guard.sh` line into that same `awk`;
 it must name that file back. Verified both ways 2026-08-17.
 
-### Attachment gold residue: slash terms unsearchable by symbol, 6-term cap, yen rows, IXIC, unembedded additions [2026-09-17, item 4 closed and item 5 added 2026-09-20]
+### Attachment gold residue: slash terms unsearchable by symbol, 6-term cap, wrong labels, IXIC, unembedded additions [2026-09-17, item 4 closed and item 5 added 2026-09-20, item 3 widened to the label-quality class 2026-09-20]
 `LlmBenchmark/attach-gold/` (built by `LlmBenchmark/scripts/build_attach_gold.py`, PR #1064) carries five
-known defects that were measured and left open. None changes a scored owner label today, which is why they
-are open rather than fixed. Each can mislead the next rebuild or a later scorer.
+known defects that were measured and left open. Item 3 is the only one that changes a SCORED owner label;
+the rest can mislead the next rebuild or a later scorer without moving a number today.
 1. SLASH-JOINED TERMS NEVER REACH THE SYMBOL LEG. `sought_terms` stopped splitting on "/" because
    "USD/JPY" became the term "USD" and exact-matched the ProShares ETF for 13 currency owners; the live
    `probe_check` now refuses that regression. The cost of the fix: a term with "/" fails the symbol regex
@@ -2868,12 +2868,51 @@ are open rather than fixed. Each can mislead the next rebuild or a later scorer.
    the uncapped term list from each owner's `provenance` `sought` strings in the committed gold and count
    lists longer than 6. Fix: rank symbol-shaped terms first and raise the cap; each extra term is one more
    trigram scan and 5 vector rows.
-3. TWO EMPTY-OWNER USD/JPY ROWS ARE NONE_IN_CATALOG WHILE DEXJPUS EXISTS. g2:156597:u14 ("the dollar was
-   higher at JPY159.37") and g2:158337:u4 ("strengthened 0.45% to 160.11") give yen per dollar, which is
-   DEXJPUS (Japanese Yen to U.S. Dollar Spot Exchange Rate, active). The labellers never saw it. It is
-   unscored today because the scorer reads only `owners`; it becomes a wrong gold row when empty-owner
-   rows are scored. Re-check: `SELECT symbol, is_active, retired_at FROM instruments WHERE symbol='DEXJPUS'`
-   (psql is SELECT-only), plus both units' `verdict` in `attach_gold_g2_v1.json`.
+3. LABELS THAT NAME NONE_IN_CATALOG, OR ONE TWIN, WHILE THE ROW IS THERE. Three instances, one of them
+   SCORED. The shared mechanism is that a floor or a rule decided the verdict and nobody re-read the row.
+   a. TWO EMPTY-OWNER USD/JPY ROWS ARE NONE_IN_CATALOG WHILE DEXJPUS EXISTS. g2:156597:u14 ("the dollar was
+      higher at JPY159.37") and g2:158337:u4 ("strengthened 0.45% to 160.11") give yen per dollar, which is
+      DEXJPUS (Japanese Yen to U.S. Dollar Spot Exchange Rate, active). The labellers never saw it. It is
+      unscored today because the scorer reads only `owners`; it becomes a wrong gold row when empty-owner
+      rows are scored. Re-check: `SELECT symbol, is_active, retired_at FROM instruments WHERE symbol='DEXJPUS'`
+      (psql is SELECT-only), plus both units' `verdict` in `attach_gold_g2_v1.json`.
+   b. g2:161179:u4 "Japan" IS NONE_IN_CATALOG AND IT IS SCORED -- unlike (a), this row is in `owners`, so
+      every arm is graded against a label the catalog contradicts. The quote is "Japan's 10-year bond yield
+      just climbed above 3% for the first time since 1996"; IRLTLT01JPM156N ("Interest Rates: Long-Term
+      Government Bond Yields: 10-Year: Main (Including Benchmark) for Japan") has been active since
+      2026-06-02T13:39:43Z. The whole-catalog check DID surface it, at vector 0.6177 with `strong: false`
+      -- under the 0.8 cosine floor, so it never reached a round-3 adjudication and the rationale reads "no
+      candidate is a Japanese 10-year yield series". The same gold accepts the Korean equivalent
+      IRLTLT01KRM156N at g2:166564:u1, so the verdict is inconsistent within one build. Re-check:
+      `python3 -c "import json;print(json.load(open('LlmBenchmark/attach-gold/labeller-runs/matchcheck.json'))['checks']['g2|g2:161179:u4']['rows'][0])"`
+      -> id b7653e24-6f51-4b37-8c7d-934ecce0b61a, vector 0.6177, strong false; plus that unit's `verdict`
+      in `attach_gold_g2_v1.json` and `SELECT symbol, is_active, created_at FROM instruments WHERE
+      symbol IN ('IRLTLT01JPM156N','IRLTLT01KRM156N')` (psql is SELECT-only). Relabelling it INSTRUMENT
+      costs candidate recall rather than paying it: the row is NOT in that owner's k=20 list in the
+      2026-09-20 freeze (it appears once in `frozen/attach_candidates_g2_k20.json`, under a DIFFERENT
+      owner, 'Japanese yen' @ 170614), so G2 candidate recall would go 206/237 = 0.8692 -> 206/238 = 0.8655.
+   c. g1:sentinel-v6.2-cove.json:183:u1 ACCEPTS PAYEMS ALONE WHILE ITS TWIN CARRIES THE IDENTICAL CATALOG
+      NAME. PAYEMS and PAYNSA are both active and both named "All Employees, Total Nonfarm" -- the
+      seasonally adjusted and unadjusted forms of one measure. g1:sentinel-v6.2-cove.json:0:u1 accepts
+      BOTH, which is the rule the build states for PPIFIS/PPIFID in `overrides_v1.json` ("the two are the
+      same measure stored under two symbols and the verdict's set rule takes both"). A re-derivation found
+      a SECOND instance the review did not name: g1:sentinel-v6.2-cove.json:4:u3 ("payroll gains") also
+      accepts PAYEMS alone, so the class is 2 of the 4 G1 units that accept either symbol. Re-check:
+      `SELECT symbol, name, is_active FROM instruments WHERE symbol IN ('PAYEMS','PAYNSA')` (psql is
+      SELECT-only) -> two active rows, one name; then the four units' `accept` sets in
+      `attach_gold_g1_v1.json`.
+   PROVENANCE OF (b) AND (c), AND WHY THERE IS NO RATE HERE: both came from an independent re-read of 25
+   owners against the catalog, i.e. 2 disagreements in 25. THE RATIO IS NOT RE-RUNNABLE AND IS NOT QUOTED
+   AS A MEASUREMENT: the 25 were not committed -- no unit-id list, no seed, no draw rule -- so nobody can
+   say whether they were drawn uniformly over the 691 labelled owners or over some stratum, and a
+   denominator that cannot be re-derived is the one figure in this entry that fails toward the reassuring
+   answer. The three findings below it each carry their own re-check and stand on their own. To turn it
+   into a rate: draw a seeded sample of unit ids from `owners` across both golds, commit the list beside
+   `labeller-runs/`, and re-judge it -- then the number can be compared with the next rebuild's.
+   Fix: give the whole-catalog check a second pass for owners whose best vector row lands in a band below
+   the floor (0.6177 sits there), and make the twin rule a builder step rather than an override written by
+   hand per pair -- same catalog name plus same exchange is the predicate the PPIFIS/PPIFID rationale
+   already uses.
 4. THE CATALOG-DRIFT SCAN HAS TWO HOLES ON THE OWNER SIDE AND ONE ON THE ADDITION SIDE, AND THE OWNER-SIDE
    ONES ARE THE BIG ONES. `build_attach_gold.py drift` scans every row created inside its window on three
    legs, and `assemble --restamp-catalog-at` re-runs the same scan before it will re-date anything -- but a
