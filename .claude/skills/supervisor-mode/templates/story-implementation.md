@@ -144,6 +144,9 @@ name and the `--context {Svc}DbContext` rule to
 ## Notes for the supervisor
 - Keep prompts under ~600 words including the placeholders. The user's
   rule: short and focused.
+- Recording a BLOCK on this story's PR writes the next brief: name the
+  PROPERTY the artifact must guarantee, never the field you noticed -
+  `.claude/skills/review-discipline/SKILL.md` §BLOCK_TEXT.
 - Default to `run_in_background=true`. Supervisor gets a notification
   on completion; can dispatch parallel work meanwhile.
 - For the same epic / same SecMaster project, sequence stories on the

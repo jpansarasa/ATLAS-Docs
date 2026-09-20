@@ -151,7 +151,8 @@ FAILURE MODES -> THE CHECK
 ## Notes for the supervisor
 
 - Paste findings VERBATIM. Summarising re-introduces the supervisor's own compression errors —
-  exactly what step 2 exists to catch.
+  exactly what step 2 exists to catch. So what the BLOCK said is what this agent is briefed
+  with, and what a block must say is `.claude/skills/review-discipline/SKILL.md` §BLOCK_TEXT.
 - Give the CURRENT head sha. Without it the agent has to infer which branch state it is on, and
   spends its first tool calls guessing between a stale worktree and the live branch.
 - Every measured number in the brief is a hypothesis; an agent correcting one is the round's

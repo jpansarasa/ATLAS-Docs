@@ -412,6 +412,7 @@ AUTO_FIRE on supervisor-opened PR (no user gate):
   1. dispatch(review-pr + observability-review + intent-review) | parallel | background
   2. aggregate findings: {critical, important, suggestion}
   3. dispatch fix per severity | commit-as-you-go | selective pathspec
+     the BLOCK you recorded IS that brief -> `.claude/skills/review-discipline/SKILL.md` §BLOCK_TEXT
   4. push only after critical+important addressed
   5. re-run review -> verify no regression + catch new issues # brief shape: TIER1_CLAIM_CHECK RE-REVIEW
   6. iterate INSIDE the declared budget -> merge -> next story

@@ -1,6 +1,6 @@
 ---
 name: review-discipline
-description: Deciding whether a PR needs ANOTHER review round, dispatching a review round, or recording a merge verdict. Supplies the STOP condition the review skills do not - a round budget declared by artifact class before round 1 and derived from this repo's own verdict log, a severity bar tied to consequence, a convergence test over finding CLASSES, a bounded scope for the pass a merge gate forces after every fix, and a termination record naming the findings accepted unfixed. review-pr, intent-review and observability-review say what to look FOR; this one says when to stop looking.
+description: Deciding whether a PR needs ANOTHER review round, dispatching a review round, or recording a merge verdict. Supplies the STOP condition the review skills do not - a round budget declared by artifact class before round 1 and derived from this repo's own verdict log, a severity bar tied to consequence, a convergence test over finding CLASSES, a bounded scope for the pass a merge gate forces after every fix, and a termination record naming the findings accepted unfixed. review-pr, intent-review and observability-review say what to look FOR; this one says when to stop looking, and what a BLOCK must say, since the block is the next fix brief.
 ---
 
 # REVIEW_DISCIPLINE [SKILL v1]
@@ -182,6 +182,53 @@ A LENS WITH ITS OWN SEVERITY_MAP OUTRANKS THIS ONE for the findings it types. in
 NOT_EXAMINED is what makes the NEXT pass bounded instead of a fresh sweep of the same artifact -
 and a fresh sweep is precisely the act that always finds something. `NOT_EXAMINED: nothing` claims
 total coverage: rarely true, and it hands the residual risk to nobody.
+
+## BLOCK_TEXT [a block IS the next fix brief - implementation-fix.md pastes it VERBATIM]
+Measured on #1078: seven declared rounds against PRODUCTION 4. The log holds SIX verdict lines -
+round 2 recorded none, the FLOOR limit in SELF_CHECK - so quote both numbers or neither.
+
+BRIEF THE PROPERTY, NOT THE PATCH. Name what the artifact must GUARANTEE and the question it must
+  answer; never the field, line or expression you happened to notice. Naming the patch caps the fix
+  at that instance: the agent closes the named field and the next field of the same object stays
+  open. # three consecutive #1078 blocks named three fields of ONE JSON object - "the exemption
+  covers a CLEAN exit only", then "a clean COMPLETED run, meaning State exited AND ExitCode 0", then
+  recency, which NEITHER field can answer because `nerdctl compose ps` carries no timestamp. Each
+  fix was correct for the field named and blind to the next, and the agent did as briefed every
+  time. The block that instead said "decide the gate SELECTION MODEL once" closed the class in ONE
+  round, verified over 29 tag selections and 62 live runs.
+  THE CONTROL-SIDE TWIN IS NOT RESTATED HERE: a control proves nothing about the path its author did
+  not aim it at -> `.claude/skills/intent-review/SKILL.md` §AIMED AT THE ACT. Same defect at the
+  other end of the round - this rule aims the BRIEF, that one aims the CHECK.
+
+DEMAND THE INPUT-SPACE ENUMERATION BEFORE THE FIX. Require the agent to enumerate the space its
+  assertion ranges over - every field that could answer the question, every selection, every state -
+  and to state which it uses and why the rest cannot answer. Enumerate, never sample. # asked,
+  #1078 returned 29 tag selections and a ten-row state table and closed the class in one round;
+  unasked, the same class took three. The instance-level twin - a findings list names a CLASS, so
+  count the sites before fixing any - is implementation-fix.md CONSTRAINTS.
+
+SCALE THE ROUND TO THE DELTA. A full adversarial round costs the same against a 3-line diff as
+  against 400. Pick the scope from WHAT THE DELTA COULD HAVE BROKEN: a corrected sentence gets that
+  sentence and the claim it makes; a changed guard or selector gets the artifact it gates. # #1078
+  bounded its last two rounds to documentation and backlog after the tripwire re-declaration, and
+  they still caught a falsified enumeration and a figure nobody had derived.
+  THE TERMINAL ROUND IS THE EXCEPTION AND IT ALWAYS APPLIES: the round carrying the APPROVE
+  re-attacks the OLDEST at full artifact scope. FORCED_PASS above owns that and the ex-ante trap,
+  and neither is restated here. # #1078's own approve was narrow-declared, naming rounds 1-6 as
+  NOT_EXAMINED - that is the breach, not the precedent
+
+NEVER PUT A FIGURE IN A BLOCK YOU HAVE NOT DERIVED YOURSELF. A block's numbers cross into tracked
+  files. # #1078's "18 tasks" crossed THREE boundaries un-re-derived: a round-6 review agent's
+  selection table reported it, the supervisor copied it into the BLOCK ("the 18 I wrote"), and the
+  fix agent transcribed it into docs/BACKLOG.md, where it still stands - and needs CORRECTING to
+  round 7's 21 banners / 25 resolved, never LABELLING with a unit. 18 IS SIMPLY WRONG: the same
+  table gives 18 to two spellings that resolve to 27 and 25, and the playbook between the two
+  measurement heads differs by ZERO non-comment lines (b16a1ee7..d036be4a), so both readers
+  measured an executably identical file. WORSE THAN THE WRONG FIGURE, a unit-drift explanation was
+  invented for it afterwards by the same person who had relayed it - a tidy mechanism is how a
+  wrong figure survives being questioned.
+  ASSERTING IS NOT QUOTING-UNDER-CHALLENGE: re-derive a figure you ASSERT or drop it; a figure you
+  quote in order to DISPUTE it needs its source named and the dispute stated, nothing more.
 
 ## FORCED_PASS [the round the merge gate demands after every fix]
 A verdict gate keyed to the CURRENT head (ATLAS: supervisor-mode SKILL.md MERGE_GATE) forces a
