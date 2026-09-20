@@ -310,11 +310,23 @@ TEST ExtractionProcessorV2SectorEventTests.V2_publishes_sector_events_like_v1
 ```
 
 **The citation form is not cosmetic -- `audit.sh` fails the entry on both counts.**
-`CARD_TEMPLATE.md:74`: *"file:line is relative to the service root (the dir containing
-AGENT_README.md)"*, so the path is `src/Workers/ExtractionProcessor.cs`, NEVER
-`SentinelCollector/src/...`. Every landed entry in the card confirms it -- D-18's own guard reads
-`@ src/Publishers/EventPublisher.cs:112`. And `CARD_TEMPLATE.md:123-126` reports a `GUARD` with no
-`:line` as **MISSING** (HIGH `D_entry_no_citation`), not as a lesser malformed signal.
+`CARD_TEMPLATE.md` §DECISIONS BLOCK, its `Line format` clause: *"file:line is relative to the
+service root (the dir containing AGENT_README.md)"*, so the path is
+`src/Workers/ExtractionProcessor.cs`, NEVER `SentinelCollector/src/...`. Every landed entry in the
+card confirms it -- D-18's own guard reads `@ src/Publishers/EventPublisher.cs:112`. And a DIFFERENT
+block of the same file, `CARD_TEMPLATE.md` §AUDIT COMPLIANCE, reports a `GUARD` with no `:line` as
+**MISSING** (HIGH `D_entry_no_citation`), not as a lesser malformed signal.
+<!-- These were `CARD_TEMPLATE.md:74` and `:123-126` until 2026-09-20. #1075 added two net lines to
+that file and :123-126 slid onto the W8 clause, stopping two lines short of the MISSING sentence it
+is quoted for; verify-citations.py reported GREEN either side, since both spans land on non-blank
+lines. Re-anchored rather than renumbered -- and to TWO headings, not one: the line-format clause is
+under `## DECISIONS BLOCK` and the D_entry_no_citation/MISSING clause under `## AUDIT COMPLIANCE`
+further down, so an earlier revision of this sentence saying "the same block's" sent a reader to a
+block that does not carry the rule it quotes. -->
+
+
+
+
 
 **`<line>` is a placeholder and must not be committed as one.** The guard site does not exist
 until S2 adds the `CreateSectorEvent` call inside `RunV2ProductionAsync`, so the number is

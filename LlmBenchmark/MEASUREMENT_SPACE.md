@@ -2,7 +2,7 @@
 
 **Status:** design rule. Governs every comparison this harness produces.
 Results live in [`BENCHMARKS.md`](BENCHMARKS.md). Raw coordinates and controls live in
-`docs/BACKLOG.md`. The swap bar is `CLAUDE.md` §MODEL_ACCEPTANCE.
+`docs/BACKLOG.md`. The swap bar is `SentinelCollector/AGENT_README.md` §MODEL_ACCEPTANCE.
 
 ---
 

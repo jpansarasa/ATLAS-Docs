@@ -78,6 +78,35 @@ live until something fails) must DISTINGUISH absent from zero: `or vector(0)` pa
 healthy 0, and a re-check pointed at a missing path must FAIL, never report a short count as a
 result.
 
+AIMED AT THE ACT, NOT AT WHAT YOU WERE ALREADY LOOKING AT [measured 2026-09-20: five instances in
+one day, four PRs and one playbook, every one caught by an adversarial reader and none by its
+author]. A control proves nothing about the code path its author did not aim it at, and the aim
+lands where the author was already looking. Three shapes, each with its measured case:
+  DRIVE THE ACT END TO END, asserting on its OUTPUT and its EXIT CODE — never on an internal
+    function's return value # #1077: the known-bad controls drove the VERDICT function while the
+    LOOP consuming it went unexercised, so flipping the loop's comparison literal left rc 0 with
+    both controls green and a planted real gap printing PASS. Round 2 moved them to the AUDIT
+    function and a single-argument edit still printed `PASS <script> owns before touching
+    containers` for a script that owns nothing, rc 0, both controls green
+  NO ASSERTION MAY REST ON A SECOND COPY OF THE RULE. If the control re-implements what the
+    shipped code decides, it is testing the copy # #1076: `audit-catch-spans.py --selftest` never
+    called `report()`, it re-implemented the exit-code rule and asserted against that — so
+    hard-wiring `report()` to return 0 kept the selftest green while the real run exited clean
+    with 147 repairable blocks standing
+  VARY THE AXIS THE CODE READS, and find the input where the two candidate rules DISAGREE. Two
+    rules that agree on your fixture are not distinguished by it # `repairable=4, silent=6` cannot
+    tell a repairable-keyed exit from a silent-keyed one; only `repairable=0, silent>0` can. #1075:
+    one fixture broke all three audit conditions at once, so deleting condition 1 alone left the
+    suite green while the mutant scored a renamed LESSONS heading as the GOAL STATE
+THE GATE THAT NEVER RAN IS THIS CLASS TOO, not a separate bug: the smoke-test playbook's Loki gate
+  selects `{job=~"atlas/.*"}` where `job` is not a label, so it has reported PASS unconditionally on
+  every deploy # nobody aimed a control at the selector, because the selector was the part everyone
+  was already looking at
+AND THE CONTROL CAN MASK ITS OWN CASES: a control that DIES fails closed, correctly, but every case
+  downstream of the die then goes red for the control's reason — so per-case discrimination stops
+  being observable and a recorded mutant table taken before the control was wired no longer
+  reproduces. Re-derive such a table against the artifact as SHIPPED, never quote it.
+
 ## SEVERITY_MAP [REVIEW_FIX_LOOP-compatible]
 critical:   CHECK_1 (incl. conflict-without-supersession -> STOP) | CHECK_2 at a $/GPU/quota boundary
 important:  CHECK_2 (non-scarce exception path) | CHECK_3 (missing or tautological guard test)

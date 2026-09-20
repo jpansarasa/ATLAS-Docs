@@ -20,7 +20,8 @@ assert the REASON, not the decision      # a right answer via the wrong rule pas
 `.claude/hooks/test/run-*.sh`  # the ten suites; nothing runs them automatically (KNOWN GAP, README)
 
 ## ALREADY_COVERED [go there, not restated here]
-guard-test contract, tautological tests -> `.claude/skills/intent-review/SKILL.md` GUARD_TEST_CONTRACT
+guard-test contract, tautological tests -> `.claude/skills/intent-review/SKILL.md` §GUARD_TEST_CONTRACT
+a control aimed at an internal function, at a SECOND COPY of the rule, or at a fixture both candidate rules pass -> `.claude/skills/intent-review/SKILL.md` §AIMED AT THE ACT # five instances in one day; items 2, 3 and 6 below are this class seen from the guard side
 mutation-verify step, findings-are-claims, take-never-delete a held worktree -> `.claude/skills/supervisor-mode/templates/implementation-fix.md`
 re-deriving a reported number, population bias -> `.claude/skills/supervisor-mode/templates/claim-verification.md`
 

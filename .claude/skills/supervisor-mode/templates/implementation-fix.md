@@ -42,16 +42,17 @@ TRAJECTORY
    one is the round's value, not a deviation.
 3. The fix, plus an `// INTENT(D-n):` comment at the guard site if a guard is involved. Commit.
 4. The guard test: construct the violation, assert refusal AT the boundary through the real flow,
-   mock ONLY the external client. Contract: `.claude/skills/intent-review/SKILL.md`
-   GUARD_TEST_CONTRACT. Commit.
+   mock ONLY the external client. Contract:
+   `.claude/skills/intent-review/SKILL.md` §GUARD_TEST_CONTRACT. Commit.
 5. MUTATION-VERIFY each guard or alert rule you added or moved: delete or invert it, re-run,
    confirm RED, restore. A test that stays green is the bug, not the proof. Comment-only rounds
    skip this, never step 6.
    SHOW ONE MUTANT THAT ACTUALLY COMPILED and `touch` after BOTH the mutate and the restore — a
    test result on a build you did not prove rebuilt is the proxy, not the thing.
-   MUTATE AT THE SCALE THE CONTROL SHIPS AT: poison ONE unit, pad with clean ones to the documented
-   usage AND one past it, and require the complaint to NAME the offending unit. At n=1 the aggregate
-   IS the unit, so a mutant killed there proves nothing about the batch it will actually run on —
+   SCALE-MATCHED MUTATION — mutate at the scale the control SHIPS at: poison ONE unit, pad with
+   clean ones to the documented usage AND one past it, and require the complaint to NAME the
+   offending unit. At n=1 the aggregate IS the unit, so a mutant killed there proves nothing
+   about the batch it will actually run on —
    read an unstated n as n=1 and say so. One mutant per condition, each breaking EXACTLY ONE: a
    fixture that breaks several at once goes red for any of them and therefore pins none of them.
 6. `bash {Service}/.devcontainer/compile.sh`, AFTER THE FINAL COMMIT — every compile.sh is 100644
@@ -68,8 +69,12 @@ TRAJECTORY
    playbooks under `deployment/ansible/playbooks/` -> `bash deployment/tests/ansible/run.sh`:
    syntax-check + check-mode + tag selection over the zfs rollback floor, creating and destroying
    nothing, so it is safe on the live host. It cannot see `command`/`shell` behaviour — read its
-   DOES NOT CATCH header before trusting a green run. Schema change
-   -> `nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project {path}`.
+   DOES NOT CATCH header before trusting a green run. Schema change -> run the command exactly as
+   `CLAUDE.md` §MIGRATIONS writes it, never from memory: `--project` is forbidden there BY NAME
+   (`--project src/Data` resolves to `{Svc}/src/src/Data`, dies MSB1009 and leaves a stray
+   `src/src/obj`), and that block also carries the `cd` wrapper, `--output-dir`, the per-service
+   dev-service name, when `--context {Svc}DbContext` is REQUIRED and the `dotnet tool restore`
+   precondition — four things no restatement here has ever had.
 8. Report: commit hash per layer/finding, each finding {addressed | rejected with evidence |
    deferred}, the before/after number, mutation results, compile counts.
 
@@ -79,21 +84,26 @@ PRE-HANDBACK — run these BEFORE you write step 8, and put each result IN it
    re-run, and NAME what failed. Nothing failed -> the guard is decorative: fix it now, not next
    round. Mutating the guard's LOGIC does not substitute; six PRs on 2026-09-20 passed that
    mutation and shipped a guard that could not detect its own subject.
-2. ABSENT IS NOT ZERO and a missing path is not a short count. A series created lazily does not
+2. AIM EACH CONTROL AT THE ACT, not at the function you were already reading: drive the tool END TO
+   END and assert on its OUTPUT and its EXIT CODE; let no assertion rest on a SECOND COPY of the
+   rule the shipped code decides; and build the fixture where the two candidate rules DISAGREE, not
+   one they both pass. Full contract with its five measured cases:
+   `.claude/skills/intent-review/SKILL.md` §AIMED AT THE ACT.
+3. ABSENT IS NOT ZERO and a missing path is not a short count. A series created lazily does not
    exist until something fails, so `or vector(0)` paints absent as a healthy 0 and the control
    reads green forever; a re-check pointed at a path that is not there must FAIL, never report the
    count it managed to reach. Both shipped on 2026-09-20. State, for each control you add, which
    of absent and zero it can tell apart.
-3. For every FIELD you write, name its READER. No reader -> do not write the field.
-4. ENUMERATE COVERAGE FROM THE DATA SIDE, never from the instruments that exist: grep the config,
+4. For every FIELD you write, name its READER. No reader -> do not write the field.
+5. ENUMERATE COVERAGE FROM THE DATA SIDE, never from the instruments that exist: grep the config,
    table or rule file that would HAVE to mention the thing you care about, and diff that against
    what is instrumented. A census of the instruments cannot show the missing one, which is the only
    one you are looking for.
-5. Every number in the report carries the COMMAND that produced it and the POPULATION it came
+6. Every number in the report carries the COMMAND that produced it and the POPULATION it came
    from, plus the sentence that the population CAN contain what you are claiming — a counter reset
    by a restart cannot contain pre-restart samples, which is how #1071 shipped.
-6. Every file and line reference RE-DERIVED at your final commit, never copied from this brief.
-7. NAME the rule or contract clause that CHANGED what you did — a LESSONS.md entry, the
+7. Every file and line reference RE-DERIVED at your final commit, never copied from this brief.
+8. NAME the rule or contract clause that CHANGED what you did — a LESSONS.md entry, the
    GUARD_TEST_CONTRACT, a CLAUDE.md HARD_STOP, a D-entry — or state plainly that none applied.
    "None applied" is a real answer; the absence is the data.
 

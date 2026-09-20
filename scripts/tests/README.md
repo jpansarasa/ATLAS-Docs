@@ -6,6 +6,7 @@ Guard tests for the tools in `scripts/`. Run them by hand; nothing here is wired
 |---|---|---|
 | `new-epic-selftest.sh` | `../new-epic.sh` | `bash scripts/tests/new-epic-selftest.sh` |
 | `build-deploy-hint-selftest.sh` | the deploy hints printed by `*/.devcontainer/build.sh` | `bash scripts/tests/build-deploy-hint-selftest.sh` |
+| `test_verify_pointers.py` | `../verify-pointers.py`, **and the anchor-pointer GATE itself** | needs **pytest** (venv). `test_tracked_corpus_resolves` is not a control but a live gate: it sweeps every tracked `.md` for `<path>.md` SECTION CONSTRUCT pointers and NAMES each that no longer lands. The python-tests workflow runs it on any `**/*.md` change, so a renamed construct turns CI red with nobody remembering to sweep. The other four cases exist to give that one teeth. |
 | `test_verify_citations.py` | `../verify-citations.py` | needs **pytest**, which is not installed on this host — run it in a venv. `unittest discover` does NOT work on it: the file imports pytest and uses `tmp_path`, fixtures and `parametrize`, so discovery fails at import. |
 
 ## What a case here has to do

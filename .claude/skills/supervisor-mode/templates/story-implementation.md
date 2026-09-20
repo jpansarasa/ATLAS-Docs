@@ -34,10 +34,12 @@ story matters to the epic.}
   the reflex.
 
 ## Deliverables
-{Numbered list of concrete artefacts. For DB work, always include the
-EF migration step explicitly per CLAUDE.md HARD_STOP:
-"Use `nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project {path}` —
-never hand-author migration .cs files."}
+{Numbered list of concrete artefacts. For DB work, name the EF migration
+step and send the agent to `CLAUDE.md` §MIGRATIONS for the command
+VERBATIM — never restate it here. `--project` is forbidden there by name,
+and that block carries the `cd` wrapper, `--output-dir`, the per-service
+dev-service name, the `--context {Svc}DbContext` rule and the
+`dotnet tool restore` precondition. Never hand-author a migration .cs.}
 
 ## Design intent (MANDATORY stanza — supervisor fills VERBATIM, never paraphrases)
 - decisions: {the in-scope D-entries copied VERBATIM from
@@ -71,15 +73,21 @@ never hand-author migration .cs files."}
   failed -> decorative; fix it before handing back. Mutating the guard's
   LOGIC is not a substitute (six PRs, 2026-09-20, all mutated logic and
   all shipped an unwired guard).
+- AIM EACH CONTROL AT THE ACT, not at the function you were already
+  reading: drive the tool END TO END and assert on its OUTPUT and its
+  EXIT CODE; let no assertion rest on a SECOND COPY of the rule the
+  shipped code decides; build the fixture where the two candidate rules
+  DISAGREE, not one they both pass. Contract + the five measured cases:
+  `.claude/skills/intent-review/SKILL.md` §AIMED AT THE ACT.
 - ABSENT IS NOT ZERO, and a missing path is not a short count. A lazily
   created series does not exist until something fails, so `or vector(0)`
   paints absent as a healthy 0; a re-check pointed at a path that is not
   there must FAIL, never report the count it reached. Say which of absent
   and zero each control you add can tell apart.
-- MUTATE AT THE SCALE THE CONTROL SHIPS AT: poison one unit, pad with
-  clean ones to the documented usage and one past it, and require the
-  complaint to NAME the offending unit. At n=1 the aggregate IS the unit;
-  read an unstated n as n=1. One mutant per condition, each breaking
+- SCALE-MATCHED MUTATION — mutate at the scale the control SHIPS at:
+  poison one unit, pad with clean ones to the documented usage and one
+  past it, and require the complaint to NAME the offending unit. At
+  n=1 the aggregate IS the unit; read an unstated n as n=1. One mutant per condition, each breaking
   EXACTLY ONE — a fixture breaking several pins none of them.
 - ENUMERATE COVERAGE FROM THE DATA SIDE, not from the instruments that
   exist: grep the config or rule file that would HAVE to mention the thing

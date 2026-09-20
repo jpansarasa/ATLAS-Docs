@@ -240,6 +240,22 @@ PRECONDITION WE DO NOT GET FREE: our tools fail toward SUCCESS -- a harness scor
   assertions reports itself as sharp -- so each must REPORT ITS OWN DULLNESS: carry a KNOWN-BAD CONTROL exercised when
   the tool runs, broken one documented way, requiring the matching guard to complain BY NAME (worked example:
   deployment/tests/alerts/selftest.sh). A green run without a control is an opinion.
+AND A CONTROL MUST BE AIMED AT THE ACT, or it is a green run about a path nobody tested: drive the tool
+  END TO END asserting its OUTPUT and its EXIT CODE (never an internal function's return), rest no
+  assertion on a SECOND COPY of the rule the shipped code decides, and build the fixture where the two
+  candidate rules DISAGREE. Contract + five measured cases, all 2026-09-20:
+  `.claude/skills/intent-review/SKILL.md` §AIMED AT THE ACT # a control and a known-bad control fail the
+  same way, so this sits beside the clause above rather than only in the review skill
+ANCHOR POINTERS ARE GATED IN CI, file:line ones are not the same check: `scripts/verify-pointers.py`
+  resolves every `<path>.md` §CONSTRUCT pointer and DENIES an ambiguous path. The GATE is
+  `scripts/tests/test_verify_pointers.py::test_tracked_corpus_resolves`, swept by the python-tests
+  workflow on any `**/*.md` change -- so a renamed construct turns CI red with nobody remembering
+  run it the way CI does, never by hand-invoking the tool: `python -m pytest scripts/tests -k tracked_corpus`
+    # pytest is NOT installed on this host -- use a venv
+  over an arbitrary file set: `mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-pointers.py "${F[@]}"`
+  ✗ it is a NAME resolver, never a drift detector -- a pointer at a section that still exists and no
+    longer says what the prose claims reads GREEN, and a Title-Case heading (`§API Endpoints`) is out of
+    scope and UNCOUNTED, so its "0 cannot resolve" is never a claim about those
 TRIGGER: you USED a tool -> leave it sharper # not "it broke" -- a tool that has visibly broken was already blunt for every job before it
 SHARP ENOUGH, NOT RAZOR: judge a remaining defect by whether it MISLEADS (a reader or agent takes a wrong action) or is
   merely IMPERFECT. Stop at the first # a round trading three cosmetic fixes for one new false claim is a net loss

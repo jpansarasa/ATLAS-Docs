@@ -2,7 +2,7 @@
 
 Extraction quality for ATLAS Sentinel, measured on production's own CoD path.
 Method and comparability rules: [`MEASUREMENT_SPACE.md`](MEASUREMENT_SPACE.md). Raw coordinates,
-controls and sample-level detail: `docs/BACKLOG.md`. Swap criteria: `CLAUDE.md` §MODEL_ACCEPTANCE.
+controls and sample-level detail: `docs/BACKLOG.md`. Swap criteria: `SentinelCollector/AGENT_README.md` §MODEL_ACCEPTANCE.
 
 ---
 

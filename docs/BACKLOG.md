@@ -2181,7 +2181,7 @@ RECALL of ticker symbols.
 The ordering is the tell: the worst extractor measured (EXAONE, `numbers_f1` 0.2218) has the BEST
 ticker score at 0.6369, and the best extractor (Gemma 4, 0.7570) is fourth from bottom at 0.4101.
 
-  ✗ barred as a swap criterion -> `CLAUDE.md` §MODEL_ACCEPTANCE
+  ✗ barred as a swap criterion -> `SentinelCollector/AGENT_README.md` §MODEL_ACCEPTANCE
   ✗ removed from `LlmBenchmark/BENCHMARKS.md` -- it is a gold defect, not a benchmark result
   FIX: score only the 24 article-stated cases, which would be a real extraction metric. Not done,
     so the current number cannot be read in either direction.
@@ -2487,6 +2487,8 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | D | 2026-09-16 | OPEN | Empty-but-valid results grade CORRECT in the sentinel quality check |
 | D | 2026-09-16 | OPEN | "stub" is an unpinned cross-file contract that fails OPEN |
 | D | 2026-09-16 | BLOCKED | CI is advisory, not blocking |
+| D | 2026-09-20 | OPEN | new-epic.sh's graduation-shape control: its CANNOT-RUN arm survives three mutations at 59/59 green |
+| D | 2026-09-20 | OPEN | verify-pointers.py resolves on the filesystem, not the git index: untracked target, `../` escape, symlink and duplicate construct all pass (0 of 38 affected today) |
 | D | 2026-09-16 | OPEN | Three figures the PR-verdict decision check leaves un-re-checkable |
 | D | 2026-09-16 | OPEN | Citations in tracked .md that cannot land are the corpus's steady state, and so is rc 1 |
 | D | 2026-09-16 | OPEN | A conflicted index path makes the alerts selftest report a nonexistent permissions defect |
@@ -2516,6 +2518,71 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | E | 2026-09-06 | OPEN | colibri cannot produce an admissible scorecard (DO-NOT-BUILD, permanent): seed refused |
 | E | 2026-09-06 | OPEN | Precision ladder on gemma-3-27b: Q6_K LOSES to Q4_K_M, and vLLM has no rung above 4-bit |
 
+
+### new-epic.sh's graduation-shape control: the CANNOT-RUN arm is unpinned, and the recorded mutant table was irreproducible [2026-09-20]
+Three mutations of `graduation_shape_case` / `run_graduation_shape_control` in `scripts/new-epic.sh`
+leave `scripts/tests/new-epic-selftest.sh` fully green. Each was measured by applying it and running
+`bash scripts/tests/new-epic-selftest.sh` from the repo root. EVERY COUNT BELOW CARRIES THE HEAD IT
+WAS TAKEN AT, because this suite's total moves whenever a case is added and a bare `N/58` stops
+being re-checkable the moment one is -- which is the defect the second half of this entry corrects,
+repeated once already by the entry's own first revision.
+
+| mutation | edit | measured |
+|---|---|---|
+| fixture-built proof deleted | drop `grep -qxF "$proof" "$tmp" \|\| { rm -f "$tmp"; return 2; }` (one site) | green at f17f5efc (58/58) |
+| mktemp fallback returns success | `tmp="$(mktemp)" \|\| return 2` -> `\|\| return 0` **in `graduation_shape_case` only** -- that literal matches TWO sites, the other being `run_lessons_control`, whose arm IS reachable | green at f17f5efc (58/58) |
+| cannot-run sentinel swallowed | the FIVE `rc=$?; [ "$rc" -eq 2 ] && return 2` lines -> `&& return 0` (four at f17f5efc; the fifth fixture added one) | green at f17f5efc (58/58) |
+
+All three disable the same arm: the control's report that it COULD NOT RUN. Nothing in the suite
+forces a cannot-run, and it cannot be forced from outside -- `TMPDIR` pointed at an unwritable path
+fails `run_control`'s mktemp FIRST, so the script dies on the first control's message and a case
+asserting the graduation-shape one is never reached. A reviewer looked for another external lever on
+2026-09-20 and found none. Closing this needs an injection point the selftest can aim at that arm
+specifically, which is test-only machinery in production code
+(`.claude/skills/guard-change/SKILL.md` item 10: a shared test override binds every participant and
+must be asserted in BOTH directions). Not built; the cost was judged above the exposure, which is a
+control that stays silent when its environment breaks rather than one that mis-scores.
+RE-CHECK: apply any row above at the current head, run the selftest, and expect it to stay GREEN at
+whatever the suite's full count is then. While it does, this entry is still true.
+
+THE RECORD THE COMMIT MESSAGE CARRIES IS WRONG, and cannot be amended post-merge, so the correction
+lives here. Commit `e35439df` ("fix(new-epic): one selftest case per condition, and a control that
+reaches them") states that deleting each audit condition gives 56 of 58 with a different case red.
+Blinding each condition of `audit_lessons`' empty-index branch in turn and running the selftest:
+
+| blinded condition | e35439df claims | at f17f5efc (58 cases) | at this PR's head (59 cases) |
+|---|---|---|---|
+| 1, heading present | 56/58 | **11/58** | **12/59** |
+| 2, section empty | 56/58 | **12/58** | **13/59** |
+| 3, ALREADY_ENCODED populated | 56/58 | **12/58** | **12/59** |
+
+THE HEAD-INDEPENDENT STATEMENT, because none of those numbers survives the next added case: blinding
+any one condition turns MOST OF THE SUITE red -- roughly 46 or 47 cases -- and every one of those
+failures carries the CONTROL's message, not its own. 56/58, a suite nearly green with one case red,
+reproduces only with `run_graduation_shape_control` UNWIRED.
+
+Wired, it does its job: it detects the blinded condition, `die`s at rc 2 before any audit runs, and
+every case that invokes the script then fails for the control's reason. That is correct fail-closed
+behaviour and it makes per-case discrimination unobservable while the control is live -- so a reader
+re-running the recorded table sees ~46 failures, reads it as a regression, and the tempting repair is
+to soften the control's die. It is not a regression. The class is
+`.claude/skills/intent-review/SKILL.md` §AIMED AT THE ACT, last paragraph.
+
+### verify-pointers.py resolves on the FILESYSTEM, not the git index, and does not mind a construct defined twice [2026-09-20]
+`scripts/verify-pointers.py` answers "does this file exist" with `os.path.isfile` under the repo
+root, and "does this construct exist" by scanning lines. Four shapes therefore pass GREEN that a
+reader would call rot:
+  an UNTRACKED or GITIGNORED target -- present on the author's disk, absent for everyone else, and
+    absent in CI, where the gate would then report the pointer as unresolvable rather than as the
+    green it was locally;
+  a `../` escape or a SYMLINK leaving the checkout -- resolved against whatever is there;
+  a construct DEFINED TWICE in one file -- the pointer is satisfied by either, so deleting the one
+    the prose means leaves it green on the other.
+MEASURED 2026-09-20 at this PR's head: **zero of the 38 tracked anchor pointers is affected by any
+of the four** -- every target is tracked, no pointer contains `..`, no target is a symlink, and no
+resolved construct is duplicated in its file. So this is a hole in the checker, not a live defect.
+RE-CHECK: re-run the sweep and compare its pointer count against `git ls-files`; the day a pointer's
+target is untracked, CI and a local run will DISAGREE, which is the observable.
 
 ### The three watermark-only ReExtract legs re-assert the row's tier, and nothing pins that they do [2026-09-06]
 `ExtractedObservation.ApplyReExtraction`'s `newSecMasterMethod` became REQUIRED in #1030, so the next

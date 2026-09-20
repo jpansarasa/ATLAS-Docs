@@ -9,7 +9,7 @@ Dispatch this whenever a substantive agent report arrives. Skip it for mechanica
 Why it exists: agent reports state inferences in the same voice as measurements, and the
 supervisor is the only checkpoint between a subagent and the user. Unaided it is a poor one —
 the refutation otherwise arrives from a later deep review, after the claim was relayed as fact.
-See SKILL.md §TIER1_CLAIM_CHECK.
+See `.claude/skills/supervisor-mode/SKILL.md` §TIER1_CLAIM_CHECK.
 
 ```
 READ-ONLY. Change nothing. No pushes, no deploys, no restarts. DB SELECT-only.
