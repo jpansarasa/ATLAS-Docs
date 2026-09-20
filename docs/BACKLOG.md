@@ -84,7 +84,8 @@ Defects with a measurement that makes them re-checkable.
 | C | 2026-09-17 | OPEN | Finnhub catalog enrichment re-enriches and re-embeds ~240 rows/hour; its cooldowns never persist |
 | C | 2026-09-16 | OPEN | gemini-resolver saturates its 1500/day cap; intent says dozens/day (INTENT_FIDELITY) |
 | C | 2026-09-16 | AWAITING-DECISION | Quarantined-ticker re-acquisition is an undecided policy: Gemini cost + un-alerted 23505 |
-| D | 2026-09-17 | OPEN | Integration suites behind `compile.sh --integration` never reach the marker; 4 of 6 are red |
+| D | 2026-09-20 | OPEN | FredCollector compile.sh dies in a fresh worktree: its compose env_file names a gitignored .env (Ofr's is tracked) |
+| D | 2026-09-17 | AWAITING-DECISION | Integration suites never reach the marker; Fred's 7 gRPC tests read a table the card denies |
 | D | 2026-09-16 | OPEN | Gemma 4 swap residuals: one-directional coordinate sweep, hermes parser, promtool fixtures |
 | D | 2026-09-16 | OPEN | D-23 thin-draw gate cannot deny: Bind() appends to the Engines default (inert until wired) |
 | D | 2026-09-16 | OPEN | Static-meter flake: two ExtractionProcessor test classes still outside SentinelMeterStatic |
@@ -1658,24 +1659,75 @@ Re-check: `sum by (result)(secmaster_entity_resolution_self_seed_total)` (2026-0
      OR indexname LIKE 'idx_source_mappings_collector_source%';`
 
 **Six services keep their integration suite behind `compile.sh --integration`, so the push marker never sees it,
-and four of the six are red.** [2026-09-17] The six are ThresholdEngine, FredCollector, OfrCollector,
-NasdaqCollector, AlphaVantageCollector and FinnhubCollector; SecMaster moved its suite into the gate after #900.
-Measured on the per-worktree database-name branch, and no failure below touches a database name:
-- FredCollector, 10 of 123 fail. Seven `EventStreamIntegrationTests` stream zero events
-  (`GetEventsSince_RespectsLimit`: expected 20, found 0), and a control run with the pre-fix gRPC base from
-  `c4b86adb` failed the same 7 of 8. Three `MacroObservationIdempotencyTests` throw in EF model validation, before
-  any SQL: `NewsArticleEmbeddingEntity.Embedding` (pgvector `Vector`) "could not be mapped", and the test's
-  `UseNpgsql` options configure no `UseVector()`.
-- OfrCollector, 3 of 64: its `MacroObservationIdempotencyTests` fail with the same model-validation error.
-- AlphaVantageCollector, 39 of 45 fail "DB_PASSWORD environment variable is required": its
-  `.devcontainer/compose.yaml` sets no `DB_*` variable, and the fixture's user fallback is `ai_inference`.
-- FinnhubCollector, 32 of 38 fail "Name or service not known": its compose file sets no `DB_HOST`, and the
-  fixture falls back to `finnhub-timescaledb`, which no compose file defines.
-In AlphaVantage and Finnhub, the passing six are the naming unit tests, which need no database.
-ThresholdEngine (67) and NasdaqCollector (28) are green. The consequence is that a regression only an integration
-suite can catch ships behind a valid push marker. #900 found that class on SecMaster: four tests silently red since #231.
+and FredCollector's 7 gRPC tests are still red.** [2026-09-17, re-measured 2026-09-20] The six are ThresholdEngine,
+FredCollector, OfrCollector, NasdaqCollector, AlphaVantageCollector and FinnhubCollector; SecMaster moved its suite
+into the gate after #900. Three of the four red suites are now green: OfrCollector 64 of 64, AlphaVantageCollector
+45 of 45, FinnhubCollector 38 of 38, FredCollector 116 of 123 (was 61/64, 6/45, 6/38, 113/123). ThresholdEngine (67)
+and NasdaqCollector (28) were already green. The consequence stands: a regression only an integration suite can
+catch ships behind a valid push marker. #900 found that class on SecMaster: four tests silently red since #231.
 Re-check: `bash <Service>/.devcontainer/compile.sh --integration`, then read the `Failed!` line of the
 `*.IntegrationTests.dll`.
+
+STILL RED, and NOT a test-side gap -- `FredCollector`'s 7 `EventStreamIntegrationTests`. The gRPC stream and its
+tests disagree about WHICH TABLE is the event source, and the service card takes the tests' side against the code:
+- `FredCollector/AGENT_README.md:22` PATHS: "gRPC-EventStream [:5001 - ThresholdEngine]: polls DB events table; does
+  not serve fred_observations directly". `FredCollector/src/Grpc/Repositories/EventRepository.cs:34,70,100,119,137`
+  reads `_dbContext.FredObservations` in every one of its five queries. `69b2d670` (#65, 2025-12-13) made that
+  switch; the tests, added later in `d5645e87` (#151, 2026-01-25), seed `DbContext.Events` and assert the stream
+  returns them, so they stream 0.
+  CITE THESE TWO FILES BY THEIR SERVICE PATH, never by basename: six tracked files are named `EventRepository.cs`
+  and two `EventPublisher.cs`, and `SentinelCollector/src/Grpc/Repositories/EventRepository.cs:27,37,50` reads
+  `_context.Events` -- so a bare `EventRepository.cs` cite with a line number both fails the citation sweep as
+  ambiguous AND lands a reader on the service whose code DOES match this card line, i.e. on "there is no defect
+  here". (Written without the line number on purpose: the sweep would read the example itself as a citation.)
+  The card line is KNOWN-FALSE as it stands and is NOT annotated in the card: branch
+  `fix/fred-event-stream-cursor` is correcting it alongside a cursor defect, so until that lands read
+  `FredCollector/AGENT_README.md:22` as "the stream serves `fred_observations`", whatever the card says.
+- The divergence is semantic, not just a table name: `GetEventCountsByTypeAsync` groups by `SeriesId`, while
+  `GetHealth_ReturnsAccurateMetrics` expects the `EventsByType` keys `SeriesCollected` / `CollectionFailed`.
+- `events` is WRITE-ONLY in FredCollector: `FredCollector/src/Publishers/EventPublisher.cs:44,79` are its only
+  `_dbContext.Events` references, and no reader exists
+  (`git grep -n 'dbContext\.Events' -- FredCollector/src` returns 2 lines, both writes).
+  Production keeps filling it: 15,919 rows, latest `OccurredAt` 2026-09-19T18:01:05Z (read 2026-09-20T11:24Z,
+  SELECT-only), against 675,592 `fred_observations` rows with the same latest timestamp.
+- `GetHealth_EmptyDatabase_ReturnsHealthyWithZeroEvents` is the 8th test and passes only because BOTH tables are
+  empty -- it would pass against either design, so the suite reads as 7/8 broken rather than 8/8 stale.
+DECISION NEEDED, and no implementing agent may make it (CLAUDE.md SERVICE_ARCHITECTURE: never "fix" a symptom by
+violating a card invariant). Either the card and the tests are right and `EventRepository` must return to the
+`events` outbox, or the code is right and BOTH the card line and the 7 tests must be rewritten against
+`fred_observations` -- and then `EventPublisher`'s write-only table needs a disposition of its own.
+Re-check: `bash FredCollector/.devcontainer/compile.sh --integration` (7 of 123 fail, all in
+`EventStreamIntegrationTests`), then `grep -n 'FredObservations' FredCollector/src/Grpc/Repositories/EventRepository.cs`
+(5 hits) against the card's `polls DB events table` line.
+
+**FredCollector's `compile.sh` cannot run in a fresh worktree at all: its devcontainer compose file `env_file:`s a
+gitignored `.env` that only the main checkout has.** First occurrence, 2026-09-20.
+`FredCollector/.devcontainer/compose.yaml:11-12` carries `env_file: [../../FredCollector/.env]`, and
+`FredCollector/.gitignore:44` ignores `.env`, so a fresh worktree has only `.env.example` and its compile.sh --
+default or `--integration` -- dies at compose load with `fatal ... Failed to load .../FredCollector/.env: no such
+file or directory` before a single test runs (re-derived 2026-09-20 in this worktree: `config` exits 1 with exactly
+that message).
+OFRCOLLECTOR IS NOT AFFECTED, though its compose file names `.env` the same way: `OfrCollector/.env` is TRACKED
+(`c7b937aa`, 2025-12-07), so it is present in every worktree and
+`sudo nerdctl compose -f OfrCollector/.devcontainer/compose.yaml config` returns rc 0 with no error there
+(re-derived 2026-09-20 in a fresh worktree, where the Ofr integration suite also ran green). That it is tracked is
+an accepted risk in its own right -- see "Accepted risks, do not re-flag" below; do not untrack it to make the two
+services symmetric, which would give Ofr this defect.
+The compose-spec fix (`env_file: [{path: ..., required: false}]`) is NOT available here: nerdctl 1.7.7 rejects it
+with `validating ...: services.fred-collector-dev.env_file.0 must be a string` (re-measured 2026-09-20).
+DROPPING THE `env_file:` KEY IS NOT A FREE FIX: the `environment:` block below it covers only the DATABASE
+variables. It sets `DB_HOST/PORT/USER/PASSWORD` and wins over `env_file`, but it names no FRED variable at all
+(`grep -c FRED_API_KEY FredCollector/.devcontainer/compose.yaml` -> 0), so `.env` is the devcontainer's only source
+of `FRED_API_KEY`. `FredCollector/src/DependencyInjection.cs:41` gates the WHOLE FRED API client registration on
+that key being non-empty, and `:212` reads it again inside that registration with `:213` throwing when it is null.
+The throw is therefore not what a missing `.env` produces: `:41` simply skips `AddFredApiClient`, and the five
+consumers that take `IFredApiClient` -- `DataCollectionService`, `BackfillService`, `AlfredBackfillService`,
+`SeriesManagementService`, `SeriesSearchService` -- are left with no registration to resolve, which is the quieter
+failure of the two. A committed non-secret default `.env`, or passing the key through `environment:`, are the open
+options; dropping `env_file:` alone is not one.
+Re-check: `ls <worktree>/FredCollector/.env` (absent in a fresh worktree; present in /home/james/ATLAS), then
+`sudo nerdctl compose -f FredCollector/.devcontainer/compose.yaml config` from a worktree without it (rc 1) and the
+same command for `OfrCollector` (rc 0), and `grep -n FRED_API_KEY FredCollector/.devcontainer/compose.yaml` (0 hits).
 
 **Gemma 4 residuals the swap PR found and did not fix (DEPLOYED 2026-09-07 evening; 1b, 2 and 3 still open)**
 [2026-09-07, title corrected 2026-09-13, file count re-measured 2026-09-16]
@@ -3859,9 +3911,17 @@ awk form, and the quote-abutting form — each naming the exact gate path in its
 not a free simplification. Re-check with a synthetic Bash payload per shape against
 `git show 1d098006:.claude/hooks/ansible-gate-guard.sh`.
 
-**Accepted risks, do not re-flag.** Plaintext DB password `atlas_secure_password_2025` in 10+ tracked files, and
-`OfrCollector/.env` tracked with `DB_PASSWORD` / `SMTP_PASSWORD` / `FRED_API_KEY`. The user accepted both
-explicitly: private repo, LAN-only, public and public-derived data. Rotating touches the DB user and every consumer.
+**Accepted risks, do not re-flag -- WHILE THE REPOSITORY IS PRIVATE.** Plaintext DB password
+`atlas_secure_password_2025` in 10+ tracked files, and `OfrCollector/.env` tracked with `DB_PASSWORD` /
+`SMTP_PASSWORD` / `FRED_API_KEY` -- tracked since 2025-12-07 (`c7b937aa`), so it is present in every worktree and in
+every clone. The user accepted both explicitly: private repo, LAN-only, public and public-derived data, and the FRED
+key a free one (re-affirmed 2026-09-20). Rotating the DB password touches the DB user and every consumer.
+THE ACCEPTANCE HAS A TRIGGER, and it is not a re-flag: it holds only while the repo is private. Before ATLAS is ever
+open-sourced or shared outside its owner this MUST be resolved, because the key and its whole history travel with
+every clone and `git rm` alone does not remove either. Remedy for that day: rotate the key, replace the tracked file
+with a non-secret default (`OfrCollector/.env.example`, as FredCollector and AlphaVantageCollector already do), and
+supply the real value out of band the way those services do. Until then, its being tracked is also what keeps
+OfrCollector off the `env_file` defect above -- do not untrack it as tidy-up.
 
 **`__EFMigrationsHistory` is one shared table for every ATLAS service in `atlas_data`.** 58 rows, measured
 2026-08-17 (`SELECT count(*) FROM "__EFMigrationsHistory";`). Safe TODAY — EF filters by the migrations assembly

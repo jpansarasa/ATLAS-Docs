@@ -75,8 +75,8 @@ without it, and drops its database when it finishes.
 | OfrCollector | `ofr_integration_test`, `atlas_macro_ofr_idempotency_test` | bridged |
 | SentinelCollector | n/a: its fixtures use the private `timescaledb-test` sidecar (`CROSSCOLLECTOR_TEST_DB`) | on `ai-inference` |
 | NasdaqCollector | `atlas_integration_test` | bridged |
-| FinnhubCollector | `finnhub_integration_test` | bridged, but the fixture's fallback host `finnhub-timescaledb` resolves nowhere (docs/BACKLOG.md) |
-| AlphaVantageCollector | `atlas_integration_test` | bridged, but the compose file sets no `DB_PASSWORD` (docs/BACKLOG.md) |
+| FinnhubCollector | `finnhub_integration_test` | bridged |
+| AlphaVantageCollector | `atlas_integration_test` | bridged |
 | CalendarService | private `calendar-db` container | not bridged |
 | Reports | n/a (unit tests only) | not bridged |
 
@@ -107,6 +107,12 @@ cd <Service>/.devcontainer
 
 The compile script brings the devcontainer up, runs unit tests, then runs the
 integration test project. Teardown happens via `trap`.
+
+FredCollector additionally `env_file:`s `FredCollector/.env`, which is gitignored and only
+the main checkout has, so its `compile.sh` dies at compose load in a fresh worktree before
+any test runs — copy the file in, or see docs/BACKLOG.md. OfrCollector's compose file names
+`OfrCollector/.env` the same way, but that file is TRACKED, so it is present in every
+worktree and its `compile.sh` is unaffected.
 
 ## Disabling the bridge
 
