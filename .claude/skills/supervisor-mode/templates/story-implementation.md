@@ -51,7 +51,10 @@ never hand-author migration .cs files."}
 - Conflict rule: if this brief contradicts a D-entry without a named
   supersession above -> STOP and report; never route around it, never
   obey the stale entry. (The entry may be outdated OR the brief wrong —
-  the supervisor/human decides, not you.)
+  the supervisor/human decides, not you.) The same stop applies to
+  a rule stated in a skill, a template or CLAUDE.md, not only a D-entry:
+  NAME the rule and the contradiction, and never silently obey a written
+  rule you believe is stale — say so — CLAUDE.md INTENT_FIDELITY CONFLICT.
 
 ## Build / verify
 - `bash {Service}/.devcontainer/compile.sh` (with tests), AFTER the final commit.
@@ -60,6 +63,34 @@ never hand-author migration .cs files."}
   after the build (comments and docs included) remaps it and the push gate
   refuses a tree nobody built.
 - Do NOT deploy. Do NOT push. Do NOT open PR.
+
+## Pre-handback (run every one, report each result)
+- DELETE THE ENABLING LINE of every guard or control you added — the
+  registration/view, the startup seeding or zero-init, the evidence file a
+  gate reads, the consumer of a flag — re-run, NAME what failed. Nothing
+  failed -> decorative; fix it before handing back. Mutating the guard's
+  LOGIC is not a substitute (six PRs, 2026-09-20, all mutated logic and
+  all shipped an unwired guard).
+- ABSENT IS NOT ZERO, and a missing path is not a short count. A lazily
+  created series does not exist until something fails, so `or vector(0)`
+  paints absent as a healthy 0; a re-check pointed at a path that is not
+  there must FAIL, never report the count it reached. Say which of absent
+  and zero each control you add can tell apart.
+- MUTATE AT THE SCALE THE CONTROL SHIPS AT: poison one unit, pad with
+  clean ones to the documented usage and one past it, and require the
+  complaint to NAME the offending unit. At n=1 the aggregate IS the unit;
+  read an unstated n as n=1. One mutant per condition, each breaking
+  EXACTLY ONE — a fixture breaking several pins none of them.
+- ENUMERATE COVERAGE FROM THE DATA SIDE, not from the instruments that
+  exist: grep the config or rule file that would HAVE to mention the thing
+  you care about. A census of instruments cannot show the missing one.
+- For every FIELD you write, name its READER, or do not write the field.
+- Every number carries the COMMAND that produced it and the POPULATION it
+  came from, and you state that the population CAN contain what you claim
+  — a post-restart counter holds no pre-restart samples (#1071).
+- Every file/line reference re-derived at the final commit, never copied.
+- NAME the rule or contract clause that changed what you did, or say
+  plainly that none applied — the absence is data.
 
 ## Reporting back (final reply, <=200 words)
 - Branch + final commit hash, and the attested tree hash = `HEAD^{tree}`

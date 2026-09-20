@@ -33,9 +33,12 @@ CHECK_1 guard touched without supersession [critical]:
   diff modifies/deletes a GUARD-cited file:line region, code adjacent to an
   `// INTENT(D-n):` comment, or a cited guard test — WITHOUT a same-diff rewrite of the
   D-entry AND a named "supersedes D-n" in the driving brief/PR description.
-  ALSO fires when the brief/PR intent contradicts a D-entry without naming supersession ->
-  verdict is STOP-and-report; never route-around, never obey-stale (entry may be outdated
-  OR brief wrong — human/supervisor decides).
+  ALSO fires when the brief/PR intent contradicts a D-entry — or a rule stated in a skill,
+  a template or CLAUDE.md — without naming supersession -> verdict is STOP-and-report,
+  NAMING the rule and the contradiction; never route-around, never obey-stale, and never
+  silently obey a written rule you believe is stale (entry may be outdated OR brief wrong —
+  human/supervisor decides). Measured 2026-09-20: a brief contradicting LESSONS.md
+  GRADUATION_RULE was obeyed, because every stop in play named only D-entries.
 CHECK_2 new exception path without D-entry [critical if scarce-resource $/GPU/quota; important otherwise]:
   diff introduces a new exception path — new external client call, paid-API/frontier-model
   call, budget/cap bypass, raw-DB write, privileged op — with NO new D-entry (+ atomic set)
@@ -60,6 +63,20 @@ Examples:
   past budget cap -> refusal, never silent-pass
 Unit tests default; integration only where sanitization meets real serialization/protocol.
 No coverage chasing — a guard test exists because a D-entry exists, and for no other reason.
+
+WIRING, NOT ONLY LOGIC [measured 2026-09-20, six consecutive PRs]: the test counts only if it ALSO
+goes RED when the line that INSTALLS or CONSUMES the guard is deleted — mutating the guard's logic
+says nothing about whether it RUNS. Every one of those six mutated the logic, as briefed, and every
+enabling line survived untouched. The shapes to delete, one at a time, and the measured miss:
+  a registration or view — the single `AddView` for explicit histogram buckets; build rc 0, 4/4 green
+  a startup seeding or zero-initialisation — deleted, promtool still rc 0 over 19 successes
+  the evidence FILE a gate reads — emptied the list and falsified its count; the gate passed
+  the CONSUMER of a flag the code writes — a degraded record set a freeze-refusal flag nobody read
+COROLLARY, both halves: a field written and read by nobody is not a guard — name its READER or do
+not write the field. And a control whose series can be ABSENT (created lazily, so it does not exist
+live until something fails) must DISTINGUISH absent from zero: `or vector(0)` paints absent as a
+healthy 0, and a re-check pointed at a missing path must FAIL, never report a short count as a
+result.
 
 ## SEVERITY_MAP [REVIEW_FIX_LOOP-compatible]
 critical:   CHECK_1 (incl. conflict-without-supersession -> STOP) | CHECK_2 at a $/GPU/quota boundary

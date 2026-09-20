@@ -2019,6 +2019,17 @@ The cost is not the one red row: the suite exits 1, so its other 52 assertions s
 anything gating on rc reads the whole suite as broken rather than as one stale line. A permanently red suite teaches
 its readers to skip it, which is what lets the NEXT drift through. Decide the direction rather than silencing the
 row: either the dream notice is a wired participant and belongs in `EXPECTED_WIRED`, or it should not be registered.
+Re-run 2026-09-20: UNCHANGED -- rc 1, 52 PASS, the same single FAIL `registered set drifted:6a7 >
+dream-pending-notice.sh`, 43 days red. AND THE COST IS BIGGER THAN "READERS SKIP IT": no CI workflow runs the hook
+suites at all (`.github/workflows/` holds alert-rules, python-tests, sync-docs and nothing else), so this suite is
+the ONLY thing asserting that a hook is REGISTERED -- `wired` covers 12 of them, `git-push-guard.sh`,
+`pr-review-marker.sh` and `commit-marker-staleness.sh` among them. Unwiring any one of them changes the summary
+from FAIL to FAIL, on a suite nothing runs: a guard can be removed today and NOTHING in the repo notices. That is
+the same defect class as the PR the measurement came from (a guard whose enabling line nobody tests), one level up.
+`scripts/tests/new-epic-selftest.sh` sits in the same position — nothing runs it either (`git grep -l
+new-epic-selftest -- .github` -> 0 on 2026-09-20) — with one mitigation the hook suites lack: `scripts/new-epic.sh`
+carries three known-bad controls INSIDE itself, so an operator running it gets the dullness report even when no
+suite ran. That is the shape to copy here, not a reason to leave the suites unwired.
 Re-check: `.claude/hooks/test/run-wiring-smoke.sh; echo rc=$?` -- rc must be 0 and the summary `WIRING SMOKE: PASS`.
 
 **A write in one tool call and its execution in the NEXT are invisible to any command-string guard. ACCEPTED LIMIT,
@@ -3022,7 +3033,7 @@ NARROWED, NOT CLOSED [2026-09-04, #1002]: a citation whose prose names `D-n` wit
 a line beginning `D-m` is reported `WRONG-D-ENTRY`, counted apart from cannot-land (`grep -c WRONG-D-ENTRY
 scripts/verify-citations.py` -> 2 on 2026-09-16). The FinnhubCollector case is STILL LIVE AND GREEN: `.cs`
 GUARD citations land on method declarations where no `D-n` appears, and demanding one would condemn every
-GUARD citation in this repo's cards. CONSEQUENCE (CLAUDE.md TOOL_UPKEEP, LESSONS.md L8): any edit shifting
+GUARD citation in this repo's cards. CONSEQUENCE (CLAUDE.md TOOL_UPKEEP, LESSONS.md ALREADY_ENCODED, was L8): any edit shifting
 line numbers in a cited file requires a comparison of LANDING TEXT against a pristine merge-base checkout;
 equality of the `N checked, M cannot land` line is NOT a pass (488/27 matched its base while four drifted;
 `a8a0ed5d` matched 195/496/28 exactly while three did).
@@ -3779,7 +3790,7 @@ Work decided and not yet scheduled, with the decision that deferred it.
 | D | 2026-08-16 | OPEN | 4 write shapes still reach the gate layer and are ALLOWED (3 of them DENY on #935's lexer) |
 | E | 2026-09-16 | OPEN | Accepted risks, do not re-flag: plaintext DB password and tracked OfrCollector/.env |
 | E | 2026-08-17 | OPEN | __EFMigrationsHistory is one shared table for every ATLAS service in atlas_data |
-| E | 2026-08-16 | OPEN | The README's bare '41 shapes' for #935: its provenance (series lives in LESSONS L15) |
+| E | 2026-08-16 | OPEN | The README's bare '41 shapes' for #935: its provenance (series now in this entry) |
 | E | 2026-08-15 | OPEN | A do-not-merge DECISION on #935 went unread through four rounds (first occurrence) |
 
 **FRED name-drift propagation into `retired_at` -- deferred, not wired.** FRED discontinues a series by renaming it in
@@ -4102,7 +4113,9 @@ against `170be75a` (guard blob `c5ac440a`): writes **tightened 110, loosened 4, 
 Suite 172/0 at `170be75a` -> 239/0 with the reader/deployed round; no one-change mutant measured zero.
 What #935 still held over the salvage is the lexer, worth 3 shapes (`>|`, awk string-literal target, quote-abutting
 verb -- the 4-write-shapes entry below). Every "loosened = 0" claimed on this work was falsified by a bigger corpus;
-the rule (name corpus SIZE and baseline) is `.claude/skills/supervisor-mode/LESSONS.md` L15.
+the rule (name corpus SIZE and baseline) is the `DIFFERENT MIND than the fix` bullet under CONSTRAINTS in
+`.claude/skills/supervisor-mode/templates/implementation-fix.md`, which carries the falsified-zero series too;
+the spellings half is `.claude/skills/guard-change/SKILL.md` item 1. It was LESSONS.md L15 until 2026-09-20.
 
 **RECORDED, NOT CHASED — what the 498-row corpus surfaced beyond the two families it was scoped to fix.**
 None is a write against a HARD_STOP path, which is the only reason each was left open (2026-08-16). Every finding is
@@ -4227,14 +4240,60 @@ answer and it is a migration of the migration table. Re-check:
 `sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_data -c "SELECT \"ProductVersion\", count(*) FROM \"__EFMigrationsHistory\" GROUP BY 1;"`
 — a duplicate `MigrationId` is the failure mode, and it would surface as a service silently skipping a migration.
 
-**The zero-loosened SERIES for #935 and its salvage — the figures that lived only in `STATE.md`.** The series
-itself and the standing rule (any "loosened = 0" must name its corpus SIZE and the baseline it was measured
-against; a claim carrying neither is not evidence) now live in `.claude/skills/supervisor-mode/LESSONS.md` L15.
+**The zero-loosened SERIES for #935 and its salvage — the figures that lived only in `STATE.md`.** The series is
+83 rows -> 14 loosened shapes, 181 -> 60, 342 -> 60, 968 -> 88: every zero honest, every one falsified by the next,
+bigger corpus, and not converging. It is written out here because L15 carried it until 2026-09-20 and an entry
+that graduates takes its evidence with it. The standing rule it bought (any "loosened = 0" must name its corpus
+SIZE and the baseline it was measured against; a claim carrying neither is not evidence) now lives in
+`.claude/skills/supervisor-mode/templates/implementation-fix.md` CONSTRAINTS, with the spellings half at
+`guard-change` item 1.
 What this entry still holds is the provenance of one bare figure: `.claude/hooks/README.md:1154` says #935 was
 "drifting 41 shapes", with no corpus and no baseline. That 41 is #935 measured against MAIN -- not against its own
 previous head, where "loosened = 0" was true each time: 41 shapes opened, 32 of them executing a real write,
 sandbox-proved, by an agent-scratch sweep whose row count was never recorded. Left as written on purpose: the
 README is gate layer and the guard refuses writes to it, so this entry carries the provenance the sentence lacks.
+
+**One conflict-stop site still names only D-entries, and it is the one an agent reads while editing.**
+`.claude/hooks/service-decisions-context.sh` injects "If your brief contradicts a D-entry without a named
+supersession: STOP and report" as PreToolUse context on every edit to a service with a DECISIONS block. On
+2026-09-20 the stop was widened everywhere else in the class — a brief may not contradict a rule stated in a skill,
+a template or CLAUDE.md either — but that file is GATE LAYER and the write was refused, correctly: widening it is a
+hook change and wants the guard-change workflow (scratch copy, smoke run, its own PR), not a line slipped into a
+docs round. Until then, an implementing agent's most immediate copy of the stop is the narrow one. Re-check, 1 while
+this is open and 0 once it is closed:
+`git grep -c 'contradicts a D-entry without a named supersession' -- .claude/hooks/` -> 1 on 2026-09-20.
+The rest of the class is closed, and the widened wording is deliberately greppable as ONE short phrase that survives
+line-wrapping: `git grep -l 'a rule stated in a skill' -- ':!docs/BACKLOG.md' | wc -l` -> 7 on 2026-09-20 (CLAUDE.md,
+supervisor-mode `SKILL.md`, its `implementation-fix.md`, `story-implementation.md` and `spec-plan-authoring.md`,
+`intent-review/SKILL.md`, `architecture-cards/CARD_TEMPLATE.md`). A longer phrase measured 4 of the 7 because three
+copies wrap mid-sentence -- which is why the pin is short.
+
+**Four tools that three graduated lessons named as their exit condition, and that still do not exist.** L8, L11 and
+L15 were deleted from `.claude/skills/supervisor-mode/LESSONS.md` on 2026-09-20 because their RULES had landed in
+the dispatch templates, which is what GRADUATION_RULE asks for. Their GRADUATES clauses named something else — a
+TOOL that would make the rule mechanical rather than remembered — and deleting the entries deleted the only
+re-runnable record that those tools are missing. Each is measured here so the gap stays checkable, and none is
+scheduled. The rules themselves are live and are not what this entry tracks.
+1. *No hook runs `scripts/verify-citations.py` on changed files.* The `D-n` half shipped (2026-09-04, the
+   `WRONG-D-ENTRY` class), but nothing invokes the sweep, so a citation going wrong is caught only when somebody
+   remembers to look — and CLAUDE.md TOOL_UPKEEP ANTI says a falling cannot-land count can itself be the drift.
+   Re-check: `find .claude/hooks -type f -perm -u+x -exec grep -l '^[^#]*verify-citations' {} + | wc -l` -> 0 on
+   2026-09-20, and `grep -c WRONG-D-ENTRY scripts/verify-citations.py` -> 2. A wired hook makes the first non-zero.
+2. *No shared mutation helper asserts the built artifact CHANGED.* Every round hand-rolls the mutate/rebuild/restore
+   dance, and the failure mode is silent: a `mv` restore once put content below the mutant's DLL mtime and every
+   later run scored the FIRST mutant's binary. Re-check: `git ls-files | grep -c mutate-verify` -> 0 on 2026-09-20.
+   The named artifact is `scripts/mutate-verify.sh`, asserting the artifact differs by `cmp`/hash, not by test result.
+3. *No alert-rules step fails a rule file holding an `alert:` with no positive assertion naming it.*
+   `check-assertion-counts.py` is close and is NOT this: it counts positive and negative assertions per FILE against
+   a committed manifest, which a file can satisfy while one of its rules has no positive case at all. Re-check:
+   `grep -c 'alertstate\|per-alert' deployment/tests/alerts/check-assertion-counts.py` -> 0 on 2026-09-20, against
+   `grep -rlE '^\s*- alert:' deployment --include='*.yml' | wc -l` -> 12 rule files in scope. The cost, measured:
+   a rule oscillating pending -> inactive through a real ~3% resolution rate, 24 pending cycles and 0 fires in 24h,
+   in a file whose promtool suite asserted only silence.
+4. *No adversarial corpus is GENERATED from a guard's own rule table.* Hand-written corpora are scoped to their
+   author's imagination, which is why each bigger one falsified the last. Re-check:
+   `find .claude/hooks/test -type f -perm -u+x -iname '*corpus*' | wc -l` -> 0 on 2026-09-20. Name it `*corpus*`
+   when it is built; the check keys on the name because the tool has no other observable.
 
 **A recorded do-not-merge DECISION on PR #935 went unread through four review rounds** (2026-08-15). The entry
 titled "#935 ansible-gate — BLOCKED. Do not merge and do not patch-round it." landed on main in `f235e79d`

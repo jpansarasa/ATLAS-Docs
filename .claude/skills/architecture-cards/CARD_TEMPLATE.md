@@ -81,9 +81,11 @@ ATOMIC SET (change-all-or-none — same discipline as the `:sig:` infix string c
 
 Supersession: rewrite the entry IN THE SAME PR as the code change. No tombstones —
 main = current-state, git log = archive. Dispatch briefs must name **"supersedes D-n"**
-explicitly. A brief that contradicts a D-entry without a named supersession -> STOP and
-report; never route-around, never obey-stale (the entry may be outdated OR the brief
-wrong — a human/supervisor decides, not the implementing agent).
+explicitly. A brief that contradicts a D-entry — or a rule stated in a skill, a template or
+CLAUDE.md — without a named supersession -> STOP and report, NAMING the rule and the
+contradiction; never route-around, never obey-stale, and never silently obey a written rule
+you believe is stale (the entry may be outdated OR the brief wrong — a human/supervisor
+decides, not the implementing agent).
 
 Scope discipline (not everything is a decision):
   ✓ exception paths (frontier last-resort, raw-DB write, privileged op)

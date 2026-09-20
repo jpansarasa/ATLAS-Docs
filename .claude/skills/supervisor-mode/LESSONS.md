@@ -8,6 +8,13 @@ incident is fixed is a commit message: it belongs in git, or in docs/BACKLOG.md 
 ## GRADUATION_RULE [read before adding anything]
 A lesson's goal is to STOP being a lesson: once encoded in a template, skill, hook or checklist -> DELETE it here and
   leave a pointer under ALREADY_ENCODED # a lesson enforced in two places drifts in one of them
+ENCODING IS THE GRADUATION AND IT OUTRANKS THE CHECK: a GRADUATE_CHECK still failing is a statement about the
+  ENFORCEMENT artifact, never a licence to keep the entry -- "over-retention is the cheap error" below is scoped to a
+  check that could not RUN # measured 2026-09-20: three entries encoded into two templates were kept anyway, on that
+  clause read backwards as a precondition
+  AN EMPTY `## LESSONS` IS THE GOAL STATE, and `scripts/new-epic.sh` now reports it clean on three conditions --
+  heading present, its section EMPTY, ALREADY_ENCODED populated # until 2026-09-20 it refused the empty section as
+  unparseable, which made the one outcome this rule aims at the one shape that could never pass
 SHRINK as often as you grow; add nothing enforced elsewhere. CITE anchors, never file:line # they rotted 3x in a day
 WRITE_TRIGGER: a failure RECURS -> here, at the VERDICT and not the retro; a FIRST occurrence goes to docs/BACKLOG.md,
   which carries it across epics until it recurs. A METHOD failure leaves no artifact, so it never trips this by
@@ -43,68 +50,23 @@ build AFTER the final commit; the marker keys to the TREE -> CLAUDE.md GIT_PUSH 
 a hand-rolled measurement harness fails toward SUCCESS unless you stop it -> `templates/recon-measurement.md` TRAJECTORY step 3 # was L13
 a guard matching a DESCRIPTION of an act inherits the whole grammar of the description, so a fix that handles one more grammar construct is priced out loud as converging on a reimplementation of bash, and a bypass is bisected across the branch's OWN commits with over-denial reported beside it -> `.claude/skills/guard-change/SKILL.md` item 9 (GRAMMAR INHERITANCE and PRICE IT OUT LOUD), 18 and 16; the review-method half -> `review-discipline` FORCED_PASS # was L14
 a guard whose scope includes its own SOURCE makes its own repair unreachable -> `guard-change` item 14; the open defect is docs/BACKLOG.md, the gate-layer deadlock entry # was L16
-an alert that fires by ACCIDENT is not coverage -> CLAUDE.md OBSERVABILITY; the six ungauged D-18 series are docs/BACKLOG.md # was L17, whose enumerate-from-the-DATA-side half is NOT there and survives in L11 below
+an alert that fires by ACCIDENT is not coverage -> CLAUDE.md OBSERVABILITY; the six ungauged D-18 series are docs/BACKLOG.md # was L17, whose enumerate-from-the-DATA-side half is NOT there: it is the PRE-HANDBACK item of that name in both code-dispatching templates, named on the SILENCE line below
 a command reporting its own limit, warning or truncation has ANSWERED you -> `templates/claim-verification.md` step 8 # was L18
 verify a claim before relaying it, and give two reviewers DIFFERENT lenses -> SKILL.md TIER1_CLAIM_CHECK + REVIEW_FIX_LOOP LENSES + `templates/claim-verification.md`
 what a guard test must do to count -> `.claude/skills/intent-review/SKILL.md` GUARD_TEST_CONTRACT
+a guard test that mutates only LOGIC cannot see an UNWIRED guard: delete the line that INSTALLS or CONSUMES it -> the same GUARD_TEST_CONTRACT, WIRING NOT ONLY LOGIC + the PRE-HANDBACK block in `templates/implementation-fix.md` and `templates/story-implementation.md`
 what the verdict marker attests -> SKILL.md MERGE_GATE + `.claude/hooks/README.md` PR Review Verdict Gate
 find a recorded DECISION about a PR (BLOCKED, do-not-merge, superseded) BEFORE reviewing its code -> SKILL.md MERGE_GATE SEQUENCE step 0
 analysis is not a review record -> SKILL.md MERGE_GATE, fail-closed by `.claude/hooks/pr-review-marker.sh` and `scripts/claude-pr-verdict` # was L3
 one merge act per Bash invocation -> `.claude/hooks/git-push-guard.sh` denies any command carrying more than one + SKILL.md RED_FLAGS # was L5
 prose quoting a gated push or merge form trips that gate; pass long text by path -> `.claude/hooks/README.md` Accepted cost # was L6; only the merge denies and the two-pushes deny name the remedy
 squash merge makes commit reachability answer NO for work that landed -> SKILL.md RED_FLAGS; ask the PR's state or compare CONTENT # was L7
+verify against the THING and never the PROXY -- the landing TEXT of a reference, an artifact you proved rebuilt -> `templates/implementation-fix.md` step 5 (show one mutant that compiled, `touch` after mutate AND restore) + CLAUDE.md TOOL_UPKEEP ANTI (compare the unresolved SET against a pristine baseline, never a count and never an rc) # was L8
+an instrument proven only by SILENCE or at n=1 has pinned nothing, and coverage is enumerated from the DATA side -> all three halves are in BOTH code-dispatching templates, `templates/implementation-fix.md` and `templates/story-implementation.md`: the alert half at step 7 (the rule's case asserts `alertstate="firing"` on bursty input), SCALE-MATCHED MUTATION at step 5 / the Pre-handback bullet of that name, and ENUMERATE COVERAGE FROM THE DATA SIDE as the PRE-HANDBACK item of that name # was L11. Named as three destinations because two of them were claimed to survive "on this line", which is the entry pointing at itself -- a retirement whose rule landed nowhere. The `consumed cap` phrase two hook fixtures cite as their provenance lives on this line
+a self-authored negative is scoped to its author's imagination -> `templates/implementation-fix.md` CONSTRAINTS (a corpus from a DIFFERENT MIND than the fix; its SIZE and the BASELINE it was measured against, with the #935 series that falsified every honest zero) + `guard-change` item 1 for the spellings half # was L15
 a per-worktree devcontainer does not isolate what its tests share on a server outside it: a fixed database name dropped on the shared timescaledb collides across worktrees and across services -> each integration project's `Infrastructure/IntegrationDatabaseName`, which refuses to run without the owner key `scripts/devcontainer-owner.sh` hands over. A default `compile.sh` runs its `IntegrationDatabaseNameTests` only in SecMaster; the other six services run them only under `compile.sh --integration`, which the push marker does not require. A new fixture that CREATEs or DROPs a database names it there
 
 ## LESSONS
-
-L8 A PROXY DOES NOT MOVE WITH THE THING IT STANDS FOR, and when it stops tracking it fails in the direction that
-  reads as SUCCESS. A reference is a proxy for the content at a position; an mtime is a proxy for freshness.
-  EVIDENCE: #1002, 2026-09-04 -- 8 lines above a card's DECISIONS block moved D-18 from `:85` to `:93`. Two docs
-    cite `:84`: BLANK on main and FLAGGED, landing on D-13 on head and QUIET, so cannot-land FELL BY ONE as the
-    citation went wrong. #1004, 2026-09-05 -- a `mv` restore put content below the built mutant's DLL mtime, so
-    every later run scored the FIRST mutant's binary.
-  RULE: verify against the THING, never the proxy -- the CONTENT a reference should land on, the ARTIFACT a build
-    should have produced. Content edits first and references LAST, then sweep your OWN diff and compare the
-    unresolved SET against a pristine baseline (never a count, never an rc: both sides are rc 1 here). `touch` after
-    BOTH a mutate and a restore, then require one mutant SHOWN to have compiled -- never the test result, which is
-    the thing under suspicion.
-  GRADUATES: TWO halves, both open, so graduating one is not graduating the entry -- split it then. (a) when
-    `scripts/verify-citations.py` resolves to the NAMED CONSTRUCT rather than a live line AND a hook runs it on
-    changed files (the `D-n` class shipped in #1002, no hook is wired). (b) when a SHARED mutation helper asserts
-    the built artifact CHANGED, instead of a harness hand-rolled per round.
-  GRADUATE_CHECK: H=$(find .claude/hooks -type f -perm -u+x -exec grep -l '^[^#]*verify-citations' {} +); grep -q WRONG-D-ENTRY scripts/verify-citations.py && [ -n "$H" ] && printf '%s\n' "$H" | sed 's|.*/||' | grep -qFf - .claude/settings.json && test -x scripts/mutate-verify.sh && grep -v '^[[:space:]]*#' scripts/mutate-verify.sh | grep -qwE 'cmp|strings|sha256[a-z]*'
-
-L11 An instrument that dies silently scores its silence as a PASS -- and coverage can never be enumerated from the
-  instruments that EXIST, because the missing one is precisely what a census of them cannot show.
-  EVIDENCE: an alert rule oscillating pending -> inactive through a real resolution rate of ~3%: 24 pending cycles, 0
-    fires in 24h, in a file whose promtool suite asserted only silence. GeminiResolverNotResolving fired only because
-    rejected calls consumed cap slots -- undesigned, and switched off silently by fixing the accounting. A
-    shuffled-gold control averaged a 4x breach into a pass, invisible to its own mutation test: at n=1 the aggregate
-    IS the unit (#1016).
-  RULE: adding or changing an alert rule -> ONE `promql_expr_test` asserting `alertstate="firing"` on input shaped
-    like the real traffic, BURSTS WITH GAPS for this fleet; a test showing only silence has pinned nothing. Mutate
-    any control at THE SCALE IT SHIPS AT -- poison one unit, pad with clean ones to the documented usage AND one past
-    it, make the complaint NAME the offending unit, and read an unstated n as n=1. Enumerate coverage from the DATA
-    side: grep the config that would HAVE to mention the thing you care about.
-  GRADUATES: BOTH -- the alert-rules CI step fails any rule file holding an `alert:` with no positive assertion
-    naming it, AND intent-review GUARD_TEST_CONTRACT requires a scale-matched mutation. Neither artifact can hold the
-    rule today: no coverage checker exists beside `check-matchers.py`, the contract is silent on aggregates. Keep the
-    `consumed cap` clause above -- two hook fixtures cite it by that phrase as their provenance.
-  GRADUATE_CHECK: S=.claude/skills/intent-review/SKILL.md; grep -v '^[[:space:]]*#' deployment/tests/alerts/run.sh | grep -qE 'check-[a-z-]*coverage' && grep -qiE 'scale-matched|pad(ded)? with clean' "$S" && grep -qiE 'names? the (offending|breaching) (unit|run|record)' "$S"
-
-L15 A self-authored negative -- "nothing loosened", "no regressions", "no new findings" -- is scoped to its author's
-  imagination, and fixing the BASELINE is necessary but not sufficient.
-  EVIDENCE: #935, then the salvage round built specifically to avoid #935's error, which fixed the baseline, measured
-    zero against MAIN and was still wrong (2026-08-16). Every zero was honest and every one was falsified by the
-    next, bigger corpus: 83 rows -> 14 loosened shapes, 181 -> 60, 342 -> 60, 968 -> 88. Not converging.
-  RULE: the corpus must come from a DIFFERENT MIND than the fix -- say it in the brief, literally: "build your own
-    matrix; do not replay theirs". Require the corpus SIZE and the sentence "this number is only as good as this
-    corpus" in the report. The guard-specific instance (enumerate the SPELLINGS of every construct a rule names) is
-    `guard-change` item 1; this entry is the general form, which no artifact holds.
-  GRADUATES: when an adversarial corpus is GENERATED from the guard's own rule table rather than written by hand, so
-    the spellings come from the code and not from whoever is feeling thorough today. The check keys on an artifact's
-    NAME because that tool does not exist and has no other observable; name it `*corpus*` when you build it.
-  GRADUATE_CHECK: find .claude/hooks/test -type f -perm -u+x -iname '*corpus*' | grep -q .
 
 L19 A METRIC STEP CARRIES ITS OWN TIMESTAMP, and a deploy is a BUNDLE -- so "the deploy did it" is not an answer
   until you have read WHERE the step is and WHICH change in that deploy owns it. The deploy nearest your
@@ -131,12 +93,14 @@ L19 A METRIC STEP CARRIES ITS OWN TIMESTAMP, and a deploy is a BUNDLE -- so "the
     a human remembers wins over the one that moved the metric. The claim-verification template cannot hold this:
     it checks numbers a report ASSERTS, and here the defect is a CAUSE attached to a number that reproduced
     perfectly.
-  GRADUATE_CHECK [asks ansible what deploy.yml REACHES, never what a file CONTAINS -- a grep for the task greens
+    THE CHECK BELOW asks ansible what deploy.yml REACHES, never what a file CONTAINS -- a grep for the task greens
     on one sitting in a playbook nothing imports, and `--list-tasks` executes nothing and needs no host. What it
     still does NOT prove: that the task SUCCEEDS at deploy time, or that its tags and timestamp are right. It
-    fails closed -- no ansible, or a broken playbook, feeds grep an empty stream and the lesson stays]:
-    ( cd deployment/ansible && ansible-playbook playbooks/deploy.yml --list-tasks 2>/dev/null ) | grep -qi annotation
-
+    fails closed -- no ansible, or a broken playbook, feeds grep an empty stream and the lesson stays. This note
+    sits in GRADUATES because the parser reads the predicate as everything after `GRADUATE_CHECK:` ON THAT LINE:
+    spelled `GRADUATE_CHECK [note]:` with the predicate below, the gate saw NO check at all and told the operator
+    to add one, which would have made it a DUPLICATE. Measured 2026-09-20 against main's own script.
+  GRADUATE_CHECK: ( cd deployment/ansible && ansible-playbook playbooks/deploy.yml --list-tasks 2>/dev/null ) | grep -qi annotation
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, cited line, root cause or severity as settled fact
 never relay "X is false" without restating X's proposition and naming its subject # RELAYING is not DISPUTING, which
@@ -153,9 +117,9 @@ never dispatch gate-layer work worktree-isolated, and never create the confirm f
 never interpret a result whose row count EQUALS the limit you passed, or whose output carried a warning you did not
   read -- the instrument has already told you the answer is not an answer
 never repair a reference before your last content edit, and never believe a PROXY over the thing it stands for:
-  not a green sweep, not a FALLING cannot-land count, not a test result on a build you did not prove rebuilt [L8]
-never accept a rule, alert or control proven only by silence, only at n=1, or only from the alert list [L11]
-never accept a self-authored "nothing loosened", or a corpus built by the fix's own author [L15]
+  not a green sweep, not a FALLING cannot-land count, not a test result on a build you did not prove rebuilt
+never accept a rule, alert or control proven only by silence, only at n=1, or only from the alert list
+never accept a self-authored "nothing loosened", or a corpus built by the fix's own author
 never attribute a metric step to a deploy you have not located the step against, or to a deploy rather than to a
   named CHANGE inside it -- plot the range first, then read RELEASES.md for what else shipped nearby [L19]
 never add an entry that a template, skill, hook or checklist already enforces

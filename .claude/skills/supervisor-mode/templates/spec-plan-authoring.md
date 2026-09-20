@@ -17,7 +17,8 @@ TRAJECTORY
 1. MEASURE FIRST, WRITE SECOND. The document is written after the evidence, not before it. If you
    cannot cite a number for a claim, it does not go in as a claim.
 2. Read the in-scope `{Service}/AGENT_README.md` DECISIONS blocks and the relevant CLAUDE.md
-   sections. A plan that contradicts a D-entry without naming the supersession is a STOP.
+   sections. A plan that contradicts a D-entry — or a rule stated in a skill, a template or
+   CLAUDE.md — without naming the supersession is a STOP: name the rule and the contradiction.
 3. Every acceptance criterion needs FOUR things: a measure, a pass value, a FAIL value, and a
    negative control separating "broken" from "no data yet". A criterion that cannot fail is not a
    criterion. One plan's originally proposed metric would have PASSED while the path it measured

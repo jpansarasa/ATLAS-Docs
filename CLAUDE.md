@@ -210,8 +210,15 @@ MECHANICS [format + scope = .claude/skills/architecture-cards/CARD_TEMPLATE.md �
   SUPERSESSION: rewrite the entry in the SAME PR as the code change; briefs name "supersedes D-n"; no tombstones
   CONFLICT [HARD_STOP]: brief contradicts a D-entry without named supersession -> STOP + report # never route around,
     never obey the stale entry; a human arbitrates, not the implementing agent
-  GUARD_TEST: violation -> refusal AT the boundary through the real flow; mock ONLY the external client; RED if the
-    guard is deleted # contract .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT
+    THE SAME STOP COVERS a rule stated in a skill, a template or this file -- `.claude/skills/**`, their
+    `templates/**`, CLAUDE.md: name the rule and the contradiction, never obey a brief over a written rule, and
+    never silently obey a written rule you believe is STALE -- say so # measured 2026-09-20: a supervisor quoted
+    LESSONS.md GRADUATION_RULE and briefed its opposite, and the agent complied because this stop named only
+    D-entries. The phrase `a rule stated in a skill` is the greppable one, carried verbatim by every artifact that
+    hands an agent this stop -- one narrow site remains and is named in docs/BACKLOG.md
+  GUARD_TEST: read the contract at its CANONICAL home, .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT
+    # never restated here. This line used to point there AND repeat three of its clauses, so the contract lived in
+    # two places and could drift in one -- the duplication defect the rest of this section exists to stop
 
 ## OBSERVABILITY [user scar tissue: "too many services non-functional due to lack of observability"]
 ✗ never demote a visible signal to Info+metric without a WIRED alert
@@ -241,7 +248,7 @@ ANTI: ✗ read a green run as proof # ask what the tool CANNOT see -- verify-cit
       ✗ judge a citation sweep by its COUNT or its rc # both are proxies that fail toward SUCCESS -- rc 1 is this
         repo's steady state, and a citation going WRONG has been measured to LOWER the cannot-land count. Compare the
         unresolved SET and the LANDING TEXT against a pristine baseline; re-derive, never quote # full rule + evidence:
-        .claude/skills/supervisor-mode/LESSONS.md L8
+        .claude/skills/supervisor-mode/LESSONS.md ALREADY_ENCODED, the verify-against-the-THING line (was L8)
         `mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-citations.py --quiet "${F[@]}"`
         # ✗ pipe it through xargs: xargs remaps the child rc to 123, so the rc above is unobservable that way
       ✗ ship a tool whose docstring claims coverage it does not have # the defect, moved into the tool

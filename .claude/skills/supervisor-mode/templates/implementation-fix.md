@@ -28,7 +28,10 @@ another agent's worktree, never branch off a copy.
 
 TRAJECTORY
 1. Read `{Service}/AGENT_README.md`, the WHOLE DECISIONS block, before touching code. A guard you
-   are about to move may be a D-entry GUARD site. Contradiction, no named supersession -> STOP.
+   are about to move may be a D-entry GUARD site. Contradiction, no named supersession -> STOP. The
+   same stop if this brief contradicts a rule stated in a skill, a template or CLAUDE.md, not only a
+   D-entry: NAME the rule and the contradiction, and never silently obey a written rule you believe
+   is stale — say so — CLAUDE.md INTENT_FIDELITY CONFLICT.
 2. FRESH: reproduce the defect, record the number — the PR's opening evidence and the acceptance
    measure. FIX ROUND: VERIFY EACH FINDING BEFORE FIXING IT. Findings are claims, not facts:
    re-derive the number, open the cited file:line (lines drift between rounds). One that does not
@@ -44,6 +47,13 @@ TRAJECTORY
 5. MUTATION-VERIFY each guard or alert rule you added or moved: delete or invert it, re-run,
    confirm RED, restore. A test that stays green is the bug, not the proof. Comment-only rounds
    skip this, never step 6.
+   SHOW ONE MUTANT THAT ACTUALLY COMPILED and `touch` after BOTH the mutate and the restore — a
+   test result on a build you did not prove rebuilt is the proxy, not the thing.
+   MUTATE AT THE SCALE THE CONTROL SHIPS AT: poison ONE unit, pad with clean ones to the documented
+   usage AND one past it, and require the complaint to NAME the offending unit. At n=1 the aggregate
+   IS the unit, so a mutant killed there proves nothing about the batch it will actually run on —
+   read an unstated n as n=1 and say so. One mutant per condition, each breaking EXACTLY ONE: a
+   fixture that breaks several at once goes red for any of them and therefore pins none of them.
 6. `bash {Service}/.devcontainer/compile.sh`, AFTER THE FINAL COMMIT — every compile.sh is 100644
    in git, so `bash`, never bare. CAPTURE THE FULL LOG AND THE REAL `$?`; `| grep | tail` hides
    Permission-denied and swallows the exit code. 0 errors AND 0 warnings AND all tests pass. The
@@ -52,7 +62,9 @@ TRAJECTORY
    built. Report the attested tree hash and check it equals `HEAD^{tree}`.
 7. Alert rules -> `bash deployment/tests/alerts/run.sh`: promtool over the REPO's rules plus the
    committed unit tests, inside the prometheus image (promtool is not on the host PATH, and the
-   running container holds the DEPLOYED rules). One `*_test.yml` case per new rule. Ansible
+   running container holds the DEPLOYED rules). One `*_test.yml` case per new rule, and it asserts
+   `alertstate="firing"` on input shaped like the real traffic — BURSTS WITH GAPS for this fleet;
+   a case showing only silence pins nothing, which is how an unfireable rule passed its suite. Ansible
    playbooks under `deployment/ansible/playbooks/` -> `bash deployment/tests/ansible/run.sh`:
    syntax-check + check-mode + tag selection over the zfs rollback floor, creating and destroying
    nothing, so it is safe on the live host. It cannot see `command`/`shell` behaviour — read its
@@ -60,6 +72,30 @@ TRAJECTORY
    -> `nerdctl compose exec -T {svc}-dev dotnet ef migrations add {Name} --project {path}`.
 8. Report: commit hash per layer/finding, each finding {addressed | rejected with evidence |
    deferred}, the before/after number, mutation results, compile counts.
+
+PRE-HANDBACK — run these BEFORE you write step 8, and put each result IN it
+1. DELETE THE ENABLING LINE of every guard, control or flag you added — the registration or view,
+   the startup seeding or zero-init, the evidence file the gate reads, the consumer of the flag —
+   re-run, and NAME what failed. Nothing failed -> the guard is decorative: fix it now, not next
+   round. Mutating the guard's LOGIC does not substitute; six PRs on 2026-09-20 passed that
+   mutation and shipped a guard that could not detect its own subject.
+2. ABSENT IS NOT ZERO and a missing path is not a short count. A series created lazily does not
+   exist until something fails, so `or vector(0)` paints absent as a healthy 0 and the control
+   reads green forever; a re-check pointed at a path that is not there must FAIL, never report the
+   count it managed to reach. Both shipped on 2026-09-20. State, for each control you add, which
+   of absent and zero it can tell apart.
+3. For every FIELD you write, name its READER. No reader -> do not write the field.
+4. ENUMERATE COVERAGE FROM THE DATA SIDE, never from the instruments that exist: grep the config,
+   table or rule file that would HAVE to mention the thing you care about, and diff that against
+   what is instrumented. A census of the instruments cannot show the missing one, which is the only
+   one you are looking for.
+5. Every number in the report carries the COMMAND that produced it and the POPULATION it came
+   from, plus the sentence that the population CAN contain what you are claiming — a counter reset
+   by a restart cannot contain pre-restart samples, which is how #1071 shipped.
+6. Every file and line reference RE-DERIVED at your final commit, never copied from this brief.
+7. NAME the rule or contract clause that CHANGED what you did — a LESSONS.md entry, the
+   GUARD_TEST_CONTRACT, a CLAUDE.md HARD_STOP, a D-entry — or state plainly that none applied.
+   "None applied" is a real answer; the absence is the data.
 
 CONSTRAINTS
 - A LIST OF SITES IS A CEILING, NOT A FLOOR. Where a finding names instances it is naming a CLASS:
@@ -76,6 +112,13 @@ CONSTRAINTS
   outbound attempt. Never set `GEMINI_LIVE_TESTS=1` — that opts `tests/test_smoke.py` back into
   real Gemini calls against a 1500/day shared quota. (`SKIP_NETWORK` is dead; it gated nothing
   and a plain `pytest` used to spend.)
+- An adversarial corpus comes from a DIFFERENT MIND than the fix — build your own, do not replay
+  theirs. Any "loosened = 0", "no regressions", "no new findings" NAMES its corpus SIZE and the
+  BASELINE it was measured against; a claim carrying neither is not evidence. Measured: every
+  honest zero on #935 was falsified by the next, bigger corpus (83 rows -> 14 loosened shapes,
+  181 -> 60, 342 -> 60, 968 -> 88 — not converging), and fixing the baseline was necessary and not
+  sufficient. The guard-specific half — enumerate the SPELLINGS of every construct a rule names —
+  is `.claude/skills/guard-change/SKILL.md` item 1.
 - `git add -- <paths>`, never `-A`/`-u`/`.`.
 - Scarce resource ($/GPU/quota) -> gate + fail-closed cap + burn alert BEFORE depletion. A
   "calls>0 AND cost=$0" check is a corpse-detector, not an alert.

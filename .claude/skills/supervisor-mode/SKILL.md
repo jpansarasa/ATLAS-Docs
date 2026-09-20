@@ -298,7 +298,11 @@ PROMPT_SHAPE (<=400w ad-hoc; template-based briefs per CONFIG TEMPLATES SIZE):
     decisions: in-scope D-entries copied VERBATIM from <Service>/AGENT_README.md DECISIONS block, never paraphrased — # paraphrase = the compression step where WHY dies (leak point 1); "none — no D-entries in scope" is valid
     supersedes: D-n | none — # named explicitly; touching a guard without a named supersession = conflict
     guard_tests: one deliverable per new/changed guard — # contract: .claude/skills/intent-review/SKILL.md §GUARD_TEST_CONTRACT (violation constructed, refusal AT the boundary, RED-on-guard-delete)
-    conflict rule [include verbatim in the brief]: "If this brief contradicts a D-entry without a named supersession above -> STOP and report; never route-around, never obey the stale entry."
+    conflict rule [include verbatim in the brief]: "If this brief contradicts a D-entry, or a rule stated in a skill, a template or CLAUDE.md, without a named supersession above -> STOP and report, NAMING the rule and the contradiction; never route-around, never obey the stale entry, and never silently obey a written rule you believe is stale."
+    # WIDER THAN D-ENTRIES ON PURPOSE, and the stanza spec is where it has to widen: a brief is BUILT from this
+    # line, so a narrow stop here is the narrow stop that gets pasted. Measured 2026-09-20 -- a supervisor quoted
+    # LESSONS.md GRADUATION_RULE and briefed its opposite, and the agent complied because the stop it had been
+    # handed named only D-entries. Keep it in step with CLAUDE.md INTENT_FIDELITY CONFLICT and the canonical stanza.
     canonical: templates/story-implementation.md "Design intent" stanza
 
 PARALLELISM [CANONICAL matrix — references/parallel-dispatch.md points here, never restates]:
