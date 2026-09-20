@@ -2439,6 +2439,8 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| A | 2026-09-20 | OPEN | Catch blocks that swallow a REAL fault without marking the span leave it invisible to Tempo (147/673 across 3 services, a FLOOR; excludes 63 cancellation-only, which are NOT defects) |
+| A | 2026-09-20 | OPEN | `smoke-test.yml`'s Loki selector matches no stream, so its error check reports 0 unconditionally |
 | A | 2026-09-06 | OPEN | Three watermark-only ReExtract legs re-assert the row's tier; nothing pins that they do |
 | B | 2026-09-20 | OPEN | The <=5 ms share is the only detector for an unapplied `hnsw.ef_search`, and nothing watches it |
 | B | 2026-09-17 | OPEN | SecMaster D-16 self-seed and discovery refusals are counted but unalerted; their rate is unmeasured |
@@ -2509,6 +2511,74 @@ Re-check (no database, no engine): `grep -c 'SecMasterMethod\.Should()' Sentinel
 already returns 1 today, matching the `newSecMasterMethod: null` ARGUMENT this entry's own PR added
 at `:606`, so the obvious predicate reads CLOSED while the hole is open. That draft shipped in this
 entry for one revision.
+
+### Catch blocks that swallow a REAL fault without marking the span leave it invisible to Tempo [2026-09-20]
+CLAUDE.md OBSERVABILITY makes Tempo span status the health instrument, and docs/OBSERVABILITY.md gives
+`SetStatus(ActivityStatusCode.Error, ex.Message)` + `AddException(ex)` as the house catch-block pattern.
+It is a convention, not an enforced one. A catch that logs and continues without either call, and
+without rethrowing, leaves its span GREEN -- so the fault is invisible to the instrument we monitor by.
+MEASURED 2026-09-20. 210 of 673 catch blocks are silent, but that number SPLITS and ONLY ONE HALF IS A
+DEFECT. Never drive the combined figure to zero:
+  **REPAIRABLE: 147 of 673 (21.8%)** -- silent over a real fault. THIS is the debt.
+  cancellation-only: 63 of 673 (9.4%) -- catches ONLY `OperationCanceledException` /
+    `TaskCanceledException`. Graceful shutdown, NOT a fault, and NOT a defect. A cancellation catch
+    that sets `SetStatus(Ok)` is CORRECT and must NOT be "fixed": SentinelCollector's ResolutionWorker
+    does precisely that on purpose. Adding `SetStatus(Error)` to these 63 would redden Tempo on every
+    clean shutdown and inflate the very error ratio that code protects.
+  FinnhubCollector/src alone: 21 of 42 silent (50.0%).
+COVERAGE -- 147 is a FLOOR, not a total. The count covers exactly three services' production trees:
+`FinnhubCollector/src`, `SecMaster/src`, `SentinelCollector/src`. The other eight services on the
+CLAUDE.md SERVICES roster were NOT audited, so the repo-wide figure is necessarily higher.
+COMMAND (the classifier brace-matches each catch body and masks string literals and comments first, so
+a `SetStatus` mentioned in a comment does not count as instrumentation; it reports the two populations
+separately, so the number and this entry's re-check cannot drift apart):
+  `python3 scripts/audit-catch-spans.py FinnhubCollector/src SecMaster/src SentinelCollector/src`
+CONTROL: `--selftest` drives a fixture THROUGH `audit()` end to end -- 11 catch blocks across three
+files, 6 silent, of which 4 repairable and 2 cancellation-only -- and asserts the totals, both
+populations, the per-site line numbers and the exit code. Two files sit under `Workers/` and
+`Services/` so that a poisoned skip list changes the headline and trips the control. Verified against
+two mutations: poisoning SKIP_DIRS with `/Services/,/Workers/` (headline falls to 172/49) and replacing
+the total accumulator (headline becomes 210/210, 100%) BOTH leave the selftest FAILING by name.
+RE-CHECK: rerun the command; closed when **REPAIRABLE reaches 0** for the audited trees -- NOT when the
+silent total reaches 0, which would require damaging the 63 cancellation paths. The tool's exit code
+already keys on REPAIRABLE alone. Repair is at the catch block (add the two calls, or rethrow) --
+NEVER by counting log lines or raising prod to INFO.
+KNOWN LIMIT: classification reads the catch's exception TYPE, not its `when` filter. Two blocks
+(`EventStreamService.cs` in FinnhubCollector and SentinelCollector, `catch (RpcException ex) when
+(ex.StatusCode == StatusCode.Cancelled)`) are gRPC client-disconnect paths counted as REPAIRABLE, so
+147 is over-stated by 2. Filter-reading was tried and rejected as more error-prone than the gap: the
+common filter here is `when (ex is not OperationCanceledException)`, a NEGATION that a naive filter
+match reads backwards, turning 12+ definitively-repairable blocks into false cancellation hits.
+WORKED EXAMPLES, one of each, in the SAME file:
+  DEFECT: the stamps-persistence catch in `FinnhubCollector/src/Workers/QuoteCollectionWorker.cs` logs a
+    Warning and bumps `FinnhubMeter.CollectionErrors`; the span stays green.
+  CORRECT: the quote-collection catch higher in that file sets status + AddException and THEN logs at
+    Warning, with a comment explaining that only the log level drops. Warning-level logging and a red
+    span are not in tension; that block is the pattern to copy.
+NOT FIXED HERE: found while rewriting the `deploy` skill's health story (a docs PR). The skill now names
+this as blind spot 4 and tells readers a green Tempo window means "nothing painted a span red", not
+"nothing failed" -- which removes the wrong action but leaves the instrument incomplete.
+
+### `smoke-test.yml`'s Loki selector matches no stream, so its error check reports 0 unconditionally [2026-09-20]
+The "Query Loki for recent errors" task in `deployment/ansible/playbooks/smoke-test.yml` selects
+`{job=~"atlas/.*"}`. `job` is not a label on this Loki — `list_loki_label_names` returns exactly one
+name, `service_name`. So the selector matches nothing and the task's `error_count` is 0 no matter what
+production is doing. It has never been able to fail.
+MEASURED 2026-09-20, `query_loki_stats` over 2026-09-20T05:32:44Z..13:32:44Z (8h):
+  `{job=~"atlas/.*"}`  -> streams 0, chunks 0, entries 0, bytes 0
+  `{service_name=~".+"}` -> streams 3, chunks 9, entries 1469, bytes 467968
+RE-CHECK: run those two `query_loki_stats` calls; the defect is closed when the first returns a nonzero
+stream count for a window in which the second does.
+Two further defects in the same task, so a fix that only swaps the selector is incomplete:
+  1. the line filter is `|= "Error"` plus `| json | level="Error"` — a message substring AND a `level`
+     field. Ground truth is `severity_text` (CLAUDE.md OBSERVABILITY); `|= "Error"` also matches a
+     Warning whose text says "error", and `| json` cannot parse SecMaster's compact `[ERR]` text format.
+  2. the `nerdctl logs` fallback greps `'"level":"Error"'`, which has the same compact-text blind spot,
+     and it only runs when the Loki task FAILED — a task that succeeds while matching nothing never
+     reaches it.
+NOT FIXED HERE: this is a deploy artifact and the PR that found it was a docs change. The `deploy` skill
+now tells readers not to read this sub-task as an error check (`.claude/skills/deploy/SKILL.md`
+§POST_DEPLOY_SMOKE), which removes the wrong action but leaves the instrument blunt.
 
 ### The <=5 ms share is the only detector for an unapplied `hnsw.ef_search`, and nothing watches it [2026-09-20]
 At `SemanticSearchOptions.HnswEfSearch=200` the share of vector searches at or under 5 ms on

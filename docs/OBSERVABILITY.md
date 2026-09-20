@@ -50,8 +50,16 @@ flowchart LR
 
 Only **Grafana** is mapped to a host port (`mercury:3000`); Prometheus/Loki/Tempo/Alertmanager are
 internal-only and reached through Grafana's datasource proxy. Prometheus scrapes every 15s; jobs:
-`node-exporter`, `nvidia-gpu` (gpu-exporter), `otel-collector`, `containerd`, `gemini-resolver`
-(there is no `ups` job — UPS monitoring is dead since 2026-06-11).
+all 8 of them, per `deployment/artifacts/monitoring/prometheus.yml` (`grep job_name`), confirmed
+live 2026-09-20 with `count by (job) (up)`:
+`prometheus`, `node-exporter`, `nvidia-gpu` (gpu-exporter), `otel-collector`, `containerd`,
+`gemini-resolver`, `ups`, `vllm`.
+- `ups` — apcupsd_exporter at `mercury:9144`. UPS monitoring was dead 2026-06-11 and came back
+  2026-07-31; `apcupsd_up` is 1 and `apcupsd_nominal_power_watts` is 1980, checked 2026-09-20.
+- `vllm` — scraped from vLLM's NATIVE `/metrics`, NOT via OTLP. vLLM exports only traces over
+  OTLP, so no `vllm:` series exists under `job="otel-collector"`; query it under `job="vllm"`.
+  A wrong job label returns empty, which reads exactly like a healthy engine (CLAUDE.md
+  VLLM_METRICS).
 
 ## Service Configuration
 
