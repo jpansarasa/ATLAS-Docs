@@ -21,7 +21,7 @@ flowchart LR
     FC -->|OTLP| OTEL[OpenTelemetry Collector]
 ```
 
-Quartz cron schedules trigger `SeriesCollectionJob`, which calls `DataCollectionService` to fetch observations from FRED through a Polly-protected typed `HttpClient` (token-bucket throttled). New observations are persisted via `ObservationRepository`, published over the `ObservationChannel` to gRPC subscribers, and — when the series' resolved `SignalIdentityId` carries SecMaster's per-signal `matrix_benchmark` flag — dual-written to the shared `macro_observations` substrate (`MacroSubstrate`). On startup, `InitialDataBackfillWorker` backfills any series with zero observations; the optional `FredSeriesSectorTagBackgroundService` and `FredSeriesSignalIdentityTagBackgroundService` periodically re-tag series against SecMaster's REST taxonomy.
+Quartz cron schedules trigger `SeriesCollectionJob`, which calls `DataCollectionService` to fetch observations from FRED through a Polly-protected typed `HttpClient` (token-bucket throttled). New observations are persisted via `ObservationRepository` — the INSERT *is* the publish, and the gRPC stream serves those rows straight from `fred_observations` (card D-3); nothing is pushed to subscribers. When the series' resolved `SignalIdentityId` carries SecMaster's per-signal `matrix_benchmark` flag, the observation is also dual-written to the shared `macro_observations` substrate (`MacroSubstrate`). On startup, `InitialDataBackfillWorker` backfills any series with zero observations; the optional `FredSeriesSectorTagBackgroundService` and `FredSeriesSignalIdentityTagBackgroundService` periodically re-tag series against SecMaster's REST taxonomy.
 
 Schema is owned by EF Core migrations under `src/Data/Migrations/`. `series_configs` carries the SecMaster ATLAS-sector tag (`AtlasSectorCode`, EF-converted enum) and the signal-identity tag (`SignalIdentityId`). A check constraint (`ck_series_config_sector_xor_signal`) enforces that sector and signal-identity are mutually exclusive — a series is either macro-rolled by sector or instrument-attributed by signal-identity, never both.
 
@@ -131,7 +131,7 @@ Proto: `Events/src/Events/Protos/observation_events.proto` (service `Observation
 
 | Method | Direction | Description |
 |--------|-----------|-------------|
-| `SubscribeToEvents` | server-stream | Live subscription from a checkpoint; polls DB events table |
+| `SubscribeToEvents` | server-stream | Live subscription from a checkpoint; polls `fred_observations` on a composite `(CollectedAt, Id)` cursor (card D-4) |
 | `GetEventsSince` | server-stream | Historical replay from a timestamp |
 | `GetEventsBetween` | server-stream | Historical replay across a time range |
 | `GetLatestEventTime` | unary | Timestamp of most recent event |
@@ -143,7 +143,7 @@ Proto: `Events/src/Events/Protos/observation_events.proto` (service `Observation
 |-------|---------|--------|-----------|---------|-------------|
 | `secmaster.proto` | `SecMasterRegistry` | `RegisterSeries` | unary (fire-and-forget) | `AddSeries` POST | Register the new series with SecMaster; silently skipped when `SECMASTER_GRPC_ENDPOINT` unset |
 
-gRPC reflection is enabled. The event stream polls the DB events table — it does NOT emit from an in-process channel (see `ObservationChannel` INV in the card above).
+gRPC reflection is enabled. The event stream serves `fred_observations` directly (card D-3), synthesising one `SeriesCollected` event per row with `EventId="obs-{Id}"`. It does NOT read `public.events` — that table lost its last writer in D-3 and never had a reader — and it does NOT emit from an in-process channel (see the `ObservationChannel` DISTINCTION in the card above).
 
 ## Project Structure
 
@@ -156,7 +156,7 @@ FredCollector/
 │   ├── Endpoints/           # Minimal-API endpoint mappings (ApiEndpoints, AdminEndpoints)
 │   ├── Entities/            # EF entities (SeriesConfig, FredObservation, …)
 │   ├── Enums/               # Domain enums
-│   ├── Events/              # Domain events (publish surface)
+│   ├── Events/              # ObservationChannel (in-memory, no reader — see card DISTINCTIONS)
 │   ├── Exceptions/          # FredApiException et al.
 │   ├── Grpc/
 │   │   ├── Repositories/    # EventRepository (gRPC read path)
@@ -166,7 +166,6 @@ FredCollector/
 │   ├── Jobs/                # Quartz jobs (SeriesCollectionJob)
 │   ├── Middleware/          # ApiKeyAuthenticationHandler
 │   ├── Models/              # Request / response models + *Options classes
-│   ├── Publishers/          # EventPublisher → ObservationChannel
 │   ├── RateLimiting/        # TokenBucketRateLimiter
 │   ├── Services/            # Collection, backfill, search, sector/signal-identity tag + resolve
 │   ├── Telemetry/           # ActivitySource + Meter definitions

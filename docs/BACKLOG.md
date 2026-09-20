@@ -59,6 +59,14 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
 | D | 2026-09-20 | OPEN | SecMaster meter-capture test helpers listen PROCESS-WIDE; a slow sibling test double-counts them |
 | B | 2026-09-20 | OPEN | After both EDGAR rules, per-row staleness drift survives: no gauge over edgar_filers.fetched_at |
+| B | 2026-09-20 | OPEN | Four collectors mint a random Ulid EventId; TE's processed_events cannot dedupe them or be anti-joined |
+| B | 2026-09-20 | OPEN | `public.events` lost its last writer in D-3 and never had a reader: 15,919 rows / 23 MB to retire |
+| B | 2026-09-20 | OPEN | Fred's stream still loses ~12 rows/week to cursor inversions; no sort column on the table is commit-ordered |
+| B | 2026-09-20 | OPEN | atlas-home id8 keeps `or vector(0)`: a dead fredcollector events counter would read as a healthy 0 |
+| B | 2026-09-20 | OPEN | Devcontainer test runs publish `fredcollector_collection_failures_total` to PROD Prometheus; panel 16's control reads WIRED undeployed |
+| B | 2026-09-20 | OPEN | `eventTypes` is advertised on ObservationEventStream and ignored by 4 of the 5 collectors |
+| B | 2026-09-20 | OPEN | FredCollector's "FredCollector.DataCollection" meter is AddSource'd but never AddMeter'd: 2 instruments unexported |
+| B | 2026-09-20 | OPEN | AlphaVantage streams only the LATEST row per series; 9 of its 12 rows in 7d share an instant |
 | B | 2026-09-17 | OPEN | SecMaster D-16 drops Gemini fred_series answers for the 16 FRED ids D-18 leaves Equity (10 in 7d) |
 | B | 2026-09-20 | OPEN | 7 active catalog rows have a blank name; 71 attach-pool slots were labelled with "-" for a name |
 | B | 2026-09-20 | OPEN | selfseed_class_skip (D-34) has no alert: the 7-day production rate is unmeasured |
@@ -98,7 +106,9 @@ Defects with a measurement that makes them re-checkable.
 | C | 2026-09-16 | OPEN | gemini-resolver saturates its 1500/day cap; intent says dozens/day (INTENT_FIDELITY) |
 | C | 2026-09-16 | AWAITING-DECISION | Quarantined-ticker re-acquisition is an undecided policy: Gemini cost + un-alerted 23505 |
 | D | 2026-09-20 | OPEN | FredCollector compile.sh dies in a fresh worktree: its compose env_file names a gitignored .env (Ofr's is tracked) |
-| D | 2026-09-17 | AWAITING-DECISION | Integration suites never reach the marker; Fred's 7 gRPC tests read a table the card denies |
+| D | 2026-09-20 | OPEN | 5 of the 12 D-4 composite-cursor sites are unpinned; the whole `Between` path is one of them |
+| D | 2026-09-20 | OPEN | 52 of 54 `AddHostedService` registrations are unpinned; deleting one leaves its suite green |
+| D | 2026-09-20 | OPEN | Integration suites never reach the push marker and nothing re-runs them between PRs (all six now green) |
 | D | 2026-09-16 | OPEN | Gemma 4 swap residuals: one-directional coordinate sweep, hermes parser, promtool fixtures |
 | D | 2026-09-16 | OPEN | D-23 thin-draw gate cannot deny: Bind() appends to the Engines default (inert until wired) |
 | D | 2026-09-16 | OPEN | Static-meter flake: two ExtractionProcessor test classes still outside SentinelMeterStatic |
@@ -1881,46 +1891,18 @@ Re-check: `sum by (result)(secmaster_entity_resolution_self_seed_total)` (2026-0
      OR indexname LIKE 'idx_source_mappings_collector_source%';`
 
 **Six services keep their integration suite behind `compile.sh --integration`, so the push marker never sees it,
-and FredCollector's 7 gRPC tests are still red.** [2026-09-17, re-measured 2026-09-20] The six are ThresholdEngine,
+and every one of the six is now green.** [2026-09-17, re-measured 2026-09-20] The six are ThresholdEngine,
 FredCollector, OfrCollector, NasdaqCollector, AlphaVantageCollector and FinnhubCollector; SecMaster moved its suite
-into the gate after #900. Three of the four red suites are now green: OfrCollector 64 of 64, AlphaVantageCollector
-45 of 45, FinnhubCollector 38 of 38, FredCollector 116 of 123 (was 61/64, 6/45, 6/38, 113/123). ThresholdEngine (67)
-and NasdaqCollector (28) were already green. The consequence stands: a regression only an integration suite can
-catch ships behind a valid push marker. #900 found that class on SecMaster: four tests silently red since #231.
+into the gate after #900. All four formerly-red suites are green: OfrCollector 64 of 64, AlphaVantageCollector
+45 of 45, FinnhubCollector 38 of 38 (#1067), FredCollector 127 of 127 (was 61/64, 6/45, 6/38, 113/123).
+ThresholdEngine (67) and NasdaqCollector (28) were already green. FredCollector's last 7, the
+`EventStreamIntegrationTests` that seeded the `events` table while the code serves `fred_observations`, were the
+gRPC design conflict this entry held for arbitration; it was decided in favour of the code and the card corrected
+(FredCollector D-3), so that block is closed here rather than tombstoned. The consequence stands: a regression
+only an integration suite can catch ships behind a valid push marker, and nothing re-runs these six between PRs.
+#900 found that class on SecMaster: four tests silently red since #231.
 Re-check: `bash <Service>/.devcontainer/compile.sh --integration`, then read the `Failed!` line of the
 `*.IntegrationTests.dll`.
-
-STILL RED, and NOT a test-side gap -- `FredCollector`'s 7 `EventStreamIntegrationTests`. The gRPC stream and its
-tests disagree about WHICH TABLE is the event source, and the service card takes the tests' side against the code:
-- `FredCollector/AGENT_README.md:22` PATHS: "gRPC-EventStream [:5001 - ThresholdEngine]: polls DB events table; does
-  not serve fred_observations directly". `FredCollector/src/Grpc/Repositories/EventRepository.cs:34,70,100,119,137`
-  reads `_dbContext.FredObservations` in every one of its five queries. `69b2d670` (#65, 2025-12-13) made that
-  switch; the tests, added later in `d5645e87` (#151, 2026-01-25), seed `DbContext.Events` and assert the stream
-  returns them, so they stream 0.
-  CITE THESE TWO FILES BY THEIR SERVICE PATH, never by basename: six tracked files are named `EventRepository.cs`
-  and two `EventPublisher.cs`, and `SentinelCollector/src/Grpc/Repositories/EventRepository.cs:27,37,50` reads
-  `_context.Events` -- so a bare `EventRepository.cs` cite with a line number both fails the citation sweep as
-  ambiguous AND lands a reader on the service whose code DOES match this card line, i.e. on "there is no defect
-  here". (Written without the line number on purpose: the sweep would read the example itself as a citation.)
-  The card line is KNOWN-FALSE as it stands and is NOT annotated in the card: branch
-  `fix/fred-event-stream-cursor` is correcting it alongside a cursor defect, so until that lands read
-  `FredCollector/AGENT_README.md:22` as "the stream serves `fred_observations`", whatever the card says.
-- The divergence is semantic, not just a table name: `GetEventCountsByTypeAsync` groups by `SeriesId`, while
-  `GetHealth_ReturnsAccurateMetrics` expects the `EventsByType` keys `SeriesCollected` / `CollectionFailed`.
-- `events` is WRITE-ONLY in FredCollector: `FredCollector/src/Publishers/EventPublisher.cs:44,79` are its only
-  `_dbContext.Events` references, and no reader exists
-  (`git grep -n 'dbContext\.Events' -- FredCollector/src` returns 2 lines, both writes).
-  Production keeps filling it: 15,919 rows, latest `OccurredAt` 2026-09-19T18:01:05Z (read 2026-09-20T11:24Z,
-  SELECT-only), against 675,592 `fred_observations` rows with the same latest timestamp.
-- `GetHealth_EmptyDatabase_ReturnsHealthyWithZeroEvents` is the 8th test and passes only because BOTH tables are
-  empty -- it would pass against either design, so the suite reads as 7/8 broken rather than 8/8 stale.
-DECISION NEEDED, and no implementing agent may make it (CLAUDE.md SERVICE_ARCHITECTURE: never "fix" a symptom by
-violating a card invariant). Either the card and the tests are right and `EventRepository` must return to the
-`events` outbox, or the code is right and BOTH the card line and the 7 tests must be rewritten against
-`fred_observations` -- and then `EventPublisher`'s write-only table needs a disposition of its own.
-Re-check: `bash FredCollector/.devcontainer/compile.sh --integration` (7 of 123 fail, all in
-`EventStreamIntegrationTests`), then `grep -n 'FredObservations' FredCollector/src/Grpc/Repositories/EventRepository.cs`
-(5 hits) against the card's `polls DB events table` line.
 
 **FredCollector's `compile.sh` cannot run in a fresh worktree at all: its devcontainer compose file `env_file:`s a
 gitignored `.env` that only the main checkout has.** First occurrence, 2026-09-20.
@@ -1947,10 +1929,206 @@ consumers that take `IFredApiClient` -- `DataCollectionService`, `BackfillServic
 `SeriesManagementService`, `SeriesSearchService` -- are left with no registration to resolve, which is the quieter
 failure of the two. A committed non-secret default `.env`, or passing the key through `environment:`, are the open
 options; dropping `env_file:` alone is not one.
+WORKED AROUND, NOT FIXED, while landing the cursor fix: `cp /home/james/ATLAS/FredCollector/.env
+<worktree>/FredCollector/.env` before the first compile. The copy is gitignored so it never reaches a commit, and
+it has to be repeated in every new worktree -- which is the defect, not a remedy.
 Re-check: `ls <worktree>/FredCollector/.env` (absent in a fresh worktree; present in /home/james/ATLAS), then
 `sudo nerdctl compose -f FredCollector/.devcontainer/compose.yaml config` from a worktree without it (rc 1) and the
 same command for `OfrCollector` (rc 0), and `grep -n FRED_API_KEY FredCollector/.devcontainer/compose.yaml` (0 hits).
 
+**FOUR OF THE FIVE STREAMING COLLECTORS MINT `EventId = Ulid.NewUlid()` PER SYNTHESISED EVENT, SO
+`processed_events` CANNOT DEDUPE THEM AND NO ANTI-JOIN CAN MEASURE WHAT THEY LOST.** [2026-09-20] Only
+FredCollector uses a row-derived id (`obs-{Id}`). `SELECT source_collector, count(*) AS total,
+count(*) FILTER (WHERE event_id LIKE 'obs-%') AS obs_prefixed FROM public.processed_events WHERE
+event_occurred_at > now() - interval '7 days' GROUP BY 1` returns, as total / obs_prefixed:
+FredCollector 2046 / 2046, FinnhubCollector 179,206 / **0**, SentinelCollector 11,736 / **0**,
+OfrCollector 333 / **0**, AlphaVantageCollector 3 / **0**. Every one of those four is zero — the
+totals are what they processed, not what was joinable. THIS IS THE PRECONDITION FredCollector D-4
+DEPENDS ON: its cursor re-serves a whole instant on purpose because a repeat is a no-op against a
+stable id. Ported to a Ulid collector unchanged, every re-serve becomes a fresh INSERT.
+The cost is already being paid without the port: FinnhubCollector holds 1,075,092 `processed_events`
+rows against 209,283 `finnhub_quotes` across 18 distinct symbols, and in the last 7 days 179,206
+processed rows against 34,513 new quotes — a 5.2x redelivery multiplier, 25,601 rows a day, into a
+table that is 513 MB, is NOT a hypertable and has zero retention jobs (1,916,012 rows since
+2025-11-21). Cursor shapes, read 2026-09-20: Finnhub `CollectedAt > from` ordered by CollectedAt only,
+Ofr `> since`, Nasdaq `>= from` (no skip, but every poll redelivers the boundary instant into a dedupe
+that cannot match), AlphaVantage polls the latest row per series. Tie exposure, same 7 days: Finnhub 0
+of 34,513 rows share an instant, Ofr 0 of 293, Nasdaq 0 of 0 (commented out of compose), AlphaVantage 9
+of 12 — so Finnhub and Ofr carry the same defective cursor SHAPE with no measured loss, while
+AlphaVantage's exposure cannot be quantified. Fixing this means deriving the id from the row, per
+collector, BEFORE porting D-4. Re-check: the two queries above, plus
+`SELECT count(*), count(*)-count(DISTINCT collected_at) FROM public.<table> WHERE collected_at >
+now()-interval '7 days'` per collector table, and
+`SELECT count(*) FROM timescaledb_information.jobs WHERE hypertable_name='processed_events';` (0).
+
+**`public.events` LOST ITS LAST WRITER IN D-3 AND NEVER HAD A READER; THE TABLE IS STILL THERE.** [2026-09-20]
+15,919 rows, 23 MB total (20 MB heap + 3 MB across 4 indexes), 78 rows/day from 2025-11-21 to the D-3 cutover,
+written only by FredCollector (15,715 SeriesCollected + 204 CollectionFailed). No view, no FK, no script, no
+dashboard and no ansible artifact queried it; `grep -rn '_dbContext.Events' FredCollector/src/` returned only the
+two EventPublisher writes, now deleted. The `DbSet<EventEntity>` mapping is retained deliberately so the EF model
+still matches the live schema — removing it makes the next `dotnet ef migrations add` emit a DROP TABLE for those
+rows. Retiring it is: drop the DbSet and `EventEntity`, generate the migration, decide whether the 204
+CollectionFailed rows are worth exporting first. Re-check:
+`SELECT count(*), max("OccurredAt"), pg_size_pretty(pg_total_relation_size('public.events')) FROM public.events;`
+— a `max` that has not moved since the D-3 deploy confirms the writer is gone.
+
+**DEVCONTAINER TEST RUNS PUBLISH D-5's COUNTER INTO PRODUCTION PROMETHEUS, SO PANEL 16's "IS IT WIRED"
+CONTROL READS WIRED WITH NOTHING DEPLOYED.** [2026-09-20] `fredcollector_collection_failures_total` is
+live in production Prometheus right now, at the full D-5 product and all at 0:
+`count(fredcollector_collection_failures_total) by (exported_job, job, instance)` returns 8 under
+`{exported_job="fred-collector", job="otel-collector", instance="otel-collector:8889"}`, first sample
+2026-09-20T19:06:32Z and peaking at 16 when two runs overlapped. Nothing is deployed: the running
+`fred-collector` container was created 2026-09-16T11:00:32Z from an image built 2026-07-31T16:32:48-04:00
+(`nerdctl container inspect fred-collector` then `nerdctl image inspect fred-collector:latest` -- bare
+`inspect` returns the IMAGE), which predates this counter entirely. The emitter is the test host:
+`ApiIntegrationTestBase` starts a real `WebApplicationFactory<Program>`, so `AddApplication()` runs and
+`MetricWarmupHostedService` seeds all 8 series; `FredCollector/.devcontainer/compose.yaml` joins the
+production `ai-inference` network and `FredCollector/.env` sets `OTEL_ENDPOINT=http://otel-collector:4317`,
+the production collector. The series are labelled exactly as the real service's would be, so nothing
+downstream can tell them apart. CONSEQUENCE: panel 16 (`Collection Failures (24h)`) documents "B absent
+means the counter is not wired and A cannot be trusted", and its target B is a bare
+`sum(fredcollector_collection_failures_total)` with no `exported_job` or `instance` filter -- so B is
+PRESENT today because of a test run, and a deployer reading "A=0 with B present" concludes "no failures"
+from a host that is not production. This PR's own verification runs created them. Not fixed here: the
+honest fix is at the SOURCE (the devcontainer should not export to the production collector), not a
+per-panel label filter, which would leave every other consumer to re-learn it.
+RE-CHECK, AND IT MUST BE A RANGE QUERY, NOT THE INSTANT ONE ABOVE: the series are created by a test run
+and go stale when it ends, so an instant query reads EMPTY -- CLOSED -- at any moment no integration run
+is in flight, which is almost always. That is this file's own corpse-detector shape: the check would pass
+precisely because the evidence had expired. Ask instead whether the series existed AT ANY POINT over a
+window that could contain a run:
+`max_over_time(count(fredcollector_collection_failures_total)[24h:1m])` over the last 24h -- any result
+at all, while `nerdctl image inspect fred-collector:latest` still predates the D-5 merge, is this defect.
+The entry closes when that returns no data across a day in which integration runs DID happen (confirm
+that separately, or the empty result is the corpse-detector again). MEASURED SIDE BY SIDE 2026-09-20
+~21:40Z, with no run in flight: the instant query returns EMPTY -- it would have reported this entry
+CLOSED -- and the range query returns 16 on the same Prometheus at the same moment.
+
+**52 OF 54 `AddHostedService` REGISTRATIONS ARE UNPINNED: DELETING THE LINE LEAVES ITS SUITE GREEN.**
+[2026-09-20] Mutating a hosted service's LOGIC says nothing about whether it RUNS, and only a test that
+reaches a composition root can tell. `grep -rn 'AddHostedService<' --include=*.cs */src | grep -v /obj/`
+returns 54 call sites across 10 services on this branch (SentinelCollector 17, SecMaster 11,
+ThresholdEngine 7, FredCollector 6, OfrCollector 5, CalendarService 3, FinnhubCollector 2, and one each in
+NasdaqCollector, AlphaVantageCollector, AlertService); it is 53 on main, the difference being the
+registration this PR adds. `grep -rln 'AddApplication()\|AddInfrastructure(\|AddHostedService<'
+--include=*.cs */tests` returns exactly TWO files: `FinnhubCollector/tests/Services/DependencyInjectionTests.cs`,
+written because deleting `AddHostedService<QuoteStalenessSeeder>()` left that whole suite green, and
+`FredCollector/tests/FredCollector.UnitTests/Telemetry/MetricWarmupHostedServiceTests.cs`, added here for
+the same reason. So this is the SECOND occurrence, not the first, and 52 registrations remain unpinned.
+The sharpest of them is `SecMaster/src/DependencyInjection.cs:146` — the same
+`AddHostedService<MetricWarmupHostedService>()` line, carrying the same "the series exist at 0 from
+process start" argument that FredCollector D-5 leans on to justify a counter replacing a durable row, and
+`SecMaster/tests/Telemetry/MetricWarmupHostedServiceTests.cs` constructs the class directly, so deleting
+the registration is invisible there too. Not a blanket remedy: a registration is worth pinning where
+something DOWNSTREAM depends on it running (a seeded metric, an ordering), not per line. Re-check: the two
+greps above — the second returning more than 2 files means someone has been closing this.
+
+**FIVE OF THE TWELVE SITES OF THE D-4 COMPOSITE CURSOR ARE UNPINNED; THE WHOLE `Between` PATH IS ONE OF
+THEM.** [2026-09-20] Three review rounds each found unpinned sites of this one change -- one, then two,
+then three -- because each sweep enumerated by reading. This is the enumeration done by MUTATION: every
+site was derived mechanically from `grep -rn 'ObservationCursor\|CursoredEvent\|item.Cursor\|sinceId\|fromId\|ThenBy(o => o.Id)'`
+over `FredCollector/src`, then mutated ONE AT A TIME against the full 321-unit + 128-integration suite.
+PINNED (mutant dies, with the tests that kill it):
+  - `StreamEventsSinceAsync` composite predicate -- 4 tests
+  - `ToCursoredEvent`'s `new ObservationCursor(obs.CollectedAt, obs.Id)` -- 2 tests
+  - `ObservationCursor.Before`'s `0` sentinel -- 2 tests
+  - `SubscribeToEvents` opening on `Before(startFrom)` -- SubscribeToEvents_OpenedAtATiedInstant_DeliversTheWholeGroup
+  - `SubscribeToEvents` CATCH-UP advance (`cursor = item.Cursor`, 16-space indent) -- SubscribeToEvents_DeliversSiblingsCommittedAfterTheirInstantWasServed
+  - `GetEventsSince` opening on `Before(from)` -- GetEventsSince_AtACheckpointInstant_ServesTheWholeTiedGroup
+UNPINNED (mutant survives the FULL suite, 321/128 green):
+  - `StreamEventsSinceAsync` `.ThenBy(o => o.Id)` -- costs intra-instant ordering determinism only; no row lost
+  - `StreamEventsBetweenAsync` composite predicate reverted to scalar -- the SAME defect this PR fixes,
+    still live on that method
+  - `StreamEventsBetweenAsync` `.ThenBy(o => o.Id)`
+  - `SubscribeToEvents` POLL-LOOP advance (20-space indent) -- and that is the loop ThresholdEngine lives
+    in. Deleting it does not lose rows: the cursor goes stale and the poll re-serves from it, so the cost
+    is unbounded re-delivery, which `processed_events` absorbs because `obs-{Id}` is stable per row
+  - `GetEventsBetween` opening on `Before(from)`
+STRUCTURAL, not mutatable in isolation: the `CursoredEvent(Event, ObservationCursor)` record shape -- any
+edit is a compile error, and its behaviour is covered by the `ToCursoredEvent` mutant above.
+WHY THE `Between` PATH IS NOT FIXED HERE RATHER THAN MERELY UNTESTED: `grep -rn GetEventsBetweenAsync`
+outside `Events.Client/ObservationEventClient.cs` returns ZERO callers anywhere in the repo, so the method
+is an advertised proto surface with no consumer. It carries the identical tie-skipping defect, latent.
+Re-check, one mutation at a time: make the edit, run `FredCollector/.devcontainer/compile.sh --integration`
+(the `--integration` flag is REQUIRED -- three of the five live in repository SQL that only the integration
+suite runs against a real database, so the default unit-only run reports a false GREEN), and confirm the
+suite is still green. A RED run means someone has pinned that site and it drops off this list.
+
+**ATLAS-HOME PANEL id8 PAINTS A DEAD FRED EVENT STREAM AS A HEALTHY 0.** [2026-09-20] The Events (1h)
+stat was repointed off the retired `fredcollector_events_published_total` onto
+`sum(increase(fredcollector_grpc_events_streamed_total[1h])) or vector(0)`, and the `or vector(0)` came
+along with it. That counter is created on the first streamed event, so it is ABSENT — not zero — when the
+stream has never run, and `or vector(0)` renders both cases as a purple 0. This is the same blindness
+`fredcollector.json`'s D-5 failures panel explicitly refuses ("No target carries `or vector(0)`"), so the
+home dashboard and the service dashboard now disagree about what absent means. Not fixed here because the
+repoint was the scope. Re-check:
+`grep -n 'fredcollector_grpc_events_streamed_total' "deployment/artifacts/monitoring/dashboards/Overview/atlas-home.json"`
+— the entry closes when that line no longer carries `or vector(0)`.
+
+**FREDCOLLECTOR'S STREAM LOSES ~12 ROWS A WEEK TO CURSOR INVERSIONS, AND NO CHOICE OF SORT COLUMN CAN
+FIX IT.** [2026-09-20] D-4's composite (CollectedAt, Id) keyset recovers 204 of the 216 rows TE missed in
+7 days; the other 12 are INVERSIONS — a row that became visible AFTER one carrying a strictly later
+`CollectedAt`, so the cursor had already advanced past its instant and `>= sinceAt` can never return.
+62 rows in 7 days sit in that class (median gap 8.0 ms, max 68.9 ms), of which 12 were actually lost.
+The cause is that `CollectedAt` is assigned in app code at cycle start, ahead of the INSERT and of the
+COMMIT, so the stream's sort key is not monotone in VISIBILITY order; `Id` is allocated at INSERT and is
+equally free to commit out of order, and the table records commit order nowhere. So this is NOT a
+tiebreak bug and re-sorting on `Id` would both fail to fix it and silently change the stream's meaning
+from collection time to arrival. The two real remedies: (a) re-read a trailing lag window on each poll,
+which must be priced against the tie sizes — 730 rows for a 24-month daily backfill and 100,000 once on
+2026-06-02 would be re-served once per poll for the width of the lag; (b) give the table a
+commit-ordered column and sort on that. Neither is free, and the loss is transient: TE's
+DataWarmupService re-reads a fresh window on every restart and heals it.
+Re-check, SELECT-only:
+```sql
+WITH w AS (SELECT o."Id", o."CollectedAt",
+       max(o."CollectedAt") OVER (ORDER BY o."Id" ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS max_prev,
+       (pe.event_id IS NULL) AS missed
+  FROM public.fred_observations o
+  LEFT JOIN public.processed_events pe ON pe.event_id='obs-'||o."Id" AND pe.source_collector='FredCollector'
+  WHERE o."CollectedAt" > now()-interval '7 days' AND o."Value" IS NOT NULL)
+SELECT count(*) FILTER (WHERE missed) AS missed,
+       count(*) FILTER (WHERE missed AND max_prev > "CollectedAt") AS inversion_residual FROM w;
+```
+2026-09-20, pre-deploy: 216 / 12 (re-derived 19:20:51Z: 2,271 streamable / 220 / 11). Post-deploy the
+left column should fall to the right one as the 7-day window rolls past the deploy -- which takes SEVEN
+DAYS to mean anything. For a verdict on the deploy itself, scope the same query to rows collected after
+the deploy instant and settled (`< now() - interval '15 minutes'`), and GUARD IT ON A NON-EMPTY WINDOW:
+FredCollector collects in ONE burst a day, 18:00:0xZ for 61-95s (measured over 8 days), so a scoped
+window that does not span an 18:00Z burst holds ZERO rows and yields `missed = inversion_residual = 0`,
+which reads PASS while having measured nothing. Report `count(*) = 0` as NO VERDICT, never PASS, and run
+the check only after the first 18:00Z burst following the deploy. Worked, 2026-09-20: empty window
+0/0/0 NO VERDICT; trailing 24h 309/30/0 FAIL; the 18:00:60-18:01:10Z slice 36/0/0 PASS. The full form is
+in PR #1073's body.
+
+**`eventTypes` IS ADVERTISED ON THE `ObservationEventStream` PROTO AND IGNORED BY FOUR OF THE FIVE COLLECTORS.**
+[2026-09-20] Every collector that synthesises events from an observations table can emit only `SeriesCollected`,
+so a client asking for `CollectionFailed` gets `SeriesCollected` rows rather than none. Harmless today because
+ThresholdEngine requests exactly `new[] { "SeriesCollected" }` on both its phases
+(`MultiCollectorEventConsumerWorker`), and NasdaqCollector's card already documents "eventTypes-ignore" as
+correct — so this is a contract to either honour or delete from the proto, not a per-collector bug. FredCollector
+pins the current behaviour in `EventStreamIntegrationTests.GetEventsSince_EventTypesFilter_IsAcceptedAndIgnored`.
+Re-check: `grep -rn 'eventTypes' */src/Grpc/Repositories/EventRepository.cs` — a parameter that appears only in
+the signature is an ignored one.
+
+**FREDCOLLECTOR REGISTERS `"FredCollector.DataCollection"` WITH `AddSource` AND NOT WITH `AddMeter`, SO TWO
+INSTRUMENTS HAVE NEVER REACHED PROMETHEUS.** [2026-09-20] `Program.cs` lists it under `WithTracing` but its
+`WithMetrics` block names only "FredCollector", "FredCollector.EventStream" and the substrate meter. The orphans
+are `fredcollector.series.collected.total{series_id,success}` and `fredcollector.data_collection.duration_ms` —
+the first is the counter nearest the collection outcome and is absent from the live metric-name enumeration, which
+is why D-5 had to add a new counter on the exported meter rather than lean on it. Fixing it is one line, but it
+also exports an 80-series_id histogram that duplicates `fredcollector_data_collection_duration_milliseconds`, so
+the honest repair is to move the counter, not register the meter. Re-check:
+`list_prometheus_metric_names regex=fredcollector_series_collected.*` returns nothing today.
+
+**ALPHAVANTAGE'S STREAM SERVES ONLY THE LATEST ROW PER SERIES, AND 9 OF ITS 12 ROWS IN 7 DAYS SHARE AN INSTANT.**
+[2026-09-20] `ObservationEventStreamService` polls `latest` per series and advances `lastEventTime` only when
+`latest.CollectedAt > lastEventTime`, so it is not a keyset stream at all: anything behind the latest row is never
+offered. TE processed 3 AlphaVantage events in that window against 12 collected rows, but the Ulid EventId (entry
+above) makes the anti-join that would settle it impossible. Re-check: the per-table tie query above for
+`alphavantage_observations`, against
+`SELECT count(*) FROM processed_events WHERE source_collector='AlphaVantageCollector' AND event_occurred_at >
+now() - interval '7 days';`
 **Gemma 4 residuals the swap PR found and did not fix (DEPLOYED 2026-09-07 evening; 1b, 2 and 3 still open)**
 [2026-09-07, title corrected 2026-09-13, file count re-measured 2026-09-16]
 
@@ -3111,7 +3289,7 @@ systemd unit tailing `dmesg`. Do not close it by pointing at `ContainerRestarted
 ### FredCollector writes to an UNBOUNDED channel nobody reads [2026-08-17]
 **FredCollector writes to an UNBOUNDED channel nobody reads — the same orphan that wedged Finnhub, failing the
 other way.** `FredCollector/src/Events/ObservationChannel.cs` extends `EventChannel<ObservationCollectedEvent>`
-(`Channel.CreateUnbounded`). Two live writers — `DataCollectionService.cs:231` and `BackfillService.cs:147`, both
+(`Channel.CreateUnbounded`). Two live writers — `DataCollectionService.cs:224` and `BackfillService.cs:141`, both
 `PublishAsync` — and ZERO readers: `EventChannel.ReadAllAsync` (`:35`) is DEFINED and never called, measured
 2026-08-17 by `grep -rn "ReadAllAsync" FredCollector/src`, whose only hits are the definition itself. Because it is
 unbounded it grows instead of blocking, so it leaks rather than halting; the card already says so
