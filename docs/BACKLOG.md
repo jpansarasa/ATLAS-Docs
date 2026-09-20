@@ -2440,6 +2440,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | impact | measured | status | entry |
 |---|---|---|---|
 | A | 2026-09-06 | OPEN | Three watermark-only ReExtract legs re-assert the row's tier; nothing pins that they do |
+| B | 2026-09-20 | OPEN | The <=5 ms share is the only detector for an unapplied `hnsw.ef_search`, and nothing watches it |
 | B | 2026-09-17 | OPEN | SecMaster D-16 self-seed and discovery refusals are counted but unalerted; their rate is unmeasured |
 | B | 2026-09-16 | OPEN | Alert rules and their metrics ship on different schedules; rule-first pages a healthy system |
 | B | 2026-09-16 | OPEN | QuoteStalenessSeeder resolves its repository OUTSIDE the try: DI failure kills startup |
@@ -2508,6 +2509,58 @@ Re-check (no database, no engine): `grep -c 'SecMasterMethod\.Should()' Sentinel
 already returns 1 today, matching the `newSecMasterMethod: null` ARGUMENT this entry's own PR added
 at `:606`, so the obvious predicate reads CLOSED while the hole is open. That draft shipped in this
 entry for one revision.
+
+### The <=5 ms share is the only detector for an unapplied `hnsw.ef_search`, and nothing watches it [2026-09-20]
+At `SemanticSearchOptions.HnswEfSearch=200` the share of vector searches at or under 5 ms on
+`secmaster_vector_search_duration_milliseconds` separates ef_search=200 from both ef_search=400 and an
+unapplied setting -- BUT ONLY AT A 6h WINDOW, and the statistic must be named with its window or it is
+useless. Measured 2026-09-20 across the ef=200 era:
+  6h non-overlapping windows, n=12: **0.214 to 0.374**, median 0.261.
+  30-minute windows, n=145: 0.108 to 0.607, p5 0.148, median 0.266, p95 0.520, mean 0.280. A 30-minute
+    window is NOT a discriminator: its floor of 0.108 brushes the top of the ef=400 era (0.025-0.105 at
+    1h windows), so the two populations overlap. An earlier revision of this entry quoted "17-31%" with no
+    window named; 34% of 30-minute windows fall outside that range, and anyone sizing an alert hold from it
+    would page constantly.
+THE UNAPPLIED ERA, at the SAME 6h window, so the two populations are comparable. 25 non-overlapping 6h
+windows over 2026-09-10T23:00Z to 2026-09-16T23:00Z, before #1030's value first shipped: **0.837 to 0.925**,
+p5 0.864, median 0.892, p95 0.912. An earlier revision of this entry said "0.845-0.876, >=0.85 means
+unapplied" -- 80% of those windows sit ABOVE 0.876 and one sits BELOW 0.85, so that band was both too narrow
+and mis-thresholded. This is the same defect corrected for the applied-era band one paragraph up, and it is
+the reason the threshold below is not set at the edge of a measured range.
+The two populations do not overlap and nothing has ever been observed between them: applied tops out at
+0.374, unapplied bottoms out at 0.837. **Any threshold in that empty 0.46-wide gap separates them; 0.60 is
+used because it sits clear of both edges.** A reading above it means ef_search is NOT being applied and the
+session is running pgvector's stock 40 -- what a container serving an image that predates the setting looks
+like, and that signature hid #1030 for eleven days. Nothing alerts on it: the only consumer of this histogram
+is one p50/p95 panel in
+`deployment/artifacts/monitoring/dashboards/Collectors & Services/secmaster-resolve-latency.json`, and a
+quantile cannot see the share.
+Re-check (6h window, expect 0.21-0.37; >=0.60 unapplied; <=0.11 back at 400):
+`sum(increase(secmaster_vector_search_duration_milliseconds_bucket{le="5.0"}[6h])) / sum(increase(secmaster_vector_search_duration_milliseconds_bucket{le="+Inf"}[6h]))`
+Separately, that the BUCKET LADDER itself deployed (as opposed to the service running an older image) is one
+query, and it is a metric check because prod logs default to Warning and a healthy container says nothing:
+`count(secmaster_vector_search_duration_milliseconds_bucket{le="7.0"}) > 0` is TRUE once the explicit
+boundaries are live and the result is EMPTY while the SDK defaults are in force -- `le="7.0"` exists in no
+default ladder. Compare against 0, never against 1. This histogram is tagged `success` and carries
+`success="true"` and NOTHING ELSE, by design and not by luck: `EmbeddingService.VectorSearchAsync` records
+it at exactly one site, on the success path, and its catch block deliberately skips it because a SQL-only
+duration is undefined when the failure lands before or during the embedding call. The metric that gains
+`success="false"` is the OTHER one, `secmaster_vector_search_total_duration_milliseconds`, recorded in that
+same catch -- do not search this one for failures, they structurally cannot appear here. The error signal is
+the counter `secmaster_vector_search_errors_total{error_type=...}` (`SecMasterMeter.VectorSearchErrors`),
+already plotted on the resolve-latency dashboard.
+`> 0` is correct either way and survives a future second label value.
+The `le="5.0"` series is what makes this re-checkable at all, which is why `5` is a pinned boundary in
+`SecMaster/src/Telemetry/VectorSearchLatencyBuckets.cs` and in its test rather than a survivor of the SDK default.
+To close: wire a rule on that expression, with the `for:` taken from the distribution and not from the average.
+One more thing this histogram cannot separate, same date, no setting changed: `instruments` has NEVER been
+autovacuumed -- `autovacuum_count` 0, `last_autovacuum` null, 3,349 dead against 28,998 live (10.4%), on
+241,290 updates of which 238,922 (99.0%) are HOT. The default trigger is `50 + 0.2 * n_live_tup` = 5,850 dead,
+so it has not fired and on this table's shape will not. The vector-search statement JOINs `instruments`
+(the D-13 join), so that dead heap is paid on the hydration leg of every vector search and lands in the same
+histogram as ef_search with no way to tell the two apart. Counters are live and reset on `pg_stat_reset`.
+Re-check (SELECT-only):
+`sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_secmaster -c "SELECT n_live_tup, n_dead_tup, n_tup_upd, n_tup_hot_upd, last_autovacuum, autovacuum_count FROM pg_stat_user_tables WHERE relname='instruments';"`
 
 ### SecMaster D-16 self-seed and discovery refusals are counted but unalerted; their rate is unmeasured [2026-09-17]
 SecMaster D-16 refuses a class-family conflict at four write sites. The two register sites also count under

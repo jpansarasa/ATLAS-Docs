@@ -106,6 +106,37 @@ L15 A self-authored negative -- "nothing loosened", "no regressions", "no new fi
     NAME because that tool does not exist and has no other observable; name it `*corpus*` when you build it.
   GRADUATE_CHECK: find .claude/hooks/test -type f -perm -u+x -iname '*corpus*' | grep -q .
 
+L19 A METRIC STEP CARRIES ITS OWN TIMESTAMP, and a deploy is a BUNDLE -- so "the deploy did it" is not an answer
+  until you have read WHERE the step is and WHICH change in that deploy owns it. The deploy nearest your
+  attention is the one you did not measure.
+  EVIDENCE: twice on `secmaster_vector_search_duration_milliseconds`, the same metric both times.
+    2026-09-17 -- a latency rise attributed to D-13's join; it was #1030 raising `hnsw.ef_search` 40 -> 400 in
+    the SAME deploy, and the A/B that settled it put the two SQL variants at 7.14-8.97 ms and 8.04-15.72 ms in
+    one arm, so the join was never the size of the step.
+    2026-09-20 -- a step attributed to the 2026-09-17T14:08Z identity deploy. Re-derived at 1h steps, the share
+    at or under 5 ms reads 84.5-87.6% through 22:00Z on 2026-09-16, 17.8% in the 23:00-00:00Z hour and 2.5-10.5%
+    after, while p50/p95 either side of 14:08Z are 6.92/21.29 vs 7.12/21.18 -- unchanged. The cause sat 15 hours
+    earlier and the docs/RELEASES.md entry "Vector-SQL latency rose with the deploy" already named it.
+    Re-check either by plotting:
+    `sum(increase(secmaster_vector_search_duration_milliseconds_bucket{le="5.0"}[30m])) / sum(increase(secmaster_vector_search_duration_milliseconds_bucket{le="+Inf"}[30m]))`
+  RULE: before attributing a metric step to a deploy -- PLOT the metric as a RANGE across the whole candidate
+    window, at a step finer than the gap between deploys, and read off where the step IS. Then read
+    docs/RELEASES.md and the recent deploy log for everything else that shipped near it. A deploy carries every
+    change in it, so name the CHANGE or say you cannot. Two candidates inside one deploy are separated by holding
+    one fixed -- an A/B, a GUC set through PGOPTIONS -- never by which one you were already reviewing. The plot
+    is minutes and free; it is the cheapest discriminator on the board and it went unrun both times.
+  GRADUATES: when deploys ANNOTATE Grafana -- `deploy.yml` POSTing to `/api/annotations` with the deployed tags,
+    so every latency panel draws the deploy lines and "where is the step relative to what shipped" is answered by
+    looking instead of by recall. No such task is reachable from deploy.yml today, which is exactly why the deploy
+    a human remembers wins over the one that moved the metric. The claim-verification template cannot hold this:
+    it checks numbers a report ASSERTS, and here the defect is a CAUSE attached to a number that reproduced
+    perfectly.
+  GRADUATE_CHECK [asks ansible what deploy.yml REACHES, never what a file CONTAINS -- a grep for the task greens
+    on one sitting in a playbook nothing imports, and `--list-tasks` executes nothing and needs no host. What it
+    still does NOT prove: that the task SUCCEEDS at deploy time, or that its tags and timestamp are right. It
+    fails closed -- no ansible, or a broken playbook, feeds grep an empty stream and the lesson stays]:
+    ( cd deployment/ansible && ansible-playbook playbooks/deploy.yml --list-tasks 2>/dev/null ) | grep -qi annotation
+
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, cited line, root cause or severity as settled fact
 never relay "X is false" without restating X's proposition and naming its subject # RELAYING is not DISPUTING, which
@@ -125,6 +156,8 @@ never repair a reference before your last content edit, and never believe a PROX
   not a green sweep, not a FALLING cannot-land count, not a test result on a build you did not prove rebuilt [L8]
 never accept a rule, alert or control proven only by silence, only at n=1, or only from the alert list [L11]
 never accept a self-authored "nothing loosened", or a corpus built by the fix's own author [L15]
+never attribute a metric step to a deploy you have not located the step against, or to a deploy rather than to a
+  named CHANGE inside it -- plot the range first, then read RELEASES.md for what else shipped nearby [L19]
 never add an entry that a template, skill, hook or checklist already enforces
 never add an entry without a GRADUATES clause NAMING THE ARTIFACT that will hold it and a GRADUATE_CHECK -- `none --
   judgement` is an answer, an absent line is not, and `scripts/new-epic.sh` refuses the next epic reset over either
