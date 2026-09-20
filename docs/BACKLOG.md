@@ -33,6 +33,7 @@ Defects with a measurement that makes them re-checkable.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| C | 2026-09-20 | OPEN | Parallel-compile gap check is nerdctl-only; a docker-first verification script reads container-less and is never audited |
 | A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
 | A | 2026-09-20 | OPEN | D-17 cleared the STAMP, not the DESCRIPTION: 8 foreign rows keep an EDGAR SIC line, 4 another company's |
 | A | 2026-09-20 | OPEN | BTC-USD duplicates the curated CRYPTO:BTC row; 1,101 observations to 0 (T3 items 1 and 2) |
@@ -122,6 +123,23 @@ Defects with a measurement that makes them re-checkable.
 | E | 2026-09-16 | OPEN | Two SecMaster comments still call a Finnhub 403 transient (permanent, arrives as NULL) |
 | E | 2026-09-16 | OPEN | SentinelCollector card is 5.3x over its D-entry gate and its line count hides it |
 | E | 2026-09-16 | AWAITING-DECISION | Six deployed directories have no card and sit outside the SERVICES roster (HARD_STOP gap) |
+
+**The parallel-compile gap check decides "starts a container" on `nerdctl` alone, so a docker-first verification
+script would read `container-less` and be exempted rather than audited.** The predicate is
+`devcontainer_gap_verdict` in `scripts/test-devcontainer-owner.sh` (test 5), matching
+`grep -qE 'nerdctl|devcontainer_compose'`; the documented pipeline in
+`.claude/skills/supervisor-mode/references/parallel-dispatch.md` uses the same two tokens. That contradicts
+CLAUDE.md PROJECT_CONVENTIONS, which mandates runtime-agnostic tooling (`nerdctl|docker|podman`), and the fallback
+is already written here: `edge/sentinel-edge/.devcontainer/build.sh` runs `nerdctl compose build` when nerdctl is
+on PATH and `docker compose build` otherwise. Measured 2026-09-20: of the 14 files the check enumerates, **1**
+mentions `docker` (`git ls-files | grep '\.devcontainer/.*\.sh$' | xargs grep -ln docker`) and it is a `build.sh`,
+outside the `(compile|typecheck)\.sh$` selector, so the exposure is latent, not live — 0 audited scripts are
+docker-only today. Direction is UNSAFE: such a script would silently be treated as having nothing to collide over,
+and known-bad control B cannot see it, because B proves the exemption keys on the container tokens without
+proving those tokens are the complete set. Re-check: rerun the `xargs grep -ln docker` count above and re-run
+`bash scripts/test-devcontainer-owner.sh`; the entry closes when the predicate matches `docker` and `podman` too
+and a control plants a docker-only gap. Fix is one regex in `devcontainer_gap_verdict` plus the documented
+pipeline, but both copies must move together or they disagree.
 
 **D-17's `ClearOutOfScopeUsAuthorityStamps` names its rows by id as read at 2026-09-17T12:52:35Z, and production keeps
 writing out-of-scope stamps until that migration deploys; a row written in between stays.** Measured 2026-09-17,

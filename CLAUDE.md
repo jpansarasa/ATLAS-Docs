@@ -48,9 +48,10 @@ FILTERED RUN: nerdctl compose exec -T {svc}-dev dotnet test --filter 'DisplayNam
   4 test projects set xunit methodDisplay=method (`git grep -l '"methodDisplay": "method"' -- '*xunit.runner.json'`); there DisplayName
   is the bare method name, so `DisplayName~<ClassName>` ALSO matches ZERO tests and exits 0 -> filter a class
   with `FullyQualifiedName~<ClassName>`
-OWNED: each compile.sh (+ sentinel-edge typecheck.sh/dev.sh) owns a compose project keyed to its worktree
-  (scripts/devcontainer-owner.sh): atlas-<sha1(worktree)[0:12]>-<slug>, the same key mark-tests-passed.sh uses.
+OWNED: each CONTAINER-STARTING compile.sh (+ sentinel-edge typecheck.sh/dev.sh) owns a compose project keyed to
+  its worktree (scripts/devcontainer-owner.sh): atlas-<sha1(worktree)[0:12]>-<slug>, the same key mark-tests-passed.sh uses.
   N agents in N worktrees compile SIMULTANEOUSLY # never sequence them, never wait
+  a container-less compile.sh (FinBertSidecar, pure python) owns nothing and cannot collide # its exemption is NOT a gap
   compile.sh proves /workspace is its OWN tree (inode match); mark-tests-passed.sh refuses without that
     attestation, and refuses one over 3h old
   cleanup: teardown on EXIT + a reaper on every start removing atlas-* state whose worktree is gone # SIGKILL cannot trap
