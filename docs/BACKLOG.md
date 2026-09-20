@@ -2849,7 +2849,7 @@ Re-check reads the INDEX; silence is the pass (silent on 2026-09-16, `core.fileM
 CONTROL: pipe one fabricated `100644 <sha> 0<TAB>.claude/hooks/git-push-guard.sh` line into that same `awk`;
 it must name that file back. Verified both ways 2026-08-17.
 
-### Attachment gold residue: slash terms unsearchable by symbol, 6-term cap, yen rows, CI, IXIC [2026-09-17]
+### Attachment gold residue: slash terms unsearchable by symbol, 6-term cap, yen rows, IXIC, unembedded additions [2026-09-17, item 4 closed and item 5 added 2026-09-20]
 `LlmBenchmark/attach-gold/` (built by `LlmBenchmark/scripts/build_attach_gold.py`, PR #1064) carries five
 known defects that were measured and left open. None changes a scored owner label today, which is why they
 are open rather than fixed. Each can mislead the next rebuild or a later scorer.
@@ -2874,16 +2874,39 @@ are open rather than fixed. Each can mislead the next rebuild or a later scorer.
    unscored today because the scorer reads only `owners`; it becomes a wrong gold row when empty-owner
    rows are scored. Re-check: `SELECT symbol, is_active, retired_at FROM instruments WHERE symbol='DEXJPUS'`
    (psql is SELECT-only), plus both units' `verdict` in `attach_gold_g2_v1.json`.
-4. THE BUILDER SELFTEST IS NOT IN CI. `build_attach_gold.py selftest` (43 controls, including `decide`,
-   `none_against_exact`, `pool_leg_blind` and the "/" controls) runs only before a paid batch. Re-check:
-   `grep -c build_attach_gold .github/workflows/python-tests.yml` -> 0. Fix: add it beside the CoD and
-   CoVe gold selftests. It needs no network and no credential.
-5. A LABEL FOLLOWS THE QUOTE, NOT THE OWNER, WHEN THE EXTRACTION MIS-COPIED IT. g2:168826:u12 has owner
-   "gold" but carries only the quote "Dow and S&P 500 -0.6 per cent, Nasdaq -1 per cent.", so gold accepts
-   IXIC and NASDAQCOM. An arm that attaches "gold" to a gold row scores WRONG on an owner the extraction
-   named correctly. Known limitation of per-owner labels. Re-check: that unit's `owner`, `quotes` and
-   `accept_symbols`. Fix: label per (owner, quote) where an owner's quotes name a different thing, or
-   mark such owners `NO_SINGLE_OWNER` with the mismatch recorded.
+4. THE CATALOG-DRIFT SCAN HAS TWO HOLES ON THE OWNER SIDE AND ONE ON THE ADDITION SIDE, AND THE OWNER-SIDE
+   ONES ARE THE BIG ONES. `build_attach_gold.py drift` scans every row created inside its window on three
+   legs, and `assemble --restamp-catalog-at` re-runs the same scan before it will re-date anything -- but a
+   leg that searched nothing still returns nothing, which reads exactly like a clean scan.
+   Measured 2026-09-20 over 213 additions in (2026-09-17T11:00Z, 2026-09-20T12:02:05Z], 870 owners:
+   - **116 owners get no usable vector query** (`vector_leg_fell_back_to_the_unit_key`): no term of theirs
+     is 4 characters or longer, so the query text falls back to the unit key and the vector leg is
+     meaningless for them. 111 are NO_SINGLE_OWNER; the other 5 are INSTRUMENT owners whose accepted
+     symbols the EXACT leg did search.
+   - **98 of those carry no term at all** (`owners_with_no_term_at_all`), so all three legs searched
+     nothing. Every one is an `empty_owner_rows` row with a BLANK owner surface and verdict
+     NO_SINGLE_OWNER. The argument that this is harmless -- no catalog row can own "no single ownable
+     thing", so no addition can change that verdict -- is an argument, not a guarantee, and it is written
+     here rather than left implied.
+   - **an addition with no stored bge-m3 row is out of the vector leg's reach** (`vector_leg_blind_to`),
+     reached by the exact and trigram legs only. It was 2 of 212 (WBND, WBNEF) on the 11:17Z measurement
+     and 0 of 213 an hour later, so this one self-heals as SecMaster embeds.
+   Re-check: those three fields of `LlmBenchmark/attach-gold/catalog_drift_v1.json`, which the stage writes
+   on every run. Fix: rank symbol-shaped terms into the vector query and fall back to the owner's QUOTES
+   rather than to the unit key; for the blank-surface rows, either exclude them from the scan explicitly
+   (and say so) or give them their article's quote as the query.
+5. A LABEL CAN FOLLOW A MIS-COPIED QUOTE INSTEAD OF ITS OWNER, AND ONLY ONE INSTANCE HAS BEEN JUDGED.
+   The extraction sometimes attaches ONE quote span to several owners; the owner surface and the number's
+   unit description then carry the real subject while the quote does not. The worked example is closed:
+   g2:168826:u12 ("gold", number description "commodity return") accepted IXIC and NASDAQCOM off the quote
+   "Dow and S&P 500 -0.6 per cent, Nasdaq -1 per cent."; it now accepts GC and GC=F, its sibling
+   g2:168826:u25 ("Utilities", "sector return") is NONE_IN_CATALOG under rule 5, and g2:168826:u15
+   ("Nasdaq", "index return") keeps IXIC and NASDAQCOM -- each decided from the article, which states all
+   three phrases verbatim, as rule 1 directs. THE CLASS IS OPEN: **239 owners across 53 articles share a
+   quote with a differently-named owner** and none of the other 236 has been re-judged. Re-check: group
+   each article's owners by quote string, keep groups whose owner surfaces differ after casefolding, and
+   count the owners in them. Fix: label per (owner, quote), or make the builder flag a shared-quote group
+   for judgement instead of labelling each member from the same text.
 
 ### Stage 2 has a gold now, and it prices three things a comparison must clear [2026-09-07]
 `--task cove` is the metric every `aggregate_f1` in this repo is quoted in. `LlmBenchmark/cove-gold/`
