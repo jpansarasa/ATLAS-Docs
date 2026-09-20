@@ -4090,6 +4090,7 @@ Work decided and not yet scheduled, with the decision that deferred it.
 | A | 2026-09-16 | AWAITING-DECISION | Extraction__GuardsEnabled=false -- awaiting an owner decision |
 | A | 2026-09-16 | OPEN | The staleness stamp measures a successful FETCH, not an advancing quote (design call) |
 | A | 2026-09-04 | OPEN | Labeller quality at n=5 through production's CoD prompt+schema, 2026-09-04 |
+| B | 2026-09-20 | AWAITING-DECISION | Tracked-secret inventory, complete: what publishing this repo would expose |
 | B | 2026-09-16 | OPEN | Alert-continuity acceptance (sentinel-resolution-signal) re-measured: still NOT met |
 | B | 2026-09-16 | OPEN | Dependency debt: the Cryptography.Xml 10.0.8 pin is now the NU1903 exposure (7 csproj) |
 | B | 2026-09-16 | OPEN | The stamps table's single-writer invariant is one negative test plus convention |
@@ -4174,6 +4175,134 @@ earnings/analyst-action first.
 Re-check: the artifacts live only in `/tmp` (non-durable -- expect them gone). Re-running is ~$1.32 /
 32 requests (5 substrate articles x 3 labellers) after the ZZZ pre-flight below; until then these
 figures ARE the record.
+
+**Tracked-secret inventory, complete -- what publishing this repo would expose. AWAITING A DECISION THAT HAS NOT
+BEEN MADE (open-sourcing).** Measured 2026-09-20 at `c13a49b6` (= `origin/main`), 2,964 tracked files. This entry
+does NOT re-flag the accepted risk recorded below ("Accepted risks, do not re-flag" -- private repo, LAN-only,
+public-derived data); the owner's acceptance stands and nothing here asks for it to be revisited. What it adds is
+the inventory that acceptance is conditional on, in the owner's words: "The repo is private. If we ever want to
+make this open source, then I would be concerned." Publishing exposes the working tree AND all history, so the
+inventory is made once, now, while it is cheap. NO VALUE IS QUOTED HERE OR ANYWHERE IN THIS FILE BY THIS ENTRY --
+each item is named by path and kind only.
+
+| # | kind | real? | tracked paths | how it reaches production today |
+|---|---|---|---|---|
+| A | ATLAS app DB password (`atlas_user`, TimescaleDB `atlas_data`) | REAL, and it MATCHES the live deployed value | 24 | ansible-vault `atlas_db_password` renders `compose.yaml.j2`; the 24 tracked copies are dev/devcontainer conveniences that happen to carry the same value |
+| B | FRED API key (free tier) | REAL, MATCHES the live deployed value | 2 (`OfrCollector/.env`, `SentinelCollector/scripts/load_secmaster_fred.py`) | ansible-vault `fred_api_key` |
+| C | PostgreSQL SUPERUSER password | REAL (it is the live value) and WEAK -- a `change...`-shaped default never changed | 2 (`deployment/ansible/scripts/validate-rendered-template.sh`, `docs/devcontainer-db-bridge.md`) | ansible-vault `postgres_password` |
+| D | SMTP password, `OfrCollector/.env` | NO -- placeholder-shaped | 1 | ansible-vault `email_password` |
+| E | `.env.example` values (AlphaVantage, Fred) | NO -- placeholders | 2 | n/a |
+| F | `ApiKey` in `appsettings*.json` (AlphaVantage, Nasdaq) | NO -- `${ENV}` interpolation, not a literal | 2 | ansible-vault, via compose env |
+| G | test/fixture literals: `test-key`, `not-needed`, an `hf_TES...` fixture token, empty-string `ApiKey`/`Password` | NO | ~14 sites | n/a |
+
+A's 24 split 11 shell-default (`${DB_PASSWORD:-<value>}`, the devcontainer compose files) and 13 BARE literal
+(2 `appsettings.json` connection strings, 5 SentinelCollector scripts, `init-db.sh`, a quality-check script,
+`validate-rendered-template.sh`, 2 docs, and `OfrCollector/.env`). A shell default is normally not a leak, but
+these defaults carry the REAL production value, so the syntax does not change the exposure. `docs/BACKLOG.md`
+itself is one of the 24 -- the accepted-risks entry below quotes the value in full.
+
+NOT FREE-TIER, and the reason this is class B rather than E: A and C are production DATABASE passwords, and C is
+additionally the superuser account at a weak never-rotated default. The owner may want C handled on its own
+schedule rather than at open-sourcing, since its weakness is independent of who can read the repo.
+
+CLEAN, measured not assumed -- zero hits for: AWS, GCP/`AIza`, Anthropic, OpenAI, GitHub/GitLab, Slack, Discord,
+Stripe, SendGrid, Twilio, npm tokens, JWTs, private-key blocks, certificates, SSH/PGP keys, and URLs with embedded
+credentials. The Finnhub, AlphaVantage, Nasdaq, Grafana-admin, Grafana-Google-OAuth-client-secret and ntfy
+credentials are vault-only: the live Finnhub key appears in NO tracked file and in NO commit (`git log -S`, 0).
+
+VAULT CHECK, clean: `group_vars/vault.yml` is the ONLY ansible-vault file, and every blob EVER committed at either
+of its two historical paths (`ansible/`, then `deployment/ansible/`) is `$ANSIBLE_VAULT;1.1;AES256` -- 9 distinct
+blobs, 10 commits, 2025-11-15 to 2026-05-03. None was ever committed in plaintext.
+
+HISTORY, coarse: NOTHING exists only in history. A first entered at `c7b937aa` (2025-12-07, `OfrCollector/.env`,
+which is also the only non-`.example` `.env` ever tracked) and spread through the devcontainer and script paths
+2025-11-28 to 2026-08-14; B entered at the same commit and reached its second path at `e38f0c56` (2026-05-02).
+Both are still in the tree, so neither is history-exclusive, and no removed file carries a secret the tree lacks.
+History cleanup, if it is ever wanted, must also cover the pre-rename paths (`ansible/**`, `infrastructure/**`,
+`Deployment/compose.yaml`), which carry A, B and C in their old blobs.
+
+TRIGGER -- act on this entry BEFORE any of: making the repository public, transferring it, adding an outside
+collaborator, or publishing any mirror, archive or fork outside the owner. Not before. While the repo stays
+private the accepted risk governs.
+
+THAT TRIGGER IS A NOTE, NOT A GATE -- NOTHING FIRES, and nobody will be stopped or warned. Measured 2026-09-20:
+no hook, no workflow and no CODEOWNERS file exists that watches for it; GitHub's `security_and_analysis` on this
+repo is `null` (secret scanning and push protection are OFF, and on a private repo they are a paid feature), and
+`/rulesets` answers 403 "Upgrade to GitHub Pro", so there is no ruleset to hang one on either. The Claude settings
+DO deny `Bash(gh repo delete:*)` -- in both `.claude/settings.local.json` and `~/.claude/settings.json` -- but NO
+rule matches `gh repo edit --visibility`, so the single command that would publish this repo and everything
+inventoried above is ungated. Acting on this entry depends entirely on a human REMEMBERING it at the moment they
+go public. That may be the right trade while the repo is private; it is recorded here so it is a CHOICE and not a
+surprise.
+OPTION, deliberately NOT implemented in this round and needing no rotation and no new infrastructure: one line,
+`Bash(gh repo edit:*)`, added to the deny list beside the existing `gh repo delete` entry, would turn an AGENT
+flipping visibility into a refusal instead of a silent success. It does NOT cover a human doing it in the GitHub
+web UI, which stays unguarded whatever we do here.
+
+REMEDY when the trigger fires, per item: A and C -- rotate the DB roles and re-render from vault, then remove the
+24 and 2 tracked copies in favour of `${DB_PASSWORD:?}`-style required env (a bare `:-` default silently restores
+the leak), and purge history across the pre-rename paths; the rotation touches the DB users and EVERY consumer,
+which is precisely why it was deferred. B -- rotate the FRED key (free, self-service) and read it from env in both
+paths. C additionally deserves rotation on its own merits, trigger or not. D through G -- no action, they are
+placeholders; keep them placeholder-shaped so a future sweep does not re-raise them.
+
+Re-check -- a DRIFT CHECK on the three values enumerated above, NOT a secret scanner and NOT a substitute for one
+(none is installed: `command -v gitleaks trufflehog` returns nothing).
+It ASSERTS: every count is compared against its expectation, a mismatch names the check and both values, and the
+block exits non-zero. It is a subshell, so paste it anywhere and read `$?` -- a failure will not close your shell.
+```bash
+( set -uo pipefail
+  cd "$(git rev-parse --show-toplevel)" || exit 2
+  fail=0
+  chk() { if [ "$2" = "$3" ]; then echo "ok    $1 = $3"
+          else echo "FAIL  $1: expected $2, got $3"; fail=1; fi; }
+  # Values are read from their sources, never typed and never printed.
+  ENVP=OfrCollector/.env; COMPOSE=/opt/ai-inference/compose.yaml
+  PW=$(git show "HEAD:$ENVP" 2>/dev/null | sed -n 's/^DB_PASSWORD=//p')
+  KEY=$(git show "HEAD:$ENVP" 2>/dev/null | sed -n 's/^FRED_API_KEY=//p')
+  # C is checked by VALUE, not by variable name: the two carriers spell it DB_PASSWORD / PGPASSWORD,
+  # so grepping for POSTGRES_PASSWORD returns 0 and reads exactly like "no exposure".
+  PG=$(grep -hoE 'POSTGRES_PASSWORD=[^[:space:]]+' "$COMPOSE" 2>/dev/null | head -1 | cut -d= -f2-)
+  # THE GUARD THAT MATTERS: a renamed or missing source leaves the variable EMPTY, and `grep -F ""`
+  # matches EVERY tracked file -- a 2,959-of-2,964 result that would otherwise read as a clean pass.
+  for n in PW KEY PG; do
+    [ -n "${!n}" ] || { echo "FAIL  extraction: \$$n is EMPTY (source missing or renamed)"; exit 2; }
+  done
+  n_pw=$(git ls-files -z | xargs -0 grep -lIF -- "$PW"  | wc -l)
+  n_key=$(git ls-files -z | xargs -0 grep -lIF -- "$KEY" | wc -l)
+  n_pg=$(git ls-files -z | xargs -0 grep -lIF -- "$PG"  | wc -l)
+  chk A_app_db_password   24 "$n_pw"
+  chk B_fred_api_key       2 "$n_key"
+  chk C_superuser_password 2 "$n_pg"
+  # vault: EVERY blob ever at a vault.yml path must be encrypted. Name both historical paths -- a
+  # '*group_vars/vault.yml' glob matches none of them -- and filter on $2, because --objects also
+  # emits tag and tree names that would otherwise be counted as blobs.
+  V=$(git rev-list --all --objects -- ansible/group_vars/vault.yml deployment/ansible/group_vars/vault.yml \
+      | awk '$2 ~ /vault\.yml$/ {print $1}' | sort -u \
+      | while read -r b; do git cat-file -p "$b" | head -1 | grep -q '^\$ANSIBLE_VAULT;' \
+          && echo ENCRYPTED || echo PLAINTEXT; done)
+  chk vault_blobs     9 "$(printf '%s\n' "$V" | grep -c .          || true)"
+  chk vault_encrypted 9 "$(printf '%s\n' "$V" | grep -c ENCRYPTED  || true)"
+  chk vault_plaintext 0 "$(printf '%s\n' "$V" | grep -c PLAINTEXT  || true)"
+  [ "$fail" -eq 0 ] && echo "ALL COUNTS MATCH (inventory unchanged)" || echo "RE-CHECK FAILED"
+  exit "$fail" )
+```
+A count that RISES means one of those THREE enumerated values reached one more tracked file; a count that FALLS
+without a rotation means a copy moved, not that a secret went away. Either way the block exits non-zero and names
+the count, so drift IS a failure and not a wrong number a reader has to notice.
+WHAT IT CANNOT SEE -- both directions run 2026-09-20: spreading A to one more tracked file fails correctly
+(`FAIL A_app_db_password: expected 24, got 25`), but planting a credential of a kind it does not enumerate -- an
+AWS-shaped key pair, a Stripe-shaped key, a `postgres://user:pass@host/db` URL -- in a NEWLY tracked file leaves it
+at rc 0, `ALL COUNTS MATCH`. It knows three values and no others; it cannot recognise a credential by shape, so any
+secret of a new KIND, or in a location no enumerated value already occupies, is invisible to it. A green run
+therefore means THIS INVENTORY HAS NOT DRIFTED -- it is NOT evidence the repo is clean, and it says nothing about a
+secret added after 2026-09-20. Before the trigger above fires, re-run the pattern sweep described next, or install
+a real scanner; do NOT read green here as clearance to publish.
+The sweep that produced the table was pattern-based over all tracked non-binary files: vendor formats
+(the "CLEAN" list above), `Password=`/`Pwd=` in connection strings, `api_key`/`token`/`secret`/`password` assigned
+to a quoted literal of 8 or more characters, credential-bearing URLs (`scheme://user:pass@`), and high-entropy
+standalone tokens -- hex of 24 or more characters (891 hits) and base64 of 24 or more (21,684 hits), both of which
+were entirely dashboard UIDs, git SHAs and benchmark payloads with no credential among them.
 
 **The alert-continuity acceptance from the sentinel-resolution-signal epic was never re-measured, and
 re-measuring it now says it is NOT met.** Evicted from STATE.md 2026-08-26; the criterion was written
