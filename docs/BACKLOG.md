@@ -2537,6 +2537,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | impact | measured | status | entry |
 |---|---|---|---|
 | A | 2026-09-20 | OPEN | Catch blocks that swallow a REAL fault without marking the span leave it invisible to Tempo (147/673 across 3 services, a FLOOR; excludes 63 cancellation-only, which are NOT defects) |
+| B | 2026-09-20 | OPEN | `verify-pointers.py` has no BODY check and no FLOOR, so a deletion test against it proves the ANCHOR is load-bearing, never the RULE — two reproductions below |
 | B | 2026-09-20 | OPEN | The smoke test cannot see the OTEL stack, so a green run is consistent with loki/tempo/prometheus being down |
 | B | 2026-09-20 | OPEN | The smoke test asserts nothing non-running, never that everything expected is present |
 | B | 2026-09-20 | OPEN | Smoke test's `exited` + `ExitCode 0` exemption has no recency term; its data source carries no timestamp |
@@ -2590,6 +2591,36 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | E | 2026-09-06 | OPEN | colibri cannot produce an admissible scorecard (DO-NOT-BUILD, permanent): seed refused |
 | E | 2026-09-06 | OPEN | Precision ladder on gemma-3-27b: Q6_K LOSES to Q4_K_M, and vLLM has no rung above 4-bit |
 
+
+### verify-pointers.py: a deletion test against it proves the ANCHOR, never the RULE [2026-09-20]
+The gate `scripts/tests/test_verify_pointers.py::test_tracked_corpus_resolves` is a NAME resolver by its
+own docstring, and PR #1084 leaned on it to certify seventeen moved rules. That certification is narrower
+than it reads, in two measured ways. Both reproduced at `5e3c751b` against the full tracked corpus
+(`mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-pointers.py "${F[@]}"`), baseline
+`202 file(s) swept, 78 anchor pointer(s) checked, 0 cannot resolve` at rc 0.
+
+| blind spot | reproduction | measured |
+|---|---|---|
+| no BODY check | delete every line between a kept heading and the next heading, one destination at a time | rc **0**, "0 cannot resolve", 4 of 4: `scripts/README.md` POINTER_SWEEP, `deployment/README.md` SCORED_NOT_CONFIG, `docs/OBSERVABILITY.md` VLLM_METRICS, `LlmBenchmark/MEASUREMENT_SPACE.md` ENGINE_POLICY |
+| no FLOOR | `git rm --cached docs/OBSERVABILITY.md`, re-run | rc **0**, `201 file(s) swept, 76 anchor pointer(s) checked` — a destination leaving the corpus takes its pointers' checks with it, silently |
+
+So "N/N LOAD-BEARING" from a delete-the-destination test is a claim about the ANCHOR only: it proves the
+citing prose would go RED if the construct were RENAMED or REMOVED, and proves nothing about whether the
+rule the pointer promises is still written there. The count is not a detector either — it falls under
+both reproductions while rc stays 0, which is the `judge a sweep by its COUNT or its rc` trap in
+`CLAUDE.md` §TOOL_UPKEEP, now measured on a second tool.
+
+**A third blind spot is already recorded and is the reason this one matters**: bare label navigation.
+`deployment/ansible/group_vars/all.yml:191`, `deployment/artifacts/compose.yaml.j2:254`,
+`LlmBenchmark/scripts/run_model.py:78`, `SentinelCollector/AGENT_README.md` D-29 and
+`SentinelCollector/tests/SentinelCollector.UnitTests/Configuration/ExtractionModelCoordinateTests.cs:390`
+all navigate to `CLAUDE.md TRACK LATEST, ROLL BACK ON FAULT` with NO section sign, from files that are not
+Markdown. Neither sweep parses those, so retiring the label would have been green in both. Caught in review
+on #1084, then re-derived by matching `CLAUDE.md` followed by an upper-case label across every tracked file
+and checking each label still leads a line of `CLAUDE.md` — 40 labels navigated that way, one broken.
+
+Fix shape, not yet built: a body-presence assertion (a construct's section must be non-empty), a floor on
+the checked count, and the label sweep above folded into the same gate so the three run together.
 
 ### new-epic.sh's graduation-shape control: the CANNOT-RUN arm is unpinned, and the recorded mutant table was irreproducible [2026-09-20]
 Three mutations of `graduation_shape_case` / `run_graduation_shape_control` in `scripts/new-epic.sh`

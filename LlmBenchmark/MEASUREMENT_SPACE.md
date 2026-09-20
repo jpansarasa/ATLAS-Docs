@@ -171,6 +171,60 @@ latency, and latency is measurable.
 
 ---
 
+## ENGINE_POLICY
+
+Canonical home for the serving-engine upgrade policy — `CLAUDE.md` §INFERENCE carries the default and the
+one-variable rollback, and points here. **User direction 2026-09-07.** This SUPERSEDES "score before you
+bump", which still made *staying* the default and is how vLLM 0.19.0 became a floor nobody chose. The
+`fp8_e5m2` HARD_STOP in `CLAUDE.md` §VLLM_UPGRADE is scoped to that FLAG, never to upgrading.
+
+**The default is the latest release. Staying needs a reason; upgrading does not** — inverted deliberately.
+
+- **Rollback IS the safety mechanism, and here it is one variable:** revert `vllm_image` in
+  `deployment/ansible/group_vars/all.yml` and redeploy. Bounded, ~4 min, no data at risk. When rollback is
+  that cheap, making each upgrade earn its way in is pure loss.
+- **Staying has a cost that appears on no dashboard:** architectures the engine cannot serve (Gemma 4,
+  whose infeasibility on 0.19.0 is a MISSING CAPABILITY, not a dependency pin), throughput never claimed,
+  and a migration that grows with every version skipped.
+- ✗ never price an engine bump as a tax charged against the model that needs it — it is independently
+  worth doing, and doing it DECOUPLES the engine decision from the model decision.
+- ✗ never let the DEPLOYED engine bound the option space. The axis is what is PERMITTED, not INSTALLED
+  (see "The engine axis is open" above).
+- ✓ llama.cpp is already deployed here and is a legitimate GPU arm to SCORE, not only the CPU rollback
+  path (user direction 2026-09-07).
+- **Score AFTER the bump, as a DETECTOR, never as a gate.** A crash rolls itself back loudly; a silent
+  quality regression does not, and only the harness sees it. The scoring run is BOTH models on
+  production's CoD path — an engine change is a silent quality change until it is scored that way.
+
+### THE DETECTOR IS THE HARNESS, NOT THE DEPLOY GATE
+
+Measured 2026-09-07 — it ALREADY EXISTS, so roll-back-on-fault does not wait on new tooling.
+
+`scripts/run_model.py` drives its OWN `ThreadPoolExecutor` at `--concurrency` default 8 (`:1294`, `:1514`)
+and records `concurrency` AND the server's `max_num_seqs` as coordinate axes. A scored run therefore
+exercises CONCURRENT decode and surfaces the `fp8_e5m2` fault class PRE-DEPLOY, before production serves a
+request — strictly stronger than gate detection, which fires only once the broken engine is already live.
+It is also more aggressive than production's own `ExtractionOptions.MaxConcurrentExtractions` default of 1.
+
+The deploy gate — a `/health` wait plus ONE SEQUENTIAL 1-token completion — cannot see any fault needing
+concurrency >= 2. That makes it a BACKSTOP, worth fixing on its own merits and NEVER a reason to slow an
+upgrade; do not read its blindness as a precondition on the cadence.
+
+**What NEITHER covers**, said rather than assumed: DURATION (a bounded run cannot show a leak or
+fragmentation needing hours), and COMPOSITION (stage 1 and stage 2 are split-tested by design, so a fault
+needing BOTH stages live against one engine is unmeasured).
+
+### The `fp8_e5m2` decision, for the record
+
+DECIDED 2026-09-07 and DEPLOYED that evening (first Gemma 4 request ~22:48Z). The repo is pinned to
+0.28.0 + `fp8_e4m3` (`vllm_image`, `compose.yaml.j2`), and the RUNNING engine carried
+`--kv-cache-dtype fp8_e4m3` when checked 2026-09-13. `fp8_e4m3` is the one-flag fix at NO quality cost
+(measured single-axis, null). The isolation table is in `docs/BACKLOG.md`. Read the rule as "never
+reintroduce e5m2", and re-check the RUNNING engine rather than the repo before claiming anything about it:
+`sudo nerdctl container inspect vllm-server` — a bare `inspect` returns the IMAGE.
+
+---
+
 ## Graduation
 
 This stops being a document the moment a checker refuses a two-scorecard comparison whose

@@ -37,9 +37,10 @@ story matters to the epic.}
 {Numbered list of concrete artefacts. For DB work, name the EF migration
 step and send the agent to `CLAUDE.md` §MIGRATIONS for the command
 VERBATIM — never restate it here. `--project` is forbidden there by name,
-and that block carries the `cd` wrapper, `--output-dir`, the per-service
-dev-service name, the `--context {Svc}DbContext` rule and the
-`dotnet tool restore` precondition. Never hand-author a migration .cs.}
+and that block carries the `cd` wrapper, `--output-dir` and the
+`dotnet tool restore` precondition, and routes the per-service dev-service
+name and the `--context {Svc}DbContext` rule to
+`.claude/hooks/README.md` §EF_MIGRATION_TRAPS. Never hand-author a migration .cs.}
 
 ## Design intent (MANDATORY stanza — supervisor fills VERBATIM, never paraphrases)
 - decisions: {the in-scope D-entries copied VERBATIM from

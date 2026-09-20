@@ -86,9 +86,13 @@ All playbooks live in `ansible/playbooks/` and assume the working dir is `deploy
 
 Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least one task or block. `always` tasks run on every invocation regardless of `--tags`; `never` tasks (currently only the Cloudflare Worker block) require an explicit opt-in. The vLLM block carries only `vllm-server` (NOT `always`) because cycling it on incidental tag runs caused a driver-mismatch outage on 2026-05-14 — see `ansible/TAG_GATING_AUDIT.md`.
 
+### TAG_MECHANICS [canonical home — `CLAUDE.md` §DEPLOYMENT carries the two imperatives and points here]
+
 **Every non-scoped invocation restarts the whole stack, regardless of tag.** `Remove existing compose.yaml to force regeneration` (`:442`, `tags: [always]`, no `when:`) deletes the file and `:448` re-templates it into `register: compose_file`, so `compose_file.changed` is always true and the `:1278` systemd `state:` expression always resolves to `restarted`. That means a `compose down`/`up` of every service, a ~3.5-4 min vLLM model reload, and resurrection of a deliberately-stopped `alert-service`. The two escapes are `--skip-tags always` (for non-service tags) and `-e scoped_restart=true` (for compose services). Verify any tag selection before running it with `--list-tasks`, which resolves tags without executing anything.
 
-`scoped_services` takes **compose service names, not ansible tags.** The scoped shell filters `label=com.docker.compose.service` (`:1361`) and asserts the container is running afterwards (`:1371`), so a tag with no matching compose service fails the play. Known mismatches: `macro-substrate` -> service `migrate-macro-substrate` (a `restart: "no"` one-shot, so it exits and fails the liveness assert — not scopeable); `nasdaq-collector` (commented out in `compose.yaml.j2`, no service at all); and `dashboards`, `patterns`, `monitoring`, `otel`, `alerting`, `instruments`, `models`, `sentinel-prompts`, which are tags only.
+`scoped_services` takes **compose service names, not ansible tags.** The scoped shell filters `label=com.docker.compose.service` (`:1361`) and asserts the container is running afterwards (`:1371`), so a tag with no matching compose service fails the play. Known mismatches: `macro-substrate` -> service `migrate-macro-substrate` (a `restart: "no"` one-shot, so it exits and fails the liveness assert — not scopeable); `nasdaq-collector` (commented out in `compose.yaml.j2`, no service at all); and `dashboards`, `patterns`, `monitoring`, `otel`, `alerting`, `instruments`, `models`, `sentinel-prompts`, which are tags only. Grep those two strings — `label=com.docker.compose.service` and `SCOPED-RESTART FAILED` — rather than the line numbers above; the line numbers drift and the strings do not.
+
+**`--skip-tags build` deploys the CURRENT `:latest`; it does not build.** 18 of the 27 deployable service tags carry ONLY the build task, so on those this form runs zero tag-scoped tasks and deploys whatever image is already there — build first (`{Project}/.devcontainer/build.sh`). The 27 excludes `macro-substrate` and `nasdaq-collector`, which are build-only (a one-shot migrator, and a service commented out of compose). The 9 that also carry non-build tasks: `alert-service`, `llama-cpu-embed`, `llama-cpu-rag`, `llama-server`, `secmaster`, `sentinel-collector`, `threshold-engine`, `trafilatura` (which rebuilds on a changed context even under `--skip-tags build`), `vllm-server`.
 
 ### Application service builds (each pairs with `build`)
 
@@ -129,6 +133,19 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 | `sentinel-prompts` | Sync `SentinelCollector/src/prompts/` → `/opt/ai-inference/prompts/sentinel/` (overwrites host edits) |
 | `cpu-cod-prompts` | Sync `SentinelCollector/src/cod-prompts/` → `/opt/ai-inference/prompts/cod/` (overwrites host edits) |
 
+#### PROMPT_SYNC [canonical home — `CLAUDE.md` §DATA_ML_CONTEXT carries the imperative and points here]
+
+A prompt is edited in the REPO, never on the host mount and never inside the container:
+
+- `SentinelCollector/src/prompts/` → `/opt/ai-inference/prompts/sentinel` → container `/prompts`
+- `SentinelCollector/src/cod-prompts/` → `/opt/ai-inference/prompts/cod` → container `/prompts/cod`
+
+Both sync tasks copy with `force: true`, so a host edit under `/opt/ai-inference/prompts/**` is CLOBBERED
+on the next deploy, and `ansible-gate-guard.sh` denies the write outright. An edit inside the container is
+lost on restart — the host mount is what the container reads. Hot-tune on the host to iterate; tuning worth
+keeping must land in the repo path. Never version a prompt in its FILENAME: git is the history, and an
+unreferenced prompt is DELETED, not parked.
+
 ### Observability + monitoring
 
 | Tag | Scope |
@@ -158,14 +175,18 @@ Every `--tags X` invocation in `deploy.yml` matches a tag declared on at least o
 | `atlas-systemd` / `orphan-cleanup` | Disable + remove the pre-2026-04-17 orphan `ai-inference.service`; drop the legacy `financial_news` bootstrap DB |
 | `edge` / `sentinel-edge` | Cloudflare Worker deploy via the sentinel-edge devcontainer + `wrangler` inside it. Tagged `never` — only runs when explicitly requested. |
 
-### AutoFix: the two halves, and why only one runs
+### AUTOFIX_HALVES [canonical home — `CLAUDE.md` §DEPLOYMENT carries the check-never-assume rule and points here]
 
 AutoFix is two independent timers, and the split matters:
 
 - **`autofix-runner.timer` (60s) — ENABLED.** Polls `/opt/ai-inference/autofix-queue` for alert
   JSON written by alert-service and calls `autofix.sh`, which invokes Claude Code to diagnose and
   **open a PR**. It never runs Ansible and never touches a running service. This half carries the
-  value.
+  value. The "never runs Ansible" is enforced, not conventional: `autofix.sh` passes
+  `deny_spellings ansible … systemctl` to the scoped session, and DENY is the side the harness
+  actually enforces. **It IS running — check, never assume it is idle:** alert-service `Up`,
+  `Channels__AutoFix__Enabled=true`, `autofix-runner.timer` enabled+active, queue non-empty. Each
+  run DEFERS (exit 75) while an interactive `claude` process lives, so it looks idle and is not.
 - **`autofix-watcher.timer` (5 min) — DISABLED (2026-08-07).** Polled GitHub for merged AutoFix
   PRs and auto-deployed them. Disarmed: on a merged PR it ran `git checkout main; git pull` in the
   **shared** `/home/james/ATLAS` working tree with no dirty-tree check, then `ansible-playbook
@@ -215,6 +236,21 @@ one-shot. Its post-deploy smoke test and `:autofix-prev` image rollback were por
 | `ports_external.*` | see below | Host-mapped ports — referenced by compose template + smoke tests |
 | `ports_mcp.*` | see below | MCP server host ports (Claude Code SSE access) |
 | `ports_internal.*` | see below | Container-internal ports (documented for reference) |
+
+### SCORED_NOT_CONFIG [canonical home — `CLAUDE.md` §INFERENCE carries the HARD_STOP and points here]
+
+Changing the served model, its quantization, its KV dtype or `--max-model-len` is a SCORED acceptance
+decision, not a config edit — the bar is `SentinelCollector/AGENT_README.md` §MODEL_ACCEPTANCE. These are
+the sites that LOOK like ordinary config and are not:
+
+- In `ansible/group_vars/all.yml`: `vllm_base_model`, `vllm_image`, `vllm_max_model_len`,
+  `vllm_max_num_seqs`, `vllm_gpu_memory_utilization`, `sentinel_max_concurrent_extractions`, and
+  `sentinel_cod_json_max_completion_tokens` (D-30).
+- The `vllm-server` `command:` in `artifacts/compose.yaml.j2`.
+- `ExtractionOptions.ChatTemplate` **and its `appsettings.json` copy**. The template is CLIENT-side and
+  vLLM applies none on `/v1/completions`, so it is part of the request the score is a property of. The
+  model swap that reset it is D-29, and `16/0.92` was left behind BECAUSE it was unmeasured for the new
+  model.
 
 ### Secrets (`ansible/group_vars/vault.yml`)
 

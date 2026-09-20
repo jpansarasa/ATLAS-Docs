@@ -409,6 +409,8 @@ advertise protection that does not exist.
 
 ## Git Push Guard
 
+### PUSH_MARKER [canonical home — `CLAUDE.md` §GIT_PUSH carries the imperative and points here]
+
 **Purpose**: Prevent pushing code without running tests first.
 
 **Behavior**: Blocks any `git push` command unless a tests-passed marker for
@@ -498,6 +500,22 @@ Also enforces:
   **verdict** — see "PR Review Verdict Gate" below.
 - A push that names **no refspec** is judged from git **config**, not from the
   command — see "A bare push takes its destination from config" below.
+
+### TAG_PUSH_SPELLINGS [canonical home — `CLAUDE.md` §PHASE_TAGS carries the working form and points here]
+
+Pushing an annotated phase tag has exactly one spelling the guard accepts, and three
+that fail for three different reasons:
+
+- ✓ `git push origin <epic-slug>-done` — the bare tag name. `refs/tags/<name>`
+  behaves identically: it resolves, and the gate is then keyed on the TAG's tree.
+- ✗ `git push origin tag <name>` — DENIED. The bare word `tag` is not a resolvable
+  refspec, and an operand the guard cannot resolve refuses rather than guesses.
+- ✗ `git push --tags` — it names no refspec, so the destination is judged from
+  config and the marker lookup falls back to the CURRENT BRANCH's tree, not the
+  tag's. It gates the wrong object.
+- ✗ creating and pushing in ONE bash call — the guard resolves the refspec **before**
+  the chain runs, so the push is denied AND the tag is never created, leaving nothing
+  to retry. Tag, then push, as two separate calls.
 
 ### A bare push takes its destination from config
 
@@ -957,11 +975,15 @@ produces incomplete migrations missing the required `Designer.cs` file. EF Core 
 2. But does NOT apply the schema changes
 3. Runtime errors like "column X does not exist"
 
-**Correct Process** (CLAUDE.md `DATABASE > MIGRATIONS` is the authority):
+**Correct Process** — `CLAUDE.md` §MIGRATIONS carries the command and the HARD_STOP; this block is the
+canonical home for the traps it does not template, and CLAUDE.md points here:
 ```bash
 nerdctl compose exec -T <devcontainer-service> \
   sh -c "cd /workspace/<Svc>/src && dotnet ef migrations add <Name> --output-dir Data/Migrations"
 ```
+
+### EF_MIGRATION_TRAPS
+
 Three things this command does NOT template. The guard's deny message must
 prescribe the same form this block does — that message is what a blocked agent
 acts on next, so a wrong remedy there costs it a second failure:

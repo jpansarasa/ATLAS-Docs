@@ -56,10 +56,8 @@ live 2026-09-20 with `count by (job) (up)`:
 `gemini-resolver`, `ups`, `vllm`.
 - `ups` — apcupsd_exporter at `mercury:9144`. UPS monitoring was dead 2026-06-11 and came back
   2026-07-31; `apcupsd_up` is 1 and `apcupsd_nominal_power_watts` is 1980, checked 2026-09-20.
-- `vllm` — scraped from vLLM's NATIVE `/metrics`, NOT via OTLP. vLLM exports only traces over
-  OTLP, so no `vllm:` series exists under `job="otel-collector"`; query it under `job="vllm"`.
-  A wrong job label returns empty, which reads exactly like a healthy engine (CLAUDE.md
-  VLLM_METRICS).
+- `vllm` — scraped from vLLM's NATIVE `/metrics`, NOT via OTLP. Query rule, and the metric name every
+  published vLLM dashboard uses that does not exist here: §VLLM_METRICS under Metrics below.
 
 ## Service Configuration
 
@@ -94,6 +92,21 @@ OpenTelemetry__ServiceVersion: 1.0.0
 ```
 
 ## Metrics
+
+### VLLM_METRICS
+
+Canonical home, and the ONLY statement of this in the file — `CLAUDE.md` §INFERENCE carries the query
+rule and points here; the `vllm` scrape bullet under Stack points here rather than repeating it.
+
+vLLM is scraped as `job="vllm"` from its **NATIVE** `/metrics` endpoint. It exports only traces over OTLP
+(Tempo, service `vllm-server`), so **no `vllm:` series exists under `job="otel-collector"`** — a query
+scoped that way returns nothing forever, which reads exactly like a healthy engine.
+
+✗ `vllm:gpu_cache_usage_perc` **does not exist on 0.19**, and every published vLLM dashboard and example
+alert rule uses it. A query or rule against it is silent forever: a rule that can never fire looks
+identical to a rule that never needs to. The real name is `vllm:kv_cache_usage_perc`. Verify any `vllm:`
+name against the live endpoint before using it — the metric set is a property of the running engine
+version, not of this document. The rule, dashboard and compose files carry their own edit notes.
 
 ### Naming Convention
 
@@ -291,6 +304,17 @@ Production default is `Warning`. Use levels correctly:
 | Error | Failures, exceptions | "Failed to connect to FRED API" |
 
 **LogDebug vs LogInformation**: LogDebug is only for debug sessions—attach a debugger, temporarily lower log level. LogInformation is for runtime diagnostics—operational visibility in production when needed.
+
+### LOKI_SERVICE_NAME
+
+Canonical home for the label trap — `CLAUDE.md` §OBSERVABILITY carries the imperative and points here.
+
+Loki's `service_name` values have **no derivable pattern**. Measured 2026-08-17 and again 2026-09-07,
+they are mixed: `SecMaster` (no suffix), `sentinel-collector` (no suffix), `finnhub-collector-service`,
+`threshold-engine-service`, `reports-daily-host`. Guessing in either direction fails toward a clean-looking
+result, because a wrong label returns the **same empty result** as a healthy Warning-level service that is
+correctly emitting nothing. Always enumerate `list_loki_label_values` for `service_name` first; never infer
+it from a container name, an ansible tag or a project name.
 
 ### Structured Logging
 

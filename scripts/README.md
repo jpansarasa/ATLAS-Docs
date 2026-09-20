@@ -8,13 +8,81 @@ Repo-root operator scripts. Mix of Claude Code helpers, ad-hoc auditing harnesse
 |---|---|
 | `claude-mark-verified` | Manual "tests passed" marker for the `git-push-guard.sh` hook when changes are not amenable to a `compile.sh` validator (YAML, Markdown, dashboard JSON, shell). Writes a `v2-manual` marker that unblocks the push and logs an audit line. See `CLAUDE_MARK_VERIFIED.md` for full usage. |
 | `CLAUDE_MARK_VERIFIED.md` | Companion doc for `claude-mark-verified` — when to use, when **not** to use, audit-log format, hook behaviour. |
-| `devcontainer-owner.sh` | Per-agent ownership of devcontainer verification runs, sourced by every `.devcontainer/compile.sh` plus sentinel-edge's `typecheck.sh`/`dev.sh`. Each run gets its own compose project `atlas-<sha1(worktree)[0:12]>-<slug>` — the same key `mark-tests-passed.sh` uses — so containers, networks and the nuget volume are all per-owner and N agents verify at once. Previously container names were identical across worktrees (no `container_name:`, relative `/workspace` mounts), so a run could silently test another worktree's source and still write a push marker; this **supersedes** the host-wide flock that fixed that by serializing everything. It also resolves the repository's git **common dir** and hands it across the `sudo` boundary for the compose files to mount at its own host path: a linked worktree's `.git` is a pointer file naming a path under the MAIN checkout, which no `/workspace` mount carries, so without it `git ls-files` exits 128 inside the container and any tracked-tree sweep in a unit suite fails — in worktrees only. Also provides `devcontainer_verify_workspace` (inode proof that `/workspace` is the caller's own tree, gating the marker) and a reaper that removes `atlas-*` state whose worktree no longer exists — which is what covers SIGKILLed runs, since no trap can. |
+| `devcontainer-owner.sh` | Per-agent ownership of devcontainer verification runs, sourced by every **container-starting** `.devcontainer/compile.sh` plus sentinel-edge's `typecheck.sh`/`dev.sh` — a container-less one (FinBertSidecar, pure python) owns nothing and cannot collide, and that exemption is NOT a gap (§DEVCONTAINER_OWNERSHIP). Each run gets its own compose project `atlas-<sha1(worktree)[0:12]>-<slug>` — the same key `mark-tests-passed.sh` uses — so containers, networks and the nuget volume are all per-owner and N agents verify at once. Previously container names were identical across worktrees (no `container_name:`, relative `/workspace` mounts), so a run could silently test another worktree's source and still write a push marker; this **supersedes** the host-wide flock that fixed that by serializing everything. It also resolves the repository's git **common dir** and hands it across the `sudo` boundary for the compose files to mount at its own host path: a linked worktree's `.git` is a pointer file naming a path under the MAIN checkout, which no `/workspace` mount carries, so without it `git ls-files` exits 128 inside the container and any tracked-tree sweep in a unit suite fails — in worktrees only. Also provides `devcontainer_verify_workspace` (inode proof that `/workspace` is the caller's own tree, gating the marker) and a reaper that removes `atlas-*` state whose worktree no longer exists — which is what covers SIGKILLed runs, since no trap can. |
 | `test-devcontainer-owner.sh` | Guard test for the above (~3s, no containers): the project key matches the marker key, a foreign tree at `/workspace` is refused, `mark-tests-passed.sh` refuses a missing/stale/foreign attestation, **the reaper acts only on positively-identified absence and declines when it cannot tell** (including when run from a foreign repo), teardown fires exactly once, every compose-driving script owns *before* touching containers and verifies *before* building, no verification-path compose file pins a host port, and every base compose file sets a project name. No assertion count is quoted here on purpose — several sections scale with the file set, so a fixed number is drift waiting to happen; the suite prints its own totals. Discovery is depth-agnostic (`git ls-files`) and globs `compose*.ya?ml`, backed by a count floor and a declared-exception list, so neither a too-shallow glob nor a filter that matches nothing can pass silently. A script that starts **no** container is exempt on that observable property rather than by filename. Two roster assertions replace the count floors on the real tree — the population the loop WALKED, by name, and the exemptions it TOOK — because a floor with slack absorbs a path-scoped exclusion silently, and no planted fixture can match an excluded real path. The known-bad control drives the real enumerate-and-loop over a **planted tree** carrying one fixture per audit branch (an intact copy per selector arm; ownership stripped; container calls stripped; the compose form both plain and flag-layered; the `/workspace` verify removed, and separately moved AFTER the exec; the ownership call moved after the first container start; the marker path hardcoded) and scores three things: the one-to-one correspondence between enumerated names and emitted lines, each branch's own required line for **presence and for order**, and that every planted fixture is named by a required line or by a named assertion — a fixture scored by nothing, or a branch with no required line, is one a reader can delete for free. What the audit still cannot see is that it reads TEXT: an ownership call present but unreachable, or written early and *called* late, passes (`docs/BACKLOG.md` KNOWN DEFECTS). `--with-containers` chains the simultaneity proof. |
 | `test-devcontainer-simultaneity.sh` | The real-container proof (~2 min): two different services from two worktrees concurrently, then the *same* service from two worktrees concurrently, asserting each run execs into its own `/workspace` and gets its own marker — plus a mutation that points one run at another's container and requires the refusal to fire. Section E then proves the suite's own `ATLAS_MARKER_DIR` redirect cannot widen the real push gate, end-to-end through the hook in both directions: a marker written under the override is honoured by a guard reading that directory and refused by one running with the default environment. It commits a nonce first so the branch's tree cannot be covered by any other marker on the host — otherwise a legitimate marker for this very branch would decide the assertion. Documents in-file what it cannot cover: passing runs sample interleavings, they do not prove the race is gone; the mutation and the disjoint-names argument carry that. |
 | `new-epic.sh` | Resets `STATE.md` for a new epic from `.claude/skills/supervisor-mode/templates/STATE-scaffold.md`. STATE.md is gitignored — no undo, no git history — so the script archives it to `~/atlas-ops/state-archive/` and proves the copy identical with `cmp` *before* overwriting, then strips the scaffold header into a temp file **beside** STATE.md (same directory, so the final step is a real atomic rename; `/tmp` and `/home` are different devices here and a cross-device `mv` truncates the live file first), verifies the result is a complete usable body — including that it is byte-identical to the scaffold text after the sentinel — and only then renames it into place. If that verification fails the live file is never touched; the archive restore is the backstop for a failed *write*, and it refuses loudly if the restore itself fails rather than claiming it succeeded. It also audits the outgoing file for **four of the five bans in the WRITE_GATE** (canonical roster: `.claude/skills/supervisor-mode/templates/STATE-scaffold.md` — not re-enumerated here, since a fresh copy in a non-canonical file is the drift this tooling exists to stop; the one it cannot grep is judgement, not a pattern), plus migrated section headings and a non-blocking bloat note, and **refuses the reset while any matches**, except for lines that are verbatim scaffold boilerplate; `--evicted` overrides, `--check` audits and writes nothing. **The audit cannot judge durability** — that is judgement, routed by `CLAUDE.md` §WHERE_WORK_LANDS — so a clean audit means those patterns did not match, nothing more. Runs a known-bad control on every invocation: the strip verifier is re-proved against **two** deliberately broken scaffolds (sentinel removed; header marker after an intact sentinel), each proved to have been *built* before its verdict is scored. rc 1 = a finding or refusal, rc 2 = usage, environment, or an unsatisfiable precondition. |
 | `verify-citations.py` | Resolves `file:line` citations in tracked Markdown (cards, `CLAUDE.md`, D-entries) and, with `--memory`, in the out-of-tree memory corpus that no `git ls-files` invocation can name. Findings are UNRESOLVED (including ambiguous basenames), REVERSED, OUT-OF-RANGE and BLANK. **Content-blind by design**: it checks that a line exists and is non-blank, never what it says, so a citation that has drifted onto a comment, a brace or an unrelated task reads GREEN, and ranges are blank-checked at the START only. A green sweep is not proof a card is sound. |
-| `verify-pointers.py` | Resolves every `<path>.md` §CONSTRUCT anchor pointer in the files given to it. The house rule is to cite an ANCHOR rather than a `file:line` (`LESSONS.md` GRADUATION_RULE), which had moved every cross-document pointer OUT of any sweep: `verify-citations.py` resolves `file:line` and nothing else. It decides exactly two things -- the named file exists and is UNAMBIGUOUS, and the named construct begins some line of it. **It never reads the construct's content**, so a pointer at a section that still exists and no longer says what the citing prose claims reads GREEN; it is a name resolver, not a drift detector. Only UPPER-CASE construct names are parsed, because an upper-case run has an end a parser can find and a Title-Case English heading does not. Known-bad control on every run (rc 3, no report, if it fails). A slash or plus joins section names and each UPPER-CASE component is checked; a Title-Case heading is out of scope and UNCOUNTED, so its "0 cannot resolve" says nothing about those. Lines inside a fence are not constructs -- a mermaid edge used to satisfy a pointer. **Run it the way CI does**, `python -m pytest scripts/tests -k tracked_corpus`, not by hand. |
+| `verify-pointers.py` | Resolves every `<path>.md` §CONSTRUCT anchor pointer in the files given to it. The house rule is to cite an ANCHOR rather than a `file:line` (`LESSONS.md` GRADUATION_RULE), which had moved every cross-document pointer OUT of any sweep: `verify-citations.py` resolves `file:line` and nothing else. It decides exactly two things -- the named file exists and is UNAMBIGUOUS, and the named construct begins some line of it. Known-bad control on every run (rc 3, no report, if it fails). **Run it the way CI does**, `python -m pytest scripts/tests -k tracked_corpus`, not by hand. What it CANNOT see, and the one case for invoking it directly: §POINTER_SWEEP below -- stated ONCE, there, because two copies in one file drift in one. |
 | `agent-stall-watchdog.sh` | Per-agent stall detector for supervisor sessions. Given a tasks dir (the `.output`-symlink directory under `/tmp/claude-<uid>/…/<uuid>/tasks`), reports each subagent transcript whose mtime is older than N minutes. Annotates `PROMPT?` when the tail contains `"stop_reason":"tool_use"` (agent proposed a tool, harness is paused waiting for approval). Suppresses false positives with `BUSY-COMPILE` when a compile/build process is found for the agent's worktree. Designed to run every supervisor poll cycle; output fits in <10 lines for a healthy session. |
+
+## DEVCONTAINER_OWNERSHIP
+
+Canonical home for the verification-run ownership model — `CLAUDE.md` §VERIFY carries the imperative
+("N agents in N worktrees compile SIMULTANEOUSLY; never sequence them, never wait") and points here.
+
+- **The key.** Every container-starting `.devcontainer/compile.sh`, plus sentinel-edge's `typecheck.sh`
+  and `dev.sh`, sources `devcontainer-owner.sh` and takes the compose project
+  `atlas-<sha1(worktree)[0:12]>-<slug>` — the same key `mark-tests-passed.sh` uses, which is what ties a
+  marker to the tree that earned it. A container-less `compile.sh` (FinBertSidecar, pure python) owns
+  nothing and cannot collide; that exemption is **not** a gap.
+- **The attestation.** `compile.sh` proves `/workspace` is its OWN tree by inode match.
+  `mark-tests-passed.sh` refuses to write a marker without that attestation, and refuses one more than
+  3h old.
+- **Cleanup.** Teardown on `EXIT`, plus a reaper on every start that removes `atlas-*` state whose
+  worktree is gone — SIGKILL cannot be trapped, so the trap alone would leak.
+- **No verification-path compose file publishes a host port** — these are exec-only. Two DECLARED
+  interactive exceptions: sentinel-edge's `compose.ports.yaml` (8787) and WhisperService's
+  `compose.dev.yaml` (8090). `test-devcontainer-owner.sh` asserts the rule and the exception list
+  together, so adding a third port without declaring it turns the suite red.
+- **Why:** before this, container names were identical across worktrees, so a concurrent run could
+  silently test *another* worktree's source and still write a push marker.
+
+**KNOWN, and not a concurrency bug:** two DIFFERENT services in ONE worktree collide on
+`Events/src/*/obj` by UID. The root-user devcontainers (AlphaVantageCollector, CalendarService,
+FinnhubCollector, NasdaqCollector, Reports) versus `vscode`/uid-1000 produce
+`Access to the path '/workspace/Events/.../obj/<guid>.tmp' is denied`. Recovery:
+`sudo rm -rf <worktree>/Events/src/*/{obj,bin}`. Serializing does **not** fix it — it is file ownership,
+not a race.
+
+## TEST_FILTERS
+
+Why a filtered `dotnet test` run can test nothing and still exit 0 — `CLAUDE.md` §VERIFY carries the
+working form and points here. This belongs with the devcontainer verification flow above: the filter runs
+inside the devcontainer, because `dotnet` exists on the host too and a bare `dotnet test` silently becomes
+a host run against host-owned `obj/`.
+
+xUnit exposes `DisplayName` and `FullyQualifiedName` — **never `Name`**. A `--filter 'Name~X'` matches ZERO
+tests and STILL EXITS 0, so a run that tested nothing reads as a pass.
+
+Four test projects set xunit `methodDisplay=method` — enumerate them, never recall them:
+
+```bash
+git grep -l '"methodDisplay": "method"' -- '*xunit.runner.json'
+```
+
+In those four, `DisplayName` is the bare method name, so `DisplayName~<ClassName>` ALSO matches zero tests
+and exits 0. Filter a class with `FullyQualifiedName~<ClassName>`, which is correct in every project.
+
+## POINTER_SWEEP
+
+What `verify-pointers.py` CANNOT see — the single statement of it; the Files row above deliberately does
+not repeat these. `CLAUDE.md` §TOOL_UPKEEP carries the CI-gate identity and the run-it-the-way-CI-does
+rule and points here. **pytest is NOT installed on this host — use a venv.**
+
+- It is a **NAME resolver, never a drift detector.** A pointer aimed at a construct that still exists
+  and no longer says what the citing prose claims reads GREEN. Only UPPER-CASE construct names are
+  parsed, because an upper-case run has an end a parser can find and a Title-Case English heading
+  does not.
+- A Title-Case heading (`§API Endpoints`) is **out of scope and UNCOUNTED**, so a run's
+  "0 cannot resolve" is never a claim about those.
+- Lines inside a fence are not constructs — a mermaid edge used to satisfy a pointer aimed at a heading.
+- **It has no floor and no body check.** Deleting a section's BODY under a kept heading passes at rc 0,
+  and `git rm --cached` on a destination drops the checked count silently at rc 0. A deletion test
+  against it proves the ANCHOR is load-bearing, never the RULE (`docs/BACKLOG.md`).
+- **The one reason to invoke it directly** — a file set the gate's tracked corpus does not cover, such
+  as an untracked or out-of-tree draft. It is never a substitute for the pytest run above:
+  `mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-pointers.py "${F[@]}"`.
 
 ## Subdirectories (each with its own README)
 

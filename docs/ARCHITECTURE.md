@@ -65,6 +65,9 @@ via `deploy.resources.reservations.devices`, image digest-pinned.
 
 ## 3. Inference topology (zero ollama)
 
+INFERENCE_TOPOLOGY [canonical home for what is INSTALLED — `CLAUDE.md` §INFERENCE keeps the rules and
+points here; what is PERMITTED is a different question, answered in `LlmBenchmark/MEASUREMENT_SPACE.md`]
+
 All CPU inference runs **llama.cpp** (`ghcr.io/ggml-org/llama.cpp:server`); the GPU runs
 **vLLM**. No ollama container or engine exists. GGUF blobs are read-only bind-mounts from the
 frozen ollama-format content store — digest-pinned; re-provisioning the store without updating
@@ -82,6 +85,11 @@ whisper (CPU faster-whisper) and finbert are separate model sidecars. SecMaster'
 config keys are a naming seam only — the engine behind them is llama.cpp.
 
 ## 4. Data flow
+
+DATA_FLOW [canonical home — `CLAUDE.md` §DATA_FLOW keeps the three compressed arrows and points here]
+
+Every arrow below is **DATA** direction, never CALL direction. On the collector->ThresholdEngine arrow the
+collector SERVES the stream and ThresholdEngine is the client, so reading it as a call graph inverts it.
 
 ### 4a. Live threshold path (event-driven)
 

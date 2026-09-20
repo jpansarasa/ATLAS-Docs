@@ -72,9 +72,10 @@ TRAJECTORY
    DOES NOT CATCH header before trusting a green run. Schema change -> run the command exactly as
    `CLAUDE.md` §MIGRATIONS writes it, never from memory: `--project` is forbidden there BY NAME
    (`--project src/Data` resolves to `{Svc}/src/src/Data`, dies MSB1009 and leaves a stray
-   `src/src/obj`), and that block also carries the `cd` wrapper, `--output-dir`, the per-service
-   dev-service name, when `--context {Svc}DbContext` is REQUIRED and the `dotnet tool restore`
-   precondition — four things no restatement here has ever had.
+   `src/src/obj`), and that block also carries the `cd` wrapper, `--output-dir` and the
+   `dotnet tool restore` precondition, and routes the per-service dev-service name and when
+   `--context {Svc}DbContext` is REQUIRED to `.claude/hooks/README.md` §EF_MIGRATION_TRAPS —
+   four things no restatement here has ever had.
 8. Report: commit hash per layer/finding, each finding {addressed | rejected with evidence |
    deferred}, the before/after number, mutation results, compile counts.
 
