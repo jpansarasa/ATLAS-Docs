@@ -21,21 +21,80 @@ Applies `VERIFY_TEST.COMPLETION_GATE` and `PROBLEM_SOLVING.EVIDENCE_GATE` from `
 
 `ansible-playbook playbooks/smoke-test.yml` — run from `deployment/ansible/`. Read-only
 reachability validation, NOT a deployment: container status, internal service `/api/health`
-endpoints via the grafana container, MCP `/health`, a Loki error query, GPU + vllm-server.
-Sub-tags: `health`, `containers`, `internal`, `mcp`, `logs`, `loki`, `docker`, `gpu`, `database`.
+endpoints via the grafana container, MCP `/health`, GPU + vllm-server, TimescaleDB.
+Sub-tags: `health`, `containers`, `internal`, `mcp`, `gpu`, `database`.
 
 Run it AFTER the deploy completes, before declaring done. It proves REACHABILITY — containers
 up, endpoints answering. It is not a health verdict: step 4 is. Reachability and health are
 different questions, and a service can answer `/health` 200 while its work path throws.
 
-✗ do NOT read this playbook's `loki` sub-task as "no errors". Its selector is
-`{job=~"atlas/.*"}` and `job` is not a Loki label here — the only indexed label is
-`service_name`. Measured 2026-09-20 over an 8h window: that selector matches 0 streams /
-0 bytes, while `{service_name=~".+"}` matches 3 streams / 1469 entries / 467968 bytes.
-So the task reports "0 errors" unconditionally and always has. It fails toward SUCCESS.
-Backlog entry, with the two further defects a selector-only fix would miss: docs/BACKLOG.md
-§MEASUREMENT DEBT "`smoke-test.yml`'s Loki selector matches no stream, so its error check
-reports 0 unconditionally".
+IT HAS NO LOG CHECK, DELIBERATELY. One existed until 2026-09-20 and reported `Logs (5m): PASS`
+on every deploy of its life: its selector was `{job=~"atlas/.*"}` and `job` is not a label on
+this Loki. It was removed rather than repaired, because fixing the selector would still leave a
+log query deciding a verdict, and an empty result is the healthy steady state. Do not add one
+back. `logs`, `loki` and `docker` are no longer sub-tags.
+
+THE VERDICT IS PER-DOMAIN, NOT ONE GATE [selection model, decided 2026-09-20 — the playbook's
+own comment block is the authority; this is the summary]. Each `Verdict - <domain>` task carries
+EXACTLY the tags of the checks that feed it and reads no fact from another domain, so a check
+and its verdict are selected or deselected together. A domain you deselect makes no claim and
+prints `NOT CHECKED`; a domain that RAN cannot escape being judged.
+
+That replaced four successive attempts to put ONE central gate on a better tag list — `always`
+(dropped by `--skip-tags always`), `health` (not selected by `--tags containers,database,gpu`),
+then the six-tag union (dropped by `--skip-tags internal,mcp`). Each was measured rc 0 with a
+real failure present. Ansible has no task that cannot be deselected, so no tag list closes this;
+the enumeration had to be removed, not extended. **Do not "fix" a future hole here by adding a
+tag.**
+
+One `always` task refuses the degenerate case *within its reach*: an invocation selecting no
+domain by `--tags` (`--tags logs`, naming a tag the playbook no longer has) exits 2 rather than
+reporting a meaningless 0.
+
+ITS REACH IS BOUNDED, AND THE BOUND CANNOT BE CLOSED IN THE PLAYBOOK. Any selection whose
+RESOLVED TASK SET IS EMPTY runs zero tasks and exits 0 with an EMPTY PLAY RECAP. Hold the
+CLASS, never a list: Ansible's tag algebra is closed under intersection and complement, so the
+argv forms producing an empty set are unbounded — `--skip-tags tagged` and
+`--tags logs --skip-tags always` are both members and share no property. Ansible has no
+undeselectable task, so no task added here covers it, adding one restarts the enumeration the
+per-domain model deleted, and a wrapper blacklisting spellings is that same mistake one level
+up. **Read the PLAY RECAP, not just the rc: a run that executed zero tasks examined nothing.**
+Tracked: docs/BACKLOG.md §MEASUREMENT DEBT.
+
+`--skip-tags always` ALONE is NOT one of those spellings, and that matters because it is this
+repo's documented non-service idiom. On this playbook it skips only the summary and the
+degenerate-case task; all 16 checks still run and a failure still exits 2 (measured).
+
+Measured after the change — every sub-tag now works, singly and combined:
+```
+health, containers, internal, mcp, gpu, database   -> 0 on a healthy stack
+logs (matches no task)                             -> 2, refuses a run with no verdict
+```
+The five that used to exit 2 on an undefined fact in the summary were fixed by the same change:
+the summary now guards each row with `is defined` and decides nothing. An earlier revision of
+this section said only `health` ran, and before that said all five died on `db_check` — the
+second was wrong in four rows, from generalising one measurement. Re-derive per tag.
+
+WHAT ITS CONTAINER CHECK CAN AND CANNOT SEE. It lists `nerdctl compose ps -a` from
+`deployment_base`, so it covers every service in the ATLAS compose project and fails on any that
+is not running. `migrate-macro-substrate` is exempt ONLY when `State == "exited"` AND
+`ExitCode == 0` — a clean COMPLETED run. Both halves matter: `ExitCode: 0` is the DEFAULT on a
+container that never ran, so `created`, `dead`, `paused` and `restarting` all carry it and all
+passed while the check read ExitCode alone (measured). `restart: no` means a failed or
+never-started migration never retries and no other task here would catch it. The `-a` is
+load-bearing: the default is "just running", so before
+2026-09-20 the unhealthy set was structurally always empty and `Containers: PASS` was as
+unconditional as the log line. It does NOT cover the OTEL stack — `loki`, `grafana`,
+`prometheus`, `tempo` and `otel-collector` are a SEPARATE compose project
+(`/opt/otel/compose.otel.yaml`, `otel.service`) and cannot appear in that list however the task
+is written, even though `infrastructure_services` names all five. GRAFANA IS THE EXCEPTION, and
+by accident rather than design: all ten internal `/health` checks shell out through
+`nerdctl exec grafana curl`, so grafana being down makes every one of them return non-zero and
+the run fails. That is coupling, not coverage — it disappears the moment those checks move to
+another container with curl, and it says nothing about `loki`, `tempo`, `prometheus` or
+`otel-collector`, which are genuinely invisible here. A green smoke test IS consistent with
+those four being down, and they are how you reach Tempo and Prometheus for step 4.
+Tracked: docs/BACKLOG.md §MEASUREMENT DEBT "The smoke test cannot see the OTEL stack".
 
 ## HEALTH_VERIFICATION [step 4 — the gate that decides deployed-or-rolled-back]
 
@@ -206,7 +265,11 @@ reverts the commit; silently reverting main hides that the merge happened.
 ✗ re-enable `autofix-watcher.timer` to get auto-deploy back # ansible enforces disabled; the trigger is the failure mode, not the mechanism
 ✗ report "no errors in Loki" as health # prod logs default to Warning, so a healthy container emits NOTHING and an empty result is byte-identical to health. Tempo span status is the instrument
 ✗ report a service that ships no logs as a defect # same rule, other direction
-✗ treat the smoke test's `loki` sub-task as an error check # its `{job=~"atlas/.*"}` selector matches 0 streams, measured; it reports 0 errors unconditionally
+✗ add a log check back to `smoke-test.yml` # the one that was there reported PASS unconditionally for its whole life, and a repaired selector would still be a log query deciding a verdict. Health is Tempo + Prometheus
+✗ read its green `Containers` line as covering loki/grafana/prometheus/tempo/otel-collector # separate compose project, invisible to that task however it is written
+✗ exempt a one-shot container by NAME, or by ExitCode alone # `ExitCode: 0` is the default on a container that never ran, so created/dead/paused/restarting all carry it; require State == exited AND ExitCode == 0 or an unmigrated database reports PASS
+✗ close a smoke-test gate hole by adding a TAG to a verdict task # four rounds did exactly that and each tag list was droppable by a different invocation; the verdict is per-domain now, tagged with its own checks
+✗ read its `Containers: PASS` as proof a migration ran # the exemption has no recency term and `compose ps` carries no timestamp, so an exit-0 from four days ago is indistinguishable from one just now
 ✗ guess a `resource.service.name` or a `service_name` # mixed conventions, and a wrong value returns the same empty result as a healthy service. Enumerate first
 ✗ read zero error spans from an idle service as health # no traffic = no spans = a null sample
 ✗ read a green Tempo window as "nothing failed" # 147 of 673 catch blocks across three services swallow a REAL fault without marking the span, so it never reaches Tempo. Pair it with the counters

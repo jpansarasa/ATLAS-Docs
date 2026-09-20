@@ -2515,7 +2515,11 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | impact | measured | status | entry |
 |---|---|---|---|
 | A | 2026-09-20 | OPEN | Catch blocks that swallow a REAL fault without marking the span leave it invisible to Tempo (147/673 across 3 services, a FLOOR; excludes 63 cancellation-only, which are NOT defects) |
-| A | 2026-09-20 | OPEN | `smoke-test.yml`'s Loki selector matches no stream, so its error check reports 0 unconditionally |
+| B | 2026-09-20 | OPEN | The smoke test cannot see the OTEL stack, so a green run is consistent with loki/tempo/prometheus being down |
+| B | 2026-09-20 | OPEN | The smoke test asserts nothing non-running, never that everything expected is present |
+| B | 2026-09-20 | OPEN | Smoke test's `exited` + `ExitCode 0` exemption has no recency term; its data source carries no timestamp |
+| C | 2026-09-20 | OPEN | A smoke-test run executing ZERO tasks exits 0; the class is unbounded in spelling, not closeable inside the playbook |
+| B | 2026-09-20 | OPEN | Three smoke-test rows still say PASS on reachability alone: database, vllm-server, container Health |
 | A | 2026-09-06 | OPEN | Three watermark-only ReExtract legs re-assert the row's tier; nothing pins that they do |
 | B | 2026-09-20 | OPEN | The <=5 ms share is the only detector for an unapplied `hnsw.ef_search`, and nothing watches it |
 | B | 2026-09-17 | OPEN | SecMaster D-16 self-seed and discovery refusals are counted but unalerted; their rate is unmeasured |
@@ -2701,26 +2705,147 @@ NOT FIXED HERE: found while rewriting the `deploy` skill's health story (a docs 
 this as blind spot 4 and tells readers a green Tempo window means "nothing painted a span red", not
 "nothing failed" -- which removes the wrong action but leaves the instrument incomplete.
 
-### `smoke-test.yml`'s Loki selector matches no stream, so its error check reports 0 unconditionally [2026-09-20]
-The "Query Loki for recent errors" task in `deployment/ansible/playbooks/smoke-test.yml` selects
-`{job=~"atlas/.*"}`. `job` is not a label on this Loki — `list_loki_label_names` returns exactly one
-name, `service_name`. So the selector matches nothing and the task's `error_count` is 0 no matter what
-production is doing. It has never been able to fail.
-MEASURED 2026-09-20, `query_loki_stats` over 2026-09-20T05:32:44Z..13:32:44Z (8h):
-  `{job=~"atlas/.*"}`  -> streams 0, chunks 0, entries 0, bytes 0
-  `{service_name=~".+"}` -> streams 3, chunks 9, entries 1469, bytes 467968
-RE-CHECK: run those two `query_loki_stats` calls; the defect is closed when the first returns a nonzero
-stream count for a window in which the second does.
-Two further defects in the same task, so a fix that only swaps the selector is incomplete:
-  1. the line filter is `|= "Error"` plus `| json | level="Error"` — a message substring AND a `level`
-     field. Ground truth is `severity_text` (CLAUDE.md OBSERVABILITY); `|= "Error"` also matches a
-     Warning whose text says "error", and `| json` cannot parse SecMaster's compact `[ERR]` text format.
-  2. the `nerdctl logs` fallback greps `'"level":"Error"'`, which has the same compact-text blind spot,
-     and it only runs when the Loki task FAILED — a task that succeeds while matching nothing never
-     reaches it.
-NOT FIXED HERE: this is a deploy artifact and the PR that found it was a docs change. The `deploy` skill
-now tells readers not to read this sub-task as an error check (`.claude/skills/deploy/SKILL.md`
-§POST_DEPLOY_SMOKE), which removes the wrong action but leaves the instrument blunt.
+### The smoke test cannot see the OTEL stack, so a green run is consistent with loki/tempo/prometheus being down [2026-09-20]
+`deployment/ansible/playbooks/smoke-test.yml` lists containers with `nerdctl compose ps -a` from
+`deployment_base` (`/opt/ai-inference`). Its `infrastructure_services` var names seven services, but
+only `timescaledb` and `alertmanager` are in that compose project. `prometheus`, `grafana`, `loki`,
+`tempo` and `otel-collector` are a SEPARATE project — `/opt/otel/compose.otel.yaml`, run by
+`otel.service` — and cannot appear in that task's output however the selector is written. So the five
+that step 4's health method actually depends on are the five the smoke test cannot check.
+MEASURED 2026-09-20:
+  `nerdctl compose -f /opt/ai-inference/compose.yaml config --services` -> 31 services, of the seven
+    named only `timescaledb` and `alertmanager` appear.
+  `nerdctl compose -f /opt/otel/compose.otel.yaml config --services` -> 8 services, containing the
+    other five plus node-exporter, gpu-exporter, ups-exporter (which nothing checks at all).
+ONE OF THE FIVE IS COVERED BY ACCIDENT, and the accident is worth naming because it dies silently:
+`grafana` down WOULD be caught, since the "Check internal service health" task shells out through
+`nerdctl exec grafana curl` and every one of its ten checks would return non-zero. That is coupling, not
+coverage — it disappears the moment someone moves those checks to another container with curl, and it
+says nothing about loki, tempo, prometheus or otel-collector.
+RE-CHECK: `nerdctl compose -f /opt/otel/compose.otel.yaml ps -a --format json` returns containers that
+appear in no smoke-test task. The defect is closed when a failing container in that project turns the
+playbook's exit status non-zero; prove it the way the ATLAS-project gate was proved, by running the
+playbook with an extra-vars file that empties the expected-exited exclusion.
+FIX SHAPE, not done here: a second `command` task against that compose file, merged into `containers`
+before `unhealthy_containers` is computed. Left out of the PR that found it because that PR was closing a
+cannot-fail gate, and adding an unexercised new task to a gate is how the first one got in.
+
+### The smoke test asserts nothing non-running, never that everything expected is present [2026-09-20]
+`deployment/ansible/playbooks/smoke-test.yml`'s container check computes `unhealthy_containers`
+by filtering the `compose ps -a` output for `State != running`. That asks "is anything listed
+broken?" and never "is everything that should exist here?", so a container that was never
+CREATED -- a service dropped from the rendered compose.yaml, a `compose up` that partially
+failed -- is invisible rather than failing.
+MEASURED 2026-09-20: an extra-vars file setting `containers: []` (ansible `-e` outranks the
+`set_fact` that normally populates it, so this exercises the real downstream tasks) runs the
+playbook to `Containers: PASS`, `Overall: PASS`, rc 0 -- with no containers at all.
+The `-a` fix landed 2026-09-20 closed the adjacent hole (a container that EXISTS and is not
+running); this one is the complement and is older than that fix.
+EXPOSURE, measured 2026-09-20: **13 of the 31 compose services have NO check in this playbook
+other than that container listing**, so for those 13 a never-created container is invisible
+full stop. The other 18 would still be caught by an HTTP or DB probe (10 `internal_services`,
+6 `mcp_health_endpoints`, plus vllm-server's own `/health` and timescaledb's `SELECT 1`).
+The 13: alertmanager, dsl-parser-mcp, finbert-sidecar, llama-cpu-embed, llama-cpu-rag,
+llama-server, markitdown-mcp, migrate-macro-substrate, reports-daily, reports-monthly,
+reports-weekly, spacy-ner, trafilatura.
+Re-derive the set rather than trusting this list: diff `nerdctl compose config --services`
+against the playbook's `internal_services` + `mcp_health_endpoints` + {vllm-server, timescaledb}.
+RE-CHECK: `ansible-playbook playbooks/smoke-test.yml -e @<file setting containers to []> --tags
+health` returns 0. Closed when it returns non-zero, or when a task compares the observed service
+set against `nerdctl compose config --services` (31 as of this date) and fails on a shortfall.
+
+### `exited` + `ExitCode 0` cannot tell a container that ran THIS deploy from a four-day-old corpse [2026-09-20]
+`deployment/ansible/playbooks/smoke-test.yml` exempts a one-shot container when
+`State == "exited"` and `ExitCode == 0`. Both are true of a container that completed once, days
+ago, and has not run since -- the exemption has no RECENCY term, and cannot get one from its
+current data source.
+MEASURED 2026-09-20: `nerdctl compose ps -a --format json` carries NO timestamp. Its key set is
+exactly Command, ExitCode, Health, ID, Image, Name, Project, Publishers, Service, State.
+LIVE STATE the same day: `migrate-macro-substrate` finished at 2026-09-16T11:00:33Z (ExitCode 0)
+while `llama-cpu-embed`, `llama-cpu-rag` and `secmaster` were created 2026-09-20T14:30Z -- four
+days apart, and the bare run reports PASS. A scoped deploy never touches the migrator at all, so
+this is the ORDINARY case, not an edge one. Its TOTAL ABSENCE from the listing also passes, by
+the complement hole recorded in the empty-container-list entry above.
+CONSEQUENCE, stated plainly because the code comment used to overclaim it: the `State` +
+`ExitCode` tightening stops a migrator that FAILED or NEVER STARTED in this listing from being
+waved through. It does NOT establish that a migration ran, and it composes with the `SELECT 1`
+database check (which cannot see an unmigrated schema, entry above) so that "PASS over an
+unmigrated database" remains OPEN end to end. Neither entry closes it alone.
+DATA-SOURCE SHIFT THAT WOULD CLOSE IT: `nerdctl container inspect <name>` carries `Created`,
+`State.StartedAt` and `State.FinishedAt` (verified 2026-09-20 on the migrator: Created
+2026-09-16T11:00:31Z, FinishedAt 2026-09-16T11:00:33Z, StartedAt null). A recency term needs
+that call per exempt container, plus a decision about what "this deploy" means -- there is no
+deploy timestamp in the playbook today.
+RESIDUE in the same exemption, measured and deliberately left:
+  - `selectattr('ExitCode', 'equalto', 0)` also exempts BOOLEAN `false` and FLOAT `0.0`, because
+    Jinja compares by value. Neither occurs in real nerdctl output; both would pass if injected.
+  - the State-ABSENT case fails at `Identify unhealthy containers` with "'dict object' has no
+    attribute 'State'", NOT at the `selectattr('State', 'defined')` probe in `Identify exempt
+    containers` that the comment credits. It fails CLOSED either way (rc 2), but by a different
+    task than the one documented.
+RE-CHECK: `sudo nerdctl compose ps -a --format json | python3 -c "import sys,json;
+print(sorted(json.loads(sys.stdin.read())[0].keys()))"` -- closed when a timestamp appears there
+and the exemption reads it, or when the playbook inspects each exempt container instead.
+
+### A smoke-test run that executes ZERO tasks exits 0; the class is unbounded in spelling and not closeable inside the playbook [2026-09-20]
+`deployment/ansible/playbooks/smoke-test.yml` couples each domain's verdict to its own checks,
+so any selection that runs at least one task is judged. A selection that runs NO task is not,
+and exits 0 -- the rc then means "nothing was looked at", not "nothing is wrong".
+THE DEFECT IS THE CLASS, NOT ANY SPELLING: **any combination of `--tags` and `--skip-tags`
+whose resolved task set is EMPTY**, recognisable by an empty PLAY RECAP and rc 0. Ansible's
+tag algebra is closed under intersection and complement, so the spellings that produce an
+empty set are unbounded and cannot be listed. Examples measured 2026-09-20 with a real
+container failure injected, ILLUSTRATIVE AND NOT AN ENUMERATION -- do not treat this list as
+the defect's extent, and do not extend it: `--skip-tags tagged`, `--skip-tags always,health`,
+`--tags always --skip-tags always`, `--tags logs --skip-tags always`. An earlier revision of
+this entry claimed the exposed spellings "all pair `always` with a second skip, or skip the
+`tagged` meta-tag"; the last example falsifies that -- it is a `--tags` form with neither
+property -- which is exactly why the CLASS, not its members, is what this entry records.
+NOT A REGRESSION AND NOT THE DOCUMENTED IDIOM. `--skip-tags always` ALONE -- the form CLAUDE.md
+§DEPLOYMENT prescribes for a non-service tag -- resolves to a NON-empty set: it runs 18 tasks
+(`ok=16`) and exits 2 on the same injection, `Verdict - containers` firing. The mechanism
+predates this playbook's current shape: Ansible has no task that cannot be deselected.
+✗ DO NOT close this by adding a task or a tag to the playbook # that is the enumeration the
+  per-domain selection model deleted after four rounds, each of which added one more member.
+✗ DO NOT close it with a blacklist of spellings either # same defect one level up: a wrapper
+  refusing four literals leaves the rest of an unbounded family exiting 0, while reading as
+  closed. The property to assert is EMPTINESS OF THE RESOLVED TASK SET, which is observable
+  only AFTER resolution -- never from the argv.
+FIX SHAPE, if it is judged worth it: assert on the RECAP, not on the invocation. A wrapper that
+runs the playbook and fails when the PLAY RECAP reports zero tasks (equivalently, parse
+`--list-tasks` under the same selection and refuse an empty result) catches every member of the
+class including ones nobody has spelled yet. It lives OUTSIDE the playbook, which is the only
+place the property is expressible.
+RE-CHECK, and note it tests the CLASS via one arbitrary member: `ansible-playbook
+playbooks/smoke-test.yml --tags logs --skip-tags always; echo $?` -> 0 with an empty recap.
+Closed when a run whose resolved task set is empty cannot report success.
+
+### Three smoke-test rows still say PASS on reachability alone: database, vllm-server, container Health [2026-09-20]
+Asked deliberately after three review rounds on `deployment/ansible/playbooks/smoke-test.yml` each
+found the same class one level down (an exemption with no evidence of a clean run, a gate
+skippable by tag selection, a doc claim that did not hold). These are NAMED, not fixed.
+1. `Database: PASS` is `psql -c "SELECT 1"`. That proves the server accepts a connection to
+   `atlas_data`; it reads no table and no `__EFMigrationsHistory` row, so an UNMIGRATED or
+   half-migrated schema reports PASS. This is the direct blast radius of the one-shot migrator
+   whose exemption was tightened twice in this same PR -- the container check now catches the
+   migrator failing, and the database check still cannot see the consequence.
+   Re-check: the task runs `SELECT 1` and nothing else; closed when it asserts something only a
+   migrated schema can answer.
+2. `vllm-server: PASS` is a `GET /health` returning 200. It is reachability, not inference: no
+   completion is requested. CLAUDE.md §VLLM_UPGRADE already records that the fp8_e5m2 fault
+   class needs concurrency >= 2 and that a /health probe plus one sequential 1-token completion
+   cannot see it -- this playbook does not even do the completion.
+   Re-check: the task is a bare `uri` GET; closed when it exercises a real completion.
+3. The container check reads `State` and `ExitCode` and never `Health`, so a container that is
+   `running` but wedged reads as PASS. MEASURED 2026-09-20: `Health` is the empty string on
+   **31 of 31** containers, because nerdctl 1.7.7 discards healthchecks entirely
+   (project_nerdctl_ignores_depends_on). So there is no signal to read TODAY -- but the field is
+   in the output, it looks authoritative, and a future runtime that populates it would be
+   silently ignored.
+   Re-check: `nerdctl compose ps -a --format json | ...` count distinct `Health` values; if any
+   is non-empty the playbook should be reading it.
+None of the three is a regression; all three predate this PR. They are recorded because "PASS
+on reachability" is exactly the shape of defect this playbook has now yielded three times.
 
 ### The <=5 ms share is the only detector for an unapplied `hnsw.ef_search`, and nothing watches it [2026-09-20]
 At `SemanticSearchOptions.HnswEfSearch=200` the share of vector searches at or under 5 ms on

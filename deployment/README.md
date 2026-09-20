@@ -63,7 +63,7 @@ The OTEL stack (`compose.otel.yaml`) and the ATLAS application stack (`compose.y
 - **Tag-based selective deployment** — rebuild a single service (or a focused subsystem like `autofix`, `quality-check`, `merged-pr-watcher`) without restarting the rest.
 - **ZFS snapshots** — automatic pre-deployment snapshot on `nvme-fast/timeseries` and `nvme-fast/dashboard`; manual playbooks for rollback and retention.
 - **Vault-encrypted secrets** — all credentials live in `ansible/group_vars/vault.yml`; vault password file is `/home/james/.ansible_vault_pass` (set in `ansible.cfg`).
-- **Smoke tests** — `smoke-test.yml` exercises container status, HTTP `/health` (internal services + MCP servers), TimescaleDB connectivity, GPU + vLLM, and recent Loki errors.
+- **Smoke tests** — `smoke-test.yml` exercises container status, HTTP `/health` (internal services + MCP servers), TimescaleDB connectivity, and GPU + vLLM. It queries no logs: health is Tempo span status + Prometheus counters, never log silence.
 - **AutoFix + merged-PR + quality-check + buildkit-prune** — four independent systemd timer subsystems orchestrating alert-driven Claude Code runs, weekly Sentinel quality sampling, and BuildKit cache trimming. The two auto-deploy-on-merge timers (`autofix-watcher`, `merged-pr-watcher`) are installed but **disabled** — deploys are human-triggered.
 - **sandbox-manager (host systemd)** — non-containerised because containerd-runtime-in-container fails snapshot-mount prep; runs as `atlas` user with a single-binary sudoers rule for `nerdctl`.
 
@@ -75,7 +75,7 @@ All playbooks live in `ansible/playbooks/` and assume the working dir is `deploy
 |----------|-------------|
 | `deploy.yml` | Main deployment: ZFS snapshot, atlas/containerd user+group, OTEL stack, compose template render, all service builds + image pulls, ThresholdEngine + SecMaster + Sentinel + CoD config sync, databases (`atlas_data`, `calendar_data`, `atlas_secmaster`), vllm-server (compose service, opt-in tag), llama-server + llama-cpu-rag + llama-cpu-embed, systemd units (atlas, autofix-runner, autofix-watcher, merged-pr-watcher, buildkit-prune, atlas-sentinel-quality-check, container-targets, sandbox-manager), and final container-status report. |
 | `site.yml` | Thin wrapper: `import_playbook: deploy.yml`. |
-| `smoke-test.yml` | Health validation. Sub-tags: `health`, `containers`, `internal`, `mcp`, `logs`, `loki`, `docker`, `gpu`, `database`. |
+| `smoke-test.yml` | Reachability validation. Sub-tags: `health`, `containers`, `internal`, `mcp`, `gpu`, `database` — each selects its checks and its own verdict together. |
 | `zfs-snapshot.yml` | Create a tagged ZFS snapshot manually (`-e snapshot_tag=NAME`). |
 | `zfs-rollback.yml` | Stop atlas, rollback datasets to a snapshot, restart atlas. Interactive — prompts for `yes` confirmation. Required: `-e snapshot_tag=NAME`. |
 | `zfs-cleanup.yml` | Remove snapshots. `cleanup_mode=manual` (default, requires `snapshot_tag`) or `cleanup_mode=auto -e keep_snapshots=N`. |
@@ -346,13 +346,19 @@ ansible-playbook playbooks/deploy.yml -e create_snapshot=false     # skip ZFS pr
 ### Smoke Tests
 
 ```bash
-ansible-playbook playbooks/smoke-test.yml                      # full: containers + internal HTTP + MCP + DB + GPU/vLLM + Loki errors
-ansible-playbook playbooks/smoke-test.yml --tags health        # health checks only (skip log analysis)
-ansible-playbook playbooks/smoke-test.yml -e check_logs=false  # skip Loki/container log scan
-ansible-playbook playbooks/smoke-test.yml --tags gpu           # GPU + vllm-server health only
+ansible-playbook playbooks/smoke-test.yml                      # full: containers + internal HTTP + MCP + DB + GPU/vLLM
+ansible-playbook playbooks/smoke-test.yml --tags health        # all reachability checks
 ```
 
-The playbook checks: `nerdctl compose ps` for unhealthy containers, `/api/health` or `/health` (per-service mapping in the playbook vars), all MCP `/health` endpoints, `nvidia-smi` + `vllm-server` `/health`, TimescaleDB `SELECT 1`, and the last `log_lookback_minutes` (default 5) of Loki errors via the grafana container. Falls back to `nerdctl logs` if Loki is unavailable.
+The verdict is **per-domain**: each `Verdict - <domain>` task carries exactly the tags of the checks that feed it, so selecting a domain selects its verdict and deselecting one prints `NOT CHECKED` rather than `PASS`. There is no single gate to drop — four earlier attempts to tag one centrally were each droppable by a different invocation.
+
+That coupling holds for **every selection that runs at least one task**, including `--skip-tags always` (this repo's documented non-service idiom), which skips only the summary and still runs all 16 checks and still fails. It does **not** extend to any selection whose *resolved task set is empty* — that class, not any list of spellings, is the exposure. Ansible's tag algebra is closed under intersection and complement, so the argv forms producing an empty set are unbounded (`--skip-tags tagged` and `--tags logs --skip-tags always` are both members and share no property); each runs zero tasks and exits 0 with an empty `PLAY RECAP`. Ansible has no undeselectable task, so this cannot be closed inside the playbook, and adding a task to try would restart the enumeration the per-domain model removed. **A run whose `PLAY RECAP` is empty is not a smoke test, whatever its exit code — read the recap, not just the rc.**
+
+The playbook checks: `nerdctl compose ps -a` for containers that are not running, `/api/health` or `/health` (per-service mapping in the playbook vars), all MCP `/health` endpoints, `nvidia-smi` + `vllm-server` `/health`, and TimescaleDB `SELECT 1`. `migrate-macro-substrate` is exempt from the container check **only when `State` is `exited` and `ExitCode` is 0** — a clean completed run, since `ExitCode: 0` is the default on a container that never ran. That stops a migrator which failed or never started from being waved through; it does **not** prove a migration ran, because `compose ps` carries no timestamp and the check has no recency term. See docs/BACKLOG.md §MEASUREMENT DEBT.
+
+It is REACHABILITY, not a health verdict, and it deliberately runs **no log query**. Prod log level defaults to Warning, so a healthy container emits nothing and an empty result is byte-identical to health — a log query cannot be a pass/fail gate (CLAUDE.md OBSERVABILITY). Health is Tempo span status + Prometheus counters: `.claude/skills/deploy/SKILL.md` §HEALTH_VERIFICATION. The removed Loki task selected `{job=~"atlas/.*"}` on a Loki whose only label is `service_name`, and so reported PASS unconditionally for its whole life.
+
+Its container check covers the ATLAS compose project only; the OTEL stack (`loki`, `grafana`, `prometheus`, `tempo`, `otel-collector`) is a separate project and is not checked — see docs/BACKLOG.md §MEASUREMENT DEBT.
 
 ### Template change verification
 
