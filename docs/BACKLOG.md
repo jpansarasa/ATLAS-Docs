@@ -49,6 +49,8 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-16 | OPEN | Production's CoD prompt carries two defects no labeller can work around |
 | A | 2026-09-07 | OPEN | A DELTA AND A LEVEL ARE THE SAME ROW: numbers[] cannot express dropped 2% vs is 2% |
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
+| D | 2026-09-20 | OPEN | SecMaster meter-capture test helpers listen PROCESS-WIDE; a slow sibling test double-counts them |
+| B | 2026-09-20 | OPEN | After both EDGAR rules, per-row staleness drift survives: no gauge over edgar_filers.fetched_at |
 | B | 2026-09-17 | OPEN | SecMaster D-16 drops Gemini fred_series answers for the 16 FRED ids D-18 leaves Equity (10 in 7d) |
 | B | 2026-09-20 | OPEN | 7 active catalog rows have a blank name; 71 attach-pool slots were labelled with "-" for a name |
 | B | 2026-09-20 | OPEN | selfseed_class_skip (D-34) has no alert: the 7-day production rate is unmeasured |
@@ -943,6 +945,40 @@ article carried `NASDAQ`. The mechanism is shown;
 that this pair caused that row is inferred, not isolated. Impact on attachments is unmeasured. Re-check: embed both
 spellings as above; the defect is closed when the cache key preserves case or the embedder input is case-folded too.
 
+**The MeterListener capture helpers in the SecMaster unit tests filter on instrument NAME only, so they
+aggregate measurements from every test running concurrently in the process, and a test that takes long enough to
+overlap a sibling makes that sibling fail on a doubled count.** Measured 2026-09-20: adding one test to
+`EdgarClientTests` that slept ~2s (a 429 path missing `RetryAfterFirst = TimeSpan.Zero`) turned
+`OpenFigiClientTests.should_record_ok_counter_on_success` RED with "Expected capture.SumFor(\"ok\") to be 1L, but
+found 2L" — a test that had passed on the two immediately preceding runs of the same suite. The slow test was fixed,
+so the suite is green, and THE RACE IS STILL THERE: nothing scopes a capture to its own test. `MeterCapture` and
+`EdgarHistogramCapture` both key solely on `instrument.Name == instrumentName`
+(SecMaster/tests/Services/OpenFigiClientTests.cs, EdgarClientTests.cs). Consequence: any future test that emits on an
+already-captured instrument, or merely runs slowly beside one, produces a failure whose message points at the
+INNOCENT test — and the reflex fix is to re-run until green, which is how a real regression gets waved through.
+The blast radius is wider than the one pair that failed: the same name-only filter is used by capture helpers in
+EmbeddingServiceTests, EntityResolutionServiceTests, RagServiceTests, RegistrationServiceFrequencyTests and
+MetricWarmupHostedServiceTests too. The fix is a per-test discriminator on the captured measurements (a unique tag
+value, or an xUnit collection that serialises the classes sharing an instrument).
+Re-check: `git grep -c 'instrument.Name == instrumentName' -- SecMaster/tests` — 10 hits across 7 files on
+2026-09-20; the entry is closed when each capture also filters on something only its own test emits.
+
+**Two EDGAR rules now ship, and the blind spot that survives BOTH is per-row staleness drift: cycles that run at full
+volume while individual CIKs quietly stop resolving.** Measured 2026-09-20. `SecMasterEdgarOutage` (error ratio over
+1h) observes only while a cycle runs, which is 89 of the 10,080 minutes in a week — a 0.9% duty cycle — and self-clears
+~1h after a cycle even if EDGAR is still down. `SecMasterEdgarCycleNotRefreshing` (filers ingested over 8d < 1000)
+closes the two shapes that leaves open, a bootstrap-only cycle (20 filers, zero errors) and a cycle that never ran,
+and is the rule that actually bounds detection latency at ~8 days. Neither sees the third shape: 121 of the 4,914
+`edgar_filers` rows are already older than 7 days, and that number can grow without either rule moving, because a cycle
+refreshing 4,790 of 4,914 rows clears the 1000 floor comfortably. Consequence: classification serves the last good
+SIC->NAICS for a drifting tail of instruments and nothing erupts. The fix is the gauge neither rule could use —
+`count(*) where fetched_at > now() - interval '8 days'` exported at end of cycle, alerting when the FRESH fraction
+falls rather than when the absolute count does; Prometheus cannot reach Postgres here, so it has to be emitted by
+SecMaster. Note the coupling before touching those 121 rows: `ShouldSkipCycleAsync` skips only when NO row is stale, so
+they are what guarantees the cycle never skips; purging them activates the skip path, allowing a ~14d gap that would
+false-fire the 8d rule. Re-check: `select count(*) filter (where fetched_at < now() - interval '7 days'), count(*) from
+edgar_filers;` — 121 of 4,914 on 2026-09-20; a rising first number with both alerts green is this entry coming true.
+
 **`backfill_unresolved_rate_high` has never detected a fault: on main it fired on every run, and D-17's in-scope
 rate stays under its 0.50 threshold through an EDGAR outage, then crosses it on catalog growth alone.** Measured
 2026-09-17 (Loki `{service_name="SecMaster"} |= "backfill_unresolved_rate_high"` over 30d; atlas_secmaster SELECT-only).
@@ -955,7 +991,10 @@ creation month are unresolved Jul 749 of 1,355, Aug 932 of 1,613, Sep (to the 17
 3,800 more rows at that rate cross 0.50, some 80 days at the 46 rows/day those months averaged. A cohort's rate falls as
 its rows pick up a Finnhub sector (May 381 of 1,364, Jun 977 of 2,176), so that is an estimate, not a date. Consequence:
 the first firing reads as an incident and is growth. Kept, not deleted (CLAUDE.md OBSERVABILITY: nobody decided to
-demote it); the fix is a signal an outage moves, such as the share of in-scope rows whose filer lookup hits. Re-check,
+demote it); the fix is a signal an outage moves, such as the share of in-scope rows whose filer lookup hits. PARTIAL,
+and it does not close this entry: `SecMasterEdgarOutage` (2026-09-20) now watches the EDGAR HTTP boundary directly,
+which is the outage detector this entry says is missing -- but it observes only while the weekly cycle is running, and
+`backfill_unresolved_rate_high` is still a constant that growth will cross. Re-check,
 per creation month (drop the GROUP BY for the whole-population rate):
   `select to_char(created_at,'YYYY-MM'), count(*) filter (where classification_source is null and not exists (select 1 from instrument_sector_overrides o where o.instrument_id = i.id and o.is_active) and not exists (select 1 from edgar_filers f where upper(f.ticker) = upper(trim(i.symbol)) and coalesce(f.derived_naics_code,'') <> '')), count(*) from instruments i where is_active and asset_class in ('Equity','ETF','Stock') and (strpos(symbol,'.') = 0 or symbol ~ '^[A-Za-z]+\.[ABC]$') and (exchange is null or exchange !~ '^[A-Z]{2}$' or exchange = 'US') and not exists (select 1 from source_mappings m where m.instrument_id = i.id and m.is_active and m.is_primary and m.collector in ('FredCollector','FRED','BLS','OFR','OfrCollector')) group by 1 order by 1;`
 
