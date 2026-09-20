@@ -14,6 +14,7 @@ Repo-root operator scripts. Mix of Claude Code helpers, ad-hoc auditing harnesse
 | `new-epic.sh` | Resets `STATE.md` for a new epic from `.claude/skills/supervisor-mode/templates/STATE-scaffold.md`. STATE.md is gitignored — no undo, no git history — so the script archives it to `~/atlas-ops/state-archive/` and proves the copy identical with `cmp` *before* overwriting, then strips the scaffold header into a temp file **beside** STATE.md (same directory, so the final step is a real atomic rename; `/tmp` and `/home` are different devices here and a cross-device `mv` truncates the live file first), verifies the result is a complete usable body — including that it is byte-identical to the scaffold text after the sentinel — and only then renames it into place. If that verification fails the live file is never touched; the archive restore is the backstop for a failed *write*, and it refuses loudly if the restore itself fails rather than claiming it succeeded. It also audits the outgoing file for **four of the five bans in the WRITE_GATE** (canonical roster: `.claude/skills/supervisor-mode/templates/STATE-scaffold.md` — not re-enumerated here, since a fresh copy in a non-canonical file is the drift this tooling exists to stop; the one it cannot grep is judgement, not a pattern), plus migrated section headings and a non-blocking bloat note, and **refuses the reset while any matches**, except for lines that are verbatim scaffold boilerplate; `--evicted` overrides, `--check` audits and writes nothing. **The audit cannot judge durability** — that is judgement, routed by `CLAUDE.md` §WHERE_WORK_LANDS — so a clean audit means those patterns did not match, nothing more. Runs a known-bad control on every invocation: the strip verifier is re-proved against **two** deliberately broken scaffolds (sentinel removed; header marker after an intact sentinel), each proved to have been *built* before its verdict is scored. rc 1 = a finding or refusal, rc 2 = usage, environment, or an unsatisfiable precondition. |
 | `verify-citations.py` | Resolves `file:line` citations in tracked Markdown (cards, `CLAUDE.md`, D-entries) and, with `--memory`, in the out-of-tree memory corpus that no `git ls-files` invocation can name. Findings are UNRESOLVED (including ambiguous basenames), REVERSED, OUT-OF-RANGE and BLANK. **Content-blind by design**: it checks that a line exists and is non-blank, never what it says, so a citation that has drifted onto a comment, a brace or an unrelated task reads GREEN, and ranges are blank-checked at the START only. A green sweep is not proof a card is sound. |
 | `verify-pointers.py` | Resolves every `<path>.md` §CONSTRUCT anchor pointer in the files given to it. The house rule is to cite an ANCHOR rather than a `file:line` (`LESSONS.md` GRADUATION_RULE), which had moved every cross-document pointer OUT of any sweep: `verify-citations.py` resolves `file:line` and nothing else. It decides exactly two things -- the named file exists and is UNAMBIGUOUS, and the named construct begins some line of it. Known-bad control on every run (rc 3, no report, if it fails). **Run it the way CI does**, `python -m pytest scripts/tests -k tracked_corpus`, not by hand. What it CANNOT see, and the one case for invoking it directly: §POINTER_SWEEP below -- stated ONCE, there, because two copies in one file drift in one. |
+| `verify-hosted-service-pins.py` | Keeps every `AddHostedService<T>` registration either PINNED by a test that goes RED when the line is removed, or FILED as unpinned with a measurement. The surface it watches is invisible to an ordinary suite: a worker's logic can be correct, tested and green while the one line that makes the host START it is gone — measured 2026-09-20, **50 of 53 live registrations deleted with every suite green**, which is the round PR #1073 lost. Two halves with very different costs. The **check** (default, no arguments) is pure static enumeration — no dotnet, no container, no dependency beyond the standard library, sub-second over the whole repo — and decides GROWTH only: a registration that is NEW, whose statement or recorded verdict CHANGED, or that VANISHED. The frozen set stays quiet, because a check that reddens CI on day one gets switched off (#1083). STALE is the quiet win: it turns the silent deletion of a registration nothing pins into an explicit baseline edit a reviewer sees. The **sweep** (`--sweep <Service>`) is the measurement — it removes registrations, drives the service's real `compile.sh`, and reads the verdict from dotnet's own summary line, never from the exit code (compile.sh works *after* the tests, and an rc-keyed verdict scored a 73/73 GREEN CalendarService run as PINNED). It proves the suite GREEN before it mutates anything, so a service carrying one unrelated broken test yields NO VERDICT rather than a whole set of meaningless PINNEDs. It removes a service's whole set in one run, because a suite still green with all of them gone observes none of them; only a reacting service pays for per-site runs. Known-bad controls run on **every** invocation, not just under pytest. What it CANNOT see is in its docstring and is the first thing to read: only `AddHostedService<T>`, so the factory overload, `AddSingleton<IHostedService, T>`, Quartz jobs, `AddMeter`/`AddSource`, middleware and anything reflection-registered are invisible — and PINNED means *some* test reacted, never that the test asserts anything useful. §HOSTED_SERVICE_PINS below. |
 | `agent-stall-watchdog.sh` | Per-agent stall detector for supervisor sessions. Given a tasks dir (the `.output`-symlink directory under `/tmp/claude-<uid>/…/<uuid>/tasks`), reports each subagent transcript whose mtime is older than N minutes. Annotates `PROMPT?` when the tail contains `"stop_reason":"tool_use"` (agent proposed a tool, harness is paused waiting for approval). Suppresses false positives with `BUSY-COMPILE` when a compile/build process is found for the agent's worktree. Designed to run every supervisor poll cycle; output fits in <10 lines for a healthy session. |
 
 ## DEVCONTAINER_OWNERSHIP
@@ -84,6 +85,65 @@ rule and points here. **pytest is NOT installed on this host — use a venv.**
   as an untracked or out-of-tree draft. It is never a substitute for the pytest run above:
   `mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-pointers.py "${F[@]}"`.
 
+## HOSTED_SERVICE_PINS
+
+The cost argument, the two ways to close a finding, and what the gate CANNOT see — the single statement
+of it; the Files row above does not repeat the blind spots, and neither does `CLAUDE.md` §VERIFY, which
+carries the rule and points here. **pytest is NOT installed on this host — use a venv.**
+
+**Why CI pays nothing.** Measuring whether a registration is pinned means deleting it and running that
+service's suite: 30s to a few minutes per run, and FredCollector and OfrCollector need a gitignored
+`.env` no CI runner has. So the sweep is on-demand and the gate is static. The gate names the ONE service
+to sweep, so the expensive half is scoped to the composition root you actually touched rather than to all
+53 sites across 10 services.
+
+**ADVISORY, not enforcement.** Branch protection returns 403 on this plan (verified 2026-08-12; the
+evidence is in `.github/workflows/alert-rules.yml`), so neither this gate nor any other check here can
+block a merge — a red run can only be SEEN. Read a green check as a report that was produced, never as a
+gate that held. The same sentence is in `CLAUDE.md` §VERIFY and in the workflow, because a reader who
+meets only one of the three takes a passing check for enforcement.
+
+**Two ways to close a NEW finding, and only two.** Pin it — add a test that reads the descriptors the
+composition root produced and goes RED when the line is removed (`FinnhubCollector/tests/Services/DependencyInjectionTests.cs`
+and `FredCollector/tests/FredCollector.UnitTests/Telemetry/MetricWarmupHostedServiceTests.cs` are the two
+worked examples, and the second drives the started service and asserts on the measurements). Or file it —
+`--sweep <Service>` then `--freeze`, which records the verdict with the date, the suite result and the
+control behind it. Filing is a real answer; an unfiled, unpinned registration is what the check refuses.
+**`--freeze` on its own is not filing**: with no sweep result it writes an `UNMEASURED` row, and
+UNMEASURED is itself reported — otherwise freezing would buy a green check for a row with nothing
+behind it, which is "filed without a measurement" and is exactly what the property forbids.
+
+- **`AddHostedService<T>` is the whole surface, and the gap is MEASURED not hypothetical.** Five live
+  sites use the factory overload `AddHostedService(sp => sp.GetRequiredService<T>())` — all three Reports
+  hosts, SecMaster's `EdgarIngestionBackgroundService` and FinnhubCollector's `BackgroundCollectionQueue`
+  — so **Reports has no keyable registration at all and the whole service is outside the check**. Keying
+  that one spelling was rejected rather than deferred: it would read as coverage of the construct while
+  `AddHostedService(sp => new Foo())` and every other factory shape stayed silent. Coverage is instead
+  counted from the DATA side — every `AddHostedService` token minus the ones keyed, **per token, not per
+  line** — and printed as `NOT COVERED` on every run, a clean one included, so an unparseable spelling
+  lands there rather than vanishing. Also unwatched, as different constructs rather than spellings:
+  `AddSingleton<IHostedService, T>` (zero instances today, checked), Quartz job registration,
+  `AddMeter`/`AddSource`, middleware, and anything registered by reflection or assembly scanning.
+- **PINNED is not a quality claim.** It means *some* test in that service went RED when the line was
+  removed. A test that asserts the registration exists while the component is broken scores PINNED.
+- **Conditional registration is invisible.** A line moved inside `if (options.Enabled)` still enumerates
+  as one registration; nothing here can tell that it now runs only sometimes.
+- **A persistently red suite is caught; INTERMITTENT flake is not.** The sweep proves the suite green on
+  an unmutated CONTROL run before it mutates anything, so a service carrying one broken unrelated test
+  yields NO VERDICT rather than a whole set of PINNEDs whose evidence reads "went RED with the
+  registration removed" — true, and about the wrong failure. Re-running never fixed that, because the
+  second reason persists; it helps only against an intermittent failure, which can pass the control and
+  then fail a mutation run. A control that reports green having run ZERO tests is also refused.
+- **A pinning test deleted after the freeze is invisible.** The registration is unchanged, so its row
+  still hashes correctly and still says PINNED. The check guarantees a verdict cannot change *quietly*,
+  never that a recorded verdict is still true; only a re-sweep re-measures.
+- **A registration inside a string literal counts.** Line and block comments are skipped (one live
+  commented-out registration exists, `CalendarService/src/DependencyInjection.cs:53`); string contents
+  are not parsed.
+- **An interrupted sweep blocks everything until the tree is restored.** SIGKILL cannot be trapped, so a
+  killed run can leave `// PIN-SWEEP` in a source file; enumeration then refuses outright rather than
+  reading the missing registration as a STALE finding. Observed live on `NasdaqCollector/src/Program.cs`.
+
 ## Subdirectories (each with its own README)
 
 | Directory | Purpose |
@@ -99,6 +159,7 @@ rule and points here. **pytest is NOT installed on this host — use a venv.**
 - **Dispatching a subagent for a Matrix epic story?** Templates live in `.claude/skills/supervisor-mode/templates/` (start from `story-implementation.md`).
 - **Long-running Claude session stuck on permission prompts?** `claude-watchdog/scan.py` is what fires the NTFY ping; tail its log to debug false positives.
 - **Supervisor subagent stalled overnight?** Run `scripts/agent-stall-watchdog.sh <tasks-dir>` to find which agent(s) have stopped making progress; `PROMPT?` flag identifies permission-prompt stalls specifically.
+- **The hosted-service pin check REPORTS a registration NEW, CHANGED or GONE?** (It reports; it cannot block — §HOSTED_SERVICE_PINS.) Run `python3 scripts/verify-hosted-service-pins.py --sweep <Service>` for the one service the message names, then `--freeze`. Freezing alone does not close it — that records an `UNMEASURED` row, which the check still reports.
 - **Investigating an F4.6.4 prompt-grounding regression?** Re-run the `sentinel-quality-check/` harness against the live extraction stack.
 
 ## See Also

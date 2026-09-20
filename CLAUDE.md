@@ -47,6 +47,19 @@ FILTERED RUN [in the devcontainer -- dotnet exists on the HOST too and a bare `d
   ✗ `Name~` anything, and ✗ `DisplayName~<ClassName>` in the 4 projects setting xunit methodDisplay=method
     # both match ZERO tests and STILL EXIT 0, so a run that tested nothing reads as a pass
     which 4, and how to enumerate them rather than recall them: scripts/README.md §TEST_FILTERS
+WIRING IS NOT LOGIC, AND A GREEN SUITE CANNOT TELL THEM APART: a component's logic can be correct, tested
+  and green while the single `AddHostedService<T>()` line that makes the host START it is absent
+  # measured 2026-09-20: 50 of 53 live registrations deleted with every suite green -- the round #1073 lost
+  add or move a registration -> PIN it (a test that goes RED when the line is removed) or FILE it as
+    unpinned with a measurement # both are real answers; an unfiled unpinned registration is the one refusal
+  check: `scripts/verify-hosted-service-pins.py` -- static, sub-second, GROWTH only against a frozen baseline,
+    so it is silent on today's set and loud on a NEW, CHANGED or VANISHED one
+    ✗ never read it as ENFORCEMENT # branch protection 403s on this plan, so this check and every other
+      one here is ADVISORY: a red run can be SEEN and cannot block a merge. A green check is a report that
+      was produced, never a gate that held -- same wording in scripts/README.md and the workflow
+  the sweep that measures it is on-demand and scoped to ONE service, never CI; the two worked pinning tests,
+    and what the gate CANNOT see (the factory overload, Quartz, AddMeter/AddSource, reflection, and that
+    PINNED never means the test asserts anything useful): scripts/README.md §HOSTED_SERVICE_PINS
 OWNED: each CONTAINER-STARTING compile.sh (+ sentinel-edge typecheck.sh/dev.sh) owns a per-worktree compose
   project (scripts/devcontainer-owner.sh), the same key mark-tests-passed.sh uses.
   N agents in N worktrees compile SIMULTANEOUSLY # never sequence them, never wait

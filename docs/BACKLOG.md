@@ -107,7 +107,6 @@ Defects with a measurement that makes them re-checkable.
 | C | 2026-09-16 | AWAITING-DECISION | Quarantined-ticker re-acquisition is an undecided policy: Gemini cost + un-alerted 23505 |
 | D | 2026-09-20 | OPEN | FredCollector compile.sh dies in a fresh worktree: its compose env_file names a gitignored .env (Ofr's is tracked) |
 | D | 2026-09-20 | OPEN | 5 of the 12 D-4 composite-cursor sites are unpinned; the whole `Between` path is one of them |
-| D | 2026-09-20 | OPEN | 52 of 54 `AddHostedService` registrations are unpinned; deleting one leaves its suite green |
 | D | 2026-09-20 | OPEN | Integration suites never reach the push marker and nothing re-runs them between PRs (all six now green) |
 | D | 2026-09-16 | OPEN | Gemma 4 swap residuals: one-directional coordinate sweep, hermes parser, promtool fixtures |
 | D | 2026-09-16 | OPEN | D-23 thin-draw gate cannot deny: Bind() appends to the Engines default (inert until wired) |
@@ -2004,25 +2003,6 @@ that separately, or the empty result is the corpse-detector again). MEASURED SID
 ~21:40Z, with no run in flight: the instant query returns EMPTY -- it would have reported this entry
 CLOSED -- and the range query returns 16 on the same Prometheus at the same moment.
 
-**52 OF 54 `AddHostedService` REGISTRATIONS ARE UNPINNED: DELETING THE LINE LEAVES ITS SUITE GREEN.**
-[2026-09-20] Mutating a hosted service's LOGIC says nothing about whether it RUNS, and only a test that
-reaches a composition root can tell. `grep -rn 'AddHostedService<' --include=*.cs */src | grep -v /obj/`
-returns 54 call sites across 10 services on this branch (SentinelCollector 17, SecMaster 11,
-ThresholdEngine 7, FredCollector 6, OfrCollector 5, CalendarService 3, FinnhubCollector 2, and one each in
-NasdaqCollector, AlphaVantageCollector, AlertService); it is 53 on main, the difference being the
-registration this PR adds. `grep -rln 'AddApplication()\|AddInfrastructure(\|AddHostedService<'
---include=*.cs */tests` returns exactly TWO files: `FinnhubCollector/tests/Services/DependencyInjectionTests.cs`,
-written because deleting `AddHostedService<QuoteStalenessSeeder>()` left that whole suite green, and
-`FredCollector/tests/FredCollector.UnitTests/Telemetry/MetricWarmupHostedServiceTests.cs`, added here for
-the same reason. So this is the SECOND occurrence, not the first, and 52 registrations remain unpinned.
-The sharpest of them is `SecMaster/src/DependencyInjection.cs:146` — the same
-`AddHostedService<MetricWarmupHostedService>()` line, carrying the same "the series exist at 0 from
-process start" argument that FredCollector D-5 leans on to justify a counter replacing a durable row, and
-`SecMaster/tests/Telemetry/MetricWarmupHostedServiceTests.cs` constructs the class directly, so deleting
-the registration is invisible there too. Not a blanket remedy: a registration is worth pinning where
-something DOWNSTREAM depends on it running (a seeded metric, an ordering), not per line. Re-check: the two
-greps above — the second returning more than 2 files means someone has been closing this.
-
 **FIVE OF THE TWELVE SITES OF THE D-4 COMPOSITE CURSOR ARE UNPINNED; THE WHOLE `Between` PATH IS ONE OF
 THEM.** [2026-09-20] Three review rounds each found unpinned sites of this one change -- one, then two,
 then three -- because each sweep enumerated by reading. This is the enumeration done by MUTATION: every
@@ -2735,6 +2715,8 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| B | 2026-09-20 | OPEN | 50 of 53 live `AddHostedService<T>` registrations are UNPINNED: the line that makes the component RUN can be deleted with every suite green |
+| D | 2026-09-20 | OPEN | The hosted-service pin gate cannot see 5 live factory-overload registrations, and Reports has NO keyable registration at all |
 | B | 2026-09-20 | OPEN | `verify-card-companion.py` ECHO/STATUS is VOCABULARY-BOUND and cannot be complete: two review rounds found two kinds (negative rules, then wiring status), each added to the word list AFTER a human found it. It also CANNOT fail the build on an existing finding -- the freeze gates GROWTH only, so a card-only rule present before 2026-09-20 stays advisory forever. Repro: `python3 scripts/verify-card-companion.py` -> 16 advisory, 0 gating |
 | C | 2026-09-20 | OPEN | Five `verify-card-companion.py` mutations pass GREEN, each a real hole. (1) INVERTED echo: card says "must" where the companion says "must never" -- tokens match so ECHO passes; repro: negate a card ALSO clause, rerun, 0 gating. (2) Card entry degraded to a BARE POINTER (`D-n slug: DETAIL DECISIONS.md §D-n`) -- PARITY and GUARD both pass because neither requires the card to say anything; repro: truncate one entry to its pointer. (3) REORDERED companion sections -- `read_companion` returns an order list that `check()` never reads; repro: swap two `## D-n` blocks, 0 gating. (4) DUPLICATE id: a second `## D-n` silently overwrites the first in the dict; repro: copy a section, 0 gating. (5) DUPLICATE slug across two ids -- never compared; repro: rename one slug to match another |
 | C | 2026-09-20 | OPEN | `audit.sh` W10 counts CHARACTERS, not bytes (`${#var}` is character length in bash) and the cards carry non-ASCII, so a flagged entry's byte count runs slightly higher -- FinnhubCollector D-2 is 10,040 characters / 10,070 bytes. Never changes a verdict at the 4,000 threshold, which is itself PICKED (~5x the longest rule line this split produces), not derived. Repro: `bash .claude/skills/architecture-cards/scripts/audit.sh FinnhubCollector` |
@@ -2794,6 +2776,62 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | E | 2026-09-06 | OPEN | colibri cannot produce an admissible scorecard (DO-NOT-BUILD, permanent): seed refused |
 | E | 2026-09-06 | OPEN | Precision ladder on gemma-3-27b: Q6_K LOSES to Q4_K_M, and vLLM has no rung above 4-bit |
 
+
+### 50 of 53 hosted-service registrations are unpinned: deleting the line that makes a component run keeps every suite green [2026-09-20]
+A component's logic can be correct, tested and green while the single `AddHostedService<T>()` line that makes
+the host START it is absent. Measured by removing each registration and running that service's own
+`compile.sh`, reading the verdict from dotnet's own summary line rather than the script's exit code, and
+only after an unmutated CONTROL run proved that service's suite green (a service that cannot reach green
+yields NO VERDICT, because a mutation's RED would be about the pre-existing failure):
+**3 PINNED, 50 UNPINNED across 53 registrations in 10 services.** The 3 pinned are `FinnhubCollector QuoteCollectionWorker`, `FinnhubCollector QuoteStalenessSeeder`, `FredCollector MetricWarmupHostedService` — all of them
+covered by two test files written on 2026-09-20, and nothing else in the repo pins anything.
+
+This is what cost PR #1073 a round: deleting `AddHostedService<MetricWarmupHostedService>()` from FredCollector
+left 321 unit tests green and silently unpinned D-5's "seeded at startup" precondition.
+
+| | |
+|---|---|
+| re-check the split | `awk '$1!~/^#/ && NF>=4 {print $3}' scripts/hosted-service-pins.baseline \| sort \| uniq -c` |
+| re-measure one service | `python3 scripts/verify-hosted-service-pins.py --sweep <Service>`, then `--freeze` |
+| what the sweep cost | 10 services, ~20 min wall — a service whose suite stays green with ALL of its registrations removed is settled in ONE run, so only a reacting service pays per-site |
+
+**Not a blanket remedy, and the sharpest one named.** A registration is worth pinning where something
+DOWNSTREAM depends on it RUNNING -- a seeded metric, a start ordering -- not per line. The sharpest
+unpinned one is `SecMaster/src/DependencyInjection.cs:146`, the same
+`AddHostedService<MetricWarmupHostedService>()` carrying the same "the series exist at 0 from process
+start" argument that FredCollector D-5 leans on to justify a counter replacing a durable row; every test
+in `SecMaster/tests/Telemetry/MetricWarmupHostedServiceTests.cs` calls `new MetricWarmupHostedService()`
+directly, so deleting the registration is invisible there, and the sweep scores it UNPINNED.
+
+This supersedes the "52 OF 54" entry retired from KNOWN DEFECTS in the same PR, which counted a
+commented-out registration and the test FILES rather than the registrations they pin. It was already the
+SECOND occurrence of this failure mode when it was written.
+
+**Not gated, deliberately.** `scripts/verify-hosted-service-pins.py` freezes this set and reports GROWTH only — a
+NEW registration, one whose statement or recorded verdict CHANGED, one that VANISHED, or one frozen UNMEASURED
+(so `--freeze` alone cannot close a finding with a row that has no measurement behind it). Reddening CI on day one
+over 50 findings is how a check gets switched off (#1083). Closing this entry means pinning registrations and
+re-freezing, which moves rows from UNPINNED to PINNED; the debt is the UNPINNED count, never the check's silence.
+The check is ADVISORY — branch protection 403s on this plan, so it reports and cannot block.
+
+### The hosted-service pin gate is blind to the factory overload, and to all of Reports [2026-09-20]
+`scripts/verify-hosted-service-pins.py` keys `AddHostedService<T>` and nothing else. Counted from the data side
+rather than from the instrument — every `AddHostedService` token minus the ones the tool keys — **5 live sites
+use `AddHostedService(sp => sp.GetRequiredService<T>())`**: all three Reports hosts (`Reports.DailyHost`,
+`Reports.WeeklyHost`, `Reports.MonthlyHost`), SecMaster's `EdgarIngestionBackgroundService` and
+FinnhubCollector's `BackgroundCollectionQueue`. **Reports has no keyable registration at all, so that service is
+entirely outside the gate.**
+
+Keying that one spelling was rejected rather than deferred: it would read as coverage of the construct while
+`AddHostedService(sp => new Foo())` and every other factory shape stayed silent, and an enumeration always grows
+another member (`.claude/skills/guard-change/SKILL.md` item 9). The count prints under `NOT COVERED` on every
+run, a clean one included, so the blind spot carries a live number instead of a paragraph.
+
+Also unwatched and deliberately NOT counted here, because they are different constructs rather than the same one
+spelled differently: `AddSingleton<IHostedService, T>` (zero instances today, checked), Quartz job registration,
+`AddMeter` / `AddSource`, middleware, and anything registered by reflection or assembly scanning.
+
+Re-check: `python3 scripts/verify-hosted-service-pins.py` — the `NOT COVERED` line; `--list` names each site.
 
 ### verify-pointers.py: a deletion test against it proves the ANCHOR, never the RULE [2026-09-20]
 The gate `scripts/tests/test_verify_pointers.py::test_tracked_corpus_resolves` is a NAME resolver by its
