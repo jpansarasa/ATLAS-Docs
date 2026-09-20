@@ -81,7 +81,18 @@ ATOMIC SET (change-all-or-none — same discipline as the `:sig:` infix string c
 
 Supersession: rewrite the entry IN THE SAME PR as the code change. No tombstones —
 main = current-state, git log = archive. Dispatch briefs must name **"supersedes D-n"**
-explicitly. A brief that contradicts a D-entry — or a rule stated in a skill, a template or
+explicitly.
+
+WHERE A COMPANION EXISTS, SUPERSEDING IS A TWO-FILE EDIT and the second file is the one
+that gets forgotten: rewriting the card entry while `DECISIONS.md §D-n` goes on asserting
+the retired rule leaves the evidence contradicting the rule it is evidence FOR, and a
+reader who follows the DETAIL pointer lands on the stale half. So the atomic set gains a
+fifth member wherever the entry carries `/ DETAIL DECISIONS.md §D-n`: **the companion
+section is rewritten or deleted in the SAME PR**, and a retired entry leaves BOTH files.
+`scripts/verify-card-companion.py` gates the mechanical half (id, slug and GUARD citation
+parity, CI-enforced via `scripts/tests/test_verify_card_companion.py`) and reports the
+prose half as a non-gating advisory — it cannot check that two paragraphs AGREE, only that
+the card names what the companion's rules name, so the reviewer still owns the reading. A brief that contradicts a D-entry — or a rule stated in a skill, a template or
 CLAUDE.md — without a named supersession -> STOP and report, NAMING the rule and the
 contradiction; never route-around, never obey-stale, and never silently obey a written rule
 you believe is stale (the entry may be outdated OR the brief wrong — a human/supervisor
@@ -93,6 +104,21 @@ Scope discipline (not everything is a decision):
   ✓ invariants with non-obvious preconditions
   ✗ ordinary mechanism — a service may declare `DECISIONS: none — no exception paths`
   >~6 entries = smell (scope creep dilutes the signal); card stays <= ~1 page.
+
+Entry SIZE, which is the axis that actually broke [measured 2026-09-20]:
+  A D-entry is ONE LINE: the rule, its precondition, its citations. The EVIDENCE behind a
+  rule -- the measurement that established it, the alternatives rejected, the incident it
+  came from -- does NOT belong on the card. Left inline it grows without limit and nothing
+  notices, because it grows WITHIN a line: SentinelCollector reached 303,351 bytes across
+  34 entries (one of them 32,788 bytes) on 138 non-blank lines, and the line-denominated
+  W7 signal read the same as it would for a 20KB card. W9 (bytes) exists for this.
+  Past a paragraph, the evidence moves to `<Service>/DECISIONS.md` under a `## D-n <slug>`
+  heading and the card entry ends with `/ DETAIL DECISIONS.md §D-n`. The entry keeps the
+  RULE and points at the detail; the detail is never deleted, and `§D-n` is gate-checked by
+  `scripts/verify-pointers.py`, so the pointer cannot rot silently.
+  D-n stays resolvable IN THE CARD either way -- `// INTENT(D-n):` comments, the
+  intent-review skill and CLAUDE.md INTENT_FIDELITY all read the card's DECISIONS block, so
+  an entry may shed its evidence but must never leave the card for the companion.
 
 Two escape forms — the wording carries a CLAIM, pick the honest one:
   `DECISIONS: none — no exception paths`

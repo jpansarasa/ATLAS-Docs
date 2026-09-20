@@ -25,6 +25,10 @@ conflict -> STOP, never route-around, never obey-stale
    map touched paths -> services (`<Service>/src/**` -> Service).
 2. LOAD: for each touched service, read `<Service>/AGENT_README.md` DECISIONS block.
    `DECISIONS: none` or no card -> only CHECK_2 applies to that service.
+   A card entry ending `/ DETAIL DECISIONS.md §D-n` is HALF the decision: the RULE is on the
+   card, the EVIDENCE is `<Service>/DECISIONS.md §D-n`. Load that section too for any D-n the
+   diff touches — the precondition you are judging against may live only there, and the card
+   line is deliberately not enough to re-derive it.
 3. CHECK: run CHECK_1..CHECK_4 below against the diff + loaded D-entries.
 4. REPORT: emit findings per REPORT_FORMAT; no findings -> explicit "intent-clean".
 
@@ -33,6 +37,13 @@ CHECK_1 guard touched without supersession [critical]:
   diff modifies/deletes a GUARD-cited file:line region, code adjacent to an
   `// INTENT(D-n):` comment, or a cited guard test — WITHOUT a same-diff rewrite of the
   D-entry AND a named "supersedes D-n" in the driving brief/PR description.
+  WHERE THE ENTRY HAS A COMPANION, the same-diff rewrite means BOTH halves: a diff that
+  rewrites the card entry and leaves `<Service>/DECISIONS.md §D-n` asserting the retired
+  rule is a CHECK_1 finding, because the evidence now contradicts the rule it exists to
+  justify and the DETAIL pointer sends the next reader to the stale half. A retired entry
+  leaves BOTH files — no tombstone in either. `scripts/verify-card-companion.py` catches
+  id/slug/GUARD divergence mechanically; it CANNOT tell you two paragraphs disagree, so
+  read the companion section whenever the card entry moved.
   ALSO fires when the brief/PR intent contradicts a D-entry — or a rule stated in a skill,
   a template or CLAUDE.md — without naming supersession -> verdict is STOP-and-report,
   NAMING the rule and the contradiction; never route-around, never obey-stale, and never

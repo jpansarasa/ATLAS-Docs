@@ -1317,7 +1317,7 @@ Re-verified 2026-09-16: registration present with a prose comment and no `// INT
 returns 0 files.
 
 **TRIPWIRE, green by design: a NEW `BrokenCircuitException` orphaning cohort.** The classification gap itself is
-closed (SentinelCollector D-27, `SentinelCollector/AGENT_README.md:151`) and both known cohorts are disposed of: 55
+closed (SentinelCollector D-27, `SentinelCollector/AGENT_README.md` §D-27) and both known cohorts are disposed of: 55
 rows orphaned 2026-07-19..07-24, left as won't-do on alpha decay; 223 rows orphaned 2026-09-04 while `vllm-server`
 was stopped for a vLLM 0.28.0 evaluation, recovered same-day by `POST /admin/reprocess`. The query is kept because
 it is the standing detector for a THIRD cohort, and because the predicate matches EVERY breaker-open event ever
@@ -2477,29 +2477,6 @@ Re-check (2026-09-05, reproduced 2026-09-16):
   -> four hits today: the two above are the debt; `FinnhubApiClient.cs:29` and `:406` state the permanent/transient
   split CORRECTLY and are the controls, not the debt.
 
-**THE SENTINELCOLLECTOR CARD IS 5.3x OVER ITS OWN D-ENTRY GATE, AND ITS LINE COUNT HIDES IT.**
-`SentinelCollector/AGENT_README.md` measured 2026-09-16: 275,956 bytes, 136 non-blank lines, 32 D-entries (207,010 /
-101 / 28 on 2026-09-07 -- a third larger in nine days). `CARD_TEMPLATE.md` sets the gate at "card <= ~1 page / ~55
-non-blank lines" and ">~6 entries = smell (scope creep dilutes the signal)". The LINE ratio is the lying one: the
-longest single line is 32,788 characters (top three 32,788 / 22,393 / 22,389), so a density gate counted in LINES
-cannot see it -- a card can be driven arbitrarily far past "~1 page" without moving the metric, just by not pressing
-Enter. Any future check must be on BYTES. NOT A SILENT GAP -- a documented one:
-`.claude/skills/architecture-cards/scripts/audit.sh:13-14` says the smell is "deliberately LLM-scope (intent-review /
-human judgment), not script-checked", so the audit passes this card and always will. The reading agent is the only
-enforcement, and it is the party the card was supposed to serve: at 276KB the card has become a second codebase, and
-whether agents given it read, skim or truncate it is unmeasured.
-  FIX (not done, and a judgement call, not a mechanical split): decide which D-entries are still exception paths /
-    scarce-resource boundaries / non-obvious preconditions and which are ordinary mechanism that accreted, then move
-    the catalog to `README.md` §Reference per the template's own escape hatch. Superseded entries are rewritten in
-    place, never tombstoned.
-  Re-check:
-```
-f=SentinelCollector/AGENT_README.md
-echo "bytes=$(wc -c < $f) nonblank=$(grep -c '[^[:space:]]' $f) D=$(grep -c '^  D-' $f)"
-awk '{print length($0)}' $f | sort -rn | head -3
-```
-2026-09-16 -> `bytes=275956 nonblank=136 D=32`, longest lines `32788 22393 22389`.
-
 **SIX DEPLOYED DIRECTORIES HAVE NO CARD AND SIT OUTSIDE THE ROSTER, SO THE SERVICE_ARCHITECTURE HARD_STOP CANNOT
 REACH THEM** [NEEDS A HUMAN DECISION -- recorded, not decided]
 `CLAUDE.md` §SERVICE_ARCHITECTURE is a HARD_STOP: read `{Service}/AGENT_README.md` before reasoning about a service.
@@ -2536,6 +2513,10 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| B | 2026-09-20 | OPEN | `verify-card-companion.py` ECHO/STATUS is VOCABULARY-BOUND and cannot be complete: two review rounds found two kinds (negative rules, then wiring status), each added to the word list AFTER a human found it. It also CANNOT fail the build on an existing finding -- the freeze gates GROWTH only, so a card-only rule present before 2026-09-20 stays advisory forever. Repro: `python3 scripts/verify-card-companion.py` -> 16 advisory, 0 gating |
+| C | 2026-09-20 | OPEN | Five `verify-card-companion.py` mutations pass GREEN, each a real hole. (1) INVERTED echo: card says "must" where the companion says "must never" -- tokens match so ECHO passes; repro: negate a card ALSO clause, rerun, 0 gating. (2) Card entry degraded to a BARE POINTER (`D-n slug: DETAIL DECISIONS.md §D-n`) -- PARITY and GUARD both pass because neither requires the card to say anything; repro: truncate one entry to its pointer. (3) REORDERED companion sections -- `read_companion` returns an order list that `check()` never reads; repro: swap two `## D-n` blocks, 0 gating. (4) DUPLICATE id: a second `## D-n` silently overwrites the first in the dict; repro: copy a section, 0 gating. (5) DUPLICATE slug across two ids -- never compared; repro: rename one slug to match another |
+| C | 2026-09-20 | OPEN | `audit.sh` W10 counts CHARACTERS, not bytes (`${#var}` is character length in bash) and the cards carry non-ASCII, so a flagged entry's byte count runs slightly higher -- FinnhubCollector D-2 is 10,040 characters / 10,070 bytes. Never changes a verdict at the 4,000 threshold, which is itself PICKED (~5x the longest rule line this split produces), not derived. Repro: `bash .claude/skills/architecture-cards/scripts/audit.sh FinnhubCollector` |
+| B | 2026-09-20 | OPEN | FinnhubCollector D-2 is 10,040 characters on one card line (42.5% of that 23,733-byte card) -- the only W10 finding in the repo, unfixed. Same disease as the 303KB SentinelCollector card at smaller scale; the fix is the same split (rule on the card, evidence to a new `FinnhubCollector/DECISIONS.md`, with the card entry ending in a DETAIL pointer at that file's D-2 section -- written as a literal anchor only once the file exists, since the pointer gate resolves a bare `DECISIONS.md` against two tracked files and refuses the ambiguity). Repro: `bash .claude/skills/architecture-cards/scripts/audit.sh FinnhubCollector` |
 | A | 2026-09-20 | OPEN | Catch blocks that swallow a REAL fault without marking the span leave it invisible to Tempo (147/673 across 3 services, a FLOOR; excludes 63 cancellation-only, which are NOT defects) |
 | B | 2026-09-20 | OPEN | `verify-pointers.py` has no BODY check and no FLOOR, so a deletion test against it proves the ANCHOR is load-bearing, never the RULE — two reproductions below |
 | B | 2026-09-20 | OPEN | The smoke test cannot see the OTEL stack, so a green run is consistent with loki/tempo/prometheus being down |

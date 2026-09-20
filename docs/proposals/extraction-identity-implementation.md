@@ -638,8 +638,9 @@ paraphrased into a brief:
 > D-18 sentinel-series-key-ownership: INTENT a series key belongs to whoever MEASURED the number,
 > and Sentinel is on BOTH sides of that line.
 
-The full entry runs ~2,000 words at `SentinelCollector/AGENT_README.md:114`. **Whoever authors the
-S4 spec reads it end to end first.** It shipped 2026-08-13 against measured production breakage,
+The RULE is one line at `SentinelCollector/AGENT_README.md` §D-18; the ~2,000-word entry it was
+condensed from is `SentinelCollector/DECISIONS.md` §D-18. **Whoever authors the S4 spec reads BOTH
+end to end first** -- the card line alone will not tell you what this decision cost to learn. It shipped 2026-08-13 against measured production breakage,
 it is heavily guard-tested, and it turns on a polarity ("is this a series Sentinel OWNS?" rather
 than "does this key collide?") that a naive re-key would silently invert.
 
