@@ -75,7 +75,7 @@ TRAJECTORY
    `src/src/obj`), and that block also carries the `cd` wrapper, `--output-dir` and the
    `dotnet tool restore` precondition, and routes the per-service dev-service name and when
    `--context {Svc}DbContext` is REQUIRED to `.claude/hooks/README.md` §EF_MIGRATION_TRAPS —
-   four things no restatement here has ever had.
+   five things no restatement here has ever had.
 8. Report: commit hash per layer/finding, each finding {addressed | rejected with evidence |
    deferred}, the before/after number, mutation results, compile counts.
 

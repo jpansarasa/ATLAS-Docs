@@ -33,6 +33,10 @@ Defects with a measurement that makes them re-checkable.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| C | 2026-09-20 | OPEN | Test 5's roster proves HANDOVER, not EXECUTION: a `return` after the `processed+=` append records a script as walked and checks nothing |
+| D | 2026-09-20 | OPEN | Test 6's interactive-port exemption keys the FILENAME, not the declared path; a file of that name anywhere is exempt |
+| D | 2026-09-20 | OPEN | Test 6's per-owner nuget check greps FILE-WIDE; one owned and one hardcoded volume in the same file reads as owned |
+| D | 2026-09-20 | OPEN | Known-bad control B pins the audited population as a DECLARED literal (`AUDITED 10`), not a derived one |
 | C | 2026-09-20 | OPEN | Parallel-compile gap check is nerdctl-only; a docker-first verification script reads container-less and is never audited |
 | C | 2026-09-20 | OPEN | Parallel-compile ownership audit is static text; a call behind an early `exit`, or written early and CALLED late, reads as owned and in-order |
 | D | 2026-09-20 | OPEN | Test 5's sibling double-trap sweep word-splits its file list; a spaced or globbed path is silently skipped |
@@ -208,6 +212,46 @@ UNCHANGED on purpose, as scoped residue. Pre-existing since `8235457f` (#920). L
 only catches a doubly-registered teardown trap, and `git ls-files` output is the one input that would have to
 change. Re-check: rerun that count; the entry closes when the loop reads `while read -r f; do … done < <(…)` and
 a spaced fixture proves the difference.
+
+**Test 5's name roster proves the loop was HANDED each script, never that it CHECKED one.**
+`scripts/test-devcontainer-owner.sh:940` appends to `processed` as the FIRST statement of
+`audit_verify_script`, deliberately — "recorded before any branch can return" — so that a path-scoped `continue`
+in the enumerating loop cannot hide a file. The cost of recording that early is that everything AFTER the append
+is unpinned by the roster: a `return` on the next line still yields `the audit walked exactly the 15 rostered
+verification scripts`, while that script's ownership, /workspace and marker checks never run, and the suite stays
+rc 0 (recorded at `passed=134` by the #1081 review that found it). A reader takes the PASS as proof that fifteen
+scripts were audited, dispatches parallel compiles, and one of them was never checked. NOT the same defect as the
+static-text entry above: that one is about a call the audit cannot EXECUTE, this one is about a script the audit
+never REACHES the checks for. Re-check, two commands, the first static and the second the reproduction:
+`sed -n '938,946p' scripts/test-devcontainer-owner.sh` shows the append above `verdict=$(...)`; then insert
+`return 0` immediately after line 940, run `bash scripts/test-devcontainer-owner.sh`, and read the roster line —
+it must still claim fifteen walked. The entry closes when a script that reached no verdict cannot be counted as
+walked — a COMPLETED marker appended after the checks, asserted alongside the handover one, not a bigger roster.
+
+**Three smaller residues in the same suite, all measured 2026-09-20 and all recorded rather than fixed**, because
+each wants the same instrument decision as the entry above and none is a regression. Named separately so a fix to
+one cannot be read as covering the others.
+1. *The interactive-port exemption keys a BASENAME, not the declared path.* CLAUDE.md declares exactly two
+   host-port exceptions, `edge/sentinel-edge/.devcontainer/compose.ports.yaml` (8787) and
+   `WhisperService/.devcontainer/compose.dev.yaml` (8090), and the suite plants both at those paths
+   (`:1369-1370`). The guards that spend the exemption are globs on the name alone:
+   `[[ "$c" != *compose.ports.yaml && "$c" != WhisperService/* ]]` at `:1281` and `:1290`. Any compose file
+   called `compose.ports.yaml`, anywhere in the tree, therefore publishes any host port with no complaint, and
+   the exemption widens without an edit. Re-check: `grep -c '\*compose\.ports\.yaml' scripts/test-devcontainer-owner.sh`
+   -> 2 on 2026-09-20, both basename globs (`:1281`, `:1290`); it closes when both compare against the declared path.
+2. *The per-owner nuget check is a FILE-WIDE grep on both sides.* `:1300` asks `grep -q 'nuget' "$root/$c"` and
+   `:1301` asks `grep -qE 'name: \$\{ATLAS_DEV_NUGET_VOLUME:-' "$root/$c"`. Neither is scoped to a volume block,
+   so a file carrying ONE owned volume and ONE hardcoded one satisfies the second grep and is counted
+   `owned_nuget`, which is the opposite of what the check exists to say. Re-check: `sed -n '1298,1306p'
+   scripts/test-devcontainer-owner.sh`; it closes when the two greps read the same volume entry rather than the
+   same file.
+3. *Known-bad control B's audited population is a DECLARED literal.* `:1180` asserts
+   `"$ctl_out" == *"AUDITED 10"*`. Ten is a number a human keeps in step, so dropping a plant together with its
+   required line, its expectation and that literal leaves the control green over a smaller tree — the
+   `ctl_covered_elsewhere` disease the comment at `:1150` says it replaced, surviving one level out. Re-check:
+   `grep -n 'AUDITED 10' scripts/test-devcontainer-owner.sh` -> 2 lines on 2026-09-20, the assertion at `:1180` and
+   its failure message at `:1182`, so the literal must be hand-edited in two places; it closes when the expected
+   count is DERIVED from the names `plant()` was called with, the way `ctl_planted_names` already is at `:1168`.
 
 **D-17's `ClearOutOfScopeUsAuthorityStamps` names its rows by id as read at 2026-09-17T12:52:35Z, and production keeps
 writing out-of-scope stamps until that migration deploys; a row written in between stays.** Measured 2026-09-17,
@@ -2516,7 +2560,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | B | 2026-09-20 | OPEN | `verify-card-companion.py` ECHO/STATUS is VOCABULARY-BOUND and cannot be complete: two review rounds found two kinds (negative rules, then wiring status), each added to the word list AFTER a human found it. It also CANNOT fail the build on an existing finding -- the freeze gates GROWTH only, so a card-only rule present before 2026-09-20 stays advisory forever. Repro: `python3 scripts/verify-card-companion.py` -> 16 advisory, 0 gating |
 | C | 2026-09-20 | OPEN | Five `verify-card-companion.py` mutations pass GREEN, each a real hole. (1) INVERTED echo: card says "must" where the companion says "must never" -- tokens match so ECHO passes; repro: negate a card ALSO clause, rerun, 0 gating. (2) Card entry degraded to a BARE POINTER (`D-n slug: DETAIL DECISIONS.md §D-n`) -- PARITY and GUARD both pass because neither requires the card to say anything; repro: truncate one entry to its pointer. (3) REORDERED companion sections -- `read_companion` returns an order list that `check()` never reads; repro: swap two `## D-n` blocks, 0 gating. (4) DUPLICATE id: a second `## D-n` silently overwrites the first in the dict; repro: copy a section, 0 gating. (5) DUPLICATE slug across two ids -- never compared; repro: rename one slug to match another |
 | C | 2026-09-20 | OPEN | `audit.sh` W10 counts CHARACTERS, not bytes (`${#var}` is character length in bash) and the cards carry non-ASCII, so a flagged entry's byte count runs slightly higher -- FinnhubCollector D-2 is 10,040 characters / 10,070 bytes. Never changes a verdict at the 4,000 threshold, which is itself PICKED (~5x the longest rule line this split produces), not derived. Repro: `bash .claude/skills/architecture-cards/scripts/audit.sh FinnhubCollector` |
-| B | 2026-09-20 | OPEN | FinnhubCollector D-2 is 10,040 characters on one card line (42.5% of that 23,733-byte card) -- the only W10 finding in the repo, unfixed. Same disease as the 303KB SentinelCollector card at smaller scale; the fix is the same split (rule on the card, evidence to a new `FinnhubCollector/DECISIONS.md`, with the card entry ending in a DETAIL pointer at that file's D-2 section -- written as a literal anchor only once the file exists, since the pointer gate resolves a bare `DECISIONS.md` against two tracked files and refuses the ambiguity). Repro: `bash .claude/skills/architecture-cards/scripts/audit.sh FinnhubCollector` |
+| B | 2026-09-20 | OPEN | FinnhubCollector D-2 is 10,040 characters on one card line -- **10,070 BYTES of the card's 23,733 BYTES, 42.4%**, one unit on both sides of the ratio. Two earlier revisions each mixed the units and each got a different answer: 42.5% is chars/chars (10,040 of 23,615) stated against a BYTE denominator, and 42.3% is chars/bytes, which is not a ratio of anything. Like-for-like in characters is 42.5% of 23,615, and that is the pair to quote wherever the CHARACTER threshold is the subject, since W10 counts characters -- the only W10 finding in the repo, unfixed. Same disease as the 303KB SentinelCollector card at smaller scale; the fix is the same split (rule on the card, evidence to a new `FinnhubCollector/DECISIONS.md`, with the card entry ending in a DETAIL pointer at that file's D-2 section -- written as a literal anchor only once the file exists, since the pointer gate resolves a bare `DECISIONS.md` against two tracked files and refuses the ambiguity). Repro: `bash .claude/skills/architecture-cards/scripts/audit.sh FinnhubCollector` |
 | A | 2026-09-20 | OPEN | Catch blocks that swallow a REAL fault without marking the span leave it invisible to Tempo (147/673 across 3 services, a FLOOR; excludes 63 cancellation-only, which are NOT defects) |
 | B | 2026-09-20 | OPEN | `verify-pointers.py` has no BODY check and no FLOOR, so a deletion test against it proves the ANCHOR is load-bearing, never the RULE — two reproductions below |
 | B | 2026-09-20 | OPEN | The smoke test cannot see the OTEL stack, so a green run is consistent with loki/tempo/prometheus being down |
@@ -2836,8 +2880,14 @@ this entry claimed the exposed spellings "all pair `always` with a second skip, 
 `tagged` meta-tag"; the last example falsifies that -- it is a `--tags` form with neither
 property -- which is exactly why the CLASS, not its members, is what this entry records.
 NOT A REGRESSION AND NOT THE DOCUMENTED IDIOM. `--skip-tags always` ALONE -- the form CLAUDE.md
-§DEPLOYMENT prescribes for a non-service tag -- resolves to a NON-empty set: it runs 18 tasks
-(`ok=16`) and exits 2 on the same injection, `Verdict - containers` firing. The mechanism
+§DEPLOYMENT prescribes for a non-service tag -- resolves to a NON-empty set of **25 tasks** (27 in the
+play, less the two tagged `always`), of which that injected-failure run printed **21 TASK banners**:
+`ok=16` + 4 skipped on a false `when` + the 1 that failed. The play aborts at `Verdict - containers`, so
+the four later `Verdict -` tasks are resolved but never reached and print no banner. Exit code 2. THE
+NUMBER IS THE BANNER COUNT, NOT THE RESOLVED SET -- those are different measurements and an earlier
+revision of this entry gave 18, which is neither and reproduces from no denominator. Re-derive both
+STATICALLY, with no playbook run: `python3 -c "import yaml; ts=yaml.safe_load(open('deployment/ansible/playbooks/smoke-test.yml'))[0]['tasks']; r=[t for t in ts if 'always' not in t['tags']]; n=[t['name'] for t in r]; print(len(ts), len(r), n.index('Verdict - containers')+1)"`
+-> `27 25 21`. The `ok=16` already in this sentence is the arithmetic check: 16 + 4 + 1 = 21. The mechanism
 predates this playbook's current shape: Ansible has no task that cannot be deselected.
 ✗ DO NOT close this by adding a task or a tag to the playbook # that is the enumeration the
   per-domain selection model deleted after four rounds, each of which added one more member.
@@ -4522,19 +4572,60 @@ SIZE and the baseline it was measured against; a claim carrying neither is not e
 What this entry still holds is the provenance of one bare figure: `.claude/hooks/README.md:1154` says #935 was
 "drifting 41 shapes", with no corpus and no baseline. That 41 is #935 measured against MAIN -- not against its own
 previous head, where "loosened = 0" was true each time: 41 shapes opened, 32 of them executing a real write,
-sandbox-proved, by an agent-scratch sweep whose row count was never recorded. Left as written on purpose: the
-README is gate layer and the guard refuses writes to it, so this entry carries the provenance the sentence lacks.
+sandbox-proved, by an agent-scratch sweep whose row count was never recorded. This entry carries the provenance
+the sentence lacks. It used to say that was FORCED -- "the README is gate layer and the guard refuses writes to
+it" -- and that is FALSE, corrected 2026-09-20: `ansible-gate-guard.sh` gates `*.claude/hooks/*.sh`, not every
+file in the directory, so `.claude/hooks/README.md` is writable by an ordinary agent (scope and the measured
+probe: the service-decisions-context entry below). Repairing that bare 41 in the README is permitted work that
+was parked as impossible; it is still open, and it is a README edit, not a bypass.
 
 **One conflict-stop site still names only D-entries, and it is the one an agent reads while editing.**
 `.claude/hooks/service-decisions-context.sh` injects "If your brief contradicts a D-entry without a named
 supersession: STOP and report" as PreToolUse context on every edit to a service with a DECISIONS block. On
 2026-09-20 the stop was widened everywhere else in the class — a brief may not contradict a rule stated in a skill,
-a template or CLAUDE.md either — but that file is GATE LAYER and the write was refused, correctly: widening it is a
-hook change and wants the guard-change workflow (scratch copy, smoke run, its own PR), not a line slipped into a
-docs round. Until then, an implementing agent's most immediate copy of the stop is the narrow one. Re-check, 1 while
+a template or CLAUDE.md either — but that file is GATE LAYER and the write was refused, correctly: it is a hook
+change and wants the guard-change workflow, not a line slipped into a docs round. That workflow has SINCE been
+run in full (below) and the write is refused just the same, so what is left is not work but a human-placed
+bypass. Until then, an implementing agent's most immediate copy of the stop is the narrow one. Re-check, 1 while
 this is open and 0 once it is closed:
 `git grep -c 'contradicts a D-entry without a named supersession' -- .claude/hooks/` -> 1 on 2026-09-20.
-The rest of the class is closed, and the widened wording is deliberately greppable as ONE short phrase that survives
+The rest of the class is closed.
+THE FIX IS WRITTEN, VERIFIED AND STILL NOT LANDED -- the second round to be refused, so the blocker is the
+gate, not the work. Attempted 2026-09-20 from `.claude/worktrees/agent-abd7329d07fe289ec`: `ansible-gate-guard.sh`
+denied the Edit ("this WRITES TO a file in the GATE LAYER"). ITS SCOPE IS NARROWER THAN "everything under
+`.claude/hooks/**`", and saying otherwise parks permitted work as impossible: `is_gate_path`
+(`.claude/hooks/ansible-gate-guard.sh:196-203`) matches `*.devcontainer/compile.sh`, the bare `.claude/hooks`
+directory as a write target, `*.claude/hooks/*.sh` (the `*` spans `/`, so a suite at
+`.claude/hooks/test/run-*.sh` is covered too), `*.claude/settings*.json`, and the two marker scripts
+`*/scripts/claude-mark-verified` and `*/scripts/claude-pr-verdict`. A NON-`.sh` file under `.claude/hooks/` is
+NOT a gate path: measured 2026-09-20 from this worktree with no bypass file, a `Write` to
+`.claude/hooks/.gate-scope-probe.tmp` was ALLOWED, so `.claude/hooks/README.md`, the guard tests' `.md` notes and
+`mark-verified.log` are all editable by an ordinary agent. What IS refused is every `.sh` in the layer, its own
+repair included (the deadlock entry above). Developed and verified instead on the route that deny text
+itself prescribes -- `cp -r .claude/hooks <scratch>/hookstree`, edit the copy, run the copy's suite -- and the
+patch applies clean (`git apply --check`, rc 0).
+THE PASTE TARGET, stated so the paste cannot go wrong: `.claude/hooks/service-decisions-context.sh:70` is the
+FIRST of two physical lines of one `jq -n --arg ctx "<two-line string>"` command; line 71 is `$BLOCK" \` and
+line 72 is the `'{hookSpecificOutput:...}'` filter, and NEITHER changes. Replace line 70 in full, including the
+`jq -n --arg ctx "` that opens the string -- pasting the prose alone leaves the command unopened, the hook exits
+NEUTRAL and injects NOTHING, which is a silent TOTAL loss of the stop and strictly worse than the narrow wording.
+The line must stay UNWRAPPED or the `a rule stated in a skill` pin stops matching it. Line 70 entire:
+`jq -n --arg ctx "SERVICE DECISIONS ($svc_name/AGENT_README.md) — design decisions governing this code. If this brief contradicts a D-entry, or a rule stated in a skill, a template or CLAUDE.md, without a named supersession -> STOP and report, NAMING the rule and the contradiction; never route-around, never obey the stale entry, and never silently obey a written rule you believe is stale.`
+Two rows for `run-intent-fidelity-smoke.sh` go with it, and THEY ARE NOT IN THIS REPOSITORY: `.claude/hooks/test/`
+is gated the same way, so they exist only on the scratch tree they were verified on and the in-repo suite is
+byte-identical to main. One asserts `a rule stated in a skill` is present in the DELIVERED context; one asserts
+the narrow wording is absent; both sit immediately after the "injection stops at next heading" row. Teeth proved
+by swapping, not asserted: patched hook + patched suite -> both rows PASS; PRISTINE hook + patched suite -> both
+go RED and the suite's failure count moves 43 -> 45. (43 is the floor a copied-out tree carries on BOTH sides --
+`design-intent-dispatch-guard.sh` resolves the project root from its own location, so every one of its rows fails
+in scratch; the pristine tree IN the repo is rc 0 / 132 passed. The `service-decisions-context` section is
+location-independent and is clean in all three runs.)
+DELIVERY PATH, measured the same day and the reason this site is the one that matters: the hook is wired in the
+tracked `.claude/settings.json` under `PreToolUse` matcher `Edit|Write`, and it fires for a DISPATCHED SUBAGENT,
+not only an interactive session -- a subagent's `Write` to `AlertService/src/<probe>` returned the injected
+`SERVICE DECISIONS (AlertService/AGENT_README.md) ...` block, in its narrow form, as `additionalContext`.
+That is the one delivery path that reaches an editing agent whether or not it read CLAUDE.md, a skill or its brief.
+The wording is deliberately greppable as ONE short phrase that survives
 line-wrapping: `git grep -l 'a rule stated in a skill' -- ':!docs/BACKLOG.md' | wc -l` -> 7 on 2026-09-20 (CLAUDE.md,
 supervisor-mode `SKILL.md`, its `implementation-fix.md`, `story-implementation.md` and `spec-plan-authoring.md`,
 `intent-review/SKILL.md`, `architecture-cards/CARD_TEMPLATE.md`). A longer phrase measured 4 of the 7 because three
