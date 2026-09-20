@@ -20,9 +20,9 @@ BEFORE dispatching parallel compiles, ask the tree rather than this file. This N
 script that drives containers without owning an identity — and prints NOTHING when there are none:
 
     ( cd "$(git rev-parse --show-toplevel)" \
-      && git ls-files | grep -E '\.devcontainer/(compile|typecheck)\.sh$' \
-      | xargs -r grep -lE 'nerdctl|devcontainer_compose' \
-      | xargs -r grep -L devcontainer_own )
+      && git ls-files -z | grep -zE '\.devcontainer/(compile|typecheck|dev)\.sh$' \
+      | xargs -0r grep -lZE 'nerdctl|devcontainer_compose' \
+      | xargs -0r grep -L devcontainer_own )
 
 silent -> each run owns its own identity, parallel is safe. Any name printed -> SEQUENCE those.
 ✗ never substitute a COUNT comparison (`grep -l devcontainer_own` vs `ls */.devcontainer/compile.sh`).
@@ -36,11 +36,27 @@ silent -> each run owns its own identity, parallel is safe. Any name printed -> 
 ✗ never run it UNANCHORED. `git ls-files` is CWD-relative: from SecMaster/ it enumerates that one
   subtree, the pipeline prints nothing, and silence reads as "parallel is safe" — a silent false green
   where the old `*/` glob at least errored loudly. The `cd "$(git rev-parse --show-toplevel)"` subshell
-  is the anchor, and it still fails loudly outside a repo. Verified identical output from the repo root
-  and from SecMaster/.
+  is the anchor. Re-measured 2026-09-20: from the repo root and from SecMaster/, rc 0 and empty stdout on
+  a clean tree, and both name `zzgap/.devcontainer/compile.sh` with a gap planted in the index.
+✗ never run it UNQUOTED. Plain `xargs` splits on whitespace, so a path containing a space is handed to
+  `grep` as two nonexistent files: the errors go to STDERR and stdout stays EMPTY, which under the
+  contract above reads as "no gaps". Measured 2026-09-20 on a throwaway repo holding one planted gap at
+  `my svc/.devcontainer/compile.sh` — the unquoted form printed nothing on stdout, the `-z`/`-0` form
+  above printed the gap. Latent, not live: 0 of the 29 tracked `.devcontainer/*.sh` paths contain a
+  space today (`git ls-files | grep -E '\.devcontainer/.*\.sh$' | grep -c ' '`).
+✗ never wrap it in a SCRIPT that reads only stdout or only rc. Outside a repo it writes two `fatal:`
+  lines to stderr and exits **0** with empty stdout (`cd ""` succeeds, so the subshell keeps going) —
+  indistinguishable from a clean tree by either signal. It fails loudly for a human watching the
+  terminal and silently for anything else; a caller that must automate this has to check stderr.
 AUTHORITATIVE, and the copy carrying a known-bad control: scripts/test-devcontainer-owner.sh test 5 —
-  the same two filters, plus a gap planted from the tree's own scripts on EVERY run that the audit
-  must name, so a filter quietly matching nothing cannot read as a clean pass.
+  the same selector and the same two filters, driven on EVERY run over a PLANTED TREE carrying one fixture per
+  audit branch, and scored on whether the per-file lines correspond ONE-TO-ONE to the names that tree enumerated
+  AND on whether each branch emitted its own line. The REAL tree is pinned separately, by a NAME roster rather
+  than a count floor — a floor with slack absorbs a path-scoped exclusion, and no planted fixture can match an
+  excluded real path. A filter quietly matching nothing, a branch that stopped firing, a narrowed pattern that
+  makes a check silently not apply, and a loop reading a file other than the one it names all go RED there by
+  name. What it still cannot see: the check is STATIC TEXT — an ownership call present but unreachable, or written
+  early and CALLED late, reads as owned and in-order (docs/BACKLOG.md KNOWN DEFECTS).
 # this states the MECHANISM only. Per-service ports, volume names and counts live in the compose
 # files; an inventory copied here is wrong the next time someone edits one.
 

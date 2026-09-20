@@ -34,6 +34,8 @@ Defects with a measurement that makes them re-checkable.
 | impact | measured | status | entry |
 |---|---|---|---|
 | C | 2026-09-20 | OPEN | Parallel-compile gap check is nerdctl-only; a docker-first verification script reads container-less and is never audited |
+| C | 2026-09-20 | OPEN | Parallel-compile ownership audit is static text; a call behind an early `exit`, or written early and CALLED late, reads as owned and in-order |
+| D | 2026-09-20 | OPEN | Test 5's sibling double-trap sweep word-splits its file list; a spaced or globbed path is silently skipped |
 | A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
 | A | 2026-09-20 | OPEN | D-17 cleared the STAMP, not the DESCRIPTION: 8 foreign rows keep an EDGAR SIC line, 4 another company's |
 | A | 2026-09-20 | OPEN | BTC-USD duplicates the curated CRYPTO:BTC row; 1,101 observations to 0 (T3 items 1 and 2) |
@@ -131,15 +133,59 @@ script would read `container-less` and be exempted rather than audited.** The pr
 `.claude/skills/supervisor-mode/references/parallel-dispatch.md` uses the same two tokens. That contradicts
 CLAUDE.md PROJECT_CONVENTIONS, which mandates runtime-agnostic tooling (`nerdctl|docker|podman`), and the fallback
 is already written here: `edge/sentinel-edge/.devcontainer/build.sh` runs `nerdctl compose build` when nerdctl is
-on PATH and `docker compose build` otherwise. Measured 2026-09-20: of the 14 files the check enumerates, **1**
-mentions `docker` (`git ls-files | grep '\.devcontainer/.*\.sh$' | xargs grep -ln docker`) and it is a `build.sh`,
-outside the `(compile|typecheck)\.sh$` selector, so the exposure is latent, not live — 0 audited scripts are
-docker-only today. Direction is UNSAFE: such a script would silently be treated as having nothing to collide over,
-and known-bad control B cannot see it, because B proves the exemption keys on the container tokens without
-proving those tokens are the complete set. Re-check: rerun the `xargs grep -ln docker` count above and re-run
-`bash scripts/test-devcontainer-owner.sh`; the entry closes when the predicate matches `docker` and `podman` too
-and a control plants a docker-only gap. Fix is one regex in `devcontainer_gap_verdict` plus the documented
-pipeline, but both copies must move together or they disagree.
+on PATH and `docker compose build` otherwise. Measured 2026-09-20, two populations, which an earlier wording
+conflated: **0 of the 15** files the selector enumerates mention `docker`
+(`git ls-files | grep -E '\.devcontainer/(compile|typecheck|dev)\.sh$' | tr '\n' '\0' | xargs -0r grep -lE docker | wc -l`),
+and **1 of the 29** tracked `.devcontainer/*.sh` files does
+(`git ls-files | grep -E '\.devcontainer/.*\.sh$' | tr '\n' '\0' | xargs -0r grep -lE docker`) — that one being
+`edge/sentinel-edge/.devcontainer/build.sh`, outside the selector. So the exposure is latent, not live: 0 audited
+scripts are docker-only today. Direction is UNSAFE: such a script would silently be treated as having nothing to
+collide over, and known-bad control B cannot see it, because B proves the exemption keys on the container tokens
+without proving those tokens are the complete set.
+
+The half that USED to hide the first migration is now closed, and is recorded here because the entry omitted it:
+the `audited >= 12` floor carried slack (14 audited over a floor of 12), so the first audited script to stop
+matching the container predicate would have been exempted, dropped to 13, and still passed. The floor is gone —
+test 5 now asserts the population the loop WALKED against `verify_script_roster` by name, and the exemptions it
+TOOK against `container_less_exempt` for equality, so a script that stops driving containers is named rather than
+absorbed. Re-check: rerun both counts above and
+`bash scripts/test-devcontainer-owner.sh` (expect rc 0, `passed=132 failed=0`, and "walked exactly the 15
+rostered verification scripts"). The entry closes when
+the predicate matches `docker` and `podman` too and a control plants a docker-only gap. Fix is one regex in
+`devcontainer_gap_verdict` plus the documented pipeline, but both copies must move together or they disagree.
+
+**The parallel-compile ownership audit is STATIC TEXT matching, so an ownership call that is present but
+UNREACHABLE reads as `owned` and the script passes.** `devcontainer_gap_verdict` in
+`scripts/test-devcontainer-owner.sh` decides by `grep -qE '^[^#]*devcontainer_own'`; it never runs the script, so
+it cannot distinguish a call site from a dead line. Every known-bad control is itself a text mutant cut from a real
+script, which is exactly why no control can reach this. Measured 2026-09-20: copy
+`AlertService/.devcontainer/compile.sh`, insert `exit 0` on the line immediately before its `devcontainer_own`
+call, stage it in a throwaway repo and run the real `verify_audit_pipeline` over that repo — it prints
+`PASS zeta/.devcontainer/compile.sh owns before touching containers` and `audited=1 exempted=<nothing>`.
+
+ORDER is lexical for the same reason, and that half survives the fixtures added 2026-09-20 (`kappa`, `lambda`)
+because they too are text mutants. Measured the same day: a 9-line compile.sh defining `take_ownership() {
+devcontainer_own … }` at line 6, starting a container at line 8 and CALLING `take_ownership` at line 9 is reported
+`PASS mu/.devcontainer/compile.sh owns before touching containers` — the audit compares the line the call is
+WRITTEN on to the line the container starts on, never the order they RUN in. Same instrument closes both halves.
+Impact is
+C, not A: it needs someone to write an early `exit`/dead branch above the ownership call, and **0 of the 15**
+selector files carry an unconditional `exit` above their `devcontainer_own` line today (compare the first
+`^[[:space:]]*exit ` line number to the first `^[^#]*devcontainer_own ` line number in each). Closing it means
+EXECUTING each script with `devcontainer_own` stubbed to record, under a
+harness that stops it before it touches a container — a different instrument from the text audit, not a bigger
+regex. Re-check: re-run the planted-`exit 0` copy above; the entry closes when that copy is reported as a gap.
+
+**`scripts/test-devcontainer-owner.sh`'s double-trap sweep enumerates with `for f in $(git ls-files | grep …)`, so
+a path containing a space is split and one containing a glob metacharacter is expanded — either way that file is
+never checked and the sweep still reports clean.** Same defect class as the documented pipeline in
+`.claude/skills/supervisor-mode/references/parallel-dispatch.md`, which was fixed 2026-09-20; this copy was left
+UNCHANGED on purpose, as scoped residue. Pre-existing since `8235457f` (#920). Latent, not live, measured
+2026-09-20: **0 of the 29** tracked `.devcontainer/*.sh` paths contain a space or a glob metacharacter
+(`git ls-files | grep -E '\.devcontainer/.*\.sh$' | grep -cE '[ *?[]'`). Impact D because the sweep it weakens
+only catches a doubly-registered teardown trap, and `git ls-files` output is the one input that would have to
+change. Re-check: rerun that count; the entry closes when the loop reads `while read -r f; do … done < <(…)` and
+a spaced fixture proves the difference.
 
 **D-17's `ClearOutOfScopeUsAuthorityStamps` names its rows by id as read at 2026-09-17T12:52:35Z, and production keeps
 writing out-of-scope stamps until that migration deploys; a row written in between stays.** Measured 2026-09-17,
