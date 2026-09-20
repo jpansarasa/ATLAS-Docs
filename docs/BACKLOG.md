@@ -36,6 +36,7 @@ Defects with a measurement that makes them re-checkable.
 | C | 2026-09-20 | OPEN | Parallel-compile gap check is nerdctl-only; a docker-first verification script reads container-less and is never audited |
 | C | 2026-09-20 | OPEN | Parallel-compile ownership audit is static text; a call behind an early `exit`, or written early and CALLED late, reads as owned and in-order |
 | D | 2026-09-20 | OPEN | Test 5's sibling double-trap sweep word-splits its file list; a spaced or globbed path is silently skipped |
+| C | 2026-09-20 | OPEN | Test 6's three population counts are FLOORS, not rosters; tight today, and the first compose file added makes a narrowed glob silent |
 | A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
 | A | 2026-09-20 | OPEN | D-17 cleared the STAMP, not the DESCRIPTION: 8 foreign rows keep an EDGAR SIC line, 4 another company's |
 | A | 2026-09-20 | OPEN | BTC-USD duplicates the curated CRYPTO:BTC row; 1,101 observations to 0 (T3 items 1 and 2) |
@@ -149,7 +150,7 @@ matching the container predicate would have been exempted, dropped to 13, and st
 test 5 now asserts the population the loop WALKED against `verify_script_roster` by name, and the exemptions it
 TOOK against `container_less_exempt` for equality, so a script that stops driving containers is named rather than
 absorbed. Re-check: rerun both counts above and
-`bash scripts/test-devcontainer-owner.sh` (expect rc 0, `passed=132 failed=0`, and "walked exactly the 15
+`bash scripts/test-devcontainer-owner.sh` (expect rc 0, `passed=137 failed=0`, and "walked exactly the 15
 rostered verification scripts"). The entry closes when
 the predicate matches `docker` and `podman` too and a control plants a docker-only gap. Fix is one regex in
 `devcontainer_gap_verdict` plus the documented pipeline, but both copies must move together or they disagree.
@@ -167,14 +168,35 @@ ORDER is lexical for the same reason, and that half survives the fixtures added 
 because they too are text mutants. Measured the same day: a 9-line compile.sh defining `take_ownership() {
 devcontainer_own … }` at line 6, starting a container at line 8 and CALLING `take_ownership` at line 9 is reported
 `PASS mu/.devcontainer/compile.sh owns before touching containers` — the audit compares the line the call is
-WRITTEN on to the line the container starts on, never the order they RUN in. Same instrument closes both halves.
-Impact is
+WRITTEN on to the line the container starts on, never the order they RUN in. Same instrument closes both halves,
+so the re-check below exercises BOTH; a re-check naming only the `exit 0` copy would close the entry with the
+lexical-order half still open. Impact is
 C, not A: it needs someone to write an early `exit`/dead branch above the ownership call, and **0 of the 15**
 selector files carry an unconditional `exit` above their `devcontainer_own` line today (compare the first
 `^[[:space:]]*exit ` line number to the first `^[^#]*devcontainer_own ` line number in each). Closing it means
 EXECUTING each script with `devcontainer_own` stubbed to record, under a
 harness that stops it before it touches a container — a different instrument from the text audit, not a bigger
-regex. Re-check: re-run the planted-`exit 0` copy above; the entry closes when that copy is reported as a gap.
+regex. Re-check, BOTH copies, through the real `verify_audit_pipeline`: plant the `exit 0` copy AND the late-call
+copy into the control tree in `scripts/test-devcontainer-owner.sh` (the `plant` calls in test 5) and read what the
+pipeline says about each. Re-measured 2026-09-20 at `passed=137`, still open in both directions — `exit 0` above
+the ownership call yields `OK nu/.devcontainer/compile.sh owns before touching containers`, and a 9-line script
+defining the wrapper on line 6, starting a container on line 8 and calling the wrapper on line 9 yields
+`OK mu/.devcontainer/compile.sh owns before touching containers`. The entry closes when BOTH are reported as
+gaps; closing only the `exit 0` half leaves the lexical-order half live and is not a close.
+
+**Test 6 pins its three populations with FLOORS — `${#compose_files[@]} >= 14`, `named >= 13`,
+`owned_nuget >= 10` — which is the `audited >= 12` shape test 5 retired in #1079, one section out.** All three are
+TIGHT today (14/14, 13/13, 10/10 — slack 0), which is why they still catch a narrowing: measured 2026-09-20,
+appending `| grep -v ThresholdEngine` to the compose discovery pipeline gives rc 1, `passed=134 failed=3`, naming
+all three. The defect is what happens on the next legitimate addition. Modelling slack 1 by holding that same
+one-file narrowing and setting the floors to 13/12/9, the suite returns **rc 0, `passed=137 failed=0`** and
+ThresholdEngine's compose file drops out of the port, name and nuget checks silently — the PASS lines read 13, 12
+and 9 and nothing compares them to anything. A count with slack is not an assertion. Impact C: it needs a compose
+file to be added without the floors being bumped, which is an ordinary service addition and has happened before
+(#1079's floor carried 14 audited over a floor of 12 and absorbed a real path-scoped exclusion at rc 0 / 128).
+Fix is the shape already in test 5 — a NAME roster asserted for equality against what the loop walked, like
+`verify_script_roster` and `container_less_exempt` — not a bigger floor. Re-check: run both mutations above; the
+entry closes when narrowing the glob by one file fails regardless of what the floors say.
 
 **`scripts/test-devcontainer-owner.sh`'s double-trap sweep enumerates with `for f in $(git ls-files | grep …)`, so
 a path containing a space is split and one containing a glob metacharacter is expanded — either way that file is
