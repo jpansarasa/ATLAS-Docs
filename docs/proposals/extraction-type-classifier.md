@@ -1032,10 +1032,15 @@ Ship with a `promql_expr_test` in `deployment/tests/alerts/sentinel_test.yml` as
 directions: it fires when the ratio collapses with volume present, and it does **not** fire when
 volume itself goes to zero. A test for only the first direction would pass on a can't-fail alert.
 
-*Incidental defect found while specifying this:* the counter's own XML doc
-(`SentinelMeter.cs:1022-1026`) lists a **stale** reason set — it omits the four largest live
-reasons (`market_jargon`, `truncated_span`, `multiline_fragment`, `bare_corporate_suffix`) and
-lists a `garbled_fragment` that never fires. Fix it in the same PR.
+*Incidental defect found while specifying this — SINCE FIXED, re-derived 2026-09-20:* the
+counter's own XML doc listed a stale reason set, omitting the four largest live reasons
+(`market_jargon`, `truncated_span`, `multiline_fragment`, `bare_corporate_suffix`) and keeping a
+`garbled_fragment` that never fires. `CandidateSurfaceFiltered` (`SentinelMeter.cs:1197-1218`) now
+names all thirteen, and says why `garbled_fragment` stays listed: the enum bounds the tag, not the
+observed set. Nothing to fix here. (The line range this paragraph used to cite in that file never
+pointed at this counter at all — it landed on an unrelated orphan-FK counter, and read GREEN for as
+long as it resolved, because `verify-citations.py` is content-blind. It only became visible once an
+edit above it shifted the range onto a blank line.)
 
 ### 3. Measure the two gaps in §0 before designing anything else
 

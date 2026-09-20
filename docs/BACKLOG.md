@@ -34,6 +34,8 @@ Defects with a measurement that makes them re-checkable.
 | impact | measured | status | entry |
 |---|---|---|---|
 | A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
+| A | 2026-09-20 | OPEN | D-17 cleared the STAMP, not the DESCRIPTION: 8 foreign rows keep an EDGAR SIC line, 4 another company's |
+| A | 2026-09-20 | OPEN | BTC-USD duplicates the curated CRYPTO:BTC row; 1,101 observations to 0 (T3 items 1 and 2) |
 | A | 2026-09-17 | OPEN | 107 of 141 active GeminiFallback instruments are named by the query surface, not a title |
 | A | 2026-09-17 | OPEN | D-18 reclassifies 82 mislabelled rows (T3 item 3); 16 unconfirmed FRED ids, WEAT, ^TNX, EURUSD remain |
 | A | 2026-09-17 | OPEN | LLM breaker open -> resolve-local emits hypothesis "RAG" from SecMaster's own fallback text |
@@ -48,7 +50,8 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-07 | OPEN | A DELTA AND A LEVEL ARE THE SAME ROW: numbers[] cannot express dropped 2% vs is 2% |
 | A | 2026-08-15 | OPEN | Rule 1 slug substitution fixed (#969); open: INTC regression, 2 untested gaps, guards flag |
 | B | 2026-09-17 | OPEN | SecMaster D-16 drops Gemini fred_series answers for the 16 FRED ids D-18 leaves Equity (10 in 7d) |
-| B | 2026-09-17 | OPEN | SentinelCollector self-seed sends Gemini's holding class: ETFs GSG, PALL, WEAT stored Commodity |
+| B | 2026-09-20 | OPEN | 7 active catalog rows have a blank name; 71 attach-pool slots were labelled with "-" for a name |
+| B | 2026-09-20 | OPEN | selfseed_class_skip (D-34) has no alert: the 7-day production rate is unmeasured |
 | B | 2026-09-17 | AWAITING-DECISION | Test databases on the shared timescaledb: 9 fixed-name orphans, per-worktree leaks on kill, each holds a TimescaleDB worker slot |
 | B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
 | B | 2026-09-17 | OPEN | backfill_unresolved_rate_high never detected a fault: constant on main, crossed by growth on D-17 |
@@ -173,6 +176,80 @@ discovery_source = 'GeminiFallback' AND created_at < TIMESTAMPTZ '2026-07-19' AN
 count(DISTINCT instrument_id) FROM sentinel.extracted_observations WHERE instrument_id IN (<ids>) AND extracted_at >=
 TIMESTAMPTZ '2026-08-17 23:12Z' AND extracted_at < TIMESTAMPTZ '2026-09-16 23:12Z';` on `atlas_data` -> `3888 | 75`.
 `instrument_id` can change after extraction, so a different figure is not by itself a refutation.
+
+**D-17's MIGRATION CLEARED THE STAMP AND LEFT THE DESCRIPTION, AND ITS OWN LEFTOVER QUERY CANNOT SEE THAT.**
+[2026-09-20] `ClearStampsSql` nulls `description` only `WHEN EXISTS (SELECT 1 FROM edgar_filers f WHERE f.ticker =
+i.symbol AND f.sic_description = i.description)`
+(`SecMaster/src/Data/Migrations/20260917110542_ClearOutOfScopeUsAuthorityStamps.cs:265`), and `UnclearedRowsSql` @ `:309`
+selects on `classification_source` alone. So a foreign row whose stamp WAS cleared keeps its EDGAR SIC description and is
+invisible to the leftover query, to A4b, and to every acceptance count D-17 defines. Measured on `atlas_secmaster`
+2026-09-20: 8 active bare-symbol rows on a non-US venue code carry a description that is some EDGAR filer's
+`sic_description`, all 8 with `classification_source IS NULL`. Four of them hold a DIFFERENT company's line -- ACA on FP
+is `CREDIT AGRICOLE SA` carrying Arcosa's `Fabricated Structural Metal Products`, SALM on NO is `SALMAR ASA` carrying
+Salem Media's `Radio Broadcasting Stations`, REA on AT is `REA GROUP LTD` carrying Rare Earths Americas' `Metal Mining`,
+and NANO on CT is `NANO ONE MATERIALS CORP` carrying ATII Holdings' `Blank Checks`. The other four (BHP, BNT, ERO, LAC)
+happen to be right. Consequence: `EmbeddingService` vectorises the description, so a wrong one is a wrong identity
+sentence for the vector tier, and `InstrumentClassificationBackfillService.ShouldOverwriteDescription` refuses a non-empty
+description, so nothing repairs these without a data migration. Fix is a follow-up data migration over the ids, the same
+compare-and-swap shape D-17 used, with the predicate widened to `f.sic_description = i.description` alone.
+Re-check (psql is SELECT-only; `atlas_secmaster`): `SELECT count(*) FILTER (WHERE (SELECT count(*) FROM edgar_filers f
+WHERE f.ticker = i.symbol AND f.sic_description = i.description) = 0) AS another_companys, count(*) AS rows FROM
+instruments i WHERE i.is_active AND i.asset_class IN ('Equity','ETF') AND i.symbol !~ '\.' AND i.exchange ~ '^[A-Z]{2}$'
+AND i.exchange <> 'US' AND i.description IS NOT NULL AND EXISTS (SELECT 1 FROM edgar_filers f WHERE f.sic_description =
+i.description);` -> `1 | 8` on 2026-09-20 (the FILTER counts only NANO, whose description matches no filer holding its
+ticker; ACA, SALM and REA need the names compared, which the row list above does). Close when it returns 0 rows.
+
+**BTC-USD IS A SECOND BITCOIN ROW BESIDE THE CURATED ONE, AND EVERY OBSERVATION IS ON THE CURATED ONE.** [2026-09-20]
+D-18 relabelled `BTC-USD` Equity -> Crypto, which was the eighty-second of its 82 and is correct; it did NOT merge the
+row. `atlas_secmaster` holds `BTC-USD` (`entity_resolution:gemini`, created 2026-08-20T16:40Z, name `BTC-USD` -- the
+surface echoed back, SecMaster D-2) beside `CRYPTO:BTC` (`curated_v1`, name `Bitcoin`, created 2026-05-02). Both active,
+both Crypto. Measured 2026-09-20 on `atlas_data`: `CRYPTO:BTC` carries 1,101 observations (latest 2026-09-20T11:07Z) and
+`BTC-USD` carries 0. The curated side GROWS (1,037 when the plan was written, 1,101 on 2026-09-20) -- a rising number
+here is the healthy row working, not a drifting measurement; the figure that must stay 0 is `BTC-USD`'s.
+So the duplicate attracts nothing today and costs nothing today -- it is a resolution hazard, not a
+data defect, and the reason to close it is that an exact-symbol or vector hit on `BTC-USD` splits the series the moment
+one lands. A third row, `BTC` (`GRAYSCALE BITCOIN MINI ETF`, Equity, FinnhubCollector, 128 observations), is a DIFFERENT
+instrument and is not part of this. Disposition belongs to plan T3 items 1 and 2 (dedup/merge), not to a relabel.
+Re-check (psql is SELECT-only): `SELECT symbol, asset_class, is_active FROM instruments WHERE symbol IN ('BTC-USD',
+'CRYPTO:BTC');` on `atlas_secmaster` -> 2 active Crypto rows; then `SELECT instrument_id, count(*) FROM
+sentinel.extracted_observations WHERE instrument_id IN ('a1e8f1a3-fbcd-42bc-a55a-f3fcdc2e15a8',
+'b77a1888-9875-4857-9693-338f4f3fb1d3') GROUP BY 1;` on `atlas_data` -> ONE row only,
+`b77a1888...`, whose count RISES over time (1,101 on 2026-09-20). A count appearing against `a1e8f1a3...` at all is the
+split starting, and is what this entry watches; the curated count itself is not a threshold.
+
+**SEVEN ACTIVE CATALOG ROWS HAVE A BLANK NAME, AND THE ATTACH FREEZE LABELLED 71 POOL SLOTS WITH NO NAME TO READ.**
+[2026-09-20] Measured on `atlas_secmaster`: 7 active rows have `name = ''` (empty string, not NULL) -- ANTA.MU, DXLG.MU,
+HPE.HM, MAMI.HM, NBC.HM, XMHQ.HM from FinnhubCollector and RJETQ from AlphaVantageCollector, every one a foreign or
+delisted listing. Two consequences, both measured. (1) A blank name is invisible to every name-keyed tier: the pool
+builder's ILIKE and trigram legs rank on `similarity(name, ...)`, so these rows can enter a pool only by exact
+symbol/alias or by vector, and `EmbeddingService`'s identity sentence is built without the one field that identifies the
+row. (2) `LlmBenchmark/attach-gold/attach_pools_v1.json` (frozen at catalog_at 2026-09-17T11:12:23Z) puts these ids in 71
+pool slots across 43 of its 920 units, and `build_attach_gold.py:655` renders a falsy cell as `-`, so the paid labellers
+judged those 71 slots with a symbol and no name. NOT a dropped slot and not a corrupted label -- the gold's accepts were
+adjudicated and NOT_IN_POOL re-checked by SQL -- but the freeze cannot be re-derived as name-complete, and any future
+pool inherits the same blindness until the rows are named or retired.
+Re-check (psql is SELECT-only; `atlas_secmaster`): `SELECT count(*), string_agg(symbol, ', ' ORDER BY symbol) FROM
+instruments WHERE is_active AND (name IS NULL OR btrim(name) = '');` -> `7 | ANTA.MU, DXLG.MU, HPE.HM, MAMI.HM, NBC.HM,
+RJETQ, XMHQ.HM` on 2026-09-20. Pool side, no database: count those ids in `attach_pools_v1.json` -> 71 slots over 43
+units.
+
+**`selfseed_class_skip` (SentinelCollector D-34) HAS NO ALERT, BECAUSE ITS PRODUCTION RATE HAS NEVER BEEN MEASURED.**
+[2026-09-20] The D-34 skip counts `sentinel_gemini_resolver_calls_total{outcome="selfseed_class_skip",reason}` (V2) and
+`sentinel_gemini_fallback_calls_total{...}` (V1), 4 series zero-initialised at boot. A sustained skip rate means the
+resolver's class vocabulary has drifted from the table both services hold, which is silent otherwise -- but no alert is
+wired, deliberately: a hold derived from an average pages about ten times a week on a bursty signal, and this signal's
+shape is unknown because the outcome did not exist before this PR. Expected rate is near zero: replaying the resolver
+cache under the vehicle-first rule, SecMaster D-16 measured 0 of 40,088 symbol-bearing answers at confidence >= 0.6
+naming no class (2026-09-17).
+FIRST, AND BEFORE ANY RATE: the same query answers whether the zero-init landed at all. The priming runs on
+`ApplicationStarted` because a measurement taken before OTel's MeterProvider subscribes is dropped; the unit test pins
+the method's content and CANNOT see that ordering. So an EMPTY result for `{outcome="selfseed_class_skip"}` within
+minutes of a deploy -- before anything can have skipped -- means the priming is still landing too early, not that the
+rate is zero.
+Re-check: `sum by (reason) (increase(sentinel_gemini_resolver_calls_total{outcome="selfseed_class_skip"}[7d]))` and the
+same over `sentinel_gemini_fallback_calls_total`, both anchored to an instant from `date -u`, after 7 days of production
+on a build carrying D-34. Close by replaying that 7-day distribution at 1-5m resolution and either wiring a rule with a
+`for:` taken from the distribution, or recording that the rate is 0 and no rule is warranted.
 
 **D-18 RECLASSIFIES 82 MISLABELLED ROWS BY AUTHORITY, WHICH COMPLETES T3 ITEM 3 AS WRITTEN; NOT YET DEPLOYED. 19 ROWS
 NO AUTHORITY SETTLES REMAIN MISLABELLED.** Mechanism, authority and every id: `SecMaster/AGENT_README.md` D-18 and the
@@ -809,30 +886,6 @@ lower(asset_class) IN ('equity', 'etf', 'stock') AND symbol IN ('CPIW', 'GOLDPMG
 'NAHB', 'NAPM', 'NATURALR', 'PCEPILFE_PC1', 'PRS85000001', 'RSTAR', 'SPRSTOC', 'US30Y', 'USMCE', 'USQCEWEMP',
 'WCESTUS1', 'WCSSTUS1');` -> 16 on 2026-09-17, before and after the D-18 deploy, one fewer per disposition. It names the
 ids because the exchange-FRED filter also matches OWLT.
-
-**SENTINELCOLLECTOR'S GEMINI SELF-SEED SENDS THE CLASS OF WHAT A FUND HOLDS, SO 3 LIVE ETF ROWS ARE STORED AS
-`Commodity` (D-18 RELABELS 2 OF THEM), AND THE SENDER STILL RUNS.** Both register legs send `SelfSeedAssetClass.Clamp(<Gemini asset_class>)` to
-SecMaster `POST /api/instruments` as collector `GeminiFallback`: V2 at `SentinelCollector/src/Services/DeterministicResolver.cs:1051`,
-V1 at `SentinelCollector/src/Workers/ExtractionProcessor.cs:1746`. The clamp
-(`SentinelCollector/src/Services/SelfSeedAssetClass.cs:36`) keeps any member of SecMaster's D-4 allowlist, so Gemini's
-`commodity` for a commodity ETF is sent as `Commodity` while the V2 leg sends `etf` as the instrument type
-(`DeterministicResolver.cs:1077`). The clamp is SentinelCollector D-12's SENDER CLAMP, which upholds SecMaster D-4
-and only makes a register pass that allowlist; which of Gemini's two fields decides the class is SecMaster D-16's
-`GeminiAssetClass`, and the sender does not apply it. Still running: `GSG` was created 2026-09-10T12:33Z (`WEAT`
-2026-07-27, `PALL` 2026-06-29), and the newest `GeminiFallback` row of any class 2026-09-13T05:27Z.
-Readers it misleads: SecMaster D-16's family check, which trusts the stored class, so Gemini's correct ETF answers
-for these tickers meet a NON-LISTED row and drop as `class_conflict_skip` (24 cached answers on 2026-09-17); and
-`EmbeddingService`'s identity sentence, which vectorises "is a Commodity etf". Blind spot: the V1 leg sends
-`InstrumentType: null` (`ExtractionProcessor.cs:1753`), so a row IT mislabels is invisible to the query below.
-Not fixed in PR 1061, which changes no SentinelCollector code; the fix is the sender's, letting the vehicle decide.
-Relabelling rows is not that fix: SecMaster D-18 moves GSG and PALL to ETF once deployed, WEAT stays Commodity (its
-entry above), and the sender can store the next one the same way.
-Re-check (psql is SELECT-only; `atlas_secmaster`): `SELECT count(*), string_agg(symbol, ', ' ORDER BY symbol) FROM
-instruments WHERE is_active AND discovery_source = 'GeminiFallback' AND lower(instrument_type) IN ('etf', 'etn',
-'common_stock', 'preferred_stock', 'adr', 'closed_end_fund', 'mutual_fund') AND asset_class NOT IN ('Equity', 'ETF',
-'Stock');` -> `3 | GSG, PALL, WEAT` on 2026-09-17, `1 | WEAT` once D-18 deploys, and any row beyond those is this
-sender still at work; `SELECT max(created_at) FROM instruments WHERE discovery_source =
-'GeminiFallback';` -> 2026-09-13T05:27Z.
 
 **Integration test databases on the SHARED timescaledb outlive their runs, and each one holds a TimescaleDB
 background-worker slot.** [2026-09-17] Integration fixtures now use per-worktree names
