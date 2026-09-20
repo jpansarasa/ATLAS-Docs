@@ -2740,7 +2740,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | C | 2026-09-20 | OPEN | `audit.sh` W10 counts CHARACTERS, not bytes (`${#var}` is character length in bash) and the cards carry non-ASCII, so a flagged entry's byte count runs slightly higher -- FinnhubCollector D-2 is 10,040 characters / 10,070 bytes. Never changes a verdict at the 4,000 threshold, which is itself PICKED (~5x the longest rule line this split produces), not derived. Repro: `bash .claude/skills/architecture-cards/scripts/audit.sh FinnhubCollector` |
 | B | 2026-09-20 | OPEN | FinnhubCollector D-2 is 10,040 characters on one card line -- **10,070 BYTES of the card's 23,733 BYTES, 42.4%**, one unit on both sides of the ratio. Two earlier revisions each mixed the units and each got a different answer: 42.5% is chars/chars (10,040 of 23,615) stated against a BYTE denominator, and 42.3% is chars/bytes, which is not a ratio of anything. Like-for-like in characters is 42.5% of 23,615, and that is the pair to quote wherever the CHARACTER threshold is the subject, since W10 counts characters -- the only W10 finding in the repo, unfixed. Same disease as the 303KB SentinelCollector card at smaller scale; the fix is the same split (rule on the card, evidence to a new `FinnhubCollector/DECISIONS.md`, with the card entry ending in a DETAIL pointer at that file's D-2 section -- written as a literal anchor only once the file exists, since the pointer gate resolves a bare `DECISIONS.md` against two tracked files and refuses the ambiguity). Repro: `bash .claude/skills/architecture-cards/scripts/audit.sh FinnhubCollector` |
 | A | 2026-09-20 | OPEN | Catch blocks that swallow a REAL fault without marking the span leave it invisible to Tempo (147/673 across 3 services, a FLOOR; excludes 63 cancellation-only, which are NOT defects) |
-| B | 2026-09-20 | OPEN | `verify-pointers.py` has no BODY check and no FLOOR, so a deletion test against it proves the ANCHOR is load-bearing, never the RULE — two reproductions below |
+| B | 2026-09-20 | OPEN | `verify-pointers.py` has no BODY check and no FLOOR, so a deletion test against it proves the ANCHOR is load-bearing, never the RULE — two reproductions below, plus two coverage gaps: bare-label navigation and a template body that is one fence |
 | B | 2026-09-20 | OPEN | The smoke test cannot see the OTEL stack, so a green run is consistent with loki/tempo/prometheus being down |
 | B | 2026-09-20 | OPEN | The smoke test asserts nothing non-running, never that everything expected is present |
 | B | 2026-09-20 | OPEN | Smoke test's `exited` + `ExitCode 0` exemption has no recency term; its data source carries no timestamp |
@@ -2821,6 +2821,18 @@ all navigate to `CLAUDE.md TRACK LATEST, ROLL BACK ON FAULT` with NO section sig
 Markdown. Neither sweep parses those, so retiring the label would have been green in both. Caught in review
 on #1084, then re-derived by matching `CLAUDE.md` followed by an upper-case label across every tracked file
 and checking each label still leads a line of `CLAUDE.md` — 40 labels navigated that way, one broken.
+
+**A fourth, measured 2026-09-20 while encoding the dispatch rules**: no construct inside either
+code-dispatching template can be pointed at AT ALL. `constructs()` skips fenced lines -- deliberately, for
+the mermaid case -- and the entire prompt body of `implementation-fix.md` and `story-implementation.md` is
+one fenced block, so their line-leading `TRAJECTORY` and `SELF_ATTACK` tokens resolve to nothing. Repro:
+put a scratch `.md` in the worktree citing implementation-fix.md with a section sign and `TRAJECTORY`, run
+`python3 scripts/verify-pointers.py` on it -> `no line of ... begins with TRAJECTORY`, rc 1, while
+`grep -n '^TRAJECTORY$'` on the target prints a hit. Consequence: every reference INTO those two templates
+is ungated prose (`CONSTRAINTS`, `Notes for the supervisor`, `TRAJECTORY step 2`, and the two added by this
+PR), so renaming a template block rots them silently -- the class this gate exists to catch, unreachable
+for the two artifacts the fix-round loop reads most. Fix shape: let the gate treat a file whose body is a
+single outermost fence as unfenced, which keeps the mermaid case (an inner fence) intact.
 
 Fix shape, not yet built: a body-presence assertion (a construct's section must be non-empty), a floor on
 the checked count, and the label sweep above folded into the same gate so the three run together.

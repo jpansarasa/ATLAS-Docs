@@ -59,6 +59,13 @@ name and the `--context {Svc}DbContext` rule to
   NAME the rule and the contradiction, and never silently obey a written
   rule you believe is stale — say so — CLAUDE.md INTENT_FIDELITY CONFLICT.
 
+## Before the first edit
+- ENUMERATE THE SURFACE the change touches -- every site, and every artifact
+  asserting a fact the change makes false -- each PINNED by a test, FILED with
+  a measurement, or OUT OF SCOPE and why; hand that list back with the work.
+  Dispositions, the fix-the-claim-SET rule and the #1073 measurement:
+  `implementation-fix.md` TRAJECTORY step 3
+
 ## Build / verify
 - `bash {Service}/.devcontainer/compile.sh` (with tests), AFTER the final commit.
   Per CLAUDE.md GIT_PUSH HARD_STOP: 0 errors / 0 warnings / all tests pass.
@@ -68,6 +75,11 @@ name and the `--context {Svc}DbContext` rule to
 - Do NOT deploy. Do NOT push. Do NOT open PR.
 
 ## Pre-handback (run every one, report each result)
+- SELF-ATTACK, and it covers this first draft, not only a fix round: try to
+  BREAK what you are handing back, then report the LIST -- what you attacked,
+  what broke, what you tried that did NOT break. A line claiming it with no
+  list is worth nothing, and a reviewer is not the detector. The moves and the
+  measured round counts: `implementation-fix.md` PRE-HANDBACK, the SELF_ATTACK block
 - DELETE THE ENABLING LINE of every guard or control you added — the
   registration/view, the startup seeding or zero-init, the evidence file a
   gate reads, the consumer of a flag — re-run, NAME what failed. Nothing
@@ -105,6 +117,7 @@ name and the `--context {Svc}DbContext` rule to
 - Branch + final commit hash, and the attested tree hash = `HEAD^{tree}`
 - Files touched (paths, <=20 lines)
 - Build status: errors / warnings / tests pass
+- Surface list + dispositions; self-attack list (attacked / broke / did not break)
 - Deviations from spec + rationale
 - Anything blocked / needed from supervisor
 

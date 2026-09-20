@@ -40,7 +40,18 @@ TRAJECTORY
    EVERY MEASURED NUMBER, CITED LINE, ROOT CAUSE AND SEVERITY IN THIS BRIEF IS A HYPOTHESIS, never a
    specification — a brief stated as fact is obeyed, and a wrong fact is obeyed into code. Refuting
    one is the round's value, not a deviation.
-3. The fix, plus an `// INTENT(D-n):` comment at the guard site if a guard is involved. Commit.
+3. ENUMERATE THE SURFACE BEFORE THE FIRST EDIT, in ONE pass, handed back WITH the work. Every site
+   the change touches -- construction, comparison, advance, ordering, caller -- AND every artifact
+   asserting a fact the change makes false: PR body, D-entry, backlog, service README, code
+   comment, test name. Each gets ONE disposition: PINNED by a test that goes RED when the change
+   reverts, FILED with its measurement, or OUT OF SCOPE and why. A CLAIM LIVES IN MORE THAN ONE
+   PLACE, so grep the fact and fix the SET, never the copy a finding quoted.
+   #1073: 13 sites, surfaced 2 then 2 across rounds 2 and 4 because nobody enumerated once, a round
+   for each; and its round-2 critical was a sentence corrected in the D-entry and the backlog but
+   not the PR body, where it tells a DEPLOYER to roll back a correct fix. The reviewer is told to
+   DEMAND this list -> `.claude/skills/review-discipline/SKILL.md` §BLOCK_TEXT; the same move
+   scoped to a findings list is the ceiling-not-floor bullet under CONSTRAINTS.
+   Then the fix, plus an `// INTENT(D-n):` comment at the guard site if a guard is involved. Commit.
 4. The guard test: construct the violation, assert refusal AT the boundary through the real flow,
    mock ONLY the external client. Contract:
    `.claude/skills/intent-review/SKILL.md` §GUARD_TEST_CONTRACT. Commit.
@@ -77,9 +88,31 @@ TRAJECTORY
    `--context {Svc}DbContext` is REQUIRED to `.claude/hooks/README.md` §EF_MIGRATION_TRAPS —
    five things no restatement here has ever had.
 8. Report: commit hash per layer/finding, each finding {addressed | rejected with evidence |
-   deferred}, the before/after number, mutation results, compile counts.
+   deferred}, step 3's surface list with its dispositions, the SELF_ATTACK list (attacked / broke /
+   did not break), the before/after number, mutation results, compile counts.
 
 PRE-HANDBACK — run these BEFORE you write step 8, and put each result IN it
+SELF_ATTACK IS THE OBLIGATION THIS LIST SERVES, and it covers ALL work, this first draft included:
+  try to BREAK what you are about to hand back, then report the LIST -- what you attacked, what
+  broke, and what you tried that did NOT break. A line claiming it with no list is worth nothing.
+  THE REVIEWER IS NOT THE DETECTOR; handing back work a reviewer has to debug is a FAILED handback,
+  not a normal round. #1073's first two rounds found a FALSE verification instruction in its own PR
+  body, a README asserting at four lines the behaviour the PR exists to retire, a comment reading
+  "up to 10 rows share" against the same PR's D-entry figures of 11 / 730 / 100,000, and two sites
+  where the fix reverts with the whole suite green. Not one needed a reviewer: grep what your
+  change invalidates, check your own figures against each other, mutate your own guard.
+  MEASURED over 2026-09-20's PRs: agents that self-attacked AND reported it closed in 1-2 rounds --
+  a TypeError found in its own assertion; a mutation harness reporting NO-OP SED where a bad escape
+  had tested nothing; a supervisor's figure refused as unreproducible and re-derived; an
+  empty-population guard catching its own author's first draft. Handbacks reporting "done"
+  unattacked closed in 4-7. Not brief length, task difficulty or capability -- whether they tried.
+  SHARPEST INSTANCE, because it gets the least scrutiny of anything in a PR: a test, control, check
+  or query written to satisfy a REVIEW FINDING entered after review began and has had none, so
+  items 1-8 apply to IT. A new test over shared or process-global state runs 10x unmutated before
+  you believe it -- 3 RED in 10 was #1073's round-4 critical, invisible to three rounds that each
+  ran the suite ONCE, and every agent compiling that service then reads red a third of the time. A
+  new check states what input makes it FAIL and what it returns on an EMPTY one (item 3 owns that).
+  PREFER A FIX THAT DELETES OR SIMPLIFIES over one that adds -- added code is added review surface.
 1. DELETE THE ENABLING LINE of every guard, control or flag you added — the registration or view,
    the startup seeding or zero-init, the evidence file the gate reads, the consumer of the flag —
    re-run, and NAME what failed. Nothing failed -> the guard is decorative: fix it now, not next

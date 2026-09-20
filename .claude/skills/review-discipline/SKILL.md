@@ -29,8 +29,8 @@ terminate by RECORDING                   # an unrecorded stop cannot be told fro
 
 ## THE_MOVE [the whole procedure; every section below is the depth behind one of these]
   1. BEFORE round 1: name the artifact CLASS and write its budget down.
-  2. Each round: report SCOPE, NOT_EXAMINED, and per finding a CLASS plus the reader-and-wrong-action
-     sentence. No sentence -> not a round's worth of finding.
+  2. Each round: report SCOPE, NOT_EXAMINED, and per finding the RULE it violates, a CLASS and the
+     reader-and-wrong-action sentence. Either missing -> not a round's worth of finding.
   3. Count the round: one verdict at a new head. The gate-forced pass after a fix counts too.
   4. At the tripwire: RE-DECLARE in writing what is unconverged. Never merge over an open critical.
   5. The round that APPROVES re-attacks the OLDEST at full scope - never the fix diff.
@@ -127,6 +127,27 @@ round. It forces a WRITTEN re-declaration naming what is still unconverged and h
 that needs. A critical finding open at exhaustion is an escalation, never a merge.
   # a hard cap would trade one silent failure for a worse one - merging on a schedule
 
+## FINDING_BAR [what makes a finding a finding, before anything grades it]
+TWO PARTS, BOTH REQUIRED:
+  (a) the RULE, PATTERN or INTENT violated, NAMED - a clause in CLAUDE.md, a skill, a D-entry, a
+      stated contract, or a claim THIS PR itself makes.
+  (b) the reader and the wrong action they take unfixed -> SEVERITY_BAR owns that half and grades
+      it; not restated here.
+NO (a) AND IT IS A PREFERENCE: it does not enter the report, does not become RESIDUE, and buys no
+round. NOT THE SAME AS IMPERFECT, and the difference decides where it goes: IMPERFECT clears (a) and
+fails (b), so it is a real finding filed as residue; a preference fails (a) and is not a finding.
+User direction, verbatim: "A review agent can't just point at code and say 'I don't like this,
+rewrite it'. It must have violated some rule/pattern/intent. You can't say 'Don't use for loops,
+use while do' since that is not a substantive change."
+A MANUFACTURED READER SENTENCE IS THE SAME THING IN DISGUISE, and it is the form this will actually
+take, so refuse it by name: "a maintainer might be confused" can be written about any code at all.
+(b) alone never was a bar - it is satisfiable by anyone willing to write the sentence. (a) is the
+half that cannot be manufactured: a named clause either says that or it does not.
+IT IS ALSO A BUDGET RULE. A preference reaching a report is how a CONVERGING review reopens: it
+hands the next round something to "fix", and the fix then adds code that entered after review began
+and has had no review of its own. That loop is closed from the other end by
+`templates/implementation-fix.md` PRE-HANDBACK, the SELF_ATTACK block.
+
 ## SEVERITY_BAR [consequence, not correctness]
 For every finding name two things: the READER or CALLER, and the WRONG ACTION they take unfixed.
   both nameable -> ACTION-CHANGING -> fix it, this round
@@ -165,7 +186,8 @@ rationale: in a converging review severity trends down and the CLASS SET narrows
 ## ROUND_REPORT [what a round must state to be a round]
   1. SCOPE examined - paths, sections, aspects
   2. NOT_EXAMINED: <what was skipped> because <reason>
-  3. per finding: CLASS + severity + the reader-and-wrong-action sentence
+  3. per finding: the violated rule (FINDING_BAR) + CLASS + severity + the reader-and-wrong-action
+     sentence
   4. the verdict, and this round's number against the declared budget
 TWO AXES, NOT ONE. CLASS feeds the convergence test and sets NO severity. Severity comes from
 SEVERITY_BAR alone, and maps onto the review skills' {critical, important, suggestion}:
@@ -186,6 +208,8 @@ total coverage: rarely true, and it hands the residual risk to nobody.
 ## BLOCK_TEXT [a block IS the next fix brief - implementation-fix.md pastes it VERBATIM]
 Measured on #1078: seven declared rounds against PRODUCTION 4. The log holds SIX verdict lines -
 round 2 recorded none, the FLOOR limit in SELF_CHECK - so quote both numbers or neither.
+EVERY FINDING A BLOCK CARRIES HAS CLEARED FINDING_BAR, citing the rule, pattern or intent violated
+  and not only a reader # a preference relayed as a block is a fix brief for work nobody needed
 
 BRIEF THE PROPERTY, NOT THE PATCH. Name what the artifact must GUARANTEE and the question it must
   answer; never the field, line or expression you happened to notice. Naming the patch caps the fix
@@ -205,7 +229,9 @@ DEMAND THE INPUT-SPACE ENUMERATION BEFORE THE FIX. Require the agent to enumerat
   and to state which it uses and why the rest cannot answer. Enumerate, never sample. # asked,
   #1078 returned 29 tag selections and a ten-row state table and closed the class in one round;
   unasked, the same class took three. The instance-level twin - a findings list names a CLASS, so
-  count the sites before fixing any - is implementation-fix.md CONSTRAINTS.
+  count the sites before fixing any - is implementation-fix.md CONSTRAINTS; the CHANGE-level twin,
+  enumerated before the first edit and handed back with the work, is `implementation-fix.md`
+  TRAJECTORY step 3, which is where a fix agent is told to produce unasked what this rule demands.
 
 SCALE THE ROUND TO THE DELTA. A full adversarial round costs the same against a 3-line diff as
   against 400. Pick the scope from WHAT THE DELTA COULD HAVE BROKEN: a corrected sentence gets that
@@ -340,6 +366,8 @@ never continue because the last round found something # a careful reader always 
 never open round 1 without a declared class and budget
 never quote a round count without its UNIT # verdicts, dispatches and commits are three different numbers
 never spend a round on a finding whose reader and wrong action you cannot name
+never report a finding that cites no violated rule, pattern or intent # that is a PREFERENCE, and a
+  manufactured reader sentence does not promote one
 never narrow a gate-forced pass that COULD approve # narrow scope only when a critical is open or
   the budget has >=2 rounds left; otherwise full scope, because terminality is known only afterwards
 never diff-scope the round that carries the approve # every round attacks the newest change, so the
