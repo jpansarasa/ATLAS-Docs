@@ -10,6 +10,9 @@ Python harness scripts for the Sentinel extraction-LoRA acceptance-criteria pipe
 | `run_model.py` | Drives a substrate through any **OpenAI-compatible** endpoint (vLLM, SGLang, llama.cpp `/v1`) and emits the predictions JSONL `eval_harness.py --predictions` consumes, plus a provenance sidecar recording the engine build, the **sha256 of the prompt and schema files whose bytes actually reached a request**, and of the chat template string it applied (a path is not a prompt — see below). Takes the same **`--task`** as the scorer and must agree with it: `cove` (default) keeps the extraction array under `predicted_extractions`, `cod` keeps production's stage-1 object under `prediction`. Stdlib only. |
 | `eval_harness.py` | Scores predictions against an eval substrate, on **either of two extraction tasks** (`--task`), plus `--task attach` (which catalog instrument each gold owner landed on -- see **Scoring attachment** below). `cove` (default): the 18 pinned metrics over the v6.2 substrate's own `{text_quote, value, period, certainty}` shape — a task production does not run. `cod`: production's CoD stage-1 shape `{article_type, entities, numbers, events, claims}`. Both scorers are pure functions (no vLLM / GPU / network — unit-testable); they score `--predictions`, or `--mock` gold-tautology predictions. It does **not** call a model — that is `run_model.py`'s job, and keeping them apart is what keeps the scorer offline-testable. |
 | `attach_candidates.py` | The FROZEN candidate file shared by `run_model.py --task pick` and `eval_harness.py --task attach`: its loader/validator (owners `E1..E60`, each owner's own list `C1..Cm` with m <= k <= 20, uuid ids, the four coordinate axes required, `catalog_snapshot` an ISO-8601 UTC timestamp, **no owner marked `degraded`** unless the caller passes `allow_degraded`), the `{{owners}}`/`{{candidates}}` block rendering, and `pick_schema()`, which `LlmBenchmark/attach-pick/pick_schema.json` must equal. Stdlib only. See **Scoring attachment** below. |
+| `build_attach_substrate.py` | Converts `attach-gold/attach_corpus_v1.json` (an OBJECT keyed by `record_id`) into the LIST-shaped substrate `run_model.py` iterates. The conversion is a change of IDENTITY, not a reshape: every consumer joins on `(source_file, source_index)` and `record_id` reaches none of them, so the gold row -- the only artifact carrying both -- is what pairs them. Refuses (exit 2, named) a corpus entry whose `content` no longer hashes to its own recorded `content_sha256` (the article was edited after the corpus was built, so the gold's labels describe the OLD text), two gold rows claiming one join key, a gold article the frozen candidate file does not cover (`run_model --task pick` would refuse the run), a frozen article the gold does not label (silent everywhere else), and four input-shape problems. Writes only after re-reading the file through `eval_harness._load_substrate` -- the consumer's own loader, never a second copy -- and re-joining it against the gold and the frozen list. **Twelve known-bad controls run before every conversion** (`--selftest`, not optional), driving this same CLI in a subprocess and asserting OUTPUT and EXIT CODE: a CLEAN fixture that must exit 0 with the expected two records -- their join keys, their text AND their `source`, which `record_source_id` turns into the prompt's SOURCE_ID line on all 121 committed rows, so a control that set it and never read it back asserted a proper subset of what the model is sent (the NULL control, without which a red cannot be told from a runner that failed to start, LESSONS L20) -- and one fixture per refusal above, each breaking exactly ONE axis. The two key-direction fixtures are SEPARATE, and each breaks ONE direction, because one fixture breaking both is killed by whichever guard runs first, leaving the other deletable with every control green -- measured on the first version of this file and again on 2026-09-21. **11 of its 16 `raise`s go red when deleted; the 5 in `verify_round_trip` do not** -- they re-read the WRITTEN file, so no INPUT reaches them and they are a writer-bug detector, filed unpinned with that measurement in docs/BACKLOG.md. |
+| `build_a0_predictions.py` | Converts the G2 gold's per-owner `baseline` (production's own stored resolution of that owner's rows) into the id-shaped predictions JSONL that scores as **arm A0**. THE REDUCTION IS THE MEASUREMENT, and A0 IS THE BAR gates 1-3 are stated against, so the reduction moves the bar: the alternatives are named in `REDUCTIONS` and built by this same code path (`--reduction`), and `paired_attach_diff.py --a-alt` reports the resulting band. The default `rows_sum` sums `rows` per distinct instrument_id (null, production's abstention, is one of the keys), takes the largest, and breaks a tie toward an ATTACHED id then toward the smallest uuid; it attaches **142 of the committed G2's 526 owners**. Against it, re-derived by running this file's own `reduce_baseline` over that gold: `baseline_first` (whose key includes the METHOD the scorer never sees) **disagrees on 6**, every one at a top-row-count tie, and attaches 138; `any_non_null` (which reads an owner production left unattached 7-to-1 as a clean attachment) **disagrees on 17** and attaches 159; `tie_to_abstention` **disagrees on 10**, the tie set exactly, and attaches 132; `tie_to_largest_uuid` **disagrees on 3** and attaches 142. **Ties are 10 of the 526 and are NOT all abstention-versus-attachment**: 8 put an abstention level with an attachment and 2 tie two ATTACHMENTS, which with the one three-way tie makes 3 decided by the arbitrary smallest-uuid leg. An owner with NO `baseline` is REFUSED by name, never emitted as null: an unknown is not an abstention. Output is `{"attachments": [{owner, instrument_id \| null}]}`, which `attach_schema_valid` returns None for -- A0 is id-shaped, was never a model's structured output, and is NOT MEASURABLE by pass gate 5 by construction -- and the script proves that by RUNNING `resolve_attach_owners` over the written file rather than by asserting it. **Eighteen known-bad controls run before every conversion**: CLEAN (the NULL control), one malformed gold per input-reachable refusal, and the `reduction` fixture driven once per named rule, whose five answer vectors must match AND be pairwise distinct -- a fixture that stops separating two rules names them rather than passing. Its fourth owner is there for a SORT LEG rather than a verdict: flipping `any_non_null`'s row-count ordering left the other three owners' vectors intact while moving 5 of the committed G2's 526 owners and the band's widest wrong-attachment rate from 0.1730 to 0.1749. **10 of its 14 `raise`s go red when deleted**; the 3 in `verify_scorer_reads_it` are a writer-bug detector no input reaches (docs/BACKLOG.md). |
+| `paired_attach_diff.py` | The **paired** article-cluster bootstrap of the difference between two attach arms, which `eval_harness.py` does not compute ("paired A0 comparisons are not computed here") and which pass gates 1 and 2 of the candidates-in-extraction-prompt plan are stated on. One draw serves BOTH arms, so the article-composition noise they share cancels; drawing each arm its own sample is the other candidate rule, and it answers a non-zero interval for an arm compared against ITSELF, which is the fixture the `identity` control uses to tell the two apart -- **but only on an owner set whose ARTICLES DIFFER**: on byte-identical cluster rows both rules sum the same numbers and the control reports OK under the very mutant it exists to catch, which it did until 2026-09-21. An empty denominator is **NOT MEASURABLE**, carrying the same `not_measurable_reason` shape `score_attach` writes. `--a-alt NAME=PATH` (repeatable) adds ALTERNATIVE baseline arms -- the other `build_a0_predictions.py --reduction` rules -- and the output file and stdout then carry the resulting BAND beside the point estimates; without one, `a_reduction_sensitivity.measured` is `false` with the reason, so a scorecard that never varied the bar cannot be read as though it had. The metric rule is not restated: numerator and denominator per owner come from `eval_harness._attach_indicators`. **Seven controls run on every invocation** -- `identity`, `population` (arm a must MEASURE all twelve metrics, since a metric with an empty denominator was not tested by `identity` at all), `known_sign` (an oracle arm against an all-none arm built from the same owners: recall differs by exactly +1.0, wrong-attachment by exactly 0.0), and, under `--selftest` only, four that drive this CLI end to end in a subprocess asserting its exit code and stdout: `cli_not_measurable`, `cli_sensitivity_band`, `cli_empty_arm` (an arm keyed on a join key the gold does not carry is REFUSED at rc 2; without that refusal the tool REPORTS a comparison against an arm that scored nothing) and `cluster_alignment`. That last one is the only control that can see **which article list the two arms are keyed on**, because it is the only fixture whose arms cover DIFFERENT articles in both directions (arm a 1-3, arm b 2-4): on any fixture where both arms cover the same articles the union-keyed rule and a per-arm-keyed one produce the same output byte for byte. It is also the only NON-degenerate interval any control asserts, so it is the only one that moves when the percentile cut or the resample count moves -- `identity`'s [0,0] and `known_sign`'s [1,1] survive both changes (measured 2026-09-21). |
 | `test_run_model.py` | Unit tests over the runner: strict parsing (never salvage), the outbound payload, engine identification, and that a CoD response is **kept** under the key the scorer reads — the contract test imports `eval_harness._cod_object` and asserts the join rather than restating the key. Fully offline — the HTTP boundary is stubbed. |
 | `test_eval_harness.py` | Unit tests over both scorers, the scorecard builder and the control arms. Fully offline. One guard test per metric, each constructing the wrong-pairing case; the CoD alignment-key test asserts the OLD key scores 1.0 on it, so the trap it replaces is measured rather than asserted. |
 | `check_staleness.py` | Grades the committed scorecards against what is running now: engine build, attribution, age. **One verdict is a pass** (`CURRENT`) and it requires a live comparison actually to have happened — with no reachable `--endpoint` every scorecard is `DRIFT_UNCHECKED` and the exit code is non-zero. Runs a known-bad control over its own classifier first and aborts (exit 3) if that control fails — the control uses its OWN fixed threshold, never `--max-age-days`. A file it cannot examine (unparseable, or parsing with no scorecard shape) is graded `UNEXAMINED` and COUNTED **whatever it is called**, because a file skipped in silence takes the denominator with it; the ONLY files it passes over are the named sidecars `*.criteria.json` and `*.provenance.json`. Not recursive, and that gap is open -- a card in a SUBDIRECTORY is never looked for (docs/BACKLOG.md MEASUREMENT DEBT). |
@@ -291,6 +294,29 @@ unspellable. The cost: a row listed under two owners is printed twice.
 the committed clean-arm prompt and the FIXED schema (`E1..E60`, `C1..C20` + `none`, one schema for
 every article):
 
+**The substrate is built, not hand-written, and arm A0 comes out of the gold.** The attach corpus is an
+object keyed by `record_id`; the runner needs a list keyed by the scorer's `(source_file, source_index)`.
+
+```bash
+python3 LlmBenchmark/scripts/build_attach_substrate.py \
+    --corpus LlmBenchmark/attach-gold/attach_corpus_v1.json \
+    --gold <gold.json> --candidates <frozen.json> --out <substrate.json>
+
+# Arm A0: production's stored attachments, scored with no request sent. Its rows are
+# id-shaped, so the scorer reports `schema_invalid` as NOT MEASURABLE and pass gate 5 is
+# exempt for it BY CONSTRUCTION -- `picks` is false, so the rows_judged-0 refusal does not apply.
+python3 LlmBenchmark/scripts/build_a0_predictions.py \
+    --gold <gold.json> --candidates <frozen.json> --out <a0.jsonl>
+
+# ... and the same gold under each ALTERNATIVE reduction, which is what the sensitivity
+# band below is measured over. A0 is the BAR gates 1-3 are stated against, so the rule that
+# reduces `baseline` to one verdict moves the bar.
+for r in baseline_first any_non_null tie_to_abstention tie_to_largest_uuid; do
+    python3 LlmBenchmark/scripts/build_a0_predictions.py --reduction "$r" \
+        --gold <gold.json> --candidates <frozen.json> --out "<a0_$r.jsonl>"
+done
+```
+
 ```bash
 python3 LlmBenchmark/scripts/run_model.py --task pick --endpoint-mode completions \
     --prompt-file LlmBenchmark/attach-pick/pick_prompt_clean.txt \
@@ -310,6 +336,45 @@ python3 LlmBenchmark/scripts/eval_harness.py --task attach --substrate <same> \
     # G1 (the 40-article CoD gold): add --cod-gold LlmBenchmark/cod-gold/cod_stage1_gold_v1.json
     #   --extraction-predictions <the CoD run whose owners were frozen>
 ```
+
+**Gates 1 and 2 are stated on the PAIRED interval, which the scorer above does not compute.** Two
+per-arm CIs cannot answer "the paired 95% CI of the difference excludes 0": overlapping intervals do not
+mean the difference straddles zero, and non-overlapping ones are not the test the gate names.
+
+```bash
+python3 LlmBenchmark/scripts/paired_attach_diff.py --attach-gold <gold.json> \
+    --candidates <frozen.json> --a <a0.jsonl> --b <arm.jsonl> --out <paired.json> \
+    --a-alt baseline_first=<a0_baseline_first.jsonl> \
+    --a-alt any_non_null=<a0_any_non_null.jsonl> \
+    --a-alt tie_to_abstention=<a0_tie_to_abstention.jsonl> \
+    --a-alt tie_to_largest_uuid=<a0_tie_to_largest_uuid.jsonl>
+```
+
+**The baseline arm is the bar, so its own construction is a coordinate of the result.** Each
+`--a-alt` is re-compared against the same fixed arm b, and the output file and stdout carry the
+resulting BAND -- per metric, the min and max of A0's own rate, of the difference, and of the CI
+bounds -- beside the point estimates. Drop the `--a-alt`s and the record still reports
+`a_reduction_sensitivity: {"measured": false, "reason": ...}`, so a scorecard that never varied the
+bar cannot be read as though it had. A band entry is `null` when ANY arm could not measure that
+metric: a band over a set containing an unmeasured member is not a band.
+
+Measured 2026-09-21, arm A0 under all five reductions against the three B-clean replicates
+committed at `LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21/` (unweighted G2
+rates -- neither this tool nor `eval_harness.py` applies the plan's "re-weighted to the 7d
+method mix"): **no gate VERDICT changes anywhere in the band.**
+EVERY FIGURE BELOW IS RE-DERIVABLE FROM COMMITTED ARTIFACTS, and four of them were re-derived
+end to end on 2026-09-21, reproducing the committed scorecards on every metric value. The
+exact commands, the digests, and which two artifacts are regenerated rather than committed
+(the substrate and the A0 arm, both byte-reproducible from the committed corpus and gold) are
+in that directory's `README.md` -- not restated here. The predictions the b-side figures come
+from: r1 `d886871bdd59cc47...`, r2 `e9d0523b70a49962...`, r3 `005e321840c9cf20...`. Gate 1
+fails on both terms for every arm (b's wrong-attachment rate is 0.1559-0.1578 against a ceiling of
+0.0665-0.0865, and every paired CI of the difference straddles 0); gate 2 passes for every arm
+(recall 0.8101 against a floor of 0.2316-0.2569, CI lower bound +0.4170 to +0.4465 against
+-0.06); gate 3 fails for every arm, and its first term -- none-owner attach rate <= 10% against a
+measured 0.2353-0.2388 -- does not reference A0 at all, so no reduction can move it. Flipping gate
+1 would need A0's wrong-attachment rate above 0.3118; the widest the band reaches is 0.1730.
+
 
 **`schema_invalid` is per row, and it can be NOT MEASURABLE.** The plan's pass gate 5 reads "every arm:
 0 schema_invalid, 0 truncated, 0 structured_output_fallback", so the scorecard has to be able to count

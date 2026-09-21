@@ -2881,6 +2881,107 @@ that the line is. Deleting `try:` also deletes the assignment inside it.
 | closing it | assert the field, the printed line or the refusal message in an existing test; for the argparse flag, drive `main()` rather than a hand-built `Namespace` |
 | what it CANNOT see | a unit whose deletion changes behaviour no suite exercises reads DELETABLE exactly like dead surface; "PINNED" means some test reacted, never that the test asserts anything useful; and prose is excluded by construction |
 
+### 10 of the attach-round converters' 31 `raise`s stay unpinned: 8 are WRITER-bug detectors no input reaches, 2 are invariants the CLI gates ahead of them [2026-09-21]
+The three converters of PR #1090 (`build_attach_substrate.py`, `build_a0_predictions.py`,
+`paired_attach_diff.py`). **Round 2: 4 of 27 `raise`s went red when deleted. Round 3: 18 of 28. Now: 21 of
+31** -- the three new ones are the input shapes that used to die with a bare `KeyError` at rc 1 (a gold or
+corpus that is a JSON object with no `articles` key), and the split is not a judgement call: it is a
+property of where each guard sits.
+
+**Pinned, 21.** Every refusal reachable from an INPUT now has exactly one fixture that reaches it and
+asserts the message, driven through the CLI in a subprocess: 11 of 16 in `build_attach_substrate.py` and 10
+of 14 in `build_a0_predictions.py`. Each of the 21 is killed by exactly ONE named control, which is what
+says the control under test is doing the killing rather than a refusal one layer down.
+
+**Filed unpinned, 10, in three classes:**
+
+1. **`build_attach_substrate.verify_round_trip`, all 5.** It re-reads the WRITTEN file, and `build_records`
+   has already refused every input that could make any of them fire -- a duplicate join key, a key-set
+   disagreement either direction, a content digest that does not match. So no gold, corpus or candidate
+   file reaches them; only a bug in the WRITE step does. Pinning them needs a poison hook in shipped code
+   (an env var that corrupts the write), which is a documented way to run the tool with its verifier
+   defeated. Deleting the whole `verify_round_trip` CALL also leaves every control green.
+2. **`build_a0_predictions.verify_scorer_reads_it`, all 3** (`articles_scored`, `extraction_miss`,
+   `schema_invalid`-must-be-None). Same shape: `build_rows` emits one row per gold article carrying every
+   one of that article's owner surfaces, and A0 rows are id-shaped by construction. The CALL itself IS
+   pinned -- the `duplicate_join_key` control fires because the call's own `load_attach_gold` refuses a
+   gold with two articles on one join key, which nothing in `build_rows` checks -- but the three raises
+   inside it are not.
+3. **Two internal invariants.** `reduce_baseline`'s `rule not in REDUCTIONS` is unreachable from the CLI
+   (argparse `choices` gates it); it guards a direct API caller. `paired_bootstrap`'s "neither arm scored
+   an owner" needs BOTH arms empty -- with one arm empty the union of article keys is non-empty and it
+   never fires, which is why the CLI now refuses an empty arm itself, by name, at rc 2. That refusal is
+   pinned (`cli_empty_arm`); without it the tool REPORTED a comparison against an arm that scored nothing,
+   at rc 0.
+
+**CLOSED 2026-09-21, and the entry that claimed it could not be closed was wrong.** An earlier revision of
+this entry read that `_cluster_sums`'s zero-fill ("an arm missing an article gets a zero row rather than a
+shifted one") could not be separated from a per-arm keying, because a separating fixture needs the two
+arms' article sets to differ by a SYMMETRIC difference while "b a strict subset" was "the only shape either
+arm can actually take against one gold". That premise is FALSE. Both arms are subsets of the GOLD's article
+set, which does not make either a subset of the OTHER: a predictions file with no row for an article is
+skipped by `resolve_attach_owners` and counted in `coverage.articles_skipped_missing_input`, so two arms
+each missing a DIFFERENT article differ in both directions. Built from committed inputs (arm A0 `rows_sum`
+against A0 `any_non_null` over `attach_gold_g2_v1.json`, each file with one article's row deleted, 120 rows
+apiece, 105 clusters in the union) and run under both rules:
+
+| arm coverage (105 clusters either way) | shipped, union-keyed | per-arm keyed | the 6 controls then shipping |
+|---|---|---|---|
+| both arms cover all 121 gold articles | `wrong_attachment_rate` ci95 [+0.0118, +0.0407] | the same output, byte for byte | OK under both |
+| each arm missing a DIFFERENT article | ci95 [+0.0116, +0.0405], excludes 0 | ci95 [-0.0269, +0.0766], STRADDLES 0 | OK under both |
+
+So the mutation flips gate 1's verdict ("the paired 95% CI of the difference excludes 0") on this input and
+every control reported OK -- and the first row is the control for the control: with no coverage asymmetry
+the two rules are the same numbers, so it is the FIXTURE that separates them, not the mutation.
+`cluster_alignment` (`_alignment_fixture`, 4 articles, arm a covering 1-3 and arm b 2-4) now pins it
+hermetically, and it is the only control that kills the per-arm keying, the percentile re-cut and the
+2000-to-20 resample cut -- `identity` and `known_sign` assert DEGENERATE intervals ([0,0] and [1,1]), which
+no cut can move.
+
+**What stays unmeasured here**, precisely: every fixture in this suite is 4 articles or fewer, so no
+control can see a mutant that misbehaves only at the committed gold's cardinality (121 articles, 526
+owners). The table above is that check, run by hand, once -- it is not continuous, and re-running it is the
+measurement: rebuild the two arms with `build_a0_predictions.py --reduction`, delete a different article's
+row from each, and compare `paired_attach_diff.py`'s `metrics` under the shipped `_cluster_sums` call
+against a copy whose `rows_a`/`rows_b` derive their own article order. Also unreached: the band path under
+more than one `--a-alt` (`cli_sensitivity_band` uses one), and the in-process controls over a REAL arm --
+CI only ever runs them over the synthetic owner set.
+
+**Re-derive the pin counts, from the repo root.** `PYTHONDONTWRITEBYTECODE=1`, then for each of the three
+files run its own `--selftest` with each `raise` neutered in turn and count the rc-0 runs. Replace the
+whole `raise` STATEMENT with `pass` (an AST node span, not a text edit): `raise E(` -> `_ = E(`, the round-3
+method, cannot express `raise E(...) from None` and leaves an EMPTY block wherever the raise is the only
+statement in one, which the interpreter then refuses -- every suite goes red and reads as PINNED, which is
+LESSONS L20 instance 2. py_compile each mutant first and report one that does not parse as NO VERDICT, not
+as a pin. A NULL pass with no mutation must come back rc 0 first, or no red below it is readable (L20).
+
+### `check_staleness.py` cannot grade a `--task attach` scorecard at all: 4 of 4 come back UNEXAMINED [2026-09-21]
+The tool reads a `summary` block to find a scorecard's metrics. `score_attach` does not write one -- an
+attach scorecard carries `metrics`, `diagnostics`, `controls` and `acceptance_evidence` and no `summary` --
+so every attach card falls into the UNEXAMINED branch whose reason reads "parses, but carries no
+summary/metrics block: either it is not a scorecard or the scorecard shape has drifted away from what this
+tool reads". That reason names the right two possibilities and the answer is the SECOND one, for a whole
+task.
+
+**Measured 2026-09-21**, staging the round's cards into a scratch directory and running the tool at it:
+`0/2 current; 2 stale`, both UNEXAMINED. Committing this round's four cards flat beside the cap8192 ones
+would have taken the shared corpus from 27 files to 29 with the two non-scorecard `*.json` alone (the
+paired outputs and the attestation, which are neither scorecards nor on the `SIDECAR_SUFFIXES` allow-list),
+and added four more UNEXAMINED on top. They went into
+`LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21/` instead, which the tool's NON-RECURSIVE
+`glob("*.json")` never reaches -- correct for files it cannot grade, and it is why that directory's
+README.md records the choice rather than leaving it to look like filing by taste.
+
+**Why it matters rather than being cosmetic:** the attach round is the one whose numbers a pass-or-stop
+decision was reported off, and it is the one task whose scorecards the staleness instrument is blind to. A
+card that is never graded cannot go stale, which reads exactly like a card that is current.
+
+**Closing it** is a shape decision, not a patch: either `score_attach` writes the `summary` block the tool
+reads, or the tool learns the attach shape. Whichever, the re-check is the same -- put an attach scorecard
+in a directory, run `check_staleness.py --scorecards <dir>`, and require a verdict that is not UNEXAMINED.
+Widening the `glob` is NOT the fix and is deliberately out of scope here; that tool's own docstring says
+widening it changes which files it claims to have checked.
+
 ### One attach scorecard carries two `schema_invalid` fields with different populations [2026-09-21]
 Both are spelled `schema_invalid`, both are written by the same `--task attach` run, and they count
 different things. A reader comparing arms, or counting pass gate 5 ("every arm: 0 schema_invalid"), has no
