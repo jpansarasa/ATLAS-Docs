@@ -6480,10 +6480,143 @@ A park is a decision; it stands until reversed or the epic ships.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| A | 2026-09-21 | PARKED | D-33 provenance replay -- PARKED by the user "for good (measured net harmful)"; the 70% control bar is already FAILED at 0 of 47 |
 | A | 2026-09-16 | AWAITING-DECISION | R2 / S4 observation identity key redesign -- PARKED; trip condition 3 fired 2026-09-16 |
 | A | 2026-09-05 | PARKED | #729 regime news-as-staleness redesign -- parked; blockers refuted, un-park is the user's |
 | A | 2026-08-26 | PARKED | Candidate-pool epic -- PARKED, asked of the user twice, never started |
 | E | 2026-09-16 | PARKED | Claude Code function hooks -- PARKED, not adopted |
+
+**D-33 provenance replay — PARKED "for good (measured net harmful)" on the user's decision, 2026-09-16/17.**
+**The DECISION is the user's; the RECORD is the supervisor's.** The supervisor wrote the user's decision
+into `STATE.md`'s `STANDING DIRECTIVES (user 2026-09-16/17, still live)` -- supervisor-owned disposable
+working memory, not a file the user types into -- where it reads verbatim: *"D-33 replay PARKED for good
+(measured net harmful). Sweep ON since 2026-09-17."* Keeping those two apart is the whole reason for this
+entry: a standing USER decision was surviving only as one SUPERVISOR-written line in a file that is
+designed to be thrown away. The park is **unqualified** -- it carves out no narrowed, targeted or
+named-id-list form. Evicted to this file 2026-09-21 because it lived nowhere durable: at `1e1c9125`, "net
+harmful" appeared nowhere under `docs/`, `SentinelCollector/` or `.claude/`, and "D-33" appeared nowhere in
+this file, so the only copy of it sat in untracked, gitignored working memory. That is not a filing detail
+-- the park was in **no durable artifact any review round could read**, so no round on #1098 could have
+seen it, and `docs/proposals/delete-wrong-mappings.md` §9 as merged at `1e1c9125` consequently prescribed
+the parked act as a **hard prerequisite** for deleting leg A. What those rounds did or did not reason about
+is not established here and this entry does not claim it; what is established is that the park was not
+available to them.
+
+**THE MEASUREMENT THAT BACKS THE PARK — one completed production dry run, and both rates re-derived at
+2026-09-21 from its frozen journal.** The run: 195 batches, every one HTTP 200, mode `dry_run` throughout,
+`T_clean` = 2026-09-17T05:10:56.634102Z, completed 2026-09-17T10:01:07.900Z. **It wrote nothing.**
+- **Known-good control cohort: 0 of 47 rows stayed — 0.0% against the driver's 70% bar** (recorded by the
+  run's own analysis at 2026-09-17T10:01:20.653Z; outcomes `cleared` 44, `replaced` 3). **Re-derived
+  independently 2026-09-21 as 0 of 46 = 0.0%** (`cleared` 43, `replaced` 3) by re-running the driver's
+  cohort definition against the live catalog and intersecting it with the frozen journal. The cohort is 47
+  then and 46 now because exactly one row has been re-extracted past `T_clean` since. **48 rows match the
+  cohort join today, and the two rows outside the boundary are not the same kind of row:** `id` 856131 was
+  in the 47 and LEFT it (`re_extracted_at` 2026-09-17T11:57:09Z), while `id` 936578 was never in the 47 at
+  all -- its own `extracted_at` is 2026-09-19T07:42:56Z, AFTER `T_clean`, so it arrived after the run had
+  finished. **46 + 1 = 47 then; 46 + 1 + 1 = 48 in the join now.** (All four counts derived 2026-09-21 from
+  the cohort join at the driver's `control_ids()`, whose boundary is `coalesce(re_extracted_at,
+  extracted_at) < T_clean`.) **Both derivations agree on the rate (0.0%) and the verdict (FAIL).**
+  *Unit:* observation rows in `sentinel.extracted_observations`, counted once each. *Population:* rows whose
+  live `instrument_id` is one of the three `GeminiFallback` pre-2026-07-19 control instruments `DB`
+  (`c851f27b`), `EVR` (`f8e2689c`), `NMR` (`659223cf`), whose `subject_entity` equals the OLD name the #1053
+  rename migration recorded for that symbol ("Deutsche Bank", "Evercore ISI", "Nomura"), attached before
+  `T_clean`. These are rows whose ATTACHMENT is known correct and whose NAME was the thing repaired, so a
+  stay is the designed outcome for every one of them. *"Stay"* = outcome in (`unchanged`,
+  `retained_corroborated`).
+- **Overall: 2,142 of 4,843 rows stayed — 44.2%.** *Unit:* distinct observation rows scanned by the dry run
+  (4,843 distinct `observationId`, equal to the summed per-batch `scanned`, so no row is double-counted).
+  *Population:* rows attached before `T_clean` to any of the 197 instruments D-33 admits at all. Full
+  outcome split: `unchanged` 2,086 / `replaced` 934 / `retained_corroborated` 56 / `cleared` 1,767 /
+  `unavailable` 0 / `refused_known_publisher` 0.
+
+**Failing the control bar is not a tuning result — it is the D-21 signature the replay's own guard says must
+stop the run.** D-21: the resolve-only cascade is strictly NARROWER than the live one, so it strips
+attachments it cannot reproduce. `control_gate` in `SentinelCollector/scripts/reresolve-by-provenance.sh`
+carries that reading in an `INTENT(D-33)` comment — *"below the bar the replay is narrower than live and
+would destroy genuine issuer attachments (the D-21 signature): refuse --live, never lower the bar."* At 0.0%
+the replay cleared or replaced **every** attachment a correct live resolution had made on the control
+family. That is the "net harmful".
+
+**WHAT THIS SAMPLE STRUCTURALLY CANNOT CONTAIN.** It is a DRY RUN, so it contains no downstream effect of a
+clear on any consumer — the harm is inferred from the proposed outcomes, never observed. `unavailable` is
+**0 of 4,843**, so the outage branch D-33's PRECOND turns on ("an outage is never a miss") was never
+exercised: the sample says nothing about behaviour when a free leg is down. It covers only rows attached
+BEFORE `T_clean`; rows attached after are absent by construction, and one control row has already left that
+way. It covers only instruments inside the 197 — every wrong mapping on an ACTIVE non-`GeminiFallback` row,
+the far larger surface, is outside it. And the control cohort is **three symbols**: it establishes that the
+replay destroys correct attachments on `DB`/`EVR`/`NMR`, not the rate at which it does so elsewhere.
+
+**THE FOUR BLOCKERS, and they are not the same kind of thing.**
+1. **THE DECISION [a human arbitrates; nothing else lifts it].** The park above. It is a recorded user
+   decision, so it is not falsifiable by measurement and no re-measurement below reopens it. Per the
+   standing autonomy grant, overriding a recorded decision is explicitly outside what an agent may do.
+2. **WORLD CONDITION — the sweep is ON.** The running `sentinel-collector` carries
+   `ReExtract__Enabled=true`, read 2026-09-21T18:45Z at the driver's own read path (`nerdctl exec
+   sentinel-collector cat /proc/1/environ`; host PID 3870571, started 2026-09-21T04:12:59Z) and confirmed
+   doing work — `sum(increase(sentinel_reextract_rows_processed_total[6h]))` = **3,269.27** at
+   2026-09-21T18:45:26Z (unit: extrapolated counter events over 6h). `sweep_off()` fails closed (an absent
+   variable reads as ON), and `preflight_refusal` tests it **before** its `if not live: return None`, so
+   this refuses the **dry run** as well as `--live`. Separately, the service itself refuses a live run with
+   409 on the same option. This condition could change on its own, with a deploy nobody thinks of as
+   touching D-33.
+3. **WORLD / STRUCTURAL — the gates cannot be satisfied by a narrowed id list, which is the form §9
+   proposed.** The control cohort is a FIXED query over `DB`/`EVR`/`NMR`; none of those three is among the
+   12 leg-A ids or the 82 (verified 2026-09-21), and `control_gate` refuses outright when a control row is
+   absent from the dry run. So a 12-id run cannot pass the bar — it cannot even be **scored** against it.
+   A live run additionally needs a COMPLETE dry run for that exact `T_clean` **and** id set, and the only
+   recorded completion marker carries the 197-id hash (`61e8b728…`). A fresh `T_clean` is not a way out:
+   `record_t_clean` refuses while the sweep is on, and refuses to move one that already exists.
+4. **THE MEASUREMENT — the 70% bar is already failed** (above). This is the evidence BEHIND blocker 1
+   rather than a fourth independent fact, and it is listed separately because §9 named the bar as a thing
+   to get *past*, as though it had not yet been tried.
+
+**TWO FIGURES CORRECTED while filing this, both relayed wrong into the dispatch that produced this entry —
+do not re-inherit them.** (a) The control result is **0 of 47 = 0.0%**, not "1 of 71 = 1.4%"; no artifact
+under the run tree carries a 71. (b) **`A2b − A2` is 0, not non-zero, over the 12 leg-A ids** at the
+recorded `T_clean` (A2 = 26, A2b = 26, derived 2026-09-21), so the escaped-rows check would PASS for step
+0's population and is NOT a blocker there. It is **1,006** over the full 197 (A2 3,846 / A2b 4,852) — the
+claim was true of the parked population and was carried across to the narrowed one. That check is also
+live-only: on a dry run the driver only WARNS.
+
+**WHAT WOULD HAVE TO BE TRUE TO UN-PARK IT.** All four, and only the first is a decision:
+1. **The user reverses the park explicitly.** Nothing below substitutes for this, and none of 2-4 is
+   evidence that it should happen.
+2. `sentinel-collector` is deployed with `sentinel_reextract_enabled=false` and the running process shows
+   `ReExtract__Enabled=false`.
+3. A control cohort that the intended run population **actually contains**, passing at ≥ 70% — which for
+   any narrowed id list means the cohort definition itself has to change first, and that change is a D-33
+   contract question, not a driver tweak.
+4. A fresh `T_clean` recorded after a clean catalog audit, and a complete dry run for that `T_clean` and
+   that exact id set.
+
+**Consequence if this entry is missing or false:** an agent reads merged plan §9, runs the replay over a
+named id list believing it sanctioned, and the narrower cascade strips correct instrument attachments from
+production observation rows — the class that reaches `public.matrix_cells`. That is precisely the path
+#1098 left open.
+
+**Provenance, and its own fragility:** journal at `/tmp/sentinel-remediation/junk-names/deploy/run/`
+(`responses.jsonl`, `dry_run_complete.json`, `t_clean`) with the run's analysis at
+`/tmp/sentinel-remediation/junk-names/dryrun/03-analysis.txt`. `/tmp` here is ext4, not tmpfs, so it
+survives a reboot — but it is outside the repo and inside the tree agents are authorised to `rm -rf`. Every
+figure above is stated here so the entry survives the journal.
+
+Re-check — **none of these runs the replay, and none of them may be used to un-park it; they establish only
+whether blockers 2 and 3 still stand.** Anchor every metric query to an actual `date -u`.
+  `sudo nerdctl exec sentinel-collector cat /proc/1/environ > /tmp/e.raw; tr '\0' '\n' < /tmp/e.raw | grep ReExtract__Enabled`
+  # 2026-09-21T18:45Z -> ReExtract__Enabled=true. This is the exact read `sweep_off()` performs.
+  # `nerdctl container inspect` is useless here: its `.Config.Env` is empty on nerdctl 1.7.7.
+  `sum(increase(sentinel_reextract_rows_processed_total[6h])) or vector(0)`
+  # 2026-09-21T18:45:26Z -> 3269.27. A zero here means the sweep is idle, NOT that it is disabled — read the
+  #   environ for that; the two can disagree.
+  Both rates, from the frozen journal: sum `body.outcomes` across `responses.jsonl` for the overall rate;
+  for the control rate, re-run the cohort definition at `reresolve-by-provenance.sh` `control_ids()` and
+  intersect the ids with the journal's `body.rows[].observationId`. Expect the cohort to keep SHRINKING as
+  the sweep pushes rows past `T_clean` (47 on 2026-09-17, 46 on 2026-09-21); a shrinking cohort is drift in
+  the sample, never an improvement in the rate.
+  Containment, which is what makes the park cover §9's narrowed list:
+  `SELECT count(*) FROM instruments WHERE discovery_source='GeminiFallback' AND created_at < TIMESTAMPTZ '2026-07-19T00:00:00Z';`
+  # 2026-09-21 -> 197, exactly the id set the parked run covered. All 82 leg-A ids, all 12 that still hold
+  #   live attachments, and both leg-C ids are inside it, so no subset of legs A or C escapes the park.
 
 **R2 / S4 -- observation identity key redesign -- PARKED on the user's decision, 2026-08-27.** The
 thesis holds, and it is not what parked the work: an observation's identity is the entity MENTIONED,

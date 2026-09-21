@@ -313,14 +313,49 @@ It is cited from four places: `SecMaster/AGENT_README.md`'s `✗ read a quaranti
 
 ## 9. SEQUENCING, with the load-bearing edges named
 
-| Step | Work | Blocked by | Why the edge is load-bearing |
+**GATING MODEL -- every gate in the table is one of two kinds, and the column names WHO or WHAT lifts it.**
+**D (decision)** = a question only a human answers; no act by any agent satisfies it and it does not expire
+on its own. **A (act)** = a completed, verifiable act or an elapsed window, which the implementing agent
+satisfies. A step is runnable once every gate on its row is lifted. Step 0's gate is a **D that has already
+been answered NO**, and step 0 is therefore deliberately **not** an edge into steps 1-4: the question those
+steps wait on is a different one, stated under the table.
+
+| Step | Work | Unblocked by | Why the edge is load-bearing |
 |---|---|---|---|
-| **0** | Run D-33's replay over the **12 leg-A ids that still hold live attachments** (26 rows), dry-run then `--live` past the 70% control-group stay bar (`SentinelCollector/AGENT_README.md:168`) | — | **Hard prerequisite.** `ProvenanceReResolveService` (`:208-218`) proves provenance by a SecMaster by-id lookup and refuses the **whole request** with 400 "(SecMaster has no such instrument)" for any absent id — per REQUEST, before any row is read. Deleting first permanently disables the designed clearing mechanism for those rows. The other half of that proof passes today for all 12: `discovery_source='GeminiFallback'` and `created_at` 2026-06-25 → 2026-07-16, all before the `2026-07-19` cutoff at `:29`. **Two populations, which the first draft mixed:** of the **1,402** rows whose `OriginalInstrumentId` is a leg-A id, 1,385 are already cleared and **17** are still attached (8 of those to a leg-A id) — the remainder of the 1,402 is **17, not 26**. The **26** are the rows whose LIVE `instrument_id` is a leg-A id: 8 overlap the 1,402, 11 carry no `OriginalInstrumentId` at all, 7 carry one that is not a leg-A id. So **18 of the 26 have never been through D-33's cause-A replay** and step 0 is a first pass over them, not a mop-up |
-| **1** | Sentinel `NullWrongMappingInstrumentRefs`, **leg A ids only** | 0 | Deploy + verify before any DELETE, per §4 |
-| **2** | SecMaster `DeleteWrongMappingInstruments`, **leg A only**; close the `Quarantined-ticker re-acquisition` backlog row (match by its TEXT, §7 — its line number has already moved once), open its successor, rewrite the card GOTCHA, and make the THREE comment edits §7 enumerates — **not** "4 INTENT comments", which names the wrong four | 1 | The `instrument_id` edge (§4). Same PR for the doc/comment changes — §7 shows which comments, and why ATOMIC_SET is not the rule that binds them |
-| **3** | Observe 30d: `secmaster_entity_resolution_self_seed_total{result}` | 2 | Leg C must not move while the effect of leg A is being measured, or neither is attributable |
-| **4** | Legs C: repeat steps 0-2 for DX/KC | 3 **and** the live scoring epic closing | §6 — drift-audit blindness plus 322 of 348 attachments |
-| — | **Leg B** | — | **DO-NOT-BUILD** (§2) |
+| **0** | **BLOCKED — DO NOT RUN, in any mode, including a dry run.** This step prescribes the D-33 provenance replay. A recorded user decision of **2026-09-16/17** PARKED that replay **“for good (measured net harmful)”**, and the **70% control-group stay bar this row names as the thing to get past (`SentinelCollector/AGENT_README.md:168`) has already been measured and FAILED** on a completed production dry run whose population contains all 12 of these ids: **0 of 47 known-good control rows stayed — 0.0% against a 70% bar** (recorded 2026-09-17T10:01:20Z; re-derived 2026-09-21 as **0 of 46**, the cohort having lost one row to the sweep since). Failing that bar IS the D-21 signature the replay's own guard says must STOP AND REPORT. **Route this to a human; an implementing agent may not run it, and may not narrow, re-scope or re-time it to get past the block.** Decision, measurement, blockers and un-park conditions: `docs/BACKLOG.md` §PARKED EPICS, “D-33 provenance replay” | **D -- the user, reversing the park** (conditions behind this row's own pointer). No act lifts it and no agent may attempt one: not a re-measurement, not a narrowed id list, not waiting for the sweep to go off | **The premises this row gives about the PROOF are sound and stand; what is wrong is that the ACT is parked and the bar is already failed.** `ProvenanceReResolveService` (`:208-218`) proves provenance by a SecMaster by-id lookup and refuses the **whole request** with 400 “(SecMaster has no such instrument)” for any absent id — per REQUEST, before any row is read, and only on a **live** run (the check sits inside `if (!run.DryRun)` at `:100-115`). So deleting first really would permanently disable the designed clearing path for those rows, and that consequence is why the block matters rather than being a technicality. That half of the proof passes today for all 12: a by-id lookup returns 200 carrying `discoverySource='GeminiFallback'` and a `createdAt` for every one, with `created_at` spanning **2026-06-25T13:32:30Z → 2026-07-09T16:31:39Z** (verified 2026-09-21T18:46Z, all 12), every one before the `2026-07-19` cutoff at `:29`. **The “→ 2026-07-16” this row carried until now was a population mix-up:** 2026-07-16 is the newest `created_at` across all **82** leg-A rows, not across the **12** that still hold live attachments. **Two populations, which the first draft mixed:** of the **1,402** rows whose `OriginalInstrumentId` is a leg-A id, 1,385 are already cleared and **17** are still attached (8 of those to a leg-A id) — the remainder of the 1,402 is **17, not 26**. The **26** are the rows whose LIVE `instrument_id` is a leg-A id (re-confirmed 2026-09-21: 12 distinct ids, 26 rows): 8 overlap the 1,402, 11 carry no `OriginalInstrumentId` at all, 7 carry one that is not a leg-A id. So **18 of the 26 have never been through D-33's cause-A replay** — which is what makes their disposition an open question rather than a mop-up |
+| **1** | Sentinel `NullWrongMappingInstrumentRefs`, **leg A ids only** | **D -- a human answering the 26-row question below the table.** NOT step 0 completing: the migration is runnable today, and what is undecided is whether running it is WANTED | Deploy + verify before any DELETE, per §4 |
+| **2** | SecMaster `DeleteWrongMappingInstruments`, **leg A only**; close the `Quarantined-ticker re-acquisition` backlog row (match by its TEXT, §7 — its line number has already moved once), open its successor, rewrite the card GOTCHA, and make the THREE comment edits §7 enumerates — **not** "4 INTENT comments", which names the wrong four | **A -- step 1 deployed and verified** (§4). No decision of its own: the answer given at step 1 admitted the whole sequence | The `instrument_id` edge (§4). Same PR for the doc/comment changes — §7 shows which comments, and why ATOMIC_SET is not the rule that binds them |
+| **3** | Observe 30d: `secmaster_entity_resolution_self_seed_total{result}` | **A -- step 2 merged and deployed** | Leg C must not move while the effect of leg A is being measured, or neither is attributable |
+| **4** | Legs C: repeat **steps 1-2** for DX/KC. Its step-0 equivalent is parked on the same decision -- both leg-C ids sit inside the same parked replay population (verified 2026-09-21) -- so leg C is not waiting on a replay either, and "repeat step 0" must never be read back in as a prerequisite | **D -- the 26-row question below, answered again for leg C's 322 attached rows** (§4), **and A -- step 3's 30d window elapsed AND the live scoring epic closed** | §6 — drift-audit blindness plus 322 of 348 attachments |
+| — | **Leg B** | n/a -- never built | **DO-NOT-BUILD** (§2) |
+
+**THE OPEN QUESTION, stated so that one answer settles it for steps 1-4.** Step 0 is refused for good, so
+leg A's **26 rows on 12 instruments** (§4) will never be re-resolved by the D-33 replay. Steps 1 and 2 are
+nonetheless runnable -- nothing about the migrations themselves is blocked -- but running them detaches
+those 26 rows with no replay ever having been given the chance, and after step 2 the D-33 path is closed to
+them permanently (the by-id proof 400s on a deleted id). So what steps 1-4 wait on is not an act somebody
+is part-way through finishing; it is an unanswered question:
+
+> **Delete leg A anyway, accepting that those 26 rows are never cleared -- or leave leg A in place?**
+
+**On "go", steps 1 -> 2 -> 3 run in order on their act gates alone.** The implementing agent does not wait
+for step 0, does not run it, and does not re-open it. That "go" is an answer about the 26 rows; it is **not**
+a reversal of the park, which only the user can give and only in the terms `docs/BACKLOG.md` §PARKED EPICS
+sets out. If the park is ever separately reversed, step 0 becomes runnable and rejoins the sequence ahead of
+step 1 -- that is the only route by which it ever does, and nothing in steps 1-4 opens one.
+
+**This document deliberately does not propose a replacement clearing mechanism.** Whether the 26 rows are
+cleared another way, left attached, or accepted as collateral of the leg-A deletion is part of the question
+above, and inventing a substitute clearing path here would be exactly the "route around the block" the park
+forbids.
+
+**And the block is not a timing accident that waiting fixes:** the replay's run driver refuses a **dry run**
+too while the re-extract sweep is on (`preflight_refusal` tests `sweep_off` before its `if not live` return,
+so `--live` is not the only mode gated), and the control gate step 0 names is **structurally unevaluable for
+a narrowed id list** -- its cohort is a fixed query over `DB`/`EVR`/`NMR`, none of which is among the 12 or
+among the 82, and `control_gate` refuses outright when a control row is absent from the dry run. A 12-id run
+cannot pass that bar; it cannot even be scored against it.
+
 
 ---
 
