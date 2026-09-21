@@ -3137,7 +3137,11 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | C | 2026-09-21 | OPEN | `attach_schema_valid`'s recorded TRUE overrides a shape the fixed schema rejects (a malformed pick scores CORRECT); only the FALSE branch is tested, the stated rationale is false, and two mutants of the `isinstance(..., bool)` check survive the whole suite |
 | D | 2026-09-21 | OPEN | The `--task cod` and `--task cove` readers coerce `schema_valid` through `bool(...)`, so the tri-state `null` collapses to False -- NO VERDICT read as INVALID, and the fallback beside each coercion never runs. Deferred because the failure is CONSERVATIVE and the cod reader is reachable only by scoring a pick predictions file under `--task cod`, which mis-scores regardless; the cove reader raises `KeyError` on such a row |
 | B | 2026-09-21 | OPEN | #1090's approve reason says three BLINDNESS findings were "routed to the backlog with re-checkable measurements"; none were written. Filed now -- 2 of the 3 closed by the PR that files them, and the remainder is that `stage()` is reachable from no CLI path, so its control cannot be driven end to end |
-| D | 2026-09-21 | OPEN | The attach-round checker's pin chain terminates at three deletions nothing turns red on: a control removed together with its `EXPECTED_LEGS` entry, the out-of-band test file removed outright (155 -> 154 passed, rc 0), and the two workflow `run:` lines -- the last pre-existing and universal, since NO test in this repo asserts on any workflow's `run:` commands |
+| C | 2026-09-21 | OPEN | `stage_and_verify.py` has ZERO refusing sites on `attach-pick/pick_prompt_clean.txt` (0 of 6) and `attach-pick/pick_schema.json` (0 of 6): deleting or renaming either keeps `--verify` at `-- OK` rc 0 and only moves coverage, 35 -> 29 -> 23 of 77. CORRUPTION is caught (one byte -> rc 2, 6 MISMATCH). `test_run_model.py` catches the absence (rc 1) and not the corruption (186/186, rc 0) -- neither channel covers both |
+| C | 2026-09-21 | OPEN | EIGHT behaviour-preserving mutants of `stage_and_verify.py` survive both channels (selftest rc 0/23 legs, pytest rc 0/161 passed) with `--verify` stdout byte-identical on the committed set: the refusal predicate's key, root ORDER, the `sha256:` strip, `glob`/`rglob`, `stage()`'s non-json branch, the empty-sibling guard, and both sibling-preference orders. N1's two rules disagree on 6 COMMITTED sites and no fixture uses that shape |
+| D | 2026-09-21 | OPEN | The paired outputs' `.a` and `.b` are the 2 of 5 redacted path fields with NO sibling digest -- 6 sites naming the two arms gates 1 and 2 are stated on, outside `--verify`'s numerator. Each paired file holds one digest-valued string, `replicates_sha256`, which attests neither arm. The round README sentence claiming all five sit beside a digest is corrected in the PR that files this |
+| D | 2026-09-21 | OPEN | THREE unanchored figures in this file are false at `20d1540d` and only one is a test count: `pytest scripts/tests` stated as 154/155 where it is 161 (two entries, four copies), `.github/workflows/` said to hold three files where it has held four since #1087, and a `grep -l dotnet` one-liner reading 0 where it reads 1 -- off a comment saying `no dotnet`, so it now fails toward CLOSED. Every finding holds. The discriminator is ANCHORED vs unanchored, NOT absolute vs delta: the file's 55/51 `#NNN` figures look stale against 80 and are exact at the two commits they name |
+| D | 2026-09-21 | OPEN | The attach-round checker's pin chain terminates at three deletions nothing turns red on: a control removed together with its `EXPECTED_LEGS` entry (27 changed lines at the smallest of nine), the out-of-band test file removed outright (96 deletions; 161 -> 160 passed, rc 0 at `20d1540d`), and the two workflow `run:` lines (4 physical lines) -- the last pre-existing and universal, since NO test in this repo asserts on any workflow's `run:` commands, across a population of ELEVEN tracked files mentioning `.github/workflows`, not the five first named |
 | D | 2026-09-21 | OPEN | The frozen attach candidates' `generator_version` (10 copied sites in the reduced round) matched the generator at `f37e658b`/`3c4dbb44` and stopped 19 min later at `a9831b59`, when it gained a `control()` and the candidates were not re-frozen. Re-attest from that revision -- `git log` cannot see it across a squash, `git rev-list --all` can. Counted UNREAD by the reader, not red |
 | C | 2026-09-21 | OPEN | `stage_and_verify.py --verify` now reads **35 of 77** digest-valued strings in the round directory (was 13), 0 mismatches, no writer change and no committed byte altered -- a non-refusing sibling rule, with the `path` contract still refusing. **42 remain unread** and are counted and named on a `coverage:` line; 10 of those are `substrate_sha256`, whose artifact is deliberately uncommitted |
 | B | 2026-09-20 | OPEN | The smoke test asserts nothing non-running, never that everything expected is present |
@@ -3483,20 +3487,24 @@ that step to rc 2 under `bash -e`. Not re-opened.
 
 ### Where the attach-round checker's pin chain terminates: three deletions nothing turns red on [2026-09-21]
 Not the advisory-CI point (CLAUDE.md VERIFY already states that a red check can be seen and cannot block on
-this plan). These are two specific deletions that leave EVERY channel at rc 0, measured after the round-2
-and round-3 pins were in place.
+this plan). These are three specific deletions that leave EVERY channel at rc 0, measured after the
+round-2 and round-3 pins were in place, and RE-DERIVED at `20d1540d` -- unit = one test collected by
+`python -m pytest scripts/tests` in a venv, population = every file under `scripts/tests`, read
+2026-09-21T13:55Z. The counts below were first taken at the branch base `6a77daf3`, which collects 154 and
+becomes 155 once this PR's own out-of-band test file is added; they are not those numbers at head, which
+is its own entry further down.
 
 `scripts/tests/test_attach_round_selftest_wiring.py` holds a LITERAL roster, `EXPECTED_LEGS`, compared with
 set equality against what `stage_and_verify.py --selftest` prints. That is what kills a control deleted on
 its own, and what a derived roster could not. It does not survive the roster and the control being deleted
 together, and it does not survive itself being deleted.
 
-| deletion | `--selftest` | `pytest scripts/tests` | what moved |
-|---|---|---|---|
-| none (control) | rc 0 | rc 0, 155 passed | 23 legs |
-| a control **and** its `EXPECTED_LEGS` entries, together | rc 0 | rc 0, **155 passed** | 23 legs -> 21 |
-| the whole out-of-band test FILE | rc 0 | rc 0, **154 passed** | 23 legs, one fewer test |
-| the two `run:` lines in `.github/workflows/python-tests.yml` | rc 0 | rc 0, **155 passed** | nothing |
+| deletion | `--selftest` | `pytest scripts/tests` | what moved | diff a reviewer sees |
+|---|---|---|---|---|
+| none (control) | rc 0 | rc 0, 161 passed | 23 legs | -- |
+| a control **and** its `EXPECTED_LEGS` entries, together | rc 0 | rc 0, **161 passed** | 23 legs -> 22, 21 or 20 | **27 to 57 changed lines**, all nine measured |
+| the whole out-of-band test FILE | rc 0 | rc 0, **160 passed** | 23 legs, one fewer test | **96 deletions** |
+| the two `run:` lines in `.github/workflows/python-tests.yml` | rc 0 | rc 0, **161 passed** | nothing | **4 physical lines** |
 
 The second row is the general shape: a pin whose expectation is a literal is only as strong as review of
 the diff that changes the literal. The third is pytest's contract -- collecting one fewer file is not an
@@ -3504,19 +3512,197 @@ error.
 
 **The fourth is PRE-EXISTING AND UNIVERSAL, and this PR cannot close it.** Deleting the two commands that
 invoke the round's checker leaves every suite green, because **no test in this repo asserts on any
-workflow's `run:` commands at all** -- verified 2026-09-21 rather than assumed: the five tracked files
-matching `.github/workflows` outside `.github/` itself
-(`scripts/tests/test_verify_{pointers,card_companion,hosted_service_pins}.py`,
-`deployment/tests/alerts/run.sh`, `deployment/tests/alerts/MUTATION.md`) mention a workflow only in
-docstrings and comments; none parses one. Every CI step in this repo is in that position, not only these
-two. Re-check by deleting the two lines and running `python -m pytest scripts/tests` in a venv.
+workflow's `run:` commands at all**. THE CONCLUSION SURVIVES RE-DERIVATION AND THE POPULATION DOES NOT.
+The tracked files whose CONTENT matches `.github/workflows` outside `.github/` itself are **eleven**, not
+five -- fourteen counting the three workflow files themselves -- unit = one tracked file, read 2026-09-21
+at `20d1540d`. The five named before are exactly the eleven filtered to a `tests/` directory, a filter that
+was applied without being stated, and the entry shipped with no command to re-run:
+
+```bash
+git grep -lI --fixed-strings '.github/workflows' -- . ':(exclude).github/*'   # 11 -- the real population
+git grep -lI --fixed-strings '.github/workflows' -- '*tests/*' ':(exclude).github/*'   # 5 -- the named set
+```
+
+The six the filter dropped are prose: `.claude/hooks/README.md`, this file, `scripts/README.md`,
+`scripts/sentinel-quality-check/README.md`, `LlmBenchmark/scripts/README.md`, and the round's own
+`LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21/README.md`. All eleven were re-read at
+`20d1540d`: every mention sits in Markdown prose, a `#` comment or a docstring, and none opens or parses a
+workflow file. Widening to any mention of `.github` at all adds four more files and still no parser --
+three `api.github.com` URLs in hook smoke tests, one `docs.github.com` URL in a cached search fixture.
+Every CI step in this repo is in that position, not only these two. Re-check by deleting the two lines and
+running `python -m pytest scripts/tests` in a venv.
 
 Re-check any row by making the deletion and running both commands; the figures above are the whole test.
 
 **Why it is filed and not closed.** A test-count floor would put the expected count under test in its own
 control, which is the failure this repo has already measured twice (see the MEASUREMENT DEBT entries on
-harnesses that fail toward success). The honest remedy is that both deletions are one-line diffs a reviewer
-sees; naming them here is what makes a reviewer look.
+harnesses that fail toward success). The remedy left is that all three deletions are VISIBLE in review --
+but NONE of them is a one-line diff. Measured at `20d1540d`, unit = changed diff lines (`git diff
+--numstat`, insertions plus deletions), population = all nine `cli_*` controls for the first row, each
+deleted with its `cli_control()` entry and its `EXPECTED_LEGS` lines and each reverted:
+
+| row | changed lines | population |
+|---|---|---|
+| a control with its `EXPECTED_LEGS` entries | **27 to 57**, median 42 | nine `cli_*` controls; 27 `cli_unparseable_refused` (1 leg), 57 `cli_duplicate_sites` (3 legs); the five two-leg controls that give the 23 -> 21 move span 40 to 54 |
+| the out-of-band test FILE | **96 deletions** | the file is 96 lines |
+| the two workflow `run:` lines | **4 physical lines** | two commands, the second wrapped over three |
+
+All nine control deletions survive BOTH channels -- `--selftest` rc 0, `pytest scripts/tests` rc 0 at 161
+passed -- so the leg count is the only thing that moves and nothing reads it. Every one of the three
+deletions is therefore MORE visible than "one-line" claimed: the error ran in the SAFE direction, which is
+why it was residue and not a blocker. Naming them here is what makes a reviewer look.
+
+### The pick prompt and the pick schema have ZERO refusing sites, so deleting either leaves `--verify` OK at rc 0 [2026-09-21]
+**ABSENCE, not a wrong digest.** `verify` refuses an absent file only when the sibling key it resolved
+through is literally `path`; every other spelling is counted UNREAD and the run stays green. Of the 35 READ
+sites, unit = one digest-valued JSON string in
+`LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21/*.json`, measured at `20d1540d`:
+
+| named artifact | READ sites | of which REFUSING (`path`-sited) | sibling key used | digest key |
+|---|---|---|---|---|
+| `attach-g2-20260921.staleness.json` | 4 | **4** | `path` | `sha256` |
+| `attach-gold/attach_gold_g2_v1.json` | 9 | **5** | `path` x5, `gold_path` x4 | `sha256`, `gold_sha256` |
+| `attach-gold/frozen/attach_candidates_g2_k20.json` | 10 | **4** | `path` x4, `file` x6 | `sha256` |
+| `attach-pick/pick_prompt_clean.txt` | 6 | **0** | `prompt_file` | `prompt_file_sha256` |
+| `attach-pick/pick_schema.json` | 6 | **0** | `schema_file` | `schema_file_sha256` |
+
+22 of the 35 sites cannot refuse; what makes 12 of those 22 worth an entry is that they are the ONLY two
+artifacts with no refusing site at all -- the other three keep 4, 5 and 4 -- and they are the two files
+`.github/workflows/python-tests.yml` names `LlmBenchmark/attach-pick/**` in its path filter FOR, so the
+edit that is meant to make this job run is the one the job's own evidence-chain checker cannot see removed.
+Measured, each reverted:
+
+| what was done to `attach-pick/` | `--verify` verdict | rc | coverage line |
+|---|---|---|---|
+| nothing | `-- OK` | 0 | 35 of 77, 42 unread |
+| `pick_prompt_clean.txt` deleted | `-- OK` | **0** | **29** of 77, 48 unread |
+| `pick_prompt_clean.txt` renamed | `-- OK` | **0** | **29** of 77, 48 unread |
+| both deleted | `-- OK` | **0** | **23** of 77, 54 unread |
+| one byte flipped in `pick_prompt_clean.txt` | `-- FAILED` | **2** | 35 of 77, **6 MISMATCH lines** |
+
+**CORRUPTION IS CAUGHT; only ABSENCE is not.** The gap is that an absent file is reclassified as
+"no sibling I can resolve" and joins a counted total, which is the same words a deliberately-uncommitted
+artifact earns.
+
+**WHAT DOES CATCH THE ABSENCE, so this is not filed as invisible.** `LlmBenchmark/scripts/test_run_model.py`
+reads both files and turns rc 1, unit = one `FAIL` line, population = its 186 tests, read 2026-09-21 at
+`20d1540d`: **14** FAILs with both deleted (`passed: 172/186`), **13** with `pick_prompt_clean.txt` renamed
+OR deleted on its own (`passed: 173/186`), against 0 FAILs and `passed: 186/186` rc 0 on the untouched tree.
+But it does NOT see the corrupted byte -- with byte 0 of the prompt flipped it reports 0 FAILs and
+`passed: 186/186` at rc 0. The two channels are complementary and NEITHER covers both: the harness sees the
+file go away and not the edit, the checker sees the edit and not the file going away. Count the `FAIL`
+lines, never read them off a `tail` -- the first derivation of this row did, and reported 4 and 3.
+
+**Closing it** means giving the two `attach-pick` sites the round's own attestation spelling -- a
+`{path, sha256}` pair, or `prompt_file`/`schema_file` promoted into the refusing branch -- which is a writer
+change on the next round, not this one. Re-check:
+```bash
+D=LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21
+mv LlmBenchmark/attach-pick/pick_prompt_clean.txt /tmp/held
+python3 $D/stage_and_verify.py --verify $D --repo-root LlmBenchmark | tail -2   # still OK, rc 0, 29 of 77
+mv /tmp/held LlmBenchmark/attach-pick/pick_prompt_clean.txt
+```
+
+### Eight behaviour-preserving mutants of `stage_and_verify.py` survive BOTH channels, because no fixture separates the candidate rules [2026-09-21]
+Not the mutation battery in `.github/workflows/python-tests.yml`, whose 21 mutants are each recorded there
+as killed by a named control. These eight change which RULE the tool implements while leaving `--verify`'s stdout **byte
+identical** on the committed set, so nothing in the repo can state which rule shipped. Unit = one distinct
+source edit, each `py_compile`d first; scored at `20d1540d` against a baseline of `--selftest` rc 0 / 23
+legs and `pytest scripts/tests` rc 0 / 161 passed, every rc read from the process itself.
+
+| # | mutant | why no fixture separates it |
+|---|---|---|
+| N1 | refusal predicate keyed on the DIGEST KEY (`sha256`) instead of on the sibling being `path` | the three fixtures pairing an ABSENT file with a sibling use `path` (`cli_missing_reported`, `cli_nonrefusing_split_path_refuses`) or a `<stem>_sha256` key (`cli_nonrefusing_split_other_counts`); **none uses `{file, sha256}` with an absent file**, which is the one shape where the two rules disagree -- and the committed set has **6 such sites**, all naming the frozen candidates |
+| N2 | root ORDER reversed, repo root consulted before the round directory | 0 names resolve to a DIFFERENT file under both roots; `cli_repo_root`'s fixture puts its gold under one root only |
+| N3 | the `sha256:` prefix strip dropped from the comparison | 0 of the 35 READ sites carry a `sha256:`-prefixed digest -- the 10 that do are `generator_version`, UNREAD by construction, which is exactly what `cli_coverage_reported`'s fixture exercises |
+| N4 | `glob` -> `rglob` over the round directory | 0 `*.json` under any subdirectory of the round dir; `_card_dir` builds flat fixtures |
+| N5 | `stage()`'s non-`.json` copy branch deleted | `_fixture` writes three `.json` files and nothing else, so the branch has no input -- and `stage()` is reachable from no CLI path at all (its own entry above) |
+| N6 | the empty-string sibling guard dropped from `_digest_sites` | 0 conventional siblings hold `""` in the committed set, and no fixture writes one |
+| N7 | bare-`sha256` sibling preference reversed, `file` before `path` | 0 objects carry BOTH `path` and `file`; `cli_sibling_conventions` gives each shape its own document key with one sibling each |
+| N8 | `<stem>` sibling preference reversed, `<stem>_path` before `<stem>` | 0 objects carry BOTH `<stem>` and `<stem>_path`, same fixture shape |
+
+All eight: `--selftest` rc 0 at 23 legs, `pytest scripts/tests` rc 0 at 161 passed, `--verify` rc 0 with
+stdout byte-identical to the unmutated baseline. **The runner reports its own dullness** -- three known-bad
+controls run through the same harness: `verify()` returning `False` unconditionally comes back KILLED
+(selftest rc 3, pytest rc 1, 160 passed), the M1-shaped deletion of the honest-check reporting comes back
+KILLED (rc 3 / rc 1), and an unparseable edit comes back NO VERDICT rather than SURVIVED. 3 of 3 behaved.
+
+**N1 is the one worth closing first** and it is cheap: the repo's own rule is to build the fixture where
+the two candidate rules DISAGREE (CLAUDE.md TOOL_UPKEEP), and the disagreeing input is already committed --
+a `{file: <absent>, sha256: ...}` document would refuse under one rule and count UNREAD under the other.
+Adding it would also decide, rather than default, whether the frozen candidates' 6 `file`-sited digests are
+part of the round's attestation contract. The other seven are judgement calls about scope; what is filed is
+that today nothing in the repo records which way any of them was decided.
+
+**Re-check.** Take the baseline, apply ONE mutant from the table, and re-run all three: stdout identical
+and both channels green means it survived. Revert before the next one.
+```bash
+D=LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21
+python3 $D/stage_and_verify.py --selftest | grep -c '^control '            # 23
+python3 $D/stage_and_verify.py --verify $D --repo-root LlmBenchmark > /tmp/attach-verify-base.txt
+python -m pytest scripts/tests -q | tail -1                                # 161 passed, in a venv
+```
+The disagreement fixture N1 is missing is one document: `{"gold": {"file": "absent.json",
+"sha256": "<any 64 hex>"}}` in a directory `--verify` is pointed at. Shipped, it counts UNREAD at rc 0;
+under N1 it refuses at rc 2. No committed or fixture document has that shape today.
+
+### The paired outputs' `.a` and `.b` are the 2 of 5 redacted fields with NO sibling digest [2026-09-21]
+The round README's REDACTION section is corrected in the PR that files this, so what remains OPEN is the
+gap the sentence was hiding, not the sentence. Measured at `20d1540d`, unit = one redacted path field:
+
+| redacted field | documents | digest keys in the SAME object |
+|---|---|---|
+| `.substrate` (provenance sidecars) | 3 | `substrate_sha256` |
+| `.adapter_metadata.substrate` (scorecards) | 3 | `substrate_sha256` |
+| `.staleness.path` (scorecards) | 4 | `gold_sha256`, `sha256` |
+| `.a` (paired outputs) | 3 | **NONE** |
+| `.b` (paired outputs) | 3 | **NONE** |
+
+Each paired output carries exactly ONE digest-valued string anywhere in it, `.bootstrap.replicates_sha256`,
+an in-memory bootstrap draw that attests neither arm. So 6 sites naming the two arms of the comparison that
+gates 1 and 2 are stated on sit outside `--verify`'s numerator entirely. `.a` names `a0_g2.jsonl`, which is
+tracked nowhere in the repo (its digest is recorded in the round README's not-committed table); `.b` names a
+committed predictions file whose digest is recorded only in `LlmBenchmark/scripts/README.md`, in another
+directory. **Closing it** means the writer emitting `a`/`a_sha256` and `b`/`b_sha256`, which brings both
+inside the reader's existing `<stem>_sha256` convention at no cost to the reader -- a next-round change.
+Re-check:
+```bash
+D=LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21
+grep -ohE '"[a-z0-9_]+": "(sha256:)?[0-9a-f]{64}"' $D/attachpaired-*.json \
+  | cut -d'"' -f2 | sort | uniq -c
+# -> `3 replicates_sha256` and no other digest key: nothing sits beside .a or .b
+```
+
+### Three UNANCHORED figures in this file are false at head, and only one of them is a test count [2026-09-21]
+**Recurrence, not a first occurrence.** The entry titled for #1090's unfiled BLINDNESS findings already
+records four figures that were right at the commit that wrote them and wrong at the head that shipped them,
+and closes with `RE-RUN EVERY COMMAND IN AN ENTRY AT HEAD, not at the commit that wrote it`. The pin-chain
+entry beside it, written in the same PR, shipped with four more. Derived 2026-09-21 at `20d1540d`, unit as
+stated per row:
+
+| site | states | measured at `20d1540d` | the finding |
+|---|---|---|---|
+| the pin-chain entry's four table cells and its summary row (this section) | 155 / 155 / 154 / 155 collected by `pytest scripts/tests` | **161 / 161 / 160 / 161** | holds; corrected in this PR |
+| `The pin control's ALREADY-RED arm has no test` (this section), stated twice -- in prose and as its re-check's expected output | `pytest scripts/tests` "at 154 passed" | **161 passed** | holds; but a reader running the re-check gets 161 and cannot tell a moved denominator from a failed re-check |
+| KNOWN DEFECTS, the hook-registry block: "`.github/workflows/` holds alert-rules, python-tests, sync-docs **and nothing else**" | three workflow files | **four** -- `hosted-service-pins.yml` landed at `0970bc09` (#1087, 2026-09-20) | holds; no workflow runs the hook suites |
+| KNOWN DEFECTS, the merged-tree block: `grep -l dotnet .github/workflows/*.yml \| wc -l   # 0` | 0 | **1**, and the one match is `hosted-service-pins.yml`'s comment `no dotnet, no container` | holds; but the one-liner now fails toward CLOSED -- a reader gets 1 and reads the defect as fixed, off a grep that drifted onto a comment |
+
+Three sites, four copies. The two in KNOWN DEFECTS share one cause -- a fourth workflow landed -- and
+NEITHER is a test count.
+
+**THE DISCRIMINATOR IS ANCHORED VS UNANCHORED, not absolute vs delta.** The file's most alarming-looking
+absolute is not stale at all: `Three figures the PR-verdict decision check leaves un-re-checkable` says its
+`#NNN` sweep saw 55 and 51 against 80 in this file at `20d1540d`, and it is EXACT at both commits it names
+-- 55 at `40d372eb`, 51 at `b08ccdef`, re-derived 2026-09-21. An absolute stamped with its commit never
+rots; an unanchored delta would, and a delta-and-rc rule would have saved neither KNOWN DEFECTS row above.
+**Closing it** means applying the rule this file already states in `Citations in tracked .md that cannot
+land are the corpus's steady state` -- *stamp any figure with the MERGED sha, never a branch* -- to the four
+copies above, one edit each, which is what every entry this PR adds practises. Re-check:
+```bash
+python -m pytest scripts/tests -q | tail -1                  # in a venv; pytest is not on this host's python
+ls .github/workflows/ | wc -l ; grep -l dotnet .github/workflows/*.yml | wc -l
+git show 40d372eb:docs/BACKLOG.md | grep -oE '#[0-9]+' | sort -u | wc -l   # 55, and b08ccdef -> 51
+```
 
 ### 42 of the round's 77 digest-valued strings are still unidentified, after the reader went from 13 to 35 [2026-09-21]
 **What changed, and why the first version of this entry was wrong.** `_digest_pairs` keyed on ONE spelling

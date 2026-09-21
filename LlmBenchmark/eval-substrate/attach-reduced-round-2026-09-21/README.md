@@ -97,10 +97,17 @@ other reports a replicate spread as a sensitivity band.
 Five path fields held an absolute scratchpad path when these files were written and were
 rewritten to the artifact name at the point of writing: `.substrate` (provenance sidecars),
 `.staleness.path` and `.adapter_metadata.substrate` (scorecards), `.a` and `.b` (paired
-outputs). Each sits beside the sha256 that carries the identity, so nothing checkable was
-lost. Nothing else was altered -- predictions, metrics and every digest are byte for byte as
-produced. No credential or hostname was present; `endpoint: http://localhost:8000` is kept
-deliberately, as the run's own engine coordinate.
+outputs). THREE of the five sit beside the sha256 that carries the identity; `.a` and `.b`
+do NOT, and saying they did was wrong. Each paired output holds exactly one digest-valued
+string, `.bootstrap.replicates_sha256`, which is an in-memory bootstrap draw and attests
+neither arm -- so those 6 sites are outside what `stage_and_verify.py --verify` can read.
+Nothing checkable was lost, because both identities are recorded elsewhere: `a0_g2.jsonl`'s
+in the not-committed table above, and the B-clean predictions' in
+`LlmBenchmark/scripts/README.md`. Neither is recorded BESIDE the field, which is the
+convention the verifier reads, and closing that is a writer change on the next round
+(docs/BACKLOG.md). Nothing else was altered -- predictions, metrics and every digest are
+byte for byte as produced. No credential or hostname was present;
+`endpoint: http://localhost:8000` is kept deliberately, as the run's own engine coordinate.
 
 `stage_and_verify.py` beside these files is the transform, committed with its controls so
 the redaction can be reproduced rather than only confirmed absent. It refuses an absolute
