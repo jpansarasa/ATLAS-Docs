@@ -46,8 +46,9 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-21 | OPEN | 6 `.SG` rows carry a wrong-venue FIGI, 5 of them ANOTHER COMPANY's; the suffix is now null (bleeding stopped) but no row is repaired, and 194 `.SG` + 95 `.MC` + 87 `.SI` rows have no venue at all |
 | B | 2026-09-21 | OPEN | 5 of the 6 SecMaster migration test classes drive SQL CONSTANTS, never `Up`/`Down`: emptying `Up()` leaves each green |
 | B | 2026-09-21 | OPEN | D-19's Down CAS is CODE-granular, not WRITE-granular: 20 of 42 map entries resolve to US (93.3% of the population), so a later write of a DIFFERENT US spelling is invisible to it and to SkippedRestoresSql |
+| D | 2026-09-21 | OPEN | Frozen attach-candidate lists hold 2,457 records (742 instruments) whose exchange the D-19 heal rewrites and re-embeds; the only guard is a 24 h clock over two FIXED timestamps, comparing no content |
 | A | 2026-09-21 | OPEN | GIGO broken a THIRD time: the pipe-paste is cleaned at SecMaster while its SOURCE, gemini_client.py:264's prose schema, still hands the model a literal pipe enumeration; 2 live rows echo it verbatim |
-| E | 2026-09-21 | OPEN | "ALL read ListingVenueRegistry" is wider than the sweep: 2 unguarded venue-table copies survive, one already wrong on 541 rows today |
+| E | 2026-09-21 | OPEN | "ALL read ListingVenueRegistry" is wider than the sweep: 2 of the 4 venue-table copies are unguarded, one already wrong on 541 rows today |
 | A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
 | A | 2026-09-20 | OPEN | D-17 cleared the STAMP, not the DESCRIPTION: 8 foreign rows keep an EDGAR SIC line, 4 another company's |
 | A | 2026-09-20 | OPEN | BTC-USD duplicates the curated CRYPTO:BTC row; 1,101 observations to 0 (T3 items 1 and 2) |
@@ -314,22 +315,82 @@ repository.
   literals -- `exchange ~* '^(US|FRED|ICE|COMEX|CBOT|NYMEX|CRYPTO)$'` OR
   `exchange ~* '(NYSE|NASDAQ|OTC|AMEX|ARCA|BATS|CBOE)' AND exchange !~* '(EURONEXT|OMX)'` -- and no test compares it
   to the registry. **AND IT IS ALREADY WRONG TODAY, INDEPENDENTLY OF D-19**: neither arm matches
-  `NEW YORK STOCK EXCHANGE, INC.` (the string contains no `NYSE`), so of the 8,410 active bare rows the script's A10
+  `NEW YORK STOCK EXCHANGE, INC.` (the string contains no `NYSE`), so of the 8,411 active bare rows the script's A10
   check reads, 541 real NYSE listings are classified NON-US right now. D-19's heal turns those into `US`, which the
-  first arm does match, so the heal SILENTLY REPAIRS the script -- 543 of 8,410 classifications change, 541 that way
-  plus the 2 pipe rows leaving the population when they go NULL. Nothing else changes.
+  first arm does match, so the heal SILENTLY REPAIRS the script -- and it LOOSENS the gate, it does not tighten it:
+  the suspect set falls 1,070 -> 529 and `suspect_landings` stops refusing `--live` over those rows. Re-derived
+  2026-09-21 by simulating the post-heal column SELECT-only, both sides scored by the script's own predicate: 541
+  classifications change, ALL suspect -> clean, and ZERO change the other way. NOT 543 -- an earlier revision of this
+  line added the 2 pipe rows, which leave the arm's population when they go NULL but were never suspect (their text
+  matches `NASDAQ`), so they change no classification. Nothing else changes.
   (This CORRECTS a relayed claim that the copy was measured not to break: it does not break, but only because it was
   already broken in the safe direction.)
 - `SecMaster/src/Data/Migrations/20260917110542_ClearOutOfScopeUsAuthorityStamps.cs` `UnclearedRowsSql` freezes 26
   venue literals inside an operator SELECT. Measured on the simulated post-heal column it returns 0 rows before and 0
   rows after, so it is inert today; it is a frozen artifact and correctly so, but it is a second copy nothing points
   at the registry from.
-- The THIRD copy, `CanonicalizeExchangeVocabulary.SpellingValues`, is the GUARDED one and is not part of this entry:
-  `the_spelling_map_agrees_with_the_registry` checks every pair against `ListingVenueRegistry.TryResolveCode` and
-  goes RED if the vocabulary moves under it. That is the shape the other two lack.
-Re-check: `grep -rn "NYSE\|NASDAQ" SentinelCollector/scripts/reresolve-by-provenance.sh
-SecMaster/src/Data/Migrations/20260917110542_*.cs` -> both copies present on 2026-09-21. Closes when each copy either
-reads the registry or carries a test that fails when the registry moves.
+- TWO MORE COPIES EXIST AND ARE GUARDED, so they are not part of this entry -- they are here because the count
+  above is "two UNGUARDED", never "two in the repository", and a reader checking it should find all four.
+  `CanonicalizeExchangeVocabulary.SpellingValues` is checked pair-by-pair against
+  `ListingVenueRegistry.TryResolveCode` by `the_spelling_map_agrees_with_the_registry`. The fourth, added
+  2026-09-21, is the US venue-token alternation inside `SecMaster/DECISIONS.md` §D-19's falsifier SELECT -- a
+  REDUCTION of the registry's US spellings to their words -- checked by
+  `scripts/tests/test_d19_falsifier_vocabulary.py`, which parses both sides and goes RED when a registry US
+  spelling shares no token with the alternation or the alternation names a token no spelling contains
+  (`ListingVenueRegistry.cs` is in the python-tests workflow's path list for that reason). RED proved both ways
+  2026-09-21 by adding `PINK SHEETS` to the registry and `IEX` to the alternation, one at a time. What that test
+  CANNOT see is in its own docstring -- word-boundary placement, an alternation that is too WIDE (the `ARCA`
+  case), and the other four predicates. That is the shape the two copies above lack.
+Re-check, over ALL FOUR copies so the count of UNGUARDED ones is derived rather than recalled:
+`grep -rln "NYSE\|NASDAQ" SentinelCollector/scripts/reresolve-by-provenance.sh
+SecMaster/src/Data/Migrations/20260917110542_*.cs SecMaster/src/Data/Migrations/20260921084921_*.cs
+SecMaster/DECISIONS.md` -> 4 files on 2026-09-21, of which the last two carry a registry-derived test
+(`the_spelling_map_agrees_with_the_registry`, `scripts/tests/test_d19_falsifier_vocabulary.py`) and the first
+two carry none. Closes when each of those first two either reads the registry or carries a test that fails
+when the registry moves.
+
+**THE FROZEN ATTACH-CANDIDATE LISTS ARE COUPLED TO THE D-19 HEAL, AND THE ONLY THING GUARDING THEM IS A 24 h CLOCK
+THAT COMPARES NO CONTENT.** Measured 2026-09-21. `LlmBenchmark/attach-gold/frozen/attach_candidates_g1_k20.json` and
+`..._g2_k20.json` were frozen by calling `GET /api/semantic/candidates` against the catalog at `catalog_snapshot`
+2026-09-20T12:35:13Z and 12:36:49Z, so every candidate row in them carries the PRE-heal `exchange` string AND was
+ranked by a vector tier reading PRE-heal embeddings. The two files hold 13,802 candidate records over 4,152 distinct
+instruments. 2,457 records (17.8%), naming 742 distinct instruments (17.9%), carry an exchange spelling
+`CanonicalizeExchangeVocabulary` rewrites -- derived twice and agreeing at 742, once from the frozen values and once by
+joining the 4,152 ids to the live catalog. Those 742 rows also take an `updated_at` bump from the heal and therefore
+RE-EMBED, so after the deploy the same query does not return the same neighbours the file holds.
+THE GUARD CANNOT SEE ANY OF THAT. `eval_harness.check_catalog_drift` holds the gold's `catalog_at` against the file's
+`catalog_snapshot` and refuses past `ATTACH_CATALOG_DRIFT_TOLERANCE` (24 h) -- both are FIXED stamps written at freeze
+time, so the comparison returns the same verdict forever and a catalog rewritten underneath the freeze passes it
+unchanged. The staleness attestation is not a second witness: it re-checks that each ACCEPTED id is still active and
+proposable, and a re-embed and an exchange rewrite both leave that true. Consequence: scoring stays REPRODUCIBLE,
+which is precisely the hazard -- a post-deploy score describes a candidate list production no longer produces, and
+nothing in the run says so. NOT A PROPOSAL TO WIDEN THE WINDOW OR TO DIFF EXCHANGES HERE: what the guard ought to
+compare is a separate decision, already escalated; this entry exists so the coupling is measured rather than
+remembered. Re-check, from the repo root -- the spelling map is read out of the migration, so the count moves when the
+vocabulary does rather than agreeing with a copy of itself:
+
+```
+python3 - <<'EOF'
+import json
+M = {l.split("'")[1].upper() for l in open(
+  "SecMaster/src/Data/Migrations/20260921084921_CanonicalizeExchangeVocabulary.cs")
+  if l.strip().startswith("('")}
+n = hit = 0; ids = set()
+for g in ("g1", "g2"):
+    d = json.load(open(f"LlmBenchmark/attach-gold/frozen/attach_candidates_{g}_k20.json"))
+    for a in d["articles"]:
+        for o in a["owners"]:
+            for c in o["candidates"]:
+                n += 1
+                if (c.get("exchange") or "").strip().upper() in M:
+                    hit += 1; ids.add(c["id"])
+print(f"records={n} rewritten={hit} distinct_instruments={len(ids)}")
+EOF
+```
+
+-> `records=13802 rewritten=2457 distinct_instruments=742` on 2026-09-21, and `grep -n
+'ATTACH_CATALOG_DRIFT_TOLERANCE =' LlmBenchmark/scripts/eval_harness.py` -> one `timedelta` held against two stored
+stamps. Closes when a scoring run against a post-heal catalog either re-freezes the lists or refuses to score.
 
 **TWO D-19 VENUE SUFFIXES NAMED THE WRONG VENUE, AND 6 CATALOG ROWS CARRY A FIGI OBTAINED THAT WAY -- 5 OF THEM
 ANOTHER COMPANY'S. THE SUFFIXES ARE NULLED (#1091), SO NOTHING NEW IS POISONED; NO ROW IS REPAIRED.** Both entries
