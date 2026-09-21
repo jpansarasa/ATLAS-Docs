@@ -110,14 +110,58 @@ with sorted keys, including the attestation, which had nothing to redact: 381 by
 382 and the `staleness.sha256` all four scorecards record stopped resolving. That file is
 back to its as-produced bytes and `control_noop_bytes` now fails by name if it happens again.
 
+There is no `--stage`: the pre-staging originals are not committed and the scratch directory
+is gone, so `stage()` is the transform OF RECORD and its controls are the only thing that
+runs it. The CLI is these two commands and nothing else.
+
 ```bash
 D=LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21
 python3 $D/stage_and_verify.py --selftest                       # the controls
 python3 $D/stage_and_verify.py --verify $D --repo-root LlmBenchmark
 ```
 
-`--verify` resolves every recorded `{path, sha256}` pair against the artifact it names: 13 of
-them, 0 unresolvable. `--repo-root LlmBenchmark` is required rather than the repo root,
-because the harness records gold and candidate paths relative to `LlmBenchmark/`; without it
-9 of the 13 report NOT RESOLVABLE, which is the tool declining to call an unchecked digest
+BOTH ARE IN CI, in the `Attachment round tooling selftests` step of
+`.github/workflows/python-tests.yml`, which the `LlmBenchmark/eval-substrate/**` path
+trigger fires on, and `scripts/tests/test_attach_round_selftest_wiring.py` pins that
+`--selftest` actually reaches its control set. Until 2026-09-21 neither command ran unless
+a person remembered -- and the defect they exist to catch had already happened once, on
+this directory. Proven capable of red on the COMMITTED artifacts, not only on its fixtures:
+appending one byte to `attach-g2-20260921.staleness.json` takes the step to rc 2 with a
+MISMATCH at each of the four scorecards recording that digest; reverted and re-run green.
+
+`--verify` resolves a digest against the artifact its sibling field names: **35 of the 77
+digest-valued strings** in these documents, over 5 distinct (name, digest) pairs, 0
+unresolvable and 0 mismatching. `--repo-root LlmBenchmark` is required rather than the repo
+root, because the harness records gold and candidate paths relative to `LlmBenchmark/`;
+without it 9 report NOT RESOLVABLE, which is the tool declining to call an unchecked digest
 checked.
+
+TWO RULES, and the split is deliberate. `{path, sha256}` is this round's own attestation
+contract and REFUSES: a pair whose file is absent is reported and the run exits 2. Every
+other spelling is read opportunistically and never refuses -- `<stem>_sha256` looks for
+`<stem>` then `<stem>_path`, a bare `sha256` for `path` then `file`, and a site whose sibling
+names nothing, or names something absent, is COUNTED UNREAD rather than failed. That is what
+lets `substrate_sha256` stay a counted absence: `substrate_g2.json` is deliberately not
+committed. An escape -- `..` or a symlink out of the roots the invocation named -- refuses
+under both rules, so a verdict's scope equals the scope its arguments declared. It does NOT
+mean the verdict is about artifacts this round produced, and it cannot: under the CI
+invocation the second root is all of `LlmBenchmark/` (325 tracked files against this
+directory's 16), and 31 of the 35 read sites legitimately name the gold (`2f68dd3b`), the
+frozen candidates (`c64d5593`) and the pick prompt and schema -- none produced by this round.
+
+The tool prints what it could NOT identify, so the blindness is in its own output:
+
+```
+coverage: 35 of 77 digest-valued string(s) in these documents were IDENTIFIED; 42 carry no
+sibling this tool can resolve (chat_template_sha256 x9, generator_version x10,
+prompt_file_sha256 x3, replicates_sha256 x7, schema_file_sha256 x3, substrate_sha256 x10)
+```
+
+Those 42 are not reader defects: two spellings digest a template STRING and an in-memory
+bootstrap draw, six sites carry no sibling at all, ten name the uncommitted substrate, and
+ten are `generator_version`, whose key is not `_sha256`-suffixed. The per-spelling census and
+what would close each is in `docs/BACKLOG.md`.
+
+Neither the coverage nor the verdict is a guarantee about the round. Both commands are
+advisory checks a human reads: on this plan branch protection cannot block a merge on a red
+one.

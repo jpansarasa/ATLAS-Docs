@@ -2920,6 +2920,10 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | C | 2026-09-21 | OPEN | One scorecard carries two different `schema_invalid` populations under one name: `diagnostics.schema` EXCLUDES failed calls, `acceptance_evidence.run_integrity` COUNTS them. Measured on one 2-record arm: 0 of 1 against 1 of 2 |
 | C | 2026-09-21 | OPEN | `attach_schema_valid`'s recorded TRUE overrides a shape the fixed schema rejects (a malformed pick scores CORRECT); only the FALSE branch is tested, the stated rationale is false, and two mutants of the `isinstance(..., bool)` check survive the whole suite |
 | D | 2026-09-21 | OPEN | The `--task cod` and `--task cove` readers coerce `schema_valid` through `bool(...)`, so the tri-state `null` collapses to False -- NO VERDICT read as INVALID, and the fallback beside each coercion never runs. Deferred because the failure is CONSERVATIVE and the cod reader is reachable only by scoring a pick predictions file under `--task cod`, which mis-scores regardless; the cove reader raises `KeyError` on such a row |
+| B | 2026-09-21 | OPEN | #1090's approve reason says three BLINDNESS findings were "routed to the backlog with re-checkable measurements"; none were written. Filed now -- 2 of the 3 closed by the PR that files them, and the remainder is that `stage()` is reachable from no CLI path, so its control cannot be driven end to end |
+| D | 2026-09-21 | OPEN | The attach-round checker's pin chain terminates at three deletions nothing turns red on: a control removed together with its `EXPECTED_LEGS` entry, the out-of-band test file removed outright (155 -> 154 passed, rc 0), and the two workflow `run:` lines -- the last pre-existing and universal, since NO test in this repo asserts on any workflow's `run:` commands |
+| D | 2026-09-21 | OPEN | The frozen attach candidates' `generator_version` (10 copied sites in the reduced round) matched the generator at `f37e658b`/`3c4dbb44` and stopped 19 min later at `a9831b59`, when it gained a `control()` and the candidates were not re-frozen. Re-attest from that revision -- `git log` cannot see it across a squash, `git rev-list --all` can. Counted UNREAD by the reader, not red |
+| C | 2026-09-21 | OPEN | `stage_and_verify.py --verify` now reads **35 of 77** digest-valued strings in the round directory (was 13), 0 mismatches, no writer change and no committed byte altered -- a non-refusing sibling rule, with the `path` contract still refusing. **42 remain unread** and are counted and named on a `coverage:` line; 10 of those are `substrate_sha256`, whose artifact is deliberately uncommitted |
 | B | 2026-09-20 | OPEN | The smoke test asserts nothing non-running, never that everything expected is present |
 | B | 2026-09-20 | OPEN | Smoke test's `exited` + `ExitCode 0` exemption has no recency term; its data source carries no timestamp |
 | C | 2026-09-20 | OPEN | A smoke-test run executing ZERO tasks exits 0; the class is unbounded in spelling, not closeable inside the playbook |
@@ -3211,6 +3215,204 @@ the runner judges the SAME parsed object, with the SAME shared function. The onl
 scorer cannot recompute is whether `json.loads` succeeded at all, and a failed parse is already visible as
 `prediction: null`. Closing it means either testing the TRUE-over-malformed branch as intended behaviour and
 rewriting the rationale, or re-judging the shape here and keeping the flag as provenance.
+
+### Three BLINDNESS findings from #1090 were recorded as filed with measurements, and were not filed at all [2026-09-21]
+**The process defect is the entry, and this PR does not close it.** #1090's approve reason states the three
+BLINDNESS findings accepted at merge were "routed to the backlog with re-checkable measurements". No such
+entries were written, and the claim was not checked before it was recorded, so a false statement about the
+state of this file is permanent in that PR's audit log. The three are written out below with the
+measurement each should have carried; two are closed by the PR that adds this entry and one is partly open.
+They are one entry rather than three because their shared provenance -- a verdict that asserted a filing
+nobody performed -- is the thing worth being able to find again.
+
+**1. The honest-check guard was unpinned. CLOSED by this PR.** `verify`'s `target is None` branch is the
+only thing separating "cannot check" from "checks out", and deleting its reporting left every control green
+at rc 0. Re-checkable on the committed set by running the tool with the WRONG repo root, which is the
+operator error the branch exists for:
+
+```bash
+D=LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21
+python3 $D/stage_and_verify.py --verify $D --repo-root .    # shipped: 9 unresolvable, FAILED, rc 2
+```
+With the reporting deleted the same command prints `4 recorded digest(s) resolved … 0 unresolvable … OK`
+at **rc 0** -- 4 resolved either way, and the 9 pairs it cannot check simply stop being mentioned. Now
+pinned by `control cli_missing_reported`, which drives the CLI and asserts rc 2 and the named file.
+
+**2. Every control asserted an internal function's return. PARTLY CLOSED.** At `629a8133` the file had 3
+control functions printing 5 legs, none of which spawned the CLI -- against a workflow comment that states
+the opposite standard for its three sibling scripts. It now prints **23 legs from 12 leg-printing control
+functions (plus the `cli_control` aggregator, which prints none), of which 18 legs from 9 functions drive
+the CLI end to end** and assert its exit code and stdout. Re-check:
+`python3 $D/stage_and_verify.py --selftest | grep -c '^control '` -> 23, and `| grep -c '^control cli_'`
+-> 18; at `629a8133` the same two commands give 5 and 0.
+
+**Those four figures were WRONG here until 2026-09-21, and this entry's own thesis is why that matters.**
+They were recorded as 18/13 over 9/6 at the commit that wrote them and never re-run at the head that
+shipped them; the next commit on this branch added controls and falsified all four, while handing the
+reader the two commands that refute them. An entry titled for claims recorded without checking is the last
+place that may happen. RE-RUN EVERY COMMAND IN AN ENTRY AT HEAD, not at the commit that wrote it.
+**What remains: the 5 in-process legs, and they cannot be converted.** `stage()` -- the transform the file
+exists to record -- is reachable from `_stage_all` only, which is reachable from `control_noop_bytes` and
+`control_digest_resolves` only; **no CLI path reaches it**, because there is deliberately no `--stage`
+(the pre-staging originals are not committed). So `control_noop_bytes` is structurally un-drivable end to
+end, and the byte-preservation rule it guards is asserted only in process. Re-check:
+`grep -n 'stage(' $D/stage_and_verify.py` -> the only call site outside its own definition is inside
+`_stage_all`. Closing it means either exposing a staging CLI with no input, or accepting the limit --
+this entry exists so the choice is made rather than defaulted.
+
+**3. The verifier was wired into no gate. CLOSED by this PR**, and recorded here only because the verdict
+claimed it had been filed: both `--selftest` and `--verify` now run in the `Attachment round tooling
+selftests` step of `.github/workflows/python-tests.yml`, and breaking one committed artifact's bytes takes
+that step to rc 2 under `bash -e`. Not re-opened.
+
+### Where the attach-round checker's pin chain terminates: three deletions nothing turns red on [2026-09-21]
+Not the advisory-CI point (CLAUDE.md VERIFY already states that a red check can be seen and cannot block on
+this plan). These are two specific deletions that leave EVERY channel at rc 0, measured after the round-2
+and round-3 pins were in place.
+
+`scripts/tests/test_attach_round_selftest_wiring.py` holds a LITERAL roster, `EXPECTED_LEGS`, compared with
+set equality against what `stage_and_verify.py --selftest` prints. That is what kills a control deleted on
+its own, and what a derived roster could not. It does not survive the roster and the control being deleted
+together, and it does not survive itself being deleted.
+
+| deletion | `--selftest` | `pytest scripts/tests` | what moved |
+|---|---|---|---|
+| none (control) | rc 0 | rc 0, 155 passed | 23 legs |
+| a control **and** its `EXPECTED_LEGS` entries, together | rc 0 | rc 0, **155 passed** | 23 legs -> 21 |
+| the whole out-of-band test FILE | rc 0 | rc 0, **154 passed** | 23 legs, one fewer test |
+| the two `run:` lines in `.github/workflows/python-tests.yml` | rc 0 | rc 0, **155 passed** | nothing |
+
+The second row is the general shape: a pin whose expectation is a literal is only as strong as review of
+the diff that changes the literal. The third is pytest's contract -- collecting one fewer file is not an
+error.
+
+**The fourth is PRE-EXISTING AND UNIVERSAL, and this PR cannot close it.** Deleting the two commands that
+invoke the round's checker leaves every suite green, because **no test in this repo asserts on any
+workflow's `run:` commands at all** -- verified 2026-09-21 rather than assumed: the five tracked files
+matching `.github/workflows` outside `.github/` itself
+(`scripts/tests/test_verify_{pointers,card_companion,hosted_service_pins}.py`,
+`deployment/tests/alerts/run.sh`, `deployment/tests/alerts/MUTATION.md`) mention a workflow only in
+docstrings and comments; none parses one. Every CI step in this repo is in that position, not only these
+two. Re-check by deleting the two lines and running `python -m pytest scripts/tests` in a venv.
+
+Re-check any row by making the deletion and running both commands; the figures above are the whole test.
+
+**Why it is filed and not closed.** A test-count floor would put the expected count under test in its own
+control, which is the failure this repo has already measured twice (see the MEASUREMENT DEBT entries on
+harnesses that fail toward success). The honest remedy is that both deletions are one-line diffs a reviewer
+sees; naming them here is what makes a reviewer look.
+
+### 42 of the round's 77 digest-valued strings are still unidentified, after the reader went from 13 to 35 [2026-09-21]
+**What changed, and why the first version of this entry was wrong.** `_digest_pairs` keyed on ONE spelling
+-- a `sha256` string beside a `path` string -- and read 13 of the 77 digest-valued strings in the round
+directory. This entry previously argued the only fix was for `run_model.py` and `eval_harness.py` to emit
+one shape, citing CLAUDE.md GIGO. **That was a misreading of GIGO**, which is about rejecting junk where it
+is born rather than gating each destination, and whose stated cost is that each new consumer re-learns the
+rule. Here nothing is junk -- the producers emit correct digests under conventional, schema-specific names
+-- and there is exactly ONE consumer. A reader that understands more field names is a reader, not a
+destination gate.
+
+The argument also rested on an assumption never stated: that the reader must REFUSE what it cannot
+resolve, which is what forced a four-item exclusion list and made the change look expensive. Drop that
+assumption and the exclusions disappear.
+
+**THE RULE NOW SHIPPED, non-refusing.** Sibling of `<stem>_sha256` is `<stem>`, then `<stem>_path`; bare
+`sha256` tries `path`, then `file`. If a sibling names a file that is there, the digest is compared. If no
+sibling exists, or it names nothing on disk, the site is counted UNREAD on the `coverage:` line -- never
+refused. The ONE exception is the round's own attestation contract: a `path`-sited pair whose file is
+absent still REFUSES at rc 2, because that is the honest-check guard this tooling exists for. An escape
+(`..` or a symlink out of the declared roots) refuses under both.
+
+| measured 2026-09-21, unit = one digest-valued JSON string in `attach-reduced-round-2026-09-21/*.json` | before | after |
+|---|---|---|
+| READ (digest compared) | 13 | **35** |
+| unresolvable (refused) | 0 | 0 |
+| UNREAD (counted and named) | 64 | **42** |
+| mismatches among the read | 0 | **0** |
+| distinct (name, digest) pairs read | 3 | 5 |
+| committed bytes altered / writer changes | — | **none** |
+
+The 22 newly-read sites name two artifacts that were previously invisible: **12 of them**
+`attach-pick/pick_prompt_clean.txt` (6) and `attach-pick/pick_schema.json` (6) -- the files the workflow's
+own path filter lists so that an edit there runs this job. Before this change the job fired, `--verify`
+ran, and the digests those sites record for that very file were not read.
+
+**What is STILL unread, and why each is not a defect of the reader:**
+
+| spelling | sites | why |
+|---|---|---|
+| `substrate_sha256` | 10 | `substrate_g2.json` is deliberately NOT committed -- regenerable from committed inputs (round README). Non-refusing is what keeps this a counted absence instead of a red run |
+| `generator_version` | 10 | key is not `_sha256`-suffixed; its value is `sha256:`-prefixed instead -- its own entry below |
+| `chat_template_sha256` | 9 | the sibling is the template STRING, not a path -- there is no file |
+| `replicates_sha256` | 7 | an in-memory bootstrap draw; no sibling, no file |
+| `prompt_file_sha256` | 3 | the 3 sites under `acceptance_evidence.request_bytes` carry no sibling naming the file |
+| `schema_file_sha256` | 3 | same three sites |
+
+**Re-check**, and this is the number to watch rather than any figure in this entry:
+```bash
+D=LlmBenchmark/eval-substrate/attach-reduced-round-2026-09-21
+python3 $D/stage_and_verify.py --verify $D --repo-root LlmBenchmark | tail -1
+```
+**Closing the remainder** means a writer change after all, but a much smaller one than the first version of
+this entry claimed: give the three `acceptance_evidence.request_bytes` sites a sibling, and spell
+`generator_version` as `generator_sha256`. Both are on artifacts that are already frozen, so they land on
+the next round, not this one. Nothing else in the table can be closed by a reader or a writer -- those
+digests are of things that are not files.
+
+### The frozen candidates' `generator_version` matched its generator when the freeze ran, and stopped 19 minutes later [2026-09-21]
+**The value, and what is actually wrong with it.** `freeze_candidates.py:203` writes
+`"generator_version": "sha256:" + sha256(own bytes)`, and its sibling `generator` names that file.
+
+| measured 2026-09-21 | value |
+|---|---|
+| `sha256:`-prefixed values under `LlmBenchmark/` | 12 occurrences, **1 distinct value** |
+| ...in `eval-substrate/attach-reduced-round-2026-09-21/` | 10: 3 provenance sidecars x1, the 3 B-clean scorecards x2, the A0 scorecard x1 |
+| ...in `attach-gold/frozen/attach_candidates_g{1,2}_k20.json` | 2, one each -- the SOURCE the other 10 are copied from |
+| recorded value | `0b394c08a064784a3fdb0ec9bfa1b10d388dc8f61051fbe3e1235fee0f1c46d8` |
+| `sha256sum` of the generator in the tree today | `81bdbeee4960d77161c351a89ace7d32e8a1720ad4c24f50ba1bf3a4acc6e122` |
+
+**IT WAS TRUE WHEN IT WAS WRITTEN, and the command that shows it is not the obvious one.** `git log --
+<path>` walks only what is reachable from HEAD, and on a squash-merging repo the pre-squash blobs are not,
+so it reports ONE commit and invites the conclusion that the digest never matched. `git rev-list --all`
+returns four, and two of them carry a generator hashing to exactly the recorded value:
+
+```bash
+P=LlmBenchmark/attach-gold/frozen/freeze_candidates.py
+git rev-list --all -- $P | while read c; do
+  printf '%s %s %s\n' "$(git rev-parse --short $c)" \
+    "$(git show $c:$P | sha256sum | cut -c1-16)" "$(git log -1 --format='%ad %s' --date=iso $c)"
+done
+```
+
+| revision | generator sha256 | when |
+|---|---|---|
+| `c64d5593` (#1074, the squash on main) | `81bdbeee…` | 2026-09-20 09:19:41 |
+| `a9831b59` (`benchmark/attach-freeze-v2`) | `81bdbeee…` | 2026-09-20 09:07:06 |
+| `f37e658b` (`benchmark/attach-freeze-v2`) | **`0b394c08…`** | 2026-09-20 08:48:05 |
+| `3c4dbb44` (`origin/benchmark/attach-freeze`) | **`0b394c08…`** | 2026-09-17 09:17:35 |
+
+`f37e658b` is the freeze that produced the committed file: its `attach_candidates_g2_k20.json` is
+byte-identical to main's (`4ee067db697a…`, the value the round's provenance records as `candidates.sha256`).
+**19 minutes and 1 second later** `a9831b59` added a `control()` function to the generator -- a known-bad
+control on the degraded-owner refusal -- and the candidates were never re-frozen, so the squash carried a
+NEW generator with the OLD self-digest. `git diff f37e658b a9831b59 -- $P` shows exactly that addition.
+Nothing in the reduced round computed the field: `generator_version` is one of
+`attach_candidates.AXES`, `attach_candidates.load` returns it under `axes`, and `run_model.py`'s
+`candidates_provenance` spreads `**frozen["axes"]` into the provenance the scorer then copies.
+
+**So the prescription is cheap, and re-freezing is NOT it.** The field can be re-attested from an
+identified revision with no run and no live catalog: record the generator's revision beside the digest --
+`f37e658b`, or `3c4dbb44`, which carries the identical generator blob and is the one of the two that is
+PUSHED (`origin/benchmark/attach-freeze`); `f37e658b` is reachable only from a local branch and dies with
+it. Re-freezing against a live SecMaster would replace two frozen inputs three committed scorecards are
+scored against, and dropping the field would discard provenance that is correct. Spelling the key
+`generator_sha256` on a future round would also bring it inside the reader's sibling convention at no
+cost. Today it is counted UNREAD on the `coverage:` line -- 10 sites -- which is why `--verify` stays rc 0
+on it rather than either hiding it or going red forever.
+
+**PRE-EXISTING, verified before writing:** the value is byte-identical in `git show
+c64d5593:LlmBenchmark/attach-gold/frozen/attach_candidates_g2_k20.json`, and `git rev-list --all` shows no
+commit to that file after `c64d5593`.
 
 ### The `--task cod` and `--task cove` readers coerce the tri-state `schema_valid` to False, so NO VERDICT reads as INVALID [2026-09-21]
 `AttachOwner.schema_valid` is `bool | None` (`LlmBenchmark/scripts/eval_harness.py:1066`) because a row that
