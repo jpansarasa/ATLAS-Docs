@@ -47,8 +47,11 @@ Defects with a measurement that makes them re-checkable.
 | B | 2026-09-21 | OPEN | 5 of the 6 SecMaster migration test classes drive SQL CONSTANTS, never `Up`/`Down`: emptying `Up()` leaves each green |
 | B | 2026-09-21 | OPEN | D-19's Down CAS is CODE-granular, not WRITE-granular: 20 of 42 map entries resolve to US (93.3% of the population), so a later write of a DIFFERENT US spelling is invisible to it and to SkippedRestoresSql |
 | D | 2026-09-21 | OPEN | Frozen attach-candidate lists hold 2,457 records (742 instruments) whose exchange the D-19 heal rewrites and re-embeds; the only guard is a 24 h clock over two FIXED timestamps, comparing no content |
+| D | 2026-09-21 | OPEN | D-19 falsifier fixtures span 4 of 13 venue tokens, 1 of 14 `idx`, 1 of 2 ticker shapes: the `idx` mutant crosses both bars (153 of 2,551, 12:30:11Z) at `controls_passed 11 of 11` |
+| D | 2026-09-21 | OPEN | The D-19 falsifier SELECT spells the US venue vocabulary THREE times and guards ONE: 6 of 20 registry US spellings classify FALSE under Title Case (0 as stored, which cannot expose it), the direction the entry forbids (exposure 0 today) |
+| D | 2026-09-21 | OPEN | 7 test/selftest harnesses under `scripts/` are run by no workflow; 2 sit inside `scripts/tests/`, which CI triggers on and sweeps with a pytest that collects only `test_*.py` |
 | A | 2026-09-21 | OPEN | GIGO broken a THIRD time: the pipe-paste is cleaned at SecMaster while its SOURCE, gemini_client.py:264's prose schema, still hands the model a literal pipe enumeration; 2 live rows echo it verbatim |
-| E | 2026-09-21 | OPEN | "ALL read ListingVenueRegistry" is wider than the sweep: 2 of the 4 venue-table copies are unguarded, one already wrong on 541 rows today |
+| E | 2026-09-21 | OPEN | "ALL read ListingVenueRegistry" is wider than the sweep: 4 of the 6 venue-vocabulary copies are unguarded (the FILE grep counts 4 FILES; D-19's falsifier SELECT alone holds 3 of the 6 copies, 2 of them unguarded), one already wrong on 541 rows today |
 | A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
 | A | 2026-09-20 | OPEN | D-17 cleared the STAMP, not the DESCRIPTION: 8 foreign rows keep an EDGAR SIC line, 4 another company's |
 | A | 2026-09-20 | OPEN | BTC-USD duplicates the curated CRYPTO:BTC row; 1,101 observations to 0 (T3 items 1 and 2) |
@@ -306,8 +309,8 @@ constrain the producer (`response_format` / a JSON schema), which is `CLAUDE.md`
 -> 2 on 2026-09-21; and `grep -n '|' gemini-resolver-mcp/gemini_resolver/gemini_client.py` at the schema block.
 Closes when the resolver constrains its output and the prose enumeration is gone.
 
-**D-19's "ALL READ `ListingVenueRegistry`" IS WIDER THAN THE SWEEP BACKING IT: TWO UNGUARDED COPIES OF THE VENUE
-VOCABULARY SURVIVE.** A pointer gap, not a live regression -- both were measured, and neither breaks *because of*
+**D-19's "ALL READ `ListingVenueRegistry`" IS WIDER THAN THE SWEEP BACKING IT: FOUR UNGUARDED COPIES OF THE VENUE
+VOCABULARY SURVIVE, OF SIX.** A pointer gap, not a live regression -- all four were measured, and none breaks *because of*
 D-19. Measured 2026-09-21. The entry's claim is true of the five consumers it enumerates (the persisted value, the
 OpenFIGI suffix lookup, the country map, the embedding prose, D-17's non-US set) and false as a statement about the
 repository.
@@ -325,15 +328,22 @@ repository.
   matches `NASDAQ`), so they change no classification. Nothing else changes.
   (This CORRECTS a relayed claim that the copy was measured not to break: it does not break, but only because it was
   already broken in the safe direction.)
+  RE-DERIVED IN ONE SELECT 2026-09-21T13:49:31Z on `atlas_secmaster`, through the script's OWN predicates rather
+  than flagged: of the A10 bare-row population (`is_active AND exchange IS NOT NULL AND symbol NOT LIKE '%.%'`,
+  8,419 rows today, against the 8,411 read earlier the same day) 541 carry `NEW YORK STOCK EXCHANGE, INC.`, and
+  all 541 classify NON-US under `NOT (exchange ~* '^(US|FRED|ICE|COMEX|CBOT|NYMEX|CRYPTO)$' OR (exchange ~*
+  '(NYSE|NASDAQ|OTC|AMEX|ARCA|BATS|CBOE)' AND exchange !~* '(EURONEXT|OMX)'))`. 556 active rows carry the spelling
+  in all, so the 15-row gap is dotted symbols the A10 population excludes. The heal has not run.
 - `SecMaster/src/Data/Migrations/20260917110542_ClearOutOfScopeUsAuthorityStamps.cs` `UnclearedRowsSql` freezes 26
   venue literals inside an operator SELECT. Measured on the simulated post-heal column it returns 0 rows before and 0
   rows after, so it is inert today; it is a frozen artifact and correctly so, but it is a second copy nothing points
   at the registry from.
 - TWO MORE COPIES EXIST AND ARE GUARDED, so they are not part of this entry -- they are here because the count
-  above is "two UNGUARDED", never "two in the repository", and a reader checking it should find all four.
+  above is "four UNGUARDED", never "four in the repository", and a reader checking it should find all six.
   `CanonicalizeExchangeVocabulary.SpellingValues` is checked pair-by-pair against
-  `ListingVenueRegistry.TryResolveCode` by `the_spelling_map_agrees_with_the_registry`. The fourth, added
-  2026-09-21, is the US venue-token alternation inside `SecMaster/DECISIONS.md` §D-19's falsifier SELECT -- a
+  `ListingVenueRegistry.TryResolveCode` by `the_spelling_map_agrees_with_the_registry`. The OTHER guarded one,
+  added 2026-09-21, is the US venue-token alternation inside `SecMaster/DECISIONS.md` §D-19's falsifier SELECT --
+  predicate (2)'s, and the only guarded one of the THREE copies that SELECT holds -- a
   REDUCTION of the registry's US spellings to their words -- checked by
   `scripts/tests/test_d19_falsifier_vocabulary.py`, which parses both sides and goes RED when a registry US
   spelling shares no token with the alternation or the alternation names a token no spelling contains
@@ -341,13 +351,219 @@ repository.
   2026-09-21 by adding `PINK SHEETS` to the registry and `IEX` to the alternation, one at a time. What that test
   CANNOT see is in its own docstring -- word-boundary placement, an alternation that is too WIDE (the `ARCA`
   case), and the other four predicates. That is the shape the two copies above lack.
-Re-check, over ALL FOUR copies so the count of UNGUARDED ones is derived rather than recalled:
+- THE COUNT WAS FILE-GRANULAR AND UNDERCOUNTED BY TWO. Corrected 2026-09-21: the grep below counts FILES, and
+  `SecMaster/DECISIONS.md` holds THREE separate spellings of the US venue vocabulary inside the ONE falsifier
+  SELECT -- predicate (2)'s `\m(...)\M` alternation plus its `NEW YORK STOCK EXCHANGE` arm (guarded), predicate
+  (4)'s 11-token `head_is_venue` list, and predicate (5)'s 13-token residual-strip list. So the repository holds
+  SIX copies, not four, and FOUR are unguarded. What the two new ones cost, and the exposure that makes them debt
+  rather than a live defect, is its own entry ("spells the US venue vocabulary THREE times and guards ONE").
+THE RE-CHECK BELOW IS A CLOSED FOUR-FILE GREP: it can re-confirm the six and CANNOT discover a seventh, which is
+the same defect class this branch filed twice elsewhere -- stated because a reader must not read it as a sweep.
+Swept by hand 2026-09-21 for others: the one further hand-kept exchange alternation is
+`SentinelCollector/src/Extraction/TickerExtractor.cs:23` (`NYSEArca|NASDAQ|NYSE|AMEX|OTC|TSXV|TSX|LSE`), which
+reads no registry (0 references to `ListingVenueRegistry` anywhere in `SentinelCollector/`). It is deliberately
+OUTSIDE this set: it spells exchange PREFIXES in parenthesised ARTICLE notation (`(NYSE:DT)`, `(NYSEArca:SPY)`),
+not the `instruments.exchange` COLUMN vocabulary -- it carries non-US venues the column table never maps here
+(`TSX`, `TSXV`, `LSE`) and omits the column's own spellings (`NEW YORK STOCK EXCHANGE, INC.`, `OTCQX`, `BATS`,
+`CBOE`), so a registry change should NOT move it. The boundary was considered, not missed.
+Re-check, over ALL SIX copies so the count of UNGUARDED ones is derived rather than recalled:
 `grep -rln "NYSE\|NASDAQ" SentinelCollector/scripts/reresolve-by-provenance.sh
 SecMaster/src/Data/Migrations/20260917110542_*.cs SecMaster/src/Data/Migrations/20260921084921_*.cs
-SecMaster/DECISIONS.md` -> 4 files on 2026-09-21, of which the last two carry a registry-derived test
+SecMaster/DECISIONS.md` -> 4 FILES on 2026-09-21, of which the last two carry a registry-derived test
 (`the_spelling_map_agrees_with_the_registry`, `scripts/tests/test_d19_falsifier_vocabulary.py`) and the first
-two carry none. Closes when each of those first two either reads the registry or carries a test that fails
-when the registry moves.
+two carry none; then count the venue-vocabulary EXPRESSIONS inside the D-19 falsifier fence, which the file grep
+cannot see --
+`python3 -c "import re;F=re.compile(r'^\`\`\`[^\n]*\n(.*?)^\`\`\`',re.S|re.M);b=[x for x in F.findall(open('SecMaster/DECISIONS.md').read().split('## D-19')[1]) if x.lstrip().upper().startswith('WITH')][0];print(len(re.findall('(?i)new york stock exchange',b)))"`
+-- `findall` counts OCCURRENCES, which is the claim's unit; a line count agrees today only because the three sit on
+three separate lines -> 3 occurrences on 2026-09-21 (predicate (2)'s spelled-out arm, predicate (4)'s `head_is_venue` list, predicate
+(5)'s strip list), of which only the alternation is parsed by a test. CLOSES WHEN each of those four DERIVES from
+`ListingVenueRegistry`, or carries a test that fails when the registry moves AND is not a substring-containment
+test. The qualifier is load-bearing, not pedantry: applying the repo's only such gate
+(`test_d19_falsifier_vocabulary.py`'s shape) to the two in-query lists was run on 2026-09-21 and returns
+`missed=[]` on BOTH -- fully green on `head_is_venue`, and on the strip list green on that leg while going red on
+the OTHER leg for `nyse ?arca` / `nyse ?american`, which are regex fragments rather than spellings and have
+nothing to do with the blindness. A maintainer would rewrite those two tokens and ship a green gate over an
+unfixed defect. AMBIGUITY DENIES: if it is unclear whether a proposed test would fire, it does not close this.
+
+**THE D-19 FALSIFIER'S 11 IN-QUERY FIXTURES CONTROL THE PIPELINE, NOT THE PREDICATES: A ONE-TOKEN-SET EDIT MOVES
+THE REAL COUNT PAST BOTH BARS WHILE EVERY CONTROL STAYS GREEN.** The falsifier SELECT in `SecMaster/DECISIONS.md`
+§D-19 UNIONs 11 `(surface, want)` fixtures into its own `input` CTE and reports `controls_passed 11 of 11`, which
+the entry reads as the licence to believe the number. It is a control over the PIPELINE -- that the corpus and the
+fixtures meet the SAME predicate rather than two copies -- and it is not coverage of the five predicates.
+PER-AXIS COVERAGE, derived 2026-09-21T12:30:44Z by scoring each alternation member against the 11 fixture surfaces
+through Postgres' own regex engine, never by reading the SQL: predicate (2)'s venue alternation 4 of 13 members
+(`NASDAQ`, `NYSE`, `OTC`, `CBOE`; the other nine, `NYSEARCA` `NYSEAMERICAN` `AMEX` `BATS` `OTCPK` `OTCQX` `OTCQB`
+`OTCMKTS` and the `NEW YORK STOCK EXCHANGE` arm, appear in no fixture); predicate (4)'s `idx` 1 of 14 tokens
+(`composite`); predicate (3)'s ticker 1 of 2 shapes (the parenthesised `(NASDAQ:QLYS)`; no fixture carries a BARE
+`EXCH:TICKER`, which is the `Cboe:CBOE` shape the entry's prose says predicate (3) exists to catch);
+`head_is_venue` 2 of 11 tokens; the residual-strip list 4 of 13 tokens. THAT COUNT IS A CEILING ON STRADDLING, NEVER A MEASURE OF IT -- straddled implies matched, so the matched count can only OVERSTATE how many members are straddled. Read as a floor it would license the cheat below, where 13 of 13 are matched and ZERO are straddled. The closure below is the measure.
+TWO MUTANTS, BUILT AND RUN, not reasoned about. Baseline, read 2026-09-21T12:30:11Z on `atlas_data` from the
+committed fence extracted verbatim: population 432,636 rows with a non-blank `source_entity`, `venue_token` 2,551,
+`falsifier` 14, `controls_passed 11 of 11`.
+- Predicate (3) narrowed to require a parenthesis before the `EXCH:TICKER` (`e ~ '\([A-Za-z]...`): `falsifier` 26
+  (1.02% of 2,551), `controls_passed 11 of 11`. The count nearly doubles and no control notices.
+- Predicate (4)'s `idx` reduced to `composite` alone: `falsifier` 153 (5.998% of 2,551), `controls_passed
+  11 of 11`; re-read 158 of 2,560 at 13:01:10Z and again at 13:26:48Z, so the COUNT drifts with the corpus while
+  the VERDICT does not. THAT CROSSES BOTH BARS -- at least 100 rows AND more than 5% of the surfaces naming a US venue -- so
+  the entry reads FALSIFIED, the accepted display-name merge re-opens, and the trigger was an edit to a token list
+  rather than anything production emitted. The bar was chosen to be unreachable by the 14 rows the rule already
+  miscounts; it is reachable by a diff nobody would call a behaviour change.
+CLOSURE IS A PROPERTY, NOT A FIXTURE COUNT: every axis a predicate reads carries a fixture PAIR that STRADDLES it --
+for each alternation member, one surface that the member makes `want true` and one that it makes `want false` -- so
+that deleting or narrowing that member turns a CONTROL red before it moves `venue_token` or `falsifier`. A larger `VALUES` list
+that still leaves nine venue tokens and thirteen `idx` tokens unstraddled closes nothing.
+Re-check (SELECT-only, ~5s), and re-derive the denominator with the numerator, because the observation table does
+not grow at a RATE -- it grows in BURSTS. Derived 2026-09-21T13:00:39Z over the 24 h to that instant: 7,353 rows
+arrived in 65 of the 96 complete 15-minute buckets BY `extracted_at`, median 84 rows per non-empty bucket, min 1,
+max 422 rows; the last 6 h alone mean 200 rows per bucket. Separately, and on a DIFFERENT clock -- the falsifier's
+own `population` count, which is table arrival rather than `extracted_at` -- this entry's first and last reads
+(12:29:41Z and 12:42:28Z) are 316 rows apart, i.e. 371 rows per 15 minutes. The two are not the same measurement
+and are not summed. Any single figure carried forward is wrong within the hour, in either direction.
+Extract the single fenced `WITH`-block from §D-19 and run it; then run it twice more
+with `e ~ '[A-Za-z][A-Za-z.]{1,9}` changed to `e ~ '\([A-Za-z][A-Za-z.]{1,9}` and, separately, with the `idx`
+alternation reduced to `'\m(composite)\M'`.
+CLOSES ON AXIS COVERAGE, NOT ON THOSE TWO MUTANTS, and the difference is measured rather than argued: adding just
+`('NASDAQ:AAPL', false)` and `('Nasdaq 100 index', false)` to the `VALUES` list turns BOTH named mutants red
+(`controls_passed 12 of 13` with a `CONTROL FAILED` row each, `falsifier` unmoved at 14, read
+2026-09-21T13:23:36Z) while coverage moves only to venue 4 of 13, `idx` 3 of 14, `head_is_venue` 2 of 11, strip
+4 of 13 -- four of the five axes still unstraddled, only ticker complete at 2 of 2 (13:23:59Z). A criterion those
+two fixtures satisfy is a criterion the next `idx` or venue edit walks straight through.
+AND FULL MEMBERSHIP IS NOT THE EXIT EITHER -- measured, because an earlier revision of this entry named it and it
+is cheatable by the shape the query ALREADY SHIPS. NINE `('<VENUE>', false)` fixtures -- the same shape as the
+committed `('Nasdaq', false)`, exactly one per UNCOVERED venue token -- drive the per-axis count to venue 13 of 13,
+`head_is_venue` 11 of 11 and strip 13 of 13, FULL MEMBERSHIP on three of the five axes, at `controls_passed
+20 of 20` (2026-09-21T14:14:24Z). Thirteen, adding four already-covered spellings, reads the same at 24 of 24
+(13:48:21Z / 13:48:44Z); twelve does NOT reach full membership, because the spelled-out `NEW YORK STOCK EXCHANGE`
+arm sits OUTSIDE the `\m(...)\M` alternation and needs its own fixture.
+Then deleting `NYSEARCA` from predicate (2) MOVES `venue_token` -- 2,564 -> 2,561 -- and STILL reads 24 of 24
+green. Every member those fixtures cover is
+unstraddled, because a fixture that wants FALSE goes on wanting FALSE once the token that matched it is gone: it
+cannot discriminate in either direction. (Deleting `OTCQX` moves nothing on either side, so it is silent rather
+than wrong -- no production surface names it at a word boundary.)
+SO THE CRITERION IS THE PROPERTY, AND THE PROPERTY IS PER MEMBER: for EACH member of each of the five axes,
+deleting or narrowing that member must turn a CONTROL red, AND must still do so on a FIXTURES-ONLY run -- the same
+query with its corpus arm (the `SELECT ... FROM sentinel.extracted_observations` leg of `input`) removed. The
+second half is the attribution: a fixtures-only run has no corpus, so a control that reddens there reddens BECAUSE
+of the fixtures.
+AN EARLIER REVISION OF THIS LINE SAID "while the corpus count is UNMOVED", AND THAT IS UNREACHABLE BY
+CONSTRUCTION -- recorded because it is the same class as everything else in this entry. The three corpus
+aggregates are `population`, `venue_token` and `falsifier`, and all three read `WHERE want IS NULL` (the committed
+fence, lines 35-37), while every fixture carries a non-null `want`. So no fixture can move any of them, ever, and
+the clause was a condition on PRODUCTION rather than on the fixture set. Measured 2026-09-21T14:13:41Z on a
+2,564-surface `venue_token`: deleting `NASDAQ` from predicate (2) moves it by -2,071 whatever the fixtures are,
+and 7 of the 13 venue members move it at all (NASDAQ 2,071, NYSE 320, CBOE 137, NEW YORK STOCK EXCHANGE 26, OTC 4,
+NYSEARCA 3, BATS 1; the other six move nothing). Those 7 could never satisfy it. "The corpus count" was also
+ambiguous between `falsifier` and `venue_token` and this entry used it both ways -- named explicitly now, which is
+this entry's own AMBIGUITY DENIES applied to its own sentence.
+AMBIGUITY DENIES: a fixture set that cannot be shown, member by member, to redden a control on the fixtures-only
+run does not close this. The two mutants are a TRIPWIRE for this
+entry, never the exit condition.
+
+**THE D-19 FALSIFIER SELECT SPELLS THE US VENUE VOCABULARY THREE TIMES AND GUARDS ONE, AND THE TWO UNGUARDED COPIES
+ALREADY MISCLASSIFY REAL REGISTRY SPELLINGS -- IN THE DIRECTION THE ENTRY FORBIDS.** Predicate (2)'s alternation is
+checked against `ListingVenueRegistry` by `scripts/tests/test_d19_falsifier_vocabulary.py`. Predicate (4)'s 11-token
+`head_is_venue` list and predicate (5)'s 13-token residual-strip list are separate hand-kept copies that no test
+reads. This is D-19's own INTENT sentence -- "a listing venue was named in three hand-kept places and they
+disagreed" -- reproduced inside the query written to falsify it.
+THE DELETION IS SILENT AND THE DELETED TOKEN IS LOAD-BEARING -- both measured 2026-09-21, and it takes both to
+make this a defect rather than a tidy-up. SILENT: deleting `new york stock exchange|` from predicate (5)'s strip
+list leaves the full query reading `falsifier` 14 and `controls_passed 11 of 11` (12:31:49Z) and leaves
+`python -m pytest scripts/tests` at 161 passed (the roster at `20d1540d`; it was 160 before #1092 added a
+sixth `scripts/tests/test_*.py`). Nothing in the repository goes red. LOAD-BEARING: the same deletion
+flips `the New York Stock Exchange-listed REIT` -- the exact shape this falsifier exists for -- from TRUE to FALSE
+(13:00:10Z, driven through the committed `c`/`d` CTEs). So the token is doing real work, and its removal is
+invisible.
+THE CASING IS THE MECHANISM, AND THE COUNT IS MEANINGLESS WITHOUT A NAMED RENDERING. Predicate (5) excludes a row
+when the residual carries a MIXED-CASE token (`\m[A-Z][a-z]`, which no acronym matches). Of the 20 US `Spellings`,
+8 are multi-token; 2 of those (`NYSE ARCA`, `NYSE AMERICAN`) ARE spelled whole in the strip list (`nyse ?arca`,
+`nyse ?american`) and survive; the other 6 are not, so stripping only the short token leaves a remnant -- and
+whether that remnant is mixed case is decided by how the surface is WRITTEN, not by the registry. Derived
+2026-09-21T13:00:10Z, one `the <spelling>-listed pharmaceutical company` probe per registry US spelling, pushed
+through the committed CTEs, `NOT falsifier` counted:
+- AS STORED (the array's own UPPER CASE): 0 of 20. An all-caps remnant matches no mixed-case token, so this
+  rendering CANNOT expose the defect and a zero here means nothing.
+- TITLE CASE (`str.title()`): 6 of 20.
+- ACRONYM-PRESERVED TITLE CASE (title-case every token except a predicate-(2) alternation member): 6 of 20.
+The SAME six spellings under both non-stored renderings: `NEW YORK STOCK EXCHANGE, INC.`, `NASDAQ NMS - GLOBAL
+MARKET`, `OTC MARKETS`, `NYSE MKT LLC`, `CBOE BZX`, `BATS EXCHANGE`. The vocabulary gate passes all six because its
+test is SUBSTRING CONTAINMENT -- `OTC` is in `OTC MARKETS`, so the spelling counts as named. These are FALSE
+NEGATIVES, and D-19's own standard for this predicate is "THIS DETECTOR MAY ONLY ERR THE OTHER WAY".
+THE STRIP MUTANT MOVES NONE OF THE 20, under any of the three renderings (6 -> 6, 0 -> 0): the only registry
+spelling containing `new york stock exchange` is already excluded on the COMMITTED query by its `Inc.` remnant. The
+mutant is visible only on prose that names the venue without the corporate suffix -- the REIT probe above. The two
+findings are independent and neither substitutes for the other.
+THE EXPOSURE IS ZERO TODAY, which is what makes this measurement debt and not a live defect, and it is the figure
+that must be re-read before anyone decides the priority. Read 2026-09-21T12:32:37Z on `atlas_data`: of 432,828 rows
+with a non-blank `source_entity`, 0 carry any `<multi-word US venue>-listed/-quoted` shape; 0 carry `-quoted` at
+all; 12 rows (8 distinct surfaces) carry `-listed` and NONE names a US venue (`BSE-listed companies`, `US-listed
+spot Bitcoin ETFs`, `North American-listed funds`, `five major mainland-listed insurers` ...); 34 rows name a
+multi-word US venue token anywhere at all. An extraction or prompt change that starts emitting the multi-word
+spelling moves that 0, and the falsifier will not see it.
+RE-CHECK (SELECT-only), AND IT IS INVERTED ON PURPOSE: this entry documents a LIVE blindness, so the check must
+return a NON-ZERO count today and CLOSES AT ZERO. Build one `the <spelling>-listed pharmaceutical company` probe per
+entry of `ListingVenueRegistry`'s US `Spellings` array, render each in TITLE CASE (`str.title()`), push them through
+the committed `c`/`d` CTEs and count `NOT falsifier` -> 6 of 20 on 2026-09-21. Do NOT run it with the spellings AS
+STORED: that returns 0 of 20 by construction, which reads exactly like a fix. Exposure leg, same session:
+`SELECT count(*) FROM sentinel.extracted_observations WHERE btrim(source_entity) ~* '(new york stock exchange|nasdaq nms|otc markets|nyse mkt llc|cboe bzx|bats exchange)[ ,.A-Za-z-]{0,30}-(listed|quoted)\M'`
+-> 0 of 433,325 on 2026-09-21T13:24:29Z. THAT PATTERN IS THE WIDENED ONE, AND THE FIRST ONE SHIPPED HERE WAS BLIND:
+its `[- ]?[A-Za-z]*-` span crossed neither `, Inc.-` nor ` - Global Market-`, so it could not emit a
+counter-example for 2 of the 6 spellings it bounds. Controlled on the fixture set where the two disagree
+(13:24:29Z): the shipped pattern scores `the New York Stock Exchange, Inc.-listed ...` and
+`the NASDAQ Nms - Global Market-listed ...` FALSE and the widened one TRUE, with the other four spellings TRUE
+under both. The FIGURE was unaffected -- the widened pattern also returns 0 -- so this was the instrument, not the
+conclusion. CLOSES WHEN THE TITLE CASE COUNT REACHES 0, and on nothing else. "Carries a test" does NOT
+close it: applying the shape of the repo's only such test to these two lists returns `missed=[]` on both
+(2026-09-21) while this count is still 6 of 20, because that gate decides naming by SUBSTRING CONTAINMENT -- the
+exact mechanism this entry blames for hiding the defect (`OTC` is in `OTC MARKETS`, so the spelling reads as
+named). AMBIGUITY DENIES: a proposed test that cannot be shown to go red on today's 6 does not close this.
+
+**SEVEN TEST AND SELFTEST HARNESSES UNDER `scripts/` ARE RUN BY NO WORKFLOW, AND TWO OF THEM SIT INSIDE THE
+DIRECTORY CI SWEEPS.** Derived 2026-09-21 by reading every step of the four files in `.github/workflows/`
+(alert-rules, hosted-service-pins, python-tests, sync-docs) and matching it against every harness under `scripts/`:
+`audit-catch-spans.py` (which carries a `--selftest`), `test-devcontainer-owner.sh`,
+`test-devcontainer-simultaneity.sh`, `tests/new-epic-selftest.sh`, `tests/build-deploy-hint-selftest.sh`,
+`gemini-spend-calibration/test_probe_replay.py` and `gemini-spend-calibration/mutation-check.py`. The other 8 of the 15
+are run, all of them by python-tests.yml's two `pytest <dir>` steps -- the six `scripts/tests/test_*.py` and the two
+`scripts/sentinel-quality-check/test_*.py`. (Re-derived 2026-09-21T13:49:08Z at `20d1540d`, which added a sixth
+`scripts/tests/test_*.py`; the UNRUN set is unchanged at 7, same files.) (`scripts/verify-hosted-service-pins.py` has its own workflow but is a
+verifier, not one of these 14.)
+TWO DISTINCT SHAPES, and the second is the one a reader gets wrong. `scripts/tests/**` is in python-tests.yml's
+trigger path list AND the job runs `python -m pytest scripts/tests`, so both `.sh` selftests sit inside the swept
+directory, trigger the workflow on every edit, and are never executed -- pytest collects `test_*.py` only. A PR
+that breaks `new-epic-selftest.sh` turns the workflow GREEN on a run that touched it.
+FIVE OF THE SEVEN HAVE NO AUTOMATED INVOKER ANYWHERE IN THE REPOSITORY -- each DOES carry a documented hand-run
+command (`scripts/README.md`, `scripts/tests/README.md`, `scripts/gemini-spend-calibration/README.md`,
+`.claude/skills/deploy/SKILL.md`), which is precisely what makes it a suite that runs by memory (`audit-catch-spans.py`,
+`test-devcontainer-owner.sh`, `tests/new-epic-selftest.sh`, `tests/build-deploy-hint-selftest.sh`,
+`mutation-check.py`); the other two are chained from one of those five (`test-devcontainer-owner.sh
+--with-containers` runs the simultaneity proof, `mutation-check.py` drives `test_probe_replay.py`), which is one
+unrun root away from the same thing.
+THE ROSTER IS SCOPED TO `scripts/` AND THE RE-CHECK BELOW IS NOT: an earlier revision of this entry claimed
+`gemini-resolver-mcp/**` was a trigger path with no step running its 8 tests, which is FALSE --
+python-tests.yml:438-443 runs `python -m pytest gemini-resolver-mcp/tests -v` unconditionally, after its editable
+install at `python-tests.yml:436`, with no `if:` anywhere in the file (line numbers re-derived by `grep -n` at
+`20d1540d` 2026-09-21T14:12:50Z -- #1092 added 96 lines to that file and moved the step from :357). It slipped because the check written beside it extracted only
+`(scripts|deployment|LlmBenchmark)/` paths and so could not emit the counter-example. Leg (1) is now path-agnostic
+for exactly that reason -- a check whose output population cannot contain the counter-example is not a check.
+This EXTENDS the `run-wiring-smoke.sh` entry above, which already recorded that no workflow runs the hook suites
+and that `new-epic-selftest.sh` sits in the same position; this is the derived ROSTER for `scripts/`, not a second
+copy of that finding. FILED, NOT FIXED: wiring a container-driving suite (`test-devcontainer-simultaneity.sh`,
+~2 min, real containers) into CI is a decision about runner cost, not a docs edit.
+Re-check, in TWO legs, because a path in a workflow's `paths:` trigger is not a step that runs it and a
+basename grep over the workflow files cannot tell the two apart (it reports the swept `scripts/tests/test_*.py` as
+unrun): (1) the harness paths a step actually EXECUTES --
+`grep -rhE '^[[:space:]]+' .github/workflows/*.yml | grep -vE "^[[:space:]]*(-[[:space:]]*'|#)" | grep -oE '\b[A-Za-z][A-Za-z0-9._-]*(/[A-Za-z0-9._*-]+)+' | sort -u`
+-- it matches ANY path, never a hardcoded prefix list, and it drops the `- '...'` trigger entries and comment
+lines that are not steps -> 34 paths on 2026-09-21T13:49:08Z, of which 3 are under `scripts/` (`scripts/tests`,
+`scripts/sentinel-quality-check`, `scripts/verify-hosted-service-pins.py`) and one is `gemini-resolver-mcp/tests`.
+Cross-checked the same day against a run-block parser that reads only `run:` bodies: identical but for
+`actions/checkout`, `actions/setup-python` and `jpansarasa/ATLAS-Docs`, which come from `uses:`/`repository:` and
+are not repo harness paths; (2) the harnesses --
+`git ls-files scripts/ | grep -E '(test[-_][^/]*|[^/]*-selftest)\.(sh|py)$|audit-catch-spans\.py|mutation-check\.py'`
+-> 15. A harness counts as RUN only when leg (1) names its path, or names a directory a `pytest <dir>` step
+sweeps AND the harness is a `test_*.py` (that is the 8 under `scripts/tests/` and `scripts/sentinel-quality-check/`);
+everything else is UNRUN -> 7. Closes when each of the 7 is either invoked by a
+workflow or carries a recorded decision not to be.
 
 **THE FROZEN ATTACH-CANDIDATE LISTS ARE COUPLED TO THE D-19 HEAL, AND THE ONLY THING GUARDING THEM IS A 24 h CLOCK
 THAT COMPARES NO CONTENT.** Measured 2026-09-21. `LlmBenchmark/attach-gold/frozen/attach_candidates_g1_k20.json` and
