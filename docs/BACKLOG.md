@@ -53,6 +53,8 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-21 | OPEN | GIGO broken a THIRD time: the pipe-paste is cleaned at SecMaster while its SOURCE, gemini_client.py:264's prose schema, still hands the model a literal pipe enumeration; 2 live rows echo it verbatim |
 | E | 2026-09-21 | OPEN | "ALL read ListingVenueRegistry" is wider than the sweep: 4 of the 6 venue-vocabulary copies are unguarded (the FILE grep counts 4 FILES; D-19's falsifier SELECT alone holds 3 of the 6 copies, 2 of them unguarded), one already wrong on 541 rows today |
 | B | 2026-09-21 | OPEN | Deactivating a source mapping is a ONE-WAY DOOR: 14 dead keys, no writer revives one, and the register lookup reads the corpse as a hit and answers SUCCESS |
+| B | 2026-09-21 | OPEN | `RegistrationService.cs:402`'s inactive-instrument branch is UNREACHABLE, and so is the `:443` message arm reading the same flag: the subject comes from an `IsActive`-filtered read |
+| B | 2026-09-21 | OPEN | FredCollector alone both discards the SecMaster register response AND carries no failure metric; its span stays status-UNSET, so the health instrument reads a rejected registration as fine |
 | A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
 | A | 2026-09-20 | OPEN | D-17 cleared the STAMP, not the DESCRIPTION: 8 foreign rows keep an EDGAR SIC line, 4 another company's |
 | A | 2026-09-20 | OPEN | BTC-USD duplicates the curated CRYPTO:BTC row; 1,101 observations to 0 (T3 items 1 and 2) |
@@ -839,6 +841,175 @@ is `SentinelCollector`. This one excludes that dead name, so a non-zero result I
 0 = no instrument pairs a live FredCollector mapping with a live third-party one, so a reactivation cannot strip a
 live collector (today). >0 = that many instruments are one quarantine-then-reactivation away from a permanently-dead
 key for a collector that is still writing; fix before the next pass runs.
+
+**`RegistrationService.cs:402`'s `if (!instrument.IsActive)` BRANCH IS UNREACHABLE, AND SO IS THE `:443` MESSAGE ARM
+THAT READS THE SAME FLAG -- THE SUBJECT COMES BACK FROM AN `IsActive`-FILTERED READ.** Code facts at `76cd8d1c`,
+derived 2026-09-21T19:47Z. There is no runtime measurement here on purpose: the claim IS that the branch has no
+runtime, so a production figure would be a corpse-detector for it. Everything below is decided by reading the one
+call path.
+
+THE CALL PATH, AND THE ONE ASSIGNMENT A READER MUST CHECK AND DISMISS. `RegistrationService.cs:387` binds
+`instrument` from `_repository.GetBySymbolAsync(symbol, ct)`, whose implementation
+(`SecMaster/src/Data/Repositories/InstrumentRepository.cs:26-36`) ends in
+`FirstOrDefaultAsync(i => i.Symbol == symbol && i.IsActive, ct)` at `:35` -- so any non-null row it returns is
+ACTIVE by construction. Between the bind and the branch the only call is
+`IdentityConflict.ClassFamiliesDiffer` (`SecMaster/src/Services/IdentityConflict.cs:48-49`), which compares two
+class-family strings and touches no entity. `instrument` IS assigned a second time -- `RegistrationService.cs:461`,
+`instrument = new InstrumentEntity { ... }` -- and that assignment is the reason this is worth writing down rather
+than eyeballing: it sits inside the execution-strategy lambda on the `instrument == null` path, which runs only
+after the `if (instrument != null)` block opened at `:389` has returned unconditionally at `:437-446`. It cannot
+reach `:402`. There is no third write to the variable and none anywhere to the flag.
+
+TWO DEAD CONSUMERS, NOT ONE, which is what a removal gets wrong if it reads only the branch. The first is
+`:402-412` (a `LogWarning` at `:408-410` plus `Activity.Current?.SetTag("registration.instrument_inactive", true)`
+at `:411`). The second is the ternary at `:443-445`, whose false arm -- the string ending "WARNING: instrument is
+INACTIVE; resolution will not return it until reactivated" at `:445` -- is unreachable text on the same flag.
+
+NO TEST DRIVES IT, so deleting it REDs nothing: `grep -rn 'IsActive' SecMaster/tests/Services/RegistrationService*.cs`
+returns 6 hits at `76cd8d1c` and every one is `IsActive = true`. Note what that means about the INSTRUMENT: the
+repository is mocked in those suites, so a test COULD hand the branch an inactive row that the real
+`GetBySymbolAsync` can never return. None does.
+
+WHAT REMOVING IT WOULD **NOT** CHANGE, and this is the half most likely to be misread as a bonus cleanup. `:411`
+is the SECOND of two `registration.instrument_inactive` tag sites; the first is `:343`, on the existing-mapping
+early return, whose subject is `existingMapping.Instrument` (`:337`) -- a navigation property off a row found by
+`GetSourceMappingByCollectorIdAsync`, which carries no `IsActive` predicate at all. That site is REACHABLE: the
+sibling ONE-WAY DOOR entry above measures it, and guard-site row 7 of `docs/proposals/delete-wrong-mappings.md`
+records it as reachable via `GSV.NE` today. The `existingInactive` message ternary at `:381-383` is likewise the
+reachable twin of the dead one at `:443`. So the tag, its cardinality and any consumer of it all survive a
+deletion, and "this retires an unused tag" would be false.
+
+WHAT IT WOULD CHANGE: nothing observable. Both arms are unreachable, so production behaviour, the emitted telemetry
+and the test suite are all identical either side.
+
+CONSEQUENCE IF THIS ENTRY IS MISSING OR FALSE, in two opposite directions. (1) A reader takes the branch as
+evidence that registering a new source against a quarantined instrument is a handled, warned case at this site; on
+this path it cannot arise at all. (2) The reverse -- someone sweeps it as obvious dead code without noticing it is
+LATENT rather than merely dead. `InstrumentRepository.cs:28-30` calls that `IsActive` predicate "load-bearing" for
+the FRED-pollution recovery path; narrow or drop it and this branch becomes the only thing telling an operator the
+symbol stays dark. The disposition is therefore a decision -- delete it, or keep it with a comment saying what it
+guards against -- not an automatic removal, and that is why it is filed with the alternatives named rather than
+chosen. Impact B, not A: nothing is lost today, because nothing reaches it.
+
+WHY IT IS FILED RATHER THAN REPAIRED. Found while planning the leg-A deletion work.
+`docs/proposals/delete-wrong-mappings.md` step 2 already edits this file's comment set (its section 7 enumerates
+three comment edits), and folding a code deletion on a guard-adjacent method into that PR widens a doc-and-comment
+change into a behaviour-neutral code change nobody scoped it to review.
+
+RE-CHECK, three parts, each able to CONTRADICT the claim rather than confirm it by construction. Anchor on method
+names, never on signature text, so a rename reads as EMPTY rather than as a silent pass.
+  `grep -n -A10 'GetBySymbolAsync(string symbol' SecMaster/src/Data/Repositories/InstrumentRepository.cs`
+  STILL DEAD = the `FirstOrDefaultAsync` predicate still carries `&& i.IsActive`. ALIVE = that term is gone, the
+    branch now reaches production, and this entry closes as MOOT rather than fixed -- re-read `:445`'s arm before
+    trusting anything downstream of it. EMPTY = renamed; re-derive the whole path.
+  `grep -n 'instrument.IsActive\|var instrument = \|instrument = new InstrumentEntity' SecMaster/src/Services/RegistrationService.cs`
+  STILL TWO DEAD CONSUMERS = exactly two reads of `instrument.IsActive` and exactly two writes to `instrument`, the
+    second of them below the unconditional return. A THIRD write, or a second one ABOVE that return, falsifies the
+    unreachability outright and the entry must be re-derived, not patched.
+  `grep -rn 'IsActive' SecMaster/tests/Services/RegistrationService*.cs`
+  STILL UNPINNED = every hit is `IsActive = true`. A `false` appears = a test now drives the dead branch through the
+    MOCK, asserting on a path production does not have; that test is itself the finding.
+
+**FredCollector IS THE ONLY ONE OF THE FIVE COLLECTORS THAT BOTH DISCARDS THE SecMaster REGISTER RESPONSE AND
+CARRIES NO FAILURE METRIC, AND ITS SPAN STAYS STATUS-UNSET -- SO THE HEALTH INSTRUMENT READS A REJECTED
+REGISTRATION AS FINE.** Code facts at `76cd8d1c`, all five call sites read 2026-09-21T19:53Z. This is a CODE
+reading, not a rate: no figure here says how often any collector's registration is rejected in production.
+
+THE LOAD-BEARING FACT IS IN THE SHARED CLIENT, NOT IN ANY COLLECTOR, and it is why "it is inside a try/catch" is
+not an answer for ANY of the five. `Events/src/Events.Client/SecMasterRegistryClient.cs:122` returns the response
+for BOTH arms of the `if (response.Success)` at `:107`, so a `Success == false` is RETURNED, never thrown.
+Transport failures return `null` instead: `:124` and `:135` catch Unavailable and DeadlineExceeded and RETRY, and
+retry exhaustion falls through to `:156-162`; any other exception returns null at `:149-153`. The only exception
+that escapes the method is `OperationCanceledException`, rethrown bare at `:145-148`. So no collector-side `catch`
+can fire on a failed registration of any kind.
+
+THE FIVE SITES -- one physical `RegisterSeriesAsync` call per collector, with every admin and backfill entry point
+funnelling through it (`grep -rn 'RegisterSeriesAsync' --include=*.cs` over the five `src/` trees returns 6 hits,
+the sixth being a comment at `AlphaVantageCollector/src/Services/SeriesManagementService.cs:170`):
+
+| collector | call site | binds + tests the response | failure metric | span status on a rejection |
+|---|---|---|---|---|
+| Fred | `FredCollector/src/Services/SeriesManagementService.cs:309` | **no** -- return value discarded | **no** | **UNSET** |
+| AlphaVantage | `AlphaVantageCollector/src/Services/SeriesManagementService.cs:84` | yes, tested `:102`, Warning `:104-106` | no | unset |
+| Nasdaq | `NasdaqCollector/src/Services/SeriesManagementService.cs:94` | yes, tested `:113`, Warning `:115-117` | no | unset |
+| Finnhub | `FinnhubCollector/src/Services/SeriesManagementService.cs:147` | yes, tested `:159`, Warning `:162-163` | no | unset |
+| OFR | `OfrCollector/src/Services/SeriesManagementService.cs:556` | yes, tested `:567`, Warning `:571-573` | **yes**, `:569` -- but UNOBSERVED, below | **Error**, `:574` |
+
+The split on the response is 4 / 1, and the four are not equivalent to each other: three produce a Loki Warning
+only, and OFR alone also increments a counter and marks the span. Of the three right-hand columns only the last
+TWO are the HEALTH instrument -- `failure metric` is Prometheus, `span status` is Tempo. The `binds + tests` column
+and the Warning recorded inside it are Loki, which CLAUDE.md §OBSERVABILITY makes CONTENT after something is known
+wrong and never the thing that knows it. So binding and testing the response is a real improvement on Fred's site
+and is NOT what closes this entry -- see the closure condition under THE FIX, which the RE-CHECK below is bound to.
+
+WHAT FredCollector's SITE DOES. `:309` calls `RegisterSeriesAsync` with no binding and no test. Its `try` opens at
+`:307` and its `catch (Exception ex)` at `:323` sets `ActivityStatusCode.Error` (`:325`), adds the exception
+(`:326`) and logs a Warning (`:327`) -- and per the paragraph above that catch cannot fire on a registration
+failure. Because `:325` is the ONLY `SetStatus` on the span started at `:304`, and there is no `SetStatus(Ok)` on
+the success path, a rejected registration leaves a status-UNSET span, which reads as non-error. CLAUDE.md
+OBSERVABILITY makes Tempo span status plus Prometheus counters the health instrument, so this failure is invisible
+to BOTH halves of it. (OFR is the contrast: `:578` sets `Ok` explicitly, so its spans discriminate.)
+
+THE MITIGATING FACT, STATED SO THIS IS NOT OVERSTATED INTO "UNOBSERVED" -- which is what keeps it at B.
+`SecMasterRegistryClient.cs:116-120` logs, at **Warning**, `"SecMaster registration rejected for {SeriesId}:
+{Message}"` quoting the response message, whenever a response arrives with `Success == false`, regardless of what
+the caller does with the return value. FredCollector's rejections DO reach Loki through that line. What
+FredCollector lacks is its OWN signal -- a collector-scoped line naming the series and category it was registering
+-- and a metric. Three conditions leave even the shared line silent, and all three are the `null` paths rather than
+the rejection path: no response at all (`:151` and `:156-160` log different text and quote no message), a cancelled
+call (`:145-148` rethrows with no log), and `RegisterBatchAsync` (`:168-195`), which never inspects `Success` and
+has zero callers in the repo.
+
+THE FIX IS NOT A NEW DESIGN, WHICH IS WHY THIS IS FILED SMALL -- BUT THE SHAPE ON OFFER IS ITSELF NOT YET
+OBSERVED, SO COPYING IT ALONE WOULD NOT CLOSE THIS. `OfrMeter.SecMasterRegistrationFailures`
+(`OfrCollector/src/Telemetry/OfrMeter.cs:175-178`) is `ofrcollector.secmaster.registration.failures.total`, unit
+`{failures}`, tagged `type` at three bounded values, and OFR pairs it with an explicit span status on BOTH arms
+(`Error` `:574`, `Ok` `:578`) -- that pairing is the part worth copying, because it is what makes a rejection
+legible to Tempo and to Prometheus rather than only to Loki. THE COUNTER ITSELF IS UNOBSERVED, checked
+2026-09-21T20:22Z at `76cd8d1c`: grepping the tracked tree for both the metric name
+`ofrcollector.secmaster.registration.failures.total` (and its Prometheus spelling
+`ofrcollector_secmaster_registration_failures_total`) and the symbol `SecMasterRegistrationFailures` returns hits
+ONLY inside `OfrCollector/src`, plus `OfrCollector/AGENT_README.md:28` and this file -- no dashboard panel under
+`deployment/artifacts/monitoring/dashboards/`, no Prometheus rule under `.../alerts/`, nothing under
+`.../provisioning/` or `.../loki-rules/`. Per CLAUDE.md §OBSERVABILITY -- whose ban on a signal with no WIRED
+alert is this repo's form of the user-level `observed` test (machine-local, untracked, and deliberately NOT
+pointed at here because a `~/` path is outside every sweep) -- an unobserved metric is not a health signal but
+waste plus complexity, so the fix for any collector is counter AND panel-or-alert, never
+the counter alone -- and OFR's own missing panel is part of what this entry leaves open rather than a solved case
+it points at. (Prometheus also returns no series for that metric at the same instant. That does NOT discriminate
+never-incremented from never-exported by a Counter that has recorded nothing, so it is offered as neither a
+rejection count nor a rate.) The open question is unchanged: whether the counter belongs per-collector or once in
+`Events.Client` where the `Success` test already happens.
+
+THE CLOSURE CONDITION, STATED ONCE HERE AND BINDING ON THE RE-CHECK BELOW. This entry's headline is that a
+rejection is invisible to BOTH halves of the health instrument, so it closes only when that instrument can SEE
+one: (a) the span started at `FredCollector/src/Services/SeriesManagementService.cs:304` carries a non-UNSET
+status on the REAL path -- `Error` where a `Success == false` response is tested, AND `Ok` on the success path,
+since without the second an UNSET span is ambiguous rather than good -- AND (b) a failure counter increments on
+that same arm AND at least one dashboard panel or alert rule reads it. A bound-and-tested response with a
+collector-scoped Warning satisfies NEITHER and does not close this: it is exactly the shape the other three
+already have, and this entry exists because that shape leaves Tempo and Prometheus silent.
+
+ONE ADJACENT CLAIM THIS ENTRY DOES **NOT** ESTABLISH. `NasdaqCollector/src/Services/SeriesManagementService.cs:110-112`
+carries an in-code claim that SecMaster's D-4 allowlist rejects Nasdaq's default `"General"` asset class, i.e. that
+every Nasdaq registration lands in the unsuccessful branch. That comment was READ, not verified against D-4 and not
+against a live rate. If it is true, Nasdaq's Warning is firing continuously and that is a separate entry.
+
+RE-CHECK, three parts, each able to contradict:
+  `grep -n -A3 'if (response.Success)' Events/src/Events.Client/SecMasterRegistryClient.cs`
+  STILL SWALLOWED = one `return response;` serves both arms. A `throw` on the false arm = every collector's catch
+    comes alive, and this entry is re-derived from scratch rather than amended.
+  `grep -rn 'RegisterSeriesAsync' --include=*.cs FredCollector/src AlphaVantageCollector/src NasdaqCollector/src FinnhubCollector/src OfrCollector/src`
+  Expect 5 call sites plus 1 comment. A 6th call is a new site to classify; a missing one means a collector stopped
+    registering, which is a louder finding than this entry.
+  `grep -n -A25 'private async Task RegisterWithSecMasterAsync' FredCollector/src/Services/SeriesManagementService.cs`
+  STILL OPEN = the `RegisterSeriesAsync` call is assigned to nothing, the body contains no counter `.Add(`, and the
+    only `SetStatus` is inside the catch. CLOSED is the closure condition above and nothing weaker -- BOTH a
+    non-UNSET span status on the real path (`Error` on the tested `Success == false` arm AND `Ok` on the success
+    path) AND a failure counter on that arm that some panel or alert rule reads. Check the counter's OBSERVATION,
+    not merely its existence: `grep -rn '<metric name>' deployment/artifacts/monitoring/` must return a hit. A
+    bound response plus a Warning and nothing else = STILL OPEN, and reading it as CLOSED is the specific wrong
+    action this entry is filed to prevent, because Loki is not the health instrument.
 
 **D-17's `ClearOutOfScopeUsAuthorityStamps` names its rows by id as read at 2026-09-17T12:52:35Z, and production keeps
 writing out-of-scope stamps until that migration deploys; a row written in between stays.** Measured 2026-09-17,
@@ -3347,8 +3518,9 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | D | 2026-09-16 | OPEN | verify-citations.py reports GREEN on a citation that has drifted onto the WRONG line |
 | D | 2026-09-16 | AWAITING-DECISION | The documented citation sweep is .md-ONLY, so a line shift rots citations it cannot see |
 | D | 2026-09-16 | OPEN | verify-citations.py skips off-allowlist extensions, and bare :NN continuations sans --bare |
-| D | 2026-09-21 | OPEN | A prose-form reference is not a checked citation at all: 15 cross-file line references in tracked `.md` sit outside every sweep (a floor; the no-number class is unbounded) |
+| D | 2026-09-21 | OPEN | A prose-form reference is not a checked citation at all: cross-file line references in tracked `.md` sit outside every sweep -- **15 at `9f0f0ce8`, 16 at `76cd8d1c`** (a floor; the no-number class is unbounded) |
 | D | 2026-09-16 | OPEN | Patches drop the exec bit, core.fileMode=false hides it, a disarmed hook fails SILENTLY |
+| D | 2026-09-21 | OPEN | The attach-gold drift audit watches `accept` ids ONLY: 61 baseline-only ids are unwatched, and the 2 already deactivated were counted as an anonymous integer while the list that names movement stayed empty |
 | D | 2026-09-17 | OPEN | Attachment gold residue: slash terms unsearchable by symbol, 6-term cap, yen rows, CI, IXIC |
 | D | 2026-09-16 | OPEN | Stage 2 has a gold now, and it prices three things a comparison must clear |
 | D | 2026-09-16 | OPEN | The CoD gold cannot yet back a model swap: macro-owner DECIDED, the key's swing is not |
@@ -4981,7 +5153,7 @@ deliberately in NON-citation form so this entry cannot itself rot invisibly.
 Re-check: sweep every tracked `.md` for `path:NN` tokens that resolve to a real file but do not match
 `CITATION`, and confirm the count and extension breakdown before trusting a sweep that reports "every one lands".
 
-### A prose-form reference is not a checked citation at all: 15 cross-file line references in tracked `.md` sit outside every sweep [2026-09-21]
+### A prose-form reference is not a checked citation at all: cross-file line references in tracked `.md` sit outside every sweep -- 15 at `9f0f0ce8`, 16 at `76cd8d1c` [2026-09-21]
 `scripts/verify-citations.py` recognises exactly three spellings, and all three require the COLON: `CITATION`
 (`path.ext:N`, extension on the `_EXTS` allowlist), `COMMA` (the `,223-225` tail immediately following one), and
 `BARE` (`:N`, opt-in behind `--bare`). A reference written as prose -- a sentence naming a file and a line number
@@ -5005,7 +5177,8 @@ at `9f0f0ce8`. UNIT: occurrences, not files -- one line of this file carries two
 fenced blocks, a `line N` / `lines N-M` token on a line that ALSO names a file carrying an `_EXTS` extension,
 with every span the shipped `CITATION` and `COMMA` regexes already claim masked out first -- both imported from
 `verify-citations.py` rather than re-spelled, so the "not a checked citation" half is decided by the shipped rule
-and not by a second copy of it. Breakdown of the 15: 6 are `~`-hedged approximations in one plan document, 3 are
+and not by a second copy of it. Breakdown of those 15, still at `9f0f0ce8`: 6 are `~`-hedged approximations in
+one plan document, 3 are
 DELIBERATE (the `make_cache_key` docstring entry under §KNOWN DEFECTS states in its own text that it avoids the
 colon form so a sweep cannot read its stale numbers as live claims), 6 are unhedged assertions into living files.
 THE 3 IS ITSELF A FLOOR, of this entry's own neighbouring-line class: a FOURTH prose reference sits in that same
@@ -5013,10 +5186,37 @@ THE 3 IS ITSELF A FLOOR, of this entry's own neighbouring-line class: a FOURTH p
 because its filename fell on the previous physical line. It is in the 13-line residual below. Said here rather
 than left for the reader to find, because the size of the deliberate class is what the no-fix reason turns on.
 
+**THE METHOD'S `line N` TOKEN MATCH IS CASE-INSENSITIVE, AND EVERY NUMBER ABOVE AND BELOW IS THE CASE-INSENSITIVE
+ONE** [added 2026-09-21, residue of the round that wrote this entry]. The METHOD as stated does not say so, and it
+is not cosmetic: a re-adjudicator who implements it literally gets a case-SENSITIVE matcher, lands one occurrence
+short, and reports a count MOVE that is an artefact of their own regex rather than a change in the corpus.
+Re-derived at `76cd8d1c` over the 210 tracked `.md` files then in the corpus, running both flags through ONE
+implementation and diffing the SETS rather than the counts: case-SENSITIVE gives **6,817** same-line-less
+candidates and a **17-occurrence / 12-distinct-line** residual; case-INSENSITIVE gives **6,818** and **18 / 13**.
+The `large-card-*` share is 6,800 either way, and the MATCH set is identical either way -- the flag moves exactly
+ONE occurrence: the token `Line 70`, a capital `L` at the start of a sentence, in this file's own
+`a rule stated in a skill` hook entry. **FIND IT BY TEXT, NOT BY ADDRESS** --
+`grep -n 'Line 70 entire' docs/BACKLOG.md` -- because the address was `:6415` at `76cd8d1c` and is `:6656` here,
+having moved TWICE inside this one commit as text was inserted above it. That is not an incidental caveat: the one
+occurrence the measurement turns on rotted its own line number inside the very commit that measured it, which is
+exactly why this entry says to compare the SET and never the count or the address.
+
+**AND THE MATCH COUNT AT `76cd8d1c` IS 16, NOT THE 15 RECORDED ABOVE AT `9f0f0ce8` -- the corpus grew, the METHOD
+did not change** (210 tracked `.md` files against 209). The 16th is
+`docs/proposals/delete-wrong-mappings.md:27`, a file that did not exist at `9f0f0ce8` at all -- `git cat-file -e`
+on that path at that revision reports it absent -- so this is a NEW unhedged prose reference into a living file,
+which is precisely what the RE-CHECK below calls the finding, arriving between one measurement and the next. It is
+also the sharpest illustration of blast radius shape (2) available: it reads "`SecMaster/AGENT_README.md`'s
+`✗ scope-search-by-source-mapping` GOTCHA (line 94 at `9f0f0ce8`)", and the same PR that writes this paragraph
+EDITS that line. It survives only because that edit is in place and does not move line 94; nothing checked that,
+and nothing would have reported it had the line moved. One point in its favour, and the only mitigation available
+to a prose reference: it carries a SHA, which none of the other 15 do.
+
 WHAT THE COUNT STRUCTURALLY CANNOT FIND, stated because an honest floor is worth more than a confident wrong
 number:
   a reference carrying NO NUMBER AT ALL -- naming the WRONG FILE for a figure is this class, and nothing keyed on
-    a line number can see any of it, so that class is not bounded by 15 nor by anything measured here;
+    a line number can see any of it, so that class is not bounded by the 15 at `9f0f0ce8`, by the 16 at
+    `76cd8d1c`, nor by anything measured here;
   a reference whose filename sits on a NEIGHBOURING line -- the same-line requirement is what does all of the
     narrowing, discarding 6,818 candidates, 6,800 of them the two `large-card-*` fixtures' `padding line NNNN`
     filler. Re-derived 2026-09-21 at `7c94166b` from an independently written second implementation of the METHOD
@@ -5029,13 +5229,21 @@ number:
   anything inside a FENCED block -- the METHOD skips fences, which is what keeps the illustrative form above from
     perturbing its own count, so this is a blind spot the entry RELIES on rather than merely has. `verify-citations.py`
     itself has no fence handling at all, so the two disagree: a colon-form citation inside a fence IS swept;
-  a same-line filename carrying NO extension, or one off the `_EXTS` allowlist -- the three extensionless
+  a same-line filename carrying NO extension, or one off the `_EXTS` allowlist -- the extensionless
     `scripts/claude-*` wrappers are invisible to the filename half of the METHOD for exactly the reason the
-    sibling `_EXTS` entry above calls that exposure latent for the sweep itself;
+    sibling `_EXTS` entry above calls that exposure latent for the sweep itself. **THAT COUNT WAS "three" AND IS
+    TWO** (corrected 2026-09-21 at `76cd8d1c`): `git ls-files 'scripts/claude-*'` names FIVE tracked paths, of
+    which exactly two are extensionless FILES -- `scripts/claude-mark-verified` and `scripts/claude-pr-verdict`.
+    The third `scripts/claude-*` path component is `scripts/claude-watchdog`, a DIRECTORY, and all three of its
+    tracked members carry extensions (`README.md`, `notify.sh`, `scan.py`), every one of them on the `_EXTS`
+    allowlist. A glob over a directory prefix counts directories as members, which is how the 3 arose. The blind
+    CLASS is unaffected by the correction -- it is the same two files plus every extensionless path anywhere, and
+    the class was never bounded by this count;
   positional prose ("the fourth row of the DECISIONS block"), spelled-out numbers, an `L186` spelling, and any
     reference split across a line break.
 The method can also produce FALSE POSITIVES -- a `line N` naming a diff, a log excerpt or the citing file's own
-body, on a line that happens also to name a file. Zero of them in this run; all 15 were read by hand.
+body, on a line that happens also to name a file. Zero of them in the `9f0f0ce8` run; all 15 of that run's
+occurrences were read by hand. The 16th, which only exists at `76cd8d1c`, was read by hand too.
 
 BLAST RADIUS, two shapes, and the second has no author. (1) A prose reference is written WRONG and a fully green
 sweep says nothing, because it was never a claim the tool could test -- the reviewer is the only detector, and a
@@ -5064,11 +5272,22 @@ content-awareness is that other, still-unfixed entry. And it would leave untouch
 all -- a reference carrying NO NUMBER, which nothing keyed on a line number reaches. Closing this is a judgement
 about the corpus, not a regex.
 WHAT THAT MEASUREMENT CANNOT CONTAIN: one file, and the 3 deliberate references only. It says nothing about what
-prose parsing would do to the other 12 occurrences -- in particular the 6 `~`-hedged plan-document ones, which a
-parser reading a hedge as an exact claim might well turn red. Not measured, and not an argument made here.
+prose parsing would do to the other occurrences -- 12 of the 15 at `9f0f0ce8`, 13 of the 16 at `76cd8d1c` -- in
+particular the 6 `~`-hedged plan-document ones, which a parser reading a hedge as an exact claim might well turn
+red. Not measured, and not an argument made here.
 
-RE-CHECK: re-run the METHOD above at head and compare the occurrence SET against these 15, never the count. The
-3 deliberate ones must still be there; a NEW unhedged reference into a living file is the finding. For the
+RE-CHECK: re-run the METHOD above at head -- **case-INSENSITIVELY, or your residual is 17-on-12 and the move you
+report is your own regex** -- and compare the occurrence SET against **the 16 recorded at `76cd8d1c`**, which is
+the later of this entry's two baselines and therefore the one to diff against; the 15 above are the `9f0f0ce8`
+set and differ from it by exactly `docs/proposals/delete-wrong-mappings.md:27`. Compare SETS, never the count,
+and never the line addresses, which move whenever any file above them is edited -- diffing a bare count against
+a baseline whose sha you did not carry is how a corpus that merely GREW reads as a finding. The 3 deliberate ones
+must still be there; a NEW unhedged reference into a living file is the finding, and
+`docs/proposals/delete-wrong-mappings.md:27` is one that already arrived this way. EXPECT THIS ENTRY'S OWN PROSE
+IN YOUR RESULT AND ADJUDICATE IT, DO NOT COUNT IT: the paragraphs above QUOTE the references they are about, so a
+run at any revision containing them surfaces `line N` tokens inside `docs/BACKLOG.md` itself. The CRITERION stated
+under WHAT THE COUNT STRUCTURALLY CANNOT FIND already excludes them -- each carries a sha and so asserts nothing
+about the target's CURRENT content -- and a reader who skips that step reports the entry as its own finding. For the
 no-fix reason: copy this file twice, rewrite ONLY those 3 into colon form in one copy, sweep each copy alone, and
 compare the unresolved SETS -- never the counts, never the rc, both of which are identical on the two sides.
 
@@ -5088,6 +5307,76 @@ Re-check reads the INDEX; silence is the pass (silent on 2026-09-16, `core.fileM
 `git ls-files -s -- .claude/hooks scripts/claude-pr-verdict scripts/claude-mark-verified | awk '$4 !~ /\.md$/ && $1 != "100755" { print "NOT 100755 IN THE INDEX:", $1, $4 }'`
 CONTROL: pipe one fabricated `100644 <sha> 0<TAB>.claude/hooks/git-push-guard.sh` line into that same `awk`;
 it must name that file back. Verified both ways 2026-08-17.
+
+### The attach-gold drift audit watches `accept` ids only: 61 baseline-only ids are unwatched, and the 2 already deactivated were counted as an integer while the named list stayed empty [2026-09-21]
+THE SCAN IS NOT MISSING -- ITS POPULATION IS. `LlmBenchmark/scripts/build_attach_gold.py`'s `stage_drift` does
+perform an id-existence re-check: `:1434-1440` builds an `accepted` map and hands its keys to `catalog_rows`
+(`:526-532`), which SELECTs `id, symbol, is_active, retired_at IS NOT NULL` from `atlas_secmaster.instruments`, and
+`:1473-1479` reports five fields under `accepted_ids` -- `checked`, `missing` (which is exactly the hard-DELETE
+bucket), `inactive`, `retired` and `symbol_changed`. A DELETE of an ACCEPTED id would be named. What `:1439` reads
+is `o.get("accept")` and `o.get("accept_symbols")`; `o["baseline"]` is never read in `stage_drift` -- nor by the
+second liveness check, `stage_staleness`, which scopes to the same key at `:1796` and `:1813`. Two independent
+checks, one shared population.
+
+MEASURED 2026-09-21T19:54Z, re-derived by a freshly written reader rather than taken from the report this was
+raised from. UNIT: distinct instrument ids. POPULATION: every `owners` and `empty_owner_rows` row of both golds,
+`LlmBenchmark/attach-gold/attach_gold_g1_v1.json` and `LlmBenchmark/attach-gold/attach_gold_g2_v1.json`.
+  distinct `accept` ids, g1+g2 union: **250** -- which is exactly the `accepted_ids.checked` recorded in the
+    committed `LlmBenchmark/attach-gold/catalog_drift_v1.json`, so the population claim is confirmed against the
+    ARTIFACT and not only against the code;
+  distinct non-null `baseline` ids: **121**, all of them in g2 -- g1's row schema has no `baseline` key at all;
+  **baseline ids appearing in no `accept` list anywhere: 61.** All 61 exist in `instruments` today (SELECT-only);
+    **2 are `is_active = false`** -- `DX` and `KC`, both `discovery_source='GeminiFallback'`, both `updated_at`
+    2026-09-17T14:08:42Z -- and **0** are retired;
+  a further **561** baseline entries carry `instrument_id: null`, production having made no pick, so they are
+    structurally unwatchable and there is nothing there to watch.
+
+THE FIGURE THIS ENTRY CORRECTS ON ITS WAY IN: the finding was dispatched as "DX and KC". Those two are the ids that
+have drifted SO FAR; the unwatched POPULATION is 61. Filed as 2 it would understate the exposure roughly 30x, and
+it would hand the next reader a re-check that goes green the day someone re-accepts DX. The re-checkable number is
+**61 unwatched, 2 drifted**. AND THE 61 IS A FLOOR BOUNDED BY WHAT THE FROZEN GOLDS REFERENCE: it counts only
+baseline ids named in `attach_gold_g1_v1.json` and `attach_gold_g2_v1.json` as committed at `76cd8d1c`, so it
+structurally cannot contain a pick recorded in a gold version that does not exist yet, the 561 baseline entries
+whose `instrument_id` is null, or any catalog row no gold references at all -- it grows with the gold corpus, not
+with the catalog.
+
+THE AGGREGATE AND THE NAMED LIST ALREADY DISAGREE IN THE COMMITTED ARTIFACT, and nothing reconciles them.
+`catalog_drift_v1.json` records `counts.deactivated_in_window = 2` beside `accepted_ids.inactive = []`, over
+`window_since` 2026-09-17T11:00:00Z to `measured_at` 2026-09-20T12:02:05Z -- a window that CONTAINS the 14:08:42Z
+deactivation. Those four `counts` aggregates (`:1441-1448`) are catalog-WIDE `COUNT(*)`s, not scoped to the gold,
+so DX and KC were counted as an anonymous 2 while the field whose job is to NAME movement stayed empty. A reader
+comparing the two fields can see the disagreement; a reader trusting either one alone cannot.
+
+CONSEQUENCE: the audit exists to describe catalog movement under a FROZEN gold. If one of the 61 is ever DELETED
+rather than deactivated, `accepted_ids.missing` stays `[]`, no field of the artifact names it, and the baseline row
+goes on citing an id that no longer resolves -- so the gold's record of what production PICKED becomes
+unverifiable, silently. Deactivation is the milder shape of the same blindness and has already happened twice.
+
+WHAT THE METHOD STRUCTURALLY CANNOT SEE, beyond the population. `source_mappings` -- the string appears NOWHERE in
+the 2,176-line script, and every `FROM` in the drift path is `instruments` or `aliases`, so a mapping deactivated
+with its instrument left active is invisible to every stage. And the baseline ids ARE catalog-fetched once at BUILD
+time (`:557` collects them, `:567` hands them to `catalog_rows`), but only to populate display names: nothing
+asserts on that result and nothing re-reads it afterwards, which is why this is a population gap and not a missing
+query.
+
+NO ONE-LINE FIX IS PROPOSED. Widening `:1439` to union the `baseline` ids would put 61 ids under a check whose
+`inactive` bucket goes non-empty IMMEDIATELY, and a baseline pick is a RECORD of what production did, not an
+assertion that the row should still be live -- so a permanently non-empty bucket would train a reader to ignore it,
+which is the failure mode this section is about. The fix is a decision about what a baseline id's liveness MEANS to
+the audit -- a third bucket, or a separate report -- and this entry does not make it.
+
+RE-CHECK, three parts, each able to contradict rather than confirm by construction:
+  `grep -n 'o.get("accept"\|o.get("baseline"\|\["baseline"\]' LlmBenchmark/scripts/build_attach_gold.py`
+  STILL SCOPED = `stage_drift` and `stage_staleness` read only `accept`; the only `baseline` reads are the
+    build-time display fetch and the gold writer. CHANGED = a `baseline` read appears in either check, and the
+    population half closes.
+  Re-derive the three counts with a fresh reader over both gold files -- union the `accept` ids and the non-null
+    `baseline` `instrument_id`s across `owners` + `empty_owner_rows`, subtract, then read the remainder's
+    `is_active` from `atlas_secmaster`, SELECT-only. Expect 250 / 121 / 61 today. 61 FALLING means ids were
+    accepted into a gold that is supposed to be frozen, which should be visible in git; 61 RISING means new
+    baseline-only picks. The DRIFTED count rising past 2 is the movement this entry exists to make visible.
+  `python3 -c "import json; d=json.load(open('LlmBenchmark/attach-gold/catalog_drift_v1.json')); print(d['accepted_ids'], d['counts'])"`
+  STILL DISAGREEING = `deactivated_in_window` non-zero while `accepted_ids.inactive` is empty.
 
 ### Attachment gold residue: slash terms unsearchable by symbol, 6-term cap, wrong labels, IXIC, unembedded additions [2026-09-17, item 4 closed and item 5 added 2026-09-20, item 3 widened to the label-quality class 2026-09-20]
 `LlmBenchmark/attach-gold/` (built by `LlmBenchmark/scripts/build_attach_gold.py`, PR #1064) carries five
@@ -6578,6 +6867,41 @@ recorded `T_clean` (A2 = 26, A2b = 26, derived 2026-09-21), so the escaped-rows 
 claim was true of the parked population and was carried across to the narrowed one. That check is also
 live-only: on a dry run the driver only WARNS.
 
+**THE 1,006 CARRIED NO TIMESTAMP AND NO LONGER REPRODUCES — IT IS 1,009, AND THE DRIFT IS IN THE SAFE
+DIRECTION** [re-derived 2026-09-21T19:51:46Z, `atlas_data` SELECT-only, both counts written fresh from the
+definitions at `reresolve-by-provenance.sh` `count_a2` and `count_a2b` rather than by invoking the driver,
+which is parked in every mode]. **A2 = 3,843, A2b = 4,852, delta 1,009** over the 197-id population at the
+recorded `T_clean` 2026-09-17T05:10:56.634102Z. *Unit:* rows in `sentinel.extracted_observations`, counted
+once each. *Population:* rows whose live `instrument_id` is one of the 197 (re-confirmed 197 the same
+minute). Only A2 moved: it fell by 3 as the re-extract sweep pushed rows past `T_clean`, which is what
+`coalesce(re_extracted_at, extracted_at) < T` does as `re_extracted_at` lands. **A2b cannot move in that
+direction at all** — it keys on `extracted_at`, which is immutable once written, and its
+`review_notes NOT LIKE '%[re-resolve D-33%'` term can only be narrowed by a LIVE replay, which has never
+run. So the delta is monotonically NON-DECREASING while the sweep is on. The check refuses `--live` when
+the delta is `> 0`, so growth makes it refuse HARDER, never softer: this figure drifting is a stale NUMBER,
+never a weakening GUARD, and re-deriving it can only ever confirm the refusal.
+
+**AND IT IS STILL NOT THE BLOCKER FOR STEP 0**, whose population is the 12 leg-A ids, not the 197 — that is
+the whole point of the correction above and it survives the re-derivation. Re-derived 2026-09-21T19:52:28Z
+over the 82 leg-A ids (`NOT is_active AND discovery_source='GeminiFallback' AND asset_class IN
+('Equity','ETF')`, which returns exactly 82, the ids holding no rows contributing nothing): **12 distinct
+`instrument_id`s, 26 rows, A2 = 26, A2b = 26, delta 0**, unchanged. The 93 quarantined rows partition
+82 / 9 / 2 across legs A / B / C, which is the same 93 the SecMaster card now carries.
+
+**§9's ACT-GATE PREAMBLE DOES NOT DESCRIBE STEP 4's OWN ACT GATE, AND NOTHING TURNS ON IT — SAID HERE SO THE
+NEXT READER DOES NOT RE-FIND IT AS A DEFECT.** `docs/proposals/delete-wrong-mappings.md` §9 defines the two
+gate kinds as **D (decision)** = "a question only a human answers" and **A (act)** = "a completed,
+verifiable act or an elapsed window, **which the implementing agent satisfies**". Step 4's gate reads
+"**A** — step 3's 30d window elapsed AND the live scoring epic closed". The 30d window fits the definition;
+the scoring epic closing does not — no implementing agent satisfies another epic's closure, which makes it
+a world condition of the same kind as blocker 2 above (the sweep being on) rather than an act. It is a
+MIS-CLASSIFICATION IN THE PREAMBLE'S WORDING, not a wrong gate: the condition itself is correct and the
+plan's own §6 gives its reason (drift-audit blindness plus 322 of 348 attachments). Nothing turns on it
+because step 4 ALSO carries a **D** on the same row — the 26-row question answered again for leg C — so a
+human is already required before step 4 runs, and no agent can reach it by satisfying acts alone. Filed
+rather than fixed for that reason; if the preamble is ever tightened, the honest third kind is "a world
+condition nobody here controls", which blockers 2 and 3 are too.
+
 **WHAT WOULD HAVE TO BE TRUE TO UN-PARK IT.** All four, and only the first is a decision:
 1. **The user reverses the park explicitly.** Nothing below substitutes for this, and none of 2-4 is
    evidence that it should happen.
@@ -6617,6 +6941,14 @@ whether blockers 2 and 3 still stand.** Anchor every metric query to an actual `
   `SELECT count(*) FROM instruments WHERE discovery_source='GeminiFallback' AND created_at < TIMESTAMPTZ '2026-07-19T00:00:00Z';`
   # 2026-09-21 -> 197, exactly the id set the parked run covered. All 82 leg-A ids, all 12 that still hold
   #   live attachments, and both leg-C ids are inside it, so no subset of legs A or C escapes the park.
+  The escaped-rows delta, WITHOUT invoking the driver -- read `count_a2` and `count_a2b` in
+  `SentinelCollector/scripts/reresolve-by-provenance.sh`, write the two SELECTs yourself against
+  `atlas_data`, and run them over the 197 ids and the recorded `T_clean`. Running the driver for this is
+  NOT an option: it is parked in every mode, dry run included.
+  # 2026-09-21T19:51:46Z -> A2 3,843 / A2b 4,852 / delta 1,009 over the 197; 26 / 26 / 0 over the 82 leg-A
+  #   ids at 19:52:28Z. EXPECTED = the 197 delta at or ABOVE 1,009 and the leg-A delta at 0. A 197 delta
+  #   that has FALLEN means A2b shrank, i.e. rows were deleted or a live replay wrote `[re-resolve D-33`
+  #   notes -- neither should have happened under the park, and either one is the finding, not the delta.
 
 **R2 / S4 -- observation identity key redesign -- PARKED on the user's decision, 2026-08-27.** The
 thesis holds, and it is not what parked the work: an observation's identity is the entity MENTIONED,
