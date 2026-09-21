@@ -82,7 +82,7 @@ NTFY:
   poll_topic: atlas-claude-reply # user -> supervisor (replies, redirects)
   mcp: sentinel-ntfy # registered in ~/.claude.json; tools: ntfy_publish | poll_new | poll_since | ack
 WAKE_LISTENER [event-driven, not cron-poll — idle ticks = context rot + per-tick full cache miss]:
-  arm at session start: persistent Monitor on the atlas-claude-reply stream, supervisor session
+  arm at session start: a SELF-EXITING Monitor (ends inside the 30-min cap) on the atlas-claude-reply stream, supervisor session
     ONLY — subagents NEVER Monitor [[feedback_agent_long_wait_pattern]]
   on event -> ntfy_poll_new via MCP (MCP = ack cursor + source of truth; monitor = wake signal
     ONLY) -> TURN_LOOP; on monitor-exit notification -> re-arm + poll_new
