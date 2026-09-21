@@ -365,7 +365,7 @@ delisted listing. Two consequences, both measured. (1) A blank name is invisible
 builder's ILIKE and trigram legs rank on `similarity(name, ...)`, so these rows can enter a pool only by exact
 symbol/alias or by vector, and `EmbeddingService`'s identity sentence is built without the one field that identifies the
 row. (2) `LlmBenchmark/attach-gold/attach_pools_v1.json` (frozen at catalog_at 2026-09-17T11:12:23Z) puts these ids in 71
-pool slots across 43 of its 920 units, and `build_attach_gold.py:655` renders a falsy cell as `-`, so the paid labellers
+pool slots across 43 of its 920 units, and `build_attach_gold.py:666` renders a falsy cell as `-`, so the paid labellers
 judged those 71 slots with a symbol and no name. NOT a dropped slot and not a corrupted label -- the gold's accepts were
 adjudicated and NOT_IN_POOL re-checked by SQL -- but the freeze cannot be re-derived as name-complete, and any future
 pool inherits the same blindness until the rows are named or retired.
@@ -2728,6 +2728,10 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | A | 2026-09-20 | OPEN | Catch blocks that swallow a REAL fault without marking the span leave it invisible to Tempo (147/673 across 3 services, a FLOOR; excludes 63 cancellation-only, which are NOT defects) |
 | B | 2026-09-20 | OPEN | `verify-pointers.py` has no BODY check and no FLOOR, so a deletion test against it proves the ANCHOR is load-bearing, never the RULE — two reproductions below, plus two coverage gaps: bare-label navigation and a template body that is one fence |
 | B | 2026-09-20 | OPEN | The smoke test cannot see the OTEL stack, so a green run is consistent with loki/tempo/prometheus being down |
+| B | 2026-09-21 | OPEN | 14 of 176 deletion units the attach-scorer PR adds are DELETABLE with all four Python suites green, 6 more constructs only measurable as whole statements -- including the `--attestation` argparse flag the feature hangs off, and two refusal conditions of the staleness gate. Supersedes the 3-of-8 table, one row of which was a parse failure read as a pin |
+| C | 2026-09-21 | OPEN | One scorecard carries two different `schema_invalid` populations under one name: `diagnostics.schema` EXCLUDES failed calls, `acceptance_evidence.run_integrity` COUNTS them. Measured on one 2-record arm: 0 of 1 against 1 of 2 |
+| C | 2026-09-21 | OPEN | `attach_schema_valid`'s recorded TRUE overrides a shape the fixed schema rejects (a malformed pick scores CORRECT); only the FALSE branch is tested, the stated rationale is false, and two mutants of the `isinstance(..., bool)` check survive the whole suite |
+| D | 2026-09-21 | OPEN | The `--task cod` and `--task cove` readers coerce `schema_valid` through `bool(...)`, so the tri-state `null` collapses to False -- NO VERDICT read as INVALID, and the fallback beside each coercion never runs. Deferred because the failure is CONSERVATIVE and the cod reader is reachable only by scoring a pick predictions file under `--task cod`, which mis-scores regardless; the cove reader raises `KeyError` on such a row |
 | B | 2026-09-20 | OPEN | The smoke test asserts nothing non-running, never that everything expected is present |
 | B | 2026-09-20 | OPEN | Smoke test's `exited` + `ExitCode 0` exemption has no recency term; its data source carries no timestamp |
 | C | 2026-09-20 | OPEN | A smoke-test run executing ZERO tasks exits 0; the class is unbounded in spelling, not closeable inside the playbook |
@@ -2817,6 +2821,185 @@ NEW registration, one whose statement or recorded verdict CHANGED, one that VANI
 over 50 findings is how a check gets switched off (#1083). Closing this entry means pinning registrations and
 re-freezing, which moves rows from UNPINNED to PINNED; the debt is the UNPINNED count, never the check's silence.
 The check is ADVISORY — branch protection 403s on this plan, so it reports and cannot block.
+
+### 14 of 176 deletion units in the attach-scorer PR are DELETABLE line-by-line and 6 more constructs are, and its first table read a parse failure as a pin [2026-09-21]
+Same class as the hosted-service entry above, in Python rather than C#. **The first measurement of this PR
+(round 2) is superseded, not amended**: it claimed **3 DELETABLE and 5 pinned over 8 hand-picked candidate
+lines** -- a sample with no denominator, quoted in that commit message and in the entry this replaces. Of
+its 5 "pinned", four re-derive as pinned and one does not: `build_attach_gold.py`'s unmeasured-gold stderr
+warning is the lone statement inside `if unmeasured:`, so deleting THAT LINE leaves an empty block, the
+file stops PARSING, every suite goes red, and a MEASUREMENT FAILURE was recorded as a pin. Deleted as a
+whole statement it is DELETABLE. The old table's other two deletable rows re-derive as deletable; its
+third was a docstring line, which is prose and outside the population below.
+
+**The method, corrected.** The unit is the smallest WHOLE syntactic element covering each added line -- a
+leaf statement, one element of a dict/list/call display, one keyword argument -- never a fragment. The
+harness `ast.parse`s the mutated file BEFORE running any suite, and a deletion that does not parse yields
+**NO VERDICT**, naming the exception. Three known-bad controls run first and the harness refuses to print a
+table unless all three behave: a FRAGMENT deletion (one line cut from a multi-line statement) must come
+back NO VERDICT with a SyntaxError; a line a control asserts must come back PINNED; an injected junk
+statement must come back DELETABLE. Without the third, a harness that reported PINNED for everything --
+because the suites were already red -- would read as a clean result.
+
+**Measured at `c521b83b`**, the three measured files unchanged since (only test assertion MESSAGES moved
+after it), over `eval_harness.py`, `run_model.py` and `build_attach_gold.py` (test files
+excluded -- deleting a test line measures nothing): 392 added lines, of which 185 are comment or docstring
+prose, excluded because no test can pin prose. The remaining 207 code lines form **176 deletion units**:
+
+| pass | PINNED | DELETABLE | NO VERDICT |
+|---|---|---|---|
+| line-level (the unit itself) | 72 | 14 | 90 |
+| the 90, re-run as the smallest enclosing STATEMENT that parses (45 distinct) | 79 | 11 | 0 |
+
+A statement-level PINNED is weaker than it reads: it says the enclosing CONSTRUCT is load-bearing, not
+that the line is. Deleting `try:` also deletes the assignment inside it.
+
+**The 14 line-level DELETABLE units**, which is the debt:
+
+| unit | what a reader or operator loses |
+|---|---|
+| `eval_harness.py:2193` `"schema_invalid": meta.get(...)` and `:2194` `"schema_rows_judged": meta.get(...)` | the runner's own per-run count AND the population that says whether its null means "not recorded" or "nothing parsed". Both reporting surface, both unpinned; `:2194` was added by the round-3 fix and is recorded here rather than pinned, like its sibling |
+| `eval_harness.py:1250` `entry = matched[0]` | with two attestation entries for one digest, the counts would be reconciled against the LAST rather than the FIRST. The loop above it is pinned; this choice is not |
+| `eval_harness.py:1233`, `:1240`, `:1241` | three lines of REFUSAL MESSAGE text. The tests match a surviving substring, so the gate keeps denying while its diagnosis silently loses the path it examined and the counts it read |
+| `build_attach_gold.py:1822`, `:1824`, `:1826` | the stage's JSON report to stdout, the attestation's parent `mkdir`, and the `attestation:` path line the operator must then pass to `--staleness` |
+| `build_attach_gold.py:2087`, `:2090` | the selftest's own scaffolding: the stale-attestation `unlink` between fixtures, and the stdout/stderr redirect |
+| `build_attach_gold.py:2111`, `:2119`, `:2120` | three CONJUNCTS of the new staleness controls' assertions. `SELFTEST_CONTROLS` compares the NUMBER of `expect()` calls, so a control that asserts less still reports `66 controls ran, 66 expected` |
+
+**The 6 distinct statement-level DELETABLE constructs**, which the line pass cannot see:
+
+| construct | why it matters |
+|---|---|
+| `build_attach_gold.py:2162-2165` `ap.add_argument("--attestation", ...)` | the CLI flag the whole feature hangs off. The selftest drives `stage_staleness` with a hand-built `Namespace`, so nothing exercises the argparse WIRING -- the Python twin of the hosted-service finding above |
+| `build_attach_gold.py:1828-1830` `if unmeasured: print(ERROR ...)` | the row the old table called pinned. The selftest DOES execute it (stdlib `trace` confirms) into a redirected `StringIO` nothing reads, and asserts only the exit code |
+| `eval_harness.py:1214-1216` `if checked is None: raise ...` and `:1227-1228` `if not isinstance(entries, list): raise ...` | two refusal conditions of the staleness gate. Never executed by any suite, and both deletable -- a gate whose point is refusing, with two conditions no control names |
+| `build_attach_gold.py:1818-1819` per-gold `print(...)`, `:2096-2097` the selftest's `if not att.exists()` guard | reporting surface, and the selftest's own "no attestation written" diagnosis |
+
+| | |
+|---|---|
+| re-measure | enumerate units by AST over `git diff main...HEAD -U0` added lines; per unit delete its whole line span, `ast.parse` the result (fail -> NO VERDICT), then run `test_eval_harness.py`, `test_run_model.py`, `test_check_staleness.py` and `build_attach_gold.py selftest`, each `$?` read bare; restore. Run the three known-bad controls first. Harness not committed |
+| cost | 176 units x 4 suites, ~2.5 min wall (the four suites total 0.72 s) |
+| closing it | assert the field, the printed line or the refusal message in an existing test; for the argparse flag, drive `main()` rather than a hand-built `Namespace` |
+| what it CANNOT see | a unit whose deletion changes behaviour no suite exercises reads DELETABLE exactly like dead surface; "PINNED" means some test reacted, never that the test asserts anything useful; and prose is excluded by construction |
+
+### One attach scorecard carries two `schema_invalid` fields with different populations [2026-09-21]
+Both are spelled `schema_invalid`, both are written by the same `--task attach` run, and they count
+different things. A reader comparing arms, or counting pass gate 5 ("every arm: 0 schema_invalid"), has no
+way to tell from the artifact which one they are holding.
+
+| path in the scorecard | who computes it | does a FAILED CALL count? |
+|---|---|---|
+| `diagnostics.schema.schema_invalid` | `eval_harness._attach_schema_report`, off `resolve_attach_owners` | **No.** A row with `error` is counted in `rows_call_failed` and returns before any schema question |
+| `acceptance_evidence.run_integrity.schema_invalid` | `eval_harness._run_integrity`, copied from `run_model`'s provenance | **Yes.** `run_one` sets `schema_valid = parsed_ok and ...` and `parsed_ok` is False whenever `error` is set |
+
+Measured 2026-09-21 on ONE two-record arm, 1 HTTP 503 + 1 conforming pick, driven through the real
+`run_model.main` with the HTTP boundary stubbed and scored through the real `resolve_attach_owners`:
+**`run_integrity.schema_invalid` 1 of 2 rows judged; `diagnostics.schema.schema_invalid` 0 of 1 row
+judged, `rows_call_failed` 1.** Re-derive by driving `run_model.main` with an engine that raises
+`HTTPError(503)` for one of two records (the shape is in `test_run_model.should_count_only_the_parsed_rows_when_a_run_mixes_calls_and_no_calls`)
+and reading both fields out of the resulting scorecard. Closing it means naming the two apart --
+`schema_invalid_incl_failed_calls`, or dropping the runner's copy now that `schema_rows_judged` states its
+population -- not silently redefining either.
+
+### `attach_schema_valid`'s TRUE overrides a malformed shape, only the FALSE branch is tested, and its rationale is false [2026-09-21]
+`return recorded if isinstance(recorded, bool) else attach_candidates.is_pick_shape_valid(prediction)`.
+A row whose recorded flag is `true` is never re-judged, so a response the FIXED schema rejects is scored
+valid and its picks are scored as attachments. Measured 2026-09-21 through `resolve_attach_owners`:
+a row carrying `{"picks": [{"owner": "E1", "pick": "C1", "why": "x"}]}` (an extra key on a pick, which
+`is_pick_shape_valid` rejects) with `schema_valid: true` scores **`rows_schema_valid: 1`,
+`schema_invalid: 0`, and the pick CORRECT** -- the same input with no flag is refused. A second shape
+gets a scorecard that contradicts itself in one block: `{"picks": "C1"}` with the flag true reports
+**`schema_invalid: 0` beside `refusals.schema_invalid: 1`**.
+
+`should_refuse_a_pick_the_runner_marked_schema_invalid_however_well_it_parsed` covers the FALSE branch
+only. **Surviving mutants, measured**: replacing the `isinstance(recorded, bool)` check with `bool(recorded)`
+or with `recorded is not None` leaves `test_eval_harness` 236/236 and `test_run_model` 186/186 green,
+although the docstring states that a non-bool flag falls back rather than collapsing to False.
+
+The docstring's rationale for the flag winning -- "it saw the raw text -- this scorer only ever sees the
+parsed object" -- **is false**. `run_one` computes the flag as
+`parsed_ok and attach_candidates.is_pick_shape_valid(obj)` where `obj` is the output of `parse_cod(content)`:
+the runner judges the SAME parsed object, with the SAME shared function. The only thing it knows that the
+scorer cannot recompute is whether `json.loads` succeeded at all, and a failed parse is already visible as
+`prediction: null`. Closing it means either testing the TRUE-over-malformed branch as intended behaviour and
+rewriting the rationale, or re-judging the shape here and keeping the flag as provenance.
+
+### The `--task cod` and `--task cove` readers coerce the tri-state `schema_valid` to False, so NO VERDICT reads as INVALID [2026-09-21]
+`AttachOwner.schema_valid` is `bool | None` (`LlmBenchmark/scripts/eval_harness.py:1066`) because a row that
+made no call has no schema verdict. The two older readers are not, and `None` is falsy:
+
+| reader | `--task` | the coercion |
+|---|---|---|
+| `_build_cod_predictions`, def at `LlmBenchmark/scripts/eval_harness.py:2455` | `cod` | `LlmBenchmark/scripts/eval_harness.py:2487` -- `else bool(pred_row.get("schema_valid",` |
+| `_load_predictions_jsonl`, def at `LlmBenchmark/scripts/eval_harness.py:2861` | `cove` | `LlmBenchmark/scripts/eval_harness.py:2893` -- `schema_valid=bool(pred_obj.get("schema_valid", _is_schema_valid(pred_obj["predicted_extractions"]))),` |
+
+**The fallback written beside each coercion does not save it.** `dict.get(key, default)` returns the STORED
+`None` when the key is present and null -- the default expression is used only for an ABSENT key -- so
+`_is_cod_schema_valid` / `_is_schema_valid` never run on a null flag. Measured 2026-09-21 by handing the
+cove reader a cove-shaped row carrying `schema_valid: null` and `predicted_extractions: []`: **it returns
+`schema_valid False`, while `_is_schema_valid([])` returns `True`.** On that input the coercion does not
+merely lose the tri-state, it contradicts the judgement it is written beside.
+
+Carrying the tri-state here is not a one-line edit. `RecordPrediction.schema_valid` and
+`CodRecordPrediction.schema_valid` are both declared `bool`
+(`LlmBenchmark/scripts/eval_harness.py:281`, `LlmBenchmark/scripts/eval_harness.py:717`), and both scorers
+divide by counts taken off that field.
+
+**Why it is deferred rather than fixed.** Two reasons, either sufficient:
+
+1. **The failure is CONSERVATIVE.** A no-verdict row reads as schema-INVALID, never as valid, so it cannot
+   turn a malformed arm into a passing one -- the direction pass gate 5 is counted in. CLAUDE.md
+   §TOOL_UPKEEP ("SHARP ENOUGH, NOT RAZOR": judge a remaining defect by whether it MISLEADS or is merely
+   IMPERFECT) puts this on the IMPERFECT side: it understates quality, it does not flatter it.
+2. **Nothing routes a null flag there today.** The only row-level `no_call` write is
+   `LlmBenchmark/scripts/run_model.py:1296`, inside the `args.task == TASK_PICK` guard at
+   `LlmBenchmark/scripts/run_model.py:1281`, and a pick predictions file is the `--task attach` input.
+
+**The reachability is asymmetric between the two readers**, so "no `no_call` row exists on those tasks" is
+exact for the PRODUCER and not for the CLI:
+
+- **cod -- reachable by misdirection, and meaningless when it happens.** Nothing refuses
+  `--task cod --predictions <pick file>`: the attach path detects pick-shaped rows and demands
+  `--candidates` (`LlmBenchmark/scripts/eval_harness.py:2563`), the cod path at
+  `LlmBenchmark/scripts/eval_harness.py:2786` has no equivalent check. But such a run mis-scores whatever
+  this coercion does -- `_cod_object` hands the CoD scorer `{"picks": []}`, which carries none of the five
+  `_COD_KEYS` (`LlmBenchmark/scripts/eval_harness.py:2393`), and `_is_cod_schema_valid({"picks": []})` is
+  False on its own terms. Fixing the coercion alone would make an already-meaningless scorecard honest in
+  one field.
+- **cove -- unreachable by any producer.** A `no_call` row carries `prediction`, not
+  `predicted_extractions`, so `_load_predictions_jsonl` raises `KeyError: 'predicted_extractions'` before
+  the coercion evaluates. That coercion is latent, waiting on a future producer that emits a null flag on a
+  cove-shaped row.
+
+**Re-check**, from the repo root:
+
+```
+python3 - <<'EOF'
+import sys; sys.path.insert(0, "LlmBenchmark/scripts")
+import eval_harness as eh
+sub = [{"source_file": "f", "source_index": 0, "input": {"content": "t"},
+        "output": [], "is_negative": False}]
+row = {"source_file": "f", "source_index": 0, "prediction": {"picks": []},
+       "schema_valid": None, "no_call": "no_owners"}
+print(eh._build_cod_predictions(sub, None, {("f", 0): row}, mock=False)[0][0].schema_valid)
+EOF
+```
+
+**2026-09-21 it prints `False`** -- 1 of 1 rows, a recorded `None` arriving as the boolean `False`. It is
+closed when that prints `None`. Two static halves on the same date: the coercion count,
+`grep -c 'bool(pred_row.get("schema_valid"\|bool(pred_obj.get("schema_valid"' LlmBenchmark/scripts/eval_harness.py`
+is **2, which is 2 of 2 reader sites**; and the reachability,
+`grep -n no_call LlmBenchmark/scripts/run_model.py` is **6 hits, exactly 1 of them a row-level write**
+(`:1296`, pick-gated), the other 5 being 2 reads (`:1748`, `:1829`) and 3 comments -- a second write
+outside that guard would retire the deferral above.
+
+Closing it means giving both readers the `bool | None` the attach path already carries, widening the two
+record types with it, and counting a no-verdict row into a third population rather than into the complement
+of the counts at `LlmBenchmark/scripts/eval_harness.py:297` (divided by `n_total` at
+`LlmBenchmark/scripts/eval_harness.py:375`) and `LlmBenchmark/scripts/eval_harness.py:866`.
+**Do not copy `_pick_owners`' fix across.** That call site was correctly
+moved from `bool(schema_valid)` to `schema_valid is not False`, because there the flag GATES a refusal and a
+no-verdict row must not be refused. Here the same field is the NUMERATOR of a validity rate, so `is not
+False` would count the row as VALID -- the identical fabricated measurement, inverted.
 
 ### The hosted-service pin gate is blind to the factory overload, and to all of Reports [2026-09-20]
 `scripts/verify-hosted-service-pins.py` keys `AddHostedService<T>` and nothing else. Counted from the data side

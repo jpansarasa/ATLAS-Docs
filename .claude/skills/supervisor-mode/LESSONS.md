@@ -106,6 +106,41 @@ L19 A METRIC STEP CARRIES ITS OWN TIMESTAMP, and a deploy is a BUNDLE -- so "the
     spelled `GRADUATE_CHECK [note]:` with the predicate below, the gate saw NO check at all and told the operator
     to add one, which would have made it a DUPLICATE. Measured 2026-09-20 against main's own script.
   GRADUATE_CHECK: ( cd deployment/ansible && ansible-playbook playbooks/deploy.yml --list-tasks 2>/dev/null ) | grep -qi annotation
+L20 AN INSTRUMENT MUST REPORT ITS OWN FAILURE IN A SIGNAL ITS FINDING CANNOT PRODUCE. Where one channel
+  carries both -- RED means "this line is covered" AND "the file no longer parses"; RED means "the mutant
+  died" AND "the runner is broken"; GREEN means "no defect" AND "my fixture cannot see this axis" -- the
+  run yields NO VERDICT, whatever it printed.
+  EVIDENCE: three in ONE PR's review chain (#1089); two re-checkable from the repo today, the third
+    disclosed in-session and NOT verifiable from it -- PR #1089 carries no reviews and no comments.
+    1. commit 8863c5c2, finding F2: weakening the builder's `bool(labelled and accepted)` to
+       `bool(labelled)` survived all four suites, because the control's fixture varied only the labelled
+       axis. A green that meant "my fixture cannot see this", read as "the mutant is dead".
+    2. round 2's own deletability table recorded `build_attach_gold.py`'s unmeasured-gold warning as
+       PINNED. Its `print` is the ONLY statement in `if unmeasured:`, so deleting that line left an empty
+       block: the interpreter refused the file and every suite went red. Re-derived as a whole statement it
+       is DELETABLE -- the corrected table, 14 of 176 units, is docs/BACKLOG.md MEASUREMENT DEBT.
+    3. NOT RE-CHECKABLE, and kept anyway because it is the sharpest form: the reviewer's own mutation
+       runner returned RED for its NULL control, so every KILLED it reported was worthless until it was
+       rebuilt. The reviewer disclosed it in-session; nothing in the repo or PR #1089 records it, so this
+       one is testimony, not evidence -- 1 and 2 above are the re-checkable pair.
+  RULE: before reading a measurement, name the OTHER thing that produces this same signal, and make the
+    instrument decide which -- cheapest sufficient form, in this order: (a) a NULL control in the SAME
+    invocation, unmutated input that must come back with the OPPOSITE verdict, which is what catches a
+    broken runner; (b) a validity check on the mutated artifact BEFORE the suite runs -- parse, compile,
+    load -- whose failure is its own verdict; (c) a third value the tool is allowed to return, NO VERDICT,
+    distinct from both PASS and FAIL. A known-bad control alone does not do this: it proves the tool can
+    say FAIL, never that its FAIL means what you are about to read.
+  GRADUATES: `.claude/skills/intent-review/SKILL.md` §AIMED AT THE ACT, as a fourth shape beside its three.
+    DO NOT RE-LITIGATE COLLAPSING IT INTO THAT SECTION TODAY [supervisor direction 2026-09-21]: different
+    SURFACE and different REMEDY -- that section is a pass/fail contract on a control that appears IN A DIFF
+    and is therefore read by a review, while this rule's subject is an instrument no diff contains and no
+    review reads (a scratch mutation runner, an ad-hoc deletability sweep, a reviewer's own harness) and its
+    remedy is a THIRD verdict, NO VERDICT, rather than a stricter pass.
+    `templates/recon-measurement.md` step 3 already carries the narrow half ("syntax-check the thing under
+    test before measuring") for RECON harnesses only, which is why instance 2 was built by an agent that had
+    never read it. It graduates when either artifact binds ANY instrument a verdict rests on.
+  GRADUATE_CHECK: grep -qi "distinct failure channel" .claude/skills/intent-review/SKILL.md .claude/skills/supervisor-mode/templates/recon-measurement.md
+
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, cited line, root cause or severity as settled fact
 never relay "X is false" without restating X's proposition and naming its subject # RELAYING is not DISPUTING, which
@@ -127,6 +162,8 @@ never accept a rule, alert or control proven only by silence, only at n=1, or on
 never accept a self-authored "nothing loosened", or a corpus built by the fix's own author
 never attribute a metric step to a deploy you have not located the step against, or to a deploy rather than to a
   named CHANGE inside it -- plot the range first, then read RELEASES.md for what else shipped nearby [L19]
+never read a RED or a GREEN whose other cause you have not ruled out -- name what else emits this
+  signal and make the instrument say which, or the run has no verdict [L20]
 never add an entry that a template, skill, hook or checklist already enforces
 never add an entry without a GRADUATES clause NAMING THE ARTIFACT that will hold it and a GRADUATE_CHECK -- `none --
   judgement` is an answer, an absent line is not, and `scripts/new-epic.sh` refuses the next epic reset over either
