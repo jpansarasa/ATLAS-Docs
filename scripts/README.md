@@ -38,6 +38,21 @@ Canonical home for the verification-run ownership model — `CLAUDE.md` §VERIFY
   together, so adding a third port without declaring it turns the suite red.
 - **Why:** before this, container names were identical across worktrees, so a concurrent run could
   silently test *another* worktree's source and still write a push marker.
+- **Why per-WORKTREE and not per-INVOCATION.** A per-invocation project name was the rejected
+  alternative, and the three objections raised against it were re-tested on this host rather than
+  inherited (measured 2026-08-06; the numbers live in `devcontainer-owner.sh`'s header, not here).
+  Only ONE holds: a SHARED nuget volume really does corrupt, because NuGet's cross-process lock is
+  container-local, so two containers sharing a packages volume tear an extraction on a cold
+  concurrent restore — and that is closed by giving each owner its own volume
+  (`ATLAS_DEV_NUGET_VOLUME`), which is a property of the KEY EXISTING, not of its granularity. The
+  other two do NOT hold, and neither should be re-raised as a reason: a shared `Events/` `obj` is
+  not a cross-worktree hazard at all (every worktree has its own `Events/`; the UID collision below
+  is same-worktree and is not a race), and "~1.5 GiB rebuilt and leaked per run" mistook a re-TAG of
+  a content-addressed image for a rebuild — a second project name added zero bytes at an identical
+  digest, and the one-time materialisation cost is paid by ANY project name and is reclaimable.
+  What per-worktree buys that per-invocation cannot is the reaper: it identifies an owner by a
+  worktree that either exists or does not, and pre-scheme names it cannot match are still on this
+  host as fossils.
 
 **KNOWN, and not a concurrency bug:** two DIFFERENT services in ONE worktree collide on
 `Events/src/*/obj` by UID. The root-user devcontainers (AlphaVantageCollector, CalendarService,

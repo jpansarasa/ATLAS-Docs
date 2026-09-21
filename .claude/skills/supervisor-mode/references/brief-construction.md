@@ -14,8 +14,9 @@ those are NOT here, because they must be present when the dispatch is written.
   deploy                — already-merged work to prod
   claim-verification    — is one agent report true
 Review dispatches have no template — the shape is SKILL.md MERGE_GATE.
-A BLOCK has none either, and it IS the next fix brief - what it must say, and the four rules
-#1078 cost seven declared rounds to learn: `.claude/skills/review-discipline/SKILL.md` §BLOCK_TEXT.
+A BLOCK has none either, and it IS the next fix brief - what it must say, and the FIVE rules it must
+satisfy, four of them what #1078 cost seven declared rounds to learn and the fifth the finding bar:
+`.claude/skills/review-discipline/SKILL.md` §BLOCK_TEXT.
 
 ## SIZE [the fenced block is what gets pasted, not the file]
 <=700w, and justify anything past ~550.

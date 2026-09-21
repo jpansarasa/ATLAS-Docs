@@ -64,7 +64,9 @@ OWNED: each CONTAINER-STARTING compile.sh (+ sentinel-edge typecheck.sh/dev.sh) 
   project (scripts/devcontainer-owner.sh), the same key mark-tests-passed.sh uses.
   N agents in N worktrees compile SIMULTANEOUSLY # never sequence them, never wait
   the key, the inode attestation gating the marker, the reaper, the no-host-port rule with its two DECLARED
-    exceptions, and the Events/src/*/obj UID collision with its recovery: scripts/README.md §DEVCONTAINER_OWNERSHIP
+    exceptions, the Events/src/*/obj UID collision with its recovery, and why the key is per-WORKTREE and not
+    per-INVOCATION -- one of the three objections to that alternative holds and two are refuted, so do not
+    re-raise them: scripts/README.md §DEVCONTAINER_OWNERSHIP
     # that collision is file ownership, not a race -- serializing does not fix it
 
 ## PHASE_TAGS [at phase / epic completion]
@@ -102,6 +104,9 @@ compose-service tag [SCOPED — the default]:
     carry ONLY the build task -> this form runs zero tag-scoped tasks. Build first (CONTAINER_BUILD).
 non-service tag [dashboards | patterns | alerting | monitoring | sentinel-prompts | ...]: --tags {tag}
   --skip-tags always # only that tag's own tasks
+  a PR touching CODE AND a dashboard needs BOTH deploys # NO dashboard task carries a service tag, so the
+    scoped form ships the service and silently leaves the panel on the metric the PR retired (measured
+    2026-09-20 on #1073, two dashboards) -> deployment/README.md §TAG_MECHANICS
 ✗ bare `--tags {anything}` # UNCONDITIONAL full-stack restart, not a conditional one: compose down/up of
   EVERY service incl a ~4min vLLM GPU reload, and it RESURRECTS a deliberately-stopped alert-service.
   The two escapes are `--skip-tags always` and `-e scoped_restart=true`.

@@ -2717,6 +2717,10 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 |---|---|---|---|
 | B | 2026-09-20 | OPEN | 50 of 53 live `AddHostedService<T>` registrations are UNPINNED: the line that makes the component RUN can be deleted with every suite green |
 | D | 2026-09-20 | OPEN | The hosted-service pin gate cannot see 5 live factory-overload registrations, and Reports has NO keyable registration at all |
+| D | 2026-09-20 | OPEN | A mutation harness that rewrites ONE `.py` path scores a FALSE SURVIVOR: CPython keys bytecode on (mtime-second, size), and `mutation-check.py` already holds an equal-length pair |
+| D | 2026-09-20 | OPEN | The pin sweep's zero-test rule binds the CONTROL run only; a MUTATED run that ran nothing files UNPINNED quoting the control's count |
+| D | 2026-09-20 | OPEN | A `/*` inside a C# string literal opens a block comment for the pin scanner; an unterminated one blanks the rest of the file (0 live sites) |
+| D | 2026-09-20 | OPEN | The pin control's ALREADY-RED arm has no test: deleting it keeps 154/154 green and prints a mutation-phrased sentence about an unmutated run |
 | B | 2026-09-20 | OPEN | `verify-card-companion.py` ECHO/STATUS is VOCABULARY-BOUND and cannot be complete: two review rounds found two kinds (negative rules, then wiring status), each added to the word list AFTER a human found it. It also CANNOT fail the build on an existing finding -- the freeze gates GROWTH only, so a card-only rule present before 2026-09-20 stays advisory forever. Repro: `python3 scripts/verify-card-companion.py` -> 16 advisory, 0 gating |
 | C | 2026-09-20 | OPEN | Five `verify-card-companion.py` mutations pass GREEN, each a real hole. (1) INVERTED echo: card says "must" where the companion says "must never" -- tokens match so ECHO passes; repro: negate a card ALSO clause, rerun, 0 gating. (2) Card entry degraded to a BARE POINTER (`D-n slug: DETAIL DECISIONS.md §D-n`) -- PARITY and GUARD both pass because neither requires the card to say anything; repro: truncate one entry to its pointer. (3) REORDERED companion sections -- `read_companion` returns an order list that `check()` never reads; repro: swap two `## D-n` blocks, 0 gating. (4) DUPLICATE id: a second `## D-n` silently overwrites the first in the dict; repro: copy a section, 0 gating. (5) DUPLICATE slug across two ids -- never compared; repro: rename one slug to match another |
 | C | 2026-09-20 | OPEN | `audit.sh` W10 counts CHARACTERS, not bytes (`${#var}` is character length in bash) and the cards carry non-ASCII, so a flagged entry's byte count runs slightly higher -- FinnhubCollector D-2 is 10,040 characters / 10,070 bytes. Never changes a verdict at the 4,000 threshold, which is itself PICKED (~5x the longest rule line this split produces), not derived. Repro: `bash .claude/skills/architecture-cards/scripts/audit.sh FinnhubCollector` |
@@ -2832,6 +2836,106 @@ spelled differently: `AddSingleton<IHostedService, T>` (zero instances today, ch
 `AddMeter` / `AddSource`, middleware, and anything registered by reflection or assembly scanning.
 
 Re-check: `python3 scripts/verify-hosted-service-pins.py` — the `NOT COVERED` line; `--list` names each site.
+
+### A mutation harness that rewrites ONE `.py` path scores a FALSE SURVIVOR on the bytecode cache [2026-09-20]
+**CPython validates a cached `__pycache__/*.pyc` against the source's mtime TRUNCATED TO WHOLE SECONDS and its
+size — nothing else. Two revisions of one file with EQUAL BYTE LENGTH written inside the same second are
+indistinguishable to that check, so the second import silently runs the FIRST one's bytecode.** A mutant that
+was never actually executed then reads as SURVIVED, and every later verdict in that run rests on a tree the
+interpreter did not read. Measured on PR #1087's sweep, which is where the false survivor appeared.
+
+SCOPE, because it decides which harnesses are exposed: only an IMPORTED module is cached. A file run as
+`python3 mutant.py` is `__main__` and writes no `.pyc` at all — controlled 2026-09-20, two runs across an
+equal-length same-second rewrite print the OLD then the NEW value and leave no `__pycache__` behind — and that
+is why most of this repo's mutation harnesses are clear. `importlib.util.spec_from_file_location` is NOT an
+escape: its loader is a `SourceFileLoader`, so it both reads and writes the cache.
+
+Reproduction, 2026-09-20 on Python 3.12.3, both remedies in the same run (write `mod.py` as `VALUE = 'AAAAA'`,
+import it by file location in a subprocess, rewrite it as `VALUE = 'BBBBB'` — same length, same second — and
+import again): run 2 prints **AAAAA**. `rm -rf __pycache__` before it prints BBBBB; `PYTHONDONTWRITEBYTECODE=1`
+prints BBBBB. So the remedy is to wipe the `__pycache__` beside the mutated file, or set
+`PYTHONDONTWRITEBYTECODE=1` (equivalently `python3 -B`), BEFORE EACH MUTANT — never once per run.
+
+Nothing in the repo does either: `git grep -n 'PYTHONDONTWRITEBYTECODE\|python3 -B' -- scripts deployment .github`
+returns no hits, and `__pycache__/` is gitignored, so no checkout or ordinary clean ever clears it.
+
+**THE ONE SHIPPED HARNESS THAT SHARES THE EXPOSURE**, swept 2026-09-20 over `scripts/` and `deployment/tests/`:
+`scripts/gemini-spend-calibration/mutation-check.py`. It copies `probe-replay.py` to ONE fixed path in a temp
+workdir, rewrites that path for each of 12 mutants, and re-runs the suite there; `test_probe_replay.py` loads the
+mutated file with `spec_from_file_location`, so `workdir/__pycache__` is written and re-read across mutants. It
+clears nothing. Confirmed rather than inferred, 2026-09-20: a `--keep` run (PASS, 11/12 killed, 1 declared
+equivalent) leaves `__pycache__/probe-replay.cpython-312.pyc` beside the last mutant in its workdir.
+**Mutants 2 and 4 ALREADY produce byte-identical 53,880-byte files.** Today mutant 3 (53,920 B) runs between
+them and re-validates the cache, so the collision is inert — re-ordering the list, deleting mutant 3, or adding
+any equal-length mutant next to either makes the second one a false survivor while the run still prints PASS.
+
+NOT EXPOSED, each checked rather than assumed, so the next reader need not re-sweep. THE DISCRIMINATOR IS
+EXECUTION MODE, never the language a harness mutates or how many `.py` files it writes: a file only run as
+`__main__`, grepped, or listed by name is never cached, and any of these joins the exposed list the moment it
+gains a per-mutant rewrite of a file it IMPORTS.
+- `scripts/tests/test_verify_citations.py::test_the_tool_aborts_at_rc_3_when_its_own_control_stops_detecting`
+  writes `mutant.py` into a per-test `tmp_path` and runs it as `__main__` via subprocess — no `.pyc`, and one
+  mutant per directory.
+- `deployment/tests/alerts/` (`mutate.py`, `run-mutant.sh`, `selftest.sh`) mutates YAML rule and test files; the
+  checkers themselves are never rewritten. `selftest.sh` writes THREE `.py` files, and execution mode is why
+  each is safe: `$WORK/stdlib-shadow.py` (`:475`) is invoked as `python3 <path>` (`:493`, `:500`), so it runs as
+  `__main__` and nothing caches it; `$M/tests/alerts/select.py` (`:498`) is created EMPTY and only LISTED by
+  name, that case being deliberately a name check rather than an import attempt; and `$WORK/noyaml/yaml.py`
+  (`:44`), the one that IS imported, is written once into a fresh `mktemp -d` and never revised.
+- `scripts/tests/new-epic-selftest.sh` mutates a BASH script, and separately writes ONE `.py` — a planted
+  `scripts/verify-citations.py` holding the literal `WRONG-D-ENTRY` (`:717`). Safe because the predicate
+  `grep`s that file and nothing imports or executes it, not because the harness is mostly bash.
+- `scripts/audit-catch-spans.py`'s control writes C# fixtures into a fresh `TemporaryDirectory` and calls
+  `audit()` in-process; nothing written is imported.
+- `scripts/tests/test_verify_{pointers,card_companion,hosted_service_pins}.py` import the tool ONCE from the
+  checkout and never rewrite it; their fixtures are `.md` and `.cs`.
+
+Re-check (fires without running any harness):
+`python3 -c "import pathlib,collections;p=pathlib.Path('scripts/gemini-spend-calibration/mutation-check.py');ns={'__name__':'x','__file__':str(p)};exec(compile(p.read_text(),str(p),'exec'),ns);b=pathlib.Path('scripts/gemini-spend-calibration/probe-replay.py').read_text();c=collections.Counter(len(b.replace(a,r).encode()) for _,_,a,r,_ in ns['MUTANTS']);print(sorted((s,n) for s,n in c.items() if n>1))"`
+-> `[(53880, 2)]` today. Closed when `mutation-check.py` clears the cache or sets the env var per mutant; the
+equal-length group is then harmless and this re-check may return anything.
+
+### The pin sweep's zero-test rule binds the CONTROL run, not the mutated run it licenses [2026-09-20]
+`scripts/verify-hosted-service-pins.py`'s `control_run` reads the control log's `Passed:` counts and refuses a
+green run that ran ZERO tests — the harness-scoring-itself-sharp case. **`classify`, which produces the MUTATED
+run's verdict, never reads a count.** It decides on the presence of `Passed!`/`Failed!` summary lines alone, so a
+mutated run whose projects each printed `Passed!  - Failed: 0, Passed: 0` (a filter that matched nothing, a
+project that collected nothing once the line was removed) is scored UNPINNED, and the row it writes quotes the
+CONTROL's count as its evidence — `control 321 test(s) green before mutation`, true of a different run.
+
+Direction, which is why this is debt and not a defect: it over-files UNPINNED and can never produce a false
+PINNED, so it costs a re-sweep rather than a wrong clean bill of health.
+
+Re-check: `grep -n TEST_COUNTS scripts/verify-hosted-service-pins.py` -> two hits today, the definition and ONE
+use inside `control_run`. Closed when a mutated run with a zero pass count yields no verdict either.
+
+### A `/*` inside a C# string literal opens a block comment for the pin scanner [2026-09-20]
+`scan_text` tracks block comments with a running `in_block` flag and does not parse string literals, so a `/*`
+inside a string OPENS a comment. **With no `*/` after it, `in_block` stays true to end of file and every later
+line is blanked** — those registrations vanish from the keyed set AND from the `unkeyed` blind-spot census, so
+both numbers the tool prints are short and neither says so. The docstring states only the opposite direction ("a
+registration inside a string literal is scored as real"), which reads as the whole story.
+
+Measured 2026-09-20 over the tool's own corpus (`<Service>/src/**.cs`, `obj`/`bin` pruned): **1,150 `.cs` files,
+0 `/*` inside a string literal, 0 files the scanner leaves inside a block comment at EOF**, 53 registrations
+enumerated. Live-site-free today, and one C# string literal away from silent.
+
+Re-check: `git grep -nE '"[^"]*/\*' -- '*/src/*.cs' '*/src/**/*.cs'` -> no hits today; any hit is a candidate
+site to read. Pair it with `python3 scripts/verify-hosted-service-pins.py`, which must still report 53.
+
+### The pin control's ALREADY-RED arm has no test, and deleting it misdescribes the run [2026-09-20]
+`control_run`'s first arm rewrites classify's PINNED into "the suite is ALREADY RED with nothing removed",
+because classify's wording is mutation-phrased and would be false of an unmutated run. **Deleting that arm
+outright leaves `python -m pytest scripts/tests` at 154 passed** — the DECISION survives, since the next arm
+(`verdict != "UNPINNED"`) still returns not-green, and `test_a_red_control_blocks_UNPINNED_too_not_only_PINNED`
+asserts on `sweep(...) == {}` rather than on the sentence. What changes is only what the agent reads: measured
+2026-09-20 with the arm deleted, `control_run` returns `the unmutated run reached no green suite (PINNED): 1 of
+1 test project(s) went RED with the registration removed` — about a run where nothing was removed, sending the
+reader to look for a registration nobody touched.
+
+Re-check: delete the three-line `if verdict == "PINNED":` arm from `control_run`, run
+`python -m pytest scripts/tests -q` (154 passed, i.e. unpinned), restore. Closed when a test asserts the
+ALREADY-RED sentence itself.
 
 ### verify-pointers.py: a deletion test against it proves the ANCHOR, never the RULE [2026-09-20]
 The gate `scripts/tests/test_verify_pointers.py::test_tracked_corpus_resolves` is a NAME resolver by its

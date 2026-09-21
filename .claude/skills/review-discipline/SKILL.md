@@ -246,8 +246,9 @@ SCALE THE ROUND TO THE DELTA. A full adversarial round costs the same against a 
 NEVER PUT A FIGURE IN A BLOCK YOU HAVE NOT DERIVED YOURSELF. A block's numbers cross into tracked
   files. # #1078's "18 tasks" crossed THREE boundaries un-re-derived: a round-6 review agent's
   selection table reported it, the supervisor copied it into the BLOCK ("the 18 I wrote"), and the
-  fix agent transcribed it into docs/BACKLOG.md, where it still stands - and needs CORRECTING to
-  round 7's 21 banners / 25 resolved, never LABELLING with a unit. 18 IS SIMPLY WRONG: the same
+  fix agent transcribed it into docs/BACKLOG.md - corrected there by #1085 (28b039fb) to 21 TASK
+  banners PRINTED of a 25-task RESOLVED set, each figure carrying its unit, which is what the
+  correction owed and a relabelled 18 would not have paid. 18 IS SIMPLY WRONG: the same
   table gives 18 to two spellings that resolve to 27 and 25, and the playbook between the two
   measurement heads differs by ZERO non-comment lines (b16a1ee7..d036be4a), so both readers
   measured an executably identical file. WORSE THAN THE WRONG FIGURE, a unit-drift explanation was
