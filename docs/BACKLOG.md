@@ -41,6 +41,13 @@ Defects with a measurement that makes them re-checkable.
 | C | 2026-09-20 | OPEN | Parallel-compile ownership audit is static text; a call behind an early `exit`, or written early and CALLED late, reads as owned and in-order |
 | D | 2026-09-20 | OPEN | Test 5's sibling double-trap sweep word-splits its file list; a spaced or globbed path is silently skipped |
 | C | 2026-09-20 | OPEN | Test 6's three population counts are FLOORS, not rosters; tight today, and the first compose file added makes a narrowed glob silent |
+| A | 2026-09-21 | OPEN | D-19 passes 16 exchange spellings / 339 active rows through; 2 (FRED 175, Crypto 4) are deliberate non-venues, 14 / 160 await a reviewer's venue call |
+| B | 2026-09-21 | OPEN | D-19 changed the embedding's venue prose without a template bump: 7,165 active rows keep "listed on CT" until touched |
+| A | 2026-09-21 | OPEN | 6 `.SG` rows carry a wrong-venue FIGI, 5 of them ANOTHER COMPANY's; the suffix is now null (bleeding stopped) but no row is repaired, and 194 `.SG` + 95 `.MC` + 87 `.SI` rows have no venue at all |
+| B | 2026-09-21 | OPEN | 5 of the 6 SecMaster migration test classes drive SQL CONSTANTS, never `Up`/`Down`: emptying `Up()` leaves each green |
+| B | 2026-09-21 | OPEN | D-19's Down CAS is CODE-granular, not WRITE-granular: 20 of 42 map entries resolve to US (93.3% of the population), so a later write of a DIFFERENT US spelling is invisible to it and to SkippedRestoresSql |
+| A | 2026-09-21 | OPEN | GIGO broken a THIRD time: the pipe-paste is cleaned at SecMaster while its SOURCE, gemini_client.py:264's prose schema, still hands the model a literal pipe enumeration; 2 live rows echo it verbatim |
+| E | 2026-09-21 | OPEN | "ALL read ListingVenueRegistry" is wider than the sweep: 2 unguarded venue-table copies survive, one already wrong on 541 rows today |
 | A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
 | A | 2026-09-20 | OPEN | D-17 cleared the STAMP, not the DESCRIPTION: 8 foreign rows keep an EDGAR SIC line, 4 another company's |
 | A | 2026-09-20 | OPEN | BTC-USD duplicates the curated CRYPTO:BTC row; 1,101 observations to 0 (T3 items 1 and 2) |
@@ -261,6 +268,126 @@ one cannot be read as covering the others.
    `grep -n 'AUDITED 10' scripts/test-devcontainer-owner.sh` -> 2 lines on 2026-09-20, the assertion at `:1180` and
    its failure message at `:1182`, so the literal must be hand-edited in two places; it closes when the expected
    count is DERIVED from the names `plant()` was called with, the way `ctl_planted_names` already is at `:1168`.
+
+**D-19's `Down` COMPARE-AND-SWAP IS CODE-GRANULAR, NOT WRITE-GRANULAR, AND THE CARD CLAIMS MORE THAN THE
+PREDICATE DELIVERS.** Measured 2026-09-21. `RestoreSpellingsSql` swaps on the CANONICAL CODE recomputed from the
+pre-image, so it refuses to restore only when the row's exchange no longer equals that code. 20 of the migration's 42
+map entries resolve to `US`, and those 20 spellings cover 4,273 of the 4,580 mapped rows -- 93.3% of the population.
+So for 93.3% of rows a later LEGITIMATE write of a *different* US spelling (`NYSE` over a row healed from
+`NASDAQ NMS - GLOBAL MARKET`) is canonicalized by the persist boundary back to `US`, the CAS sees no change, `Down`
+restores the OLD pre-image over it, and `SkippedRestoresSql` does not list the row -- the operator is told the
+rollback was complete. The 7 non-US many-to-one codes (US aside, `TT`, `HK`, `CT`, `LN`, `FP`, `NA`, `GR` ... 23
+distinct codes for 42 entries) carry the same defect over the remaining 6.7%. The CAS still does what it was added
+for: it refuses a row rewritten to a DIFFERENT venue, which is the case that loses data. Closing it needs the
+pre-image compared against the resulting value AND the write instant -- e.g. stamping the heal instant beside the
+pre-image and refusing any row whose `updated_at` has moved since. Re-check:
+`grep -c "'US')" SecMaster/src/Data/Migrations/20260921084921_CanonicalizeExchangeVocabulary.cs` -> 20 of 42 pairs on
+2026-09-21, and the 93.3% is `count(*) FILTER (WHERE upper(btrim(exchange)) = ANY(<20 US spellings>))` over
+`... ANY(<all 42>)`. Closes when `Down` cannot silently overwrite a post-`Up` write, or when the entry says plainly
+that it can.
+
+**GIGO BROKEN A THIRD TIME: D-19 CLEANS THE PIPE-PASTE AT THE DESTINATION WHILE ITS SOURCE IS UNFIXED AND, UNTIL NOW,
+UNFILED.** `CLAUDE.md` GIGO is a HARD_STOP -- "clean at the SOURCE where garbage is BORN; never gate each
+destination" -- and it names two prior breaks, both destination gates (#818 FRED series-search, #823 paid resolver).
+This is the third, and it is in the PR that quotes the rule. Measured 2026-09-21.
+`gemini-resolver-mcp/gemini_resolver/gemini_client.py:264` hands the model a PROSE schema whose exchange value is a
+literal pipe enumeration -- `"exchange": "NYSE | NASDAQ | AMEX | OTC | FRED | null"` -- so `|` is simultaneously the
+type-alternation separator and a character of the example value, and the model cannot tell "choose one of these" from
+"the value is this string". Two live `atlas_secmaster` rows hold the echo, both `discovery_source =
+entity_resolution:gemini`: `OWLT` (Owlet Inc) stores `NYSE | NASDAQ | AMEX | OTC | FRED | null`, byte-identical to
+that line, and `SCHV` stores the truncated `NYSE | NASDAQ`. D-19 nulls both at the persist boundary, which is a
+destination gate -- the next such row is born the same way. The same prose schema does the same thing to
+`asset_class` and `instrument_type` two and three lines down, exposing D-5's column too; measured today, 0 rows carry
+a pipe in either, so only `exchange` has actually been hit. THE SOURCE FIX IS NOT A PROMPT TWEAK: the resolver should
+constrain the producer (`response_format` / a JSON schema), which is `CLAUDE.md` DATA_ML_CONTEXT's rule and
+[[feedback_constrain_llm_output_not_salvage_parse]]. Re-check:
+`SELECT count(*) FROM instruments WHERE exchange LIKE '%|%' OR asset_class LIKE '%|%' OR instrument_type LIKE '%|%'`
+-> 2 on 2026-09-21; and `grep -n '|' gemini-resolver-mcp/gemini_resolver/gemini_client.py` at the schema block.
+Closes when the resolver constrains its output and the prose enumeration is gone.
+
+**D-19's "ALL READ `ListingVenueRegistry`" IS WIDER THAN THE SWEEP BACKING IT: TWO UNGUARDED COPIES OF THE VENUE
+VOCABULARY SURVIVE.** A pointer gap, not a live regression -- both were measured, and neither breaks *because of*
+D-19. Measured 2026-09-21. The entry's claim is true of the five consumers it enumerates (the persisted value, the
+OpenFIGI suffix lookup, the country map, the embedding prose, D-17's non-US set) and false as a statement about the
+repository.
+- `SentinelCollector/scripts/reresolve-by-provenance.sh:116-117` carries its own US-exchange classifier as two regex
+  literals -- `exchange ~* '^(US|FRED|ICE|COMEX|CBOT|NYMEX|CRYPTO)$'` OR
+  `exchange ~* '(NYSE|NASDAQ|OTC|AMEX|ARCA|BATS|CBOE)' AND exchange !~* '(EURONEXT|OMX)'` -- and no test compares it
+  to the registry. **AND IT IS ALREADY WRONG TODAY, INDEPENDENTLY OF D-19**: neither arm matches
+  `NEW YORK STOCK EXCHANGE, INC.` (the string contains no `NYSE`), so of the 8,410 active bare rows the script's A10
+  check reads, 541 real NYSE listings are classified NON-US right now. D-19's heal turns those into `US`, which the
+  first arm does match, so the heal SILENTLY REPAIRS the script -- 543 of 8,410 classifications change, 541 that way
+  plus the 2 pipe rows leaving the population when they go NULL. Nothing else changes.
+  (This CORRECTS a relayed claim that the copy was measured not to break: it does not break, but only because it was
+  already broken in the safe direction.)
+- `SecMaster/src/Data/Migrations/20260917110542_ClearOutOfScopeUsAuthorityStamps.cs` `UnclearedRowsSql` freezes 26
+  venue literals inside an operator SELECT. Measured on the simulated post-heal column it returns 0 rows before and 0
+  rows after, so it is inert today; it is a frozen artifact and correctly so, but it is a second copy nothing points
+  at the registry from.
+- The THIRD copy, `CanonicalizeExchangeVocabulary.SpellingValues`, is the GUARDED one and is not part of this entry:
+  `the_spelling_map_agrees_with_the_registry` checks every pair against `ListingVenueRegistry.TryResolveCode` and
+  goes RED if the vocabulary moves under it. That is the shape the other two lack.
+Re-check: `grep -rn "NYSE\|NASDAQ" SentinelCollector/scripts/reresolve-by-provenance.sh
+SecMaster/src/Data/Migrations/20260917110542_*.cs` -> both copies present on 2026-09-21. Closes when each copy either
+reads the registry or carries a test that fails when the registry moves.
+
+**TWO D-19 VENUE SUFFIXES NAMED THE WRONG VENUE, AND 6 CATALOG ROWS CARRY A FIGI OBTAINED THAT WAY -- 5 OF THEM
+ANOTHER COMPANY'S. THE SUFFIXES ARE NULLED (#1091), SO NOTHING NEW IS POISONED; NO ROW IS REPAIRED.** Both entries
+came verbatim from the hand-kept client map on `main`, so this is a LIVE DATA DEFECT, not a regression. This is
+CLAUDE.md GIGO's named harm and the same class D-19 exists to fix: a wrong resolution at the SOURCE corrupts identity,
+and the free wrong-ticker resolutions cost more than a bill would. Measured 2026-09-21 on `atlas_secmaster`,
+SELECT-only, plus a READ-ONLY `POST /v3/mapping` that resolved each stored FIGI back to the issuer it names.
+
+`.SG` WAS DECLARED AS SINGAPORE'S (venue `SP`) AND IS BOERSE STUTTGART'S. 194 active `.SG` rows sit beside the German
+regional suffixes (`.F` 582, `.DU` 537, `.MU` 308, `.HM` 267, `.BE` 3, `.HA` 8) and carry cross-listing names --
+`NVR INC`, `ANGLO AMERICAN PLC-SPONS ADR`, `HEIWA CORP`, `ROBINSON PLC`, `JBT MAREL CORP`. The 87 genuine Singapore
+rows are on `.SI` (`1D3.SI`, `40B.SI`, ...), a suffix the table has never held. 6 of the 194 obtained a FIGI under
+exchCode `SP`; every one of the 6 also carries `exchange = 'SP'` and `country = 'SG'`, which is wrong for a German
+listing, and `SP` is held by no other row in the catalog. Resolving each stored FIGI back:
+
+| symbol | stored name | stored FIGI | the FIGI's issuer |
+|---|---|---|---|
+| `CAO.SG` | CONAGRA BRANDS INC | BBG000BG7SH4 | CHINA AVIATION OIL SINGAPORE |
+| `CMS.SG` | COMMERCIAL METALS CO | BBG01VVVG367 | CHINA MEDICAL SYSTEM HOLDING |
+| `SCG.SG` | SPORTING CLUBE DE PORTUGAL | BBG0035NY5Y1 | SKYLINK HOLDINGS LTD |
+| `SHS.SG` | SHENZHEN INVESTMENT LTD | BBG000BZB5L2 | SHS HOLDINGS LTD |
+| `VCM.SG` | VECIMA NETWORKS INC | BBG000C4P3P6 | VICOM LTD |
+| `UOB.SG` | UNITED OVERSEAS BANK LTD | BBG000BFDWJ8 | UNITED OVERSEAS BANK LTD |
+
+Five of six name a different company. `UOB.SG` matches only because the Stuttgart line and the Singapore primary share
+both ticker and issuer -- a coincidence, not a working lookup.
+
+`.MA` WAS DECLARED AS MADRID'S (venue `SM`) AND NAMES ZERO ROWS. The 95 real Madrid rows sit on `.MC` (`BBVA.MC`,
+`AENA.MC`, `ACS.MC`, ...), which is Casablanca's CODE in the same table, deliberately suffix-less; the 39 `.CS` rows
+are the Moroccan ones (33 spelled `CASABLANCA STOCK EXCHANGE`). `SM` is held by no catalog row at all. So the
+declaration bought nothing and would have routed a future Moroccan `.MA` row to Spain.
+
+FIXED IN #1091, AND WHAT IT DOES NOT FIX. Both `YahooSuffix` values are now `null`, which is fail-closed: `SuffixToCode`
+has exactly one production consumer (`OpenFigiClient.BuildJob`) and an absent suffix builds no job, so those symbols
+are never asked. Pinned by `ListingVenueRegistryTests.no_suffix_is_registered_for_the_two_that_were_measured_to_name_another_venue`
+and, on the outbound side, `OpenFigiClientTests.should_never_send_a_symbol_whose_suffix_names_another_venue`. NOT
+fixed: the 6 poisoned rows keep their wrong FIGI, exchange and country, and 194 `.SG` + 95 `.MC` + 87 `.SI` rows now
+have no venue route at all. Deciding what a Stuttgart cross-listing, a Madrid line and a Singapore line SHOULD resolve
+to is a venue decision with its own migration. Re-check:
+`SELECT symbol, name, figi, exchange, country FROM instruments WHERE symbol LIKE '%.SG' AND figi IS NOT NULL;`
+-> 6 rows on 2026-09-21; the entry closes when those rows are repaired or quarantined and the three suffix families
+have a decided venue.
+
+**5 OF THE 6 SECMASTER MIGRATION TEST CLASSES DRIVE THE SQL CONSTANTS, NEVER `Up` OR `Down`.** Measured 2026-09-21:
+`grep -c 'UpOperations\|DownOperations'` returns 7 for `CanonicalizeExchangeVocabularyMigrationTests` (fixed in #1091)
+and 0 for `ClearOutOfScopeUsAuthorityStampsMigrationTests`, `DisposeGeminiFallbackFuturesRootsMigrationTests`,
+`ReclassifyFredSeriesLabelledEquityMigrationTests`, `RepairGeminiFallbackSurfaceNamesMigrationTests` and
+`RetireDiscontinuedSeriesMigrationTests`; `grep -rn 'UpOperations\|DownOperations' SecMaster/src` returns nothing, so
+nothing outside that one test file drives a migration's operations. Consequence, and it is the trap D-17's own entry
+documents: emptying `Up()` -- or deleting any single `migrationBuilder.Sql(...)` call from it -- leaves each class
+GREEN, while the shipped migration records itself APPLIED in `__EFMigrationsHistory`, heals zero rows and can never
+re-run. The exposure is 8 `Up` statements and 11 `Down` statements across the five
+(`AddInstrumentRetiredAtAndRetireDiscontinuedSeries` 3/1, `RepairGeminiFallbackSurfaceNames` 1/1,
+`ReclassifyFredSeriesLabelledEquity` 1/4, `DisposeGeminiFallbackFuturesRoots` 2/2,
+`ClearOutOfScopeUsAuthorityStamps` 1/3). All five are already DEPLOYED, so the risk is a future edit to a spent
+migration, not a heal pending today -- which is why this is filed rather than swept. The fix per class is the helper in
+`CanonicalizeExchangeVocabularyMigrationTests` (`OperationSql` / `RunOperationsAsync`, ~8 lines). Re-check: the two
+greps above; the entry closes when all six read non-zero.
 
 **D-17's `ClearOutOfScopeUsAuthorityStamps` names its rows by id as read at 2026-09-17T12:52:35Z, and production keeps
 writing out-of-scope stamps until that migration deploys; a row written in between stays.** Measured 2026-09-17,

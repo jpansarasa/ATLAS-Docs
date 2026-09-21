@@ -11,8 +11,11 @@ identifier-resolution surface.
 - Wraps the OpenFIGI **`POST /v3/mapping`** batch API.
 - **Input:** ticker symbol with optional exchange suffix (`AAPL`, `600809.SS`,
   `DXR.TO`, share-class tickers like `BRK.A`). The client normalises suffix
-  to OpenFIGI `exchCode` (`SS`, `SZ`, `HK`, `CT`, `LN`, …) — see
-  `SuffixToExchCode` in `OpenFigiClient.cs`.
+  to OpenFIGI `exchCode` (`.SS` → `CG` Shanghai, `.SZ` → `CS` Shenzhen,
+  `.ST` → `SS` Stockholm, `.TO` → `CT`, `.L` → `LN`, …). Since D-19 the table
+  is `ListingVenueRegistry`, read through `SuffixToExchCode` in
+  `OpenFigiClient.cs`; the suffix and the exchCode are separate namespaces
+  that collide on the same letters, so never read one as the other.
 - **Output (`OpenFigiMapping`):** FIGI, compositeFIGI, shareClassFIGI, name,
   ticker, exchCode, country, marketSector, securityType. **CUSIP / ISIN /
   SEDOL are explicitly nulled** in `MapResponse` (lines 254-256) — the
