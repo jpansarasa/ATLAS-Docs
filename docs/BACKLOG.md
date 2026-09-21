@@ -3347,6 +3347,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | D | 2026-09-16 | OPEN | verify-citations.py reports GREEN on a citation that has drifted onto the WRONG line |
 | D | 2026-09-16 | AWAITING-DECISION | The documented citation sweep is .md-ONLY, so a line shift rots citations it cannot see |
 | D | 2026-09-16 | OPEN | verify-citations.py skips off-allowlist extensions, and bare :NN continuations sans --bare |
+| D | 2026-09-21 | OPEN | A prose-form reference is not a checked citation at all: 15 cross-file line references in tracked `.md` sit outside every sweep (a floor; the no-number class is unbounded) |
 | D | 2026-09-16 | OPEN | Patches drop the exec bit, core.fileMode=false hides it, a disarmed hook fails SILENTLY |
 | D | 2026-09-17 | OPEN | Attachment gold residue: slash terms unsearchable by symbol, 6-term cap, yen rows, CI, IXIC |
 | D | 2026-09-16 | OPEN | Stage 2 has a gold now, and it prices three things a comparison must clear |
@@ -4979,6 +4980,97 @@ The `.j2` bites: gate-layer templates whose line numbers move. `_EXTS` unchanged
 deliberately in NON-citation form so this entry cannot itself rot invisibly.
 Re-check: sweep every tracked `.md` for `path:NN` tokens that resolve to a real file but do not match
 `CITATION`, and confirm the count and extension breakdown before trusting a sweep that reports "every one lands".
+
+### A prose-form reference is not a checked citation at all: 15 cross-file line references in tracked `.md` sit outside every sweep [2026-09-21]
+`scripts/verify-citations.py` recognises exactly three spellings, and all three require the COLON: `CITATION`
+(`path.ext:N`, extension on the `_EXTS` allowlist), `COMMA` (the `,223-225` tail immediately following one), and
+`BARE` (`:N`, opt-in behind `--bare`). A reference written as prose -- a sentence naming a file and a line number
+in words -- matches none of them, so it is never parsed, never resolved, never reported, and no run says it was
+skipped. DISTINCT from the two entries above, which are about a CORPUS or an EXTENSION the resolver would handle
+if it were handed them; here there is nothing for the resolver to be handed. The illustrative form, fenced so it
+does not perturb the count below:
+
+```
+`ThresholdEngine/src/DependencyInjection.cs` line 186 confirms no active subscription.
+```
+
+Probed 2026-09-21 at `9f0f0ce8`, running the tool over a scratch file carrying three prose spellings of one
+reference plus a single colon-form control on the same target: `1 file(s) swept, 1 citation(s) checked`. The
+checked count is the proof -- three of the four references were invisible, and the report named neither them nor
+their absence.
+
+MEASURED, and the number is a FLOOR rather than a census: **15 occurrences in 5 of the 209 tracked `.md` files**
+at `9f0f0ce8`. UNIT: occurrences, not files -- one line of this file carries two. POPULATION: the set
+`git ls-files -z '*.md'` names, which is exactly the corpus the documented sweep hands the tool. METHOD: outside
+fenced blocks, a `line N` / `lines N-M` token on a line that ALSO names a file carrying an `_EXTS` extension,
+with every span the shipped `CITATION` and `COMMA` regexes already claim masked out first -- both imported from
+`verify-citations.py` rather than re-spelled, so the "not a checked citation" half is decided by the shipped rule
+and not by a second copy of it. Breakdown of the 15: 6 are `~`-hedged approximations in one plan document, 3 are
+DELIBERATE (the `make_cache_key` docstring entry under §KNOWN DEFECTS states in its own text that it avoids the
+colon form so a sweep cannot read its stale numbers as live claims), 6 are unhedged assertions into living files.
+THE 3 IS ITSELF A FLOOR, of this entry's own neighbouring-line class: a FOURTH prose reference sits in that same
+`make_cache_key` entry -- the one recording where the `$`-leading gate now sits -- and the METHOD discards it only
+because its filename fell on the previous physical line. It is in the 13-line residual below. Said here rather
+than left for the reader to find, because the size of the deliberate class is what the no-fix reason turns on.
+
+WHAT THE COUNT STRUCTURALLY CANNOT FIND, stated because an honest floor is worth more than a confident wrong
+number:
+  a reference carrying NO NUMBER AT ALL -- naming the WRONG FILE for a figure is this class, and nothing keyed on
+    a line number can see any of it, so that class is not bounded by 15 nor by anything measured here;
+  a reference whose filename sits on a NEIGHBOURING line -- the same-line requirement is what does all of the
+    narrowing, discarding 6,818 candidates, 6,800 of them the two `large-card-*` fixtures' `padding line NNNN`
+    filler. Re-derived 2026-09-21 at `7c94166b` from an independently written second implementation of the METHOD
+    (15 / 6,818 / 6,800 all unchanged): the residual is 18 occurrences on 13 DISTINCT LINES, and reading all 13 by
+    hand, 9 are genuine cross-file references, so ~24 is the better floor. CRITERION, stated so the next reader
+    RE-ADJUDICATES rather than re-guesses: a number aimed at a file OTHER than the citing one and asserting
+    something about that file's CURRENT content. The 4 excluded are two prose descriptions of a synthetic
+    nine-line fixture that is not a tracked file, one dated record of what a past review found, and one set of
+    LOG line numbers;
+  anything inside a FENCED block -- the METHOD skips fences, which is what keeps the illustrative form above from
+    perturbing its own count, so this is a blind spot the entry RELIES on rather than merely has. `verify-citations.py`
+    itself has no fence handling at all, so the two disagree: a colon-form citation inside a fence IS swept;
+  a same-line filename carrying NO extension, or one off the `_EXTS` allowlist -- the three extensionless
+    `scripts/claude-*` wrappers are invisible to the filename half of the METHOD for exactly the reason the
+    sibling `_EXTS` entry above calls that exposure latent for the sweep itself;
+  positional prose ("the fourth row of the DECISIONS block"), spelled-out numbers, an `L186` spelling, and any
+    reference split across a line break.
+The method can also produce FALSE POSITIVES -- a `line N` naming a diff, a log excerpt or the citing file's own
+body, on a line that happens also to name a file. Zero of them in this run; all 15 were read by hand.
+
+BLAST RADIUS, two shapes, and the second has no author. (1) A prose reference is written WRONG and a fully green
+sweep says nothing, because it was never a claim the tool could test -- the reviewer is the only detector, and a
+green sweep actively reassures them. (2) A prose line number into a file OTHER than the citing one rots with
+nobody editing either file, the moment a sibling PR inserts a row above the target: the same rot the
+`make_cache_key` entry under §KNOWN DEFECTS records happening to a `.py` docstring when PR 1061 moved two
+SecMaster constructs. `CLAUDE.md` §TOOL_UPKEEP already carries the asymmetry that makes this bite -- anchor
+pointers are gated in CI and `file:line` ones are not the same check -- and a prose line number is one rung BELOW
+the ungated `file:line`, being not merely unchecked but unparsed. Not restated here.
+
+NO FIX IS PROPOSED -- and NOT because one is impossible. A PARTIAL fix is WORSE than the gap, which is a
+different and stronger reason than the one this entry first gave. MEASURED 2026-09-21 at `7c94166b`: two scratch
+copies of this file, identical but for the 3 DELIBERATE references rewritten into colon form on the two physical
+lines that carry them, each swept alone with `--repo-root` at the worktree. Verbatim 208 citations checked,
+prosified 211; FOUR cannot land on BOTH, rc 1 on BOTH, and the unresolved SET is the same four entries either way
+(three `sentinel-v6.2-cove.json` cites and the ambiguous-basename `SeriesManagementService.cs` one) -- ZERO new
+findings. So teaching the tool to read prose turns NOTHING red here. The claim it replaces -- that the deliberate
+class would turn three correct lines red -- does not reproduce.
+IT DOES SOMETHING WORSE. All three RESOLVE, onto real non-blank lines, and are printed as healthy landings: a
+`//` comment, a `///` doc comment, and the `PersistConfirmedInstrumentAsync` signature itself. Two of those three
+numbers are ones the `make_cache_key` entry above records as STALE, and a prose-reading sweep would report them
+as LANDING and thereby bless them. RED is visible; a green blessing is not, and `verify-citations.py` is
+content-blind by design (the sibling `verify-citations.py reports GREEN on a citation that has drifted onto the
+WRONG line`), so nothing downstream catches it either. Prose parsing ALONE is a regression; prose parsing PLUS
+content-awareness is that other, still-unfixed entry. And it would leave untouched the class with no bound at
+all -- a reference carrying NO NUMBER, which nothing keyed on a line number reaches. Closing this is a judgement
+about the corpus, not a regex.
+WHAT THAT MEASUREMENT CANNOT CONTAIN: one file, and the 3 deliberate references only. It says nothing about what
+prose parsing would do to the other 12 occurrences -- in particular the 6 `~`-hedged plan-document ones, which a
+parser reading a hedge as an exact claim might well turn red. Not measured, and not an argument made here.
+
+RE-CHECK: re-run the METHOD above at head and compare the occurrence SET against these 15, never the count. The
+3 deliberate ones must still be there; a NEW unhedged reference into a living file is the finding. For the
+no-fix reason: copy this file twice, rewrite ONLY those 3 into colon form in one copy, sweep each copy alone, and
+compare the unresolved SETS -- never the counts, never the rc, both of which are identical on the two sides.
 
 ### Patches drop the exec bit, `core.fileMode=false` hides it, and a disarmed hook fails SILENTLY [2026-08-17]
 Four mechanisms compose into a defect with no symptom; each alone is survivable. (a) A patch applied to this

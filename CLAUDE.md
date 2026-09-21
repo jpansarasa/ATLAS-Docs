@@ -246,6 +246,10 @@ ANTI: ✗ read a green run as proof # ask what the tool CANNOT see -- verify-cit
         .claude/skills/supervisor-mode/LESSONS.md ALREADY_ENCODED, the verify-against-the-THING line (was L8)
         `mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-citations.py --quiet "${F[@]}"`
         # ✗ pipe it through xargs: xargs remaps the child rc to 123, so the rc above is unobservable that way
+      ✗ sweep a NEW .md before `git add` # `git ls-files` names tracked and STAGED paths only, so the file the
+        author most wants checked sits OUTSIDE the corpus and the run is silent about it, at the same rc and the
+        same shape as a clean one -- commit or stage it first # control 2026-09-21 on #1098: a planted unresolvable
+        citation entered the unresolved SET only after the `git add` (209 files swept before, 210 after, rc 1 both)
       ✗ ship a tool whose docstring claims coverage it does not have # the defect, moved into the tool
 
 ## INFERENCE [shared GPU/CPU serving — EXTRACTION rules live in SentinelCollector/AGENT_README.md]

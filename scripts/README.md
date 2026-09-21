@@ -97,8 +97,15 @@ rule and points here. **pytest is NOT installed on this host — use a venv.**
   and `git rm --cached` on a destination drops the checked count silently at rc 0. A deletion test
   against it proves the ANCHOR is load-bearing, never the RULE (`docs/BACKLOG.md`).
 - **The one reason to invoke it directly** — a file set the gate's tracked corpus does not cover, such
-  as an untracked or out-of-tree draft. It is never a substitute for the pytest run above:
-  `mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-pointers.py "${F[@]}"`.
+  as an untracked or out-of-tree draft. **NAME THE DRAFT ON THE COMMAND LINE.** `git ls-files` lists
+  tracked and STAGED paths only, so the form below WITHOUT a trailing path sweeps everything except the
+  one file you invoked it for, and reports a clean run — and this tool's clean state is rc **0**, with no
+  rc-1 steady state to muddy the false green (measured 2026-09-21 at `7c94166b`, an untracked draft in
+  the worktree root carrying one unresolvable pointer: the path-less form gave `209 file(s) swept, 158
+  anchor pointer(s) checked, 0 cannot resolve` at rc 0 and never named the draft; the form below gave
+  `210 swept, 159 checked, 1 cannot resolve` at rc 1; handed the draft alone it gave `1 cannot resolve`
+  at rc 1, so the finding was always there to miss). It is never a substitute for the pytest run above:
+  `mapfile -d '' F < <(git ls-files -z '*.md'); python3 scripts/verify-pointers.py "${F[@]}" path/to/draft.md`.
 
 ## HOSTED_SERVICE_PINS
 
