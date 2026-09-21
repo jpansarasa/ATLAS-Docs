@@ -52,6 +52,7 @@ Defects with a measurement that makes them re-checkable.
 | D | 2026-09-21 | OPEN | 7 test/selftest harnesses under `scripts/` are run by no workflow; 2 sit inside `scripts/tests/`, which CI triggers on and sweeps with a pytest that collects only `test_*.py` |
 | A | 2026-09-21 | OPEN | GIGO broken a THIRD time: the pipe-paste is cleaned at SecMaster while its SOURCE, gemini_client.py:264's prose schema, still hands the model a literal pipe enumeration; 2 live rows echo it verbatim |
 | E | 2026-09-21 | OPEN | "ALL read ListingVenueRegistry" is wider than the sweep: 4 of the 6 venue-vocabulary copies are unguarded (the FILE grep counts 4 FILES; D-19's falsifier SELECT alone holds 3 of the 6 copies, 2 of them unguarded), one already wrong on 541 rows today |
+| B | 2026-09-21 | OPEN | Deactivating a source mapping is a ONE-WAY DOOR: 14 dead keys, no writer revives one, and the register lookup reads the corpse as a hit and answers SUCCESS |
 | A | 2026-09-17 | OPEN | D-17's clear names rows read at 12:52:35Z; pre-S2 code keeps stamping until deploy, and those stay |
 | A | 2026-09-20 | OPEN | D-17 cleared the STAMP, not the DESCRIPTION: 8 foreign rows keep an EDGAR SIC line, 4 another company's |
 | A | 2026-09-20 | OPEN | BTC-USD duplicates the curated CRYPTO:BTC row; 1,101 observations to 0 (T3 items 1 and 2) |
@@ -665,6 +666,179 @@ re-run. The exposure is 8 `Up` statements and 11 `Down` statements across the fi
 migration, not a heal pending today -- which is why this is filed rather than swept. The fix per class is the helper in
 `CanonicalizeExchangeVocabularyMigrationTests` (`OperationSql` / `RunOperationsAsync`, ~8 lines). Re-check: the two
 greps above; the entry closes when all six read non-zero.
+
+**DEACTIVATING A `source_mappings` ROW IS A ONE-WAY DOOR, AND THE LOOKUP THAT WOULD CREATE A REPLACEMENT CANNOT SEE
+THE CORPSE AS DEAD, SO THE REGISTRATION ANSWERS SUCCESS AND INSERTS NOTHING.** Code facts at `97475644`;
+`atlas_secmaster` read SELECT-only at 2026-09-21T15:44Z, the round-2 re-derivations at 16:26Z; Prometheus
+instants 2026-09-21T15:40:00Z and 16:05:00Z.
+
+ONE WRITER CLEARS THE FLAG AND NONE RESTORES IT. `FredCatalogReconciliationService.cs:183` (`ReactivateAsync`) sets
+`mapping.IsActive = false` on every non-`FredCollector` mapping of an instrument it reactivates. That is the ONLY
+assignment to an EXISTING `SourceMappingEntity.IsActive` in the tree, and no raw SQL writes the column either:
+`grep -rn "UPDATE source_mappings" --include='*.cs' --include='*.sql' --include='*.py' --include='*.sh' .` returns 7
+hits, all in `20260731011758_HealFredSourceMappingFrequencyDrift.cs` and all writing `frequency`. The writer is LIVE,
+not historical -- `SecMaster/src/DependencyInjection.cs:144` registers `FredCatalogReconciliationHostedService` and
+`SecMaster/src/Endpoints/AdminEndpoints.cs:77` calls `ReconcileAsync` on demand.
+
+CORRECTION TO THE REPORT THIS ENTRY WAS RAISED FROM: `CatalogService.cs:392` DOES assign `IsActive = true` on a
+`SourceMappingEntity`, so "the only `IsActive = true` assignments are on instruments and sector overrides" is FALSE,
+and so is "neither create path sets it explicitly". It is an object initializer on a NEW entity in
+`PromoteToCollectionAsync` (`CatalogService.cs:341`), never a revival of a stored row, so the one-way-door claim
+itself stands. The two register INSERTs (`RegistrationService.cs:422` and `:484`) are the ones relying on the defaults --
+`SourceMappingEntity.cs:19` (`= true`) and `SourceMappingConfiguration.cs:52-54` (`HasDefaultValue(true)`).
+
+THE LOOKUP IS BLIND, AND ITS OWN NEIGHBOUR IS NOT.
+`InstrumentRepository.GetSourceMappingByCollectorIdAsync` (`SecMaster/src/Data/Repositories/InstrumentRepository.cs:202-207`)
+matches `m.Collector == collector && m.SourceId == sourceId` and nothing else, while `GetSourceMappingsAsync` nine
+lines above it (`:193-199`) does filter `m.IsActive`. `RegisterCoreAsync` calls the blind one first
+(`RegistrationService.cs:326`), finds the dead row, and returns
+`Success = true`, `Confidence = ExactMatch`, `Message = "Source mapping already exists"` (`:375-384`) without reaching
+either INSERT. The branch carries THREE `LogWarning` sites (`:340` instrument inactive, `:363` frequency
+corrected, `:370` blank frequency preserved) and NONE of them keys the MAPPING's state: `:340` tests the INSTRUMENT
+(`existingInactive = existingMapping.Instrument is { IsActive: false }`, `:337`) and all 14 dead rows point at ACTIVE
+instruments, while `:363`/`:370` key the request's frequency. So a re-registration of one of the 14 is silent at
+Warning ONLY when its frequency is non-blank and equals the stored value; otherwise it logs about frequency and still
+says nothing about the corpse. Second consumer of the same
+blindness: `ResolutionService.ResolveByCollectorIdAsync` (`:151-163`) would serve a dead mapping as a live
+`SourceResolution`; dormant today (`SecMaster/AGENT_README.md` DISTINCTIONS: `LookupSource` is integration-tests-only).
+
+THE COLLISION IS MASKED, NOT ABSENT. `idx_source_mappings_collector_source` is UNIQUE on `(collector, source_id)` with
+NO predicate: `SecMasterDbContextModelSnapshot.cs:892-894` carries `.IsUnique()` and no `HasFilter`, and the catalog
+agrees -- `CREATE UNIQUE INDEX idx_source_mappings_collector_source ON public.source_mappings USING btree (collector,
+source_id)`. An INSERT on a dead key WOULD raise 23505; the blind lookup short-circuits before it.
+
+POPULATION. UNIT: rows in `atlas_secmaster.public.source_mappings`. POPULATION: all 7,459 rows, 4 distinct collectors.
+READ TIME 2026-09-21T15:44Z. 14 rows are `is_active = false`; every one is `collector = SentinelCollector`; every
+`updated_at` falls inside a 399.754 ms window on 2026-06-06 (12:10:45.436621+00 to 12:10:45.836375+00), which is one
+pass of `ReactivateAsync`; every `source_id` is a FRED series id (GDP, GDPC1, HOUST, MSPUS, PCE, PI, RSXFS, TCU,
+T5YIE, CCSA, DGS10, ICSA, IPMAN, RSAFS), created 2026-01-23 to 2026-02-07.
+
+WHAT BOUNDS THE HARM TODAY. (1) NO SERIES IS DARK, in the STRONG form: for each of the 14, a live `is_primary`
+`FredCollector` mapping exists on the IDENTICAL `source_id`, count exactly 1, single distinct value across all 14
+(re-derived 2026-09-21T16:26Z; re-check (a) is that predicate, not a weaker "some live primary"). `ResolveBatch` still
+resolves all 14. (2) THE BLOCKED KEYS BELONG TO A COLLECTOR NAME NOTHING WRITES ANY MORE: both Sentinel self-seed
+sites send `Collector: "GeminiFallback"` (`SentinelCollector/src/Services/DeterministicResolver.cs:1080`,
+`SentinelCollector/src/Workers/ExtractionProcessor.cs:1770`), no `"SentinelCollector"` literal is sent as a collector
+anywhere under any `src/`, and the newest `SentinelCollector` mapping was created 2026-05-16 -- so the false-success
+path cannot currently be ENTERED for these 14.
+
+AND THE FORWARD POOL MINTS CORPSES, NOT LIVE-COLLECTOR BLOCKS -- a severity claim an earlier revision of this entry
+got wrong and which is worth keeping as the correction. 74 instruments carry both a live `FredCollector` mapping and a
+live non-Fred one, but GROUPED BY that non-Fred collector the query returns a SINGLE row: `SentinelCollector` 74, i.e.
+100% of the pool is the same dead name as bound (2), so a future reactivation over it mints another corpse and blocks
+NOBODY. The axis that would actually matter -- an instrument carrying a live `FredCollector` mapping AND a live
+mapping from a collector that is neither Fred nor Sentinel -- measures **0**, and re-check (d) is re-scoped to it.
+For scale: 147 instruments carry a live `OfrCollector` or `FinnhubCollector` mapping, and not one of them also carries
+a live `FredCollector` mapping, which is why `ReactivateAsync` cannot strip a live collector's mapping today at all.
+(All four figures: `atlas_secmaster`, read 2026-09-21T16:26Z.)
+
+WHY THIS IS FILED AND NOT FIXED -- DO NOT TAKE THE BAIT. Adding the missing `IsActive` filter at `:206` is one line and
+is NOT the fix: the lookup then MISSES the dead row, the caller falls through to the INSERT at
+`RegistrationService.cs:422`, and that INSERT collides on the non-partial unique index -- a silent false success
+traded for an un-alerted 23505.
+
+ONE GUARD STANDS BETWEEN THE TWO, AND IT COVERS ONLY A THIRD OF THE ADMISSIBLE CLASSES, SO DO NOT STATE THE TRAP
+UNCONDITIONALLY AND DO NOT READ IT AS CLOSED EITHER. `IdentityConflict.ClassFamiliesDiffer`
+(`SecMaster/src/Services/IdentityConflict.cs:48`) runs between the missed lookup and `:422`. For the 14 the existing
+rows are `asset_class = Economic` -> NON-LISTED (`ListedClasses` = Equity/ETF/Stock, `IdentityConflict.cs:25-30`), and
+`SentinelCollector` is not in `TrustedMacroCollectors` (`RegistrationService.cs:54-61`), so D-4 admits only
+`EquityShapedAssetClasses` from it -- but that set is {Equity, ETF, Index, Currency, Crypto, Commodity}
+(`RegistrationService.cs:36-44`) and FOUR of those six are NON-LISTED under D-16. So an `equity` or `etf`
+re-registration is refused before `:422` and raises no 23505, while `index`, `currency`, `crypto` or `commodity`
+agrees on family, passes D-16 and DOES reach the INSERT. 2 of 6 blocked, 4 of 6 collide. A review round asserted
+"only a Listed class is admitted, so there is no 23505 for any of the 14"; the admitted set above is why that does not
+hold, and this entry uses the derivation rather than the assertion.
+
+AND THE 23505 DOES NOT STOP AT ONE -- BUT IT STOPS INSIDE THE RPC. The retry absorber at
+`RegistrationService.cs:288-315` re-looks-up through the SAME method, so once it is filtered the absorber misses too;
+the `// Not found` arm retries the full registration, attempt 1 raises the same 23505, and the
+`when (IsUniqueViolation(ex) && attempt == 0)` filter no longer matches -- so a raw `DbUpdateException` leaves
+`RegisterWithRetryAsync`. Not even the `InvalidOperationException` at `:316`, which the loop can never reach. It does
+NOT leave the RPC: that call sits inside `RegisterAsync`'s `try` (`:128-130`), and the catch-all `catch (Exception ex)`
+at `:142` takes it -- the narrower `catch (IdentityConflictException)` at `:135` cannot, that type being its own
+direct `Exception` subclass (`IInstrumentRepository.cs:80`) and no base of `DbUpdateException` -- and it does not
+rethrow. So the one-line fix trades a silent false success for a LOUD failure, observable on three channels read at
+`97475644`: the `Registration.Register` span is set `ActivityStatusCode.Error` with the exception attached
+(`:145-146`), which is the health instrument CLAUDE.md §OBSERVABILITY names; an `Error` log line carries
+`{Collector}:{SourceId}` (`:144`), ABOVE prod's Warning floor (SecMaster D-6) and so visible without raising the
+level; and the caller receives `Success = false` with `Message = "Registration failed: DbUpdateException: ..."`
+(`:150-154`), which the collector-side Warning quotes verbatim
+(`FinnhubCollector/src/Services/SeriesManagementService.cs:162`). Nothing is unhandled and no collector sees a throw;
+UN-ALERTED, as the paragraph above says, is not unobserved.
+
+The real fix is a decision between three candidates -- REVIVE the 14 rows, DELETE them, or SCOPE the index to
+`WHERE is_active` (the shape `idx_instruments_symbol` already has) -- and this entry names all three without choosing.
+That decision is the same one already parked as "Quarantined-ticker re-acquisition is an undecided policy: Gemini cost
++ un-alerted 23505" (AWAITING-DECISION, 2026-09-16, this file), whose HAZARD paragraph already names this exact index
+as the un-alerted 23505 risk and whose question -- may a dead identity be re-acquired, and by which path -- is this
+question one level up. Decide them together or neither; scoping the index closes the 23505 half of both.
+
+NO SIGNAL DISCRIMINATES THIS DEFECT, AND THE REGISTRATION COUNTER THAT LOOKS LIKE ONE IS MERELY UNWARMED -- WHICH IS
+A DIFFERENT DEFECT WITH A ONE-LINE FIX. `SecMasterMeter.RegistrationRequests` (`SecMasterMeter.cs:392`) is incremented
+UNCONDITIONALLY on every registration at `RegistrationService.cs:108`, before the D-4 guard at `:112`, and the meter
+is exported at `SecMaster/src/Program.cs:99`. It is named with DOTS (`secmaster.registration.requests`) and reaches
+Prometheus with UNDERSCORES, which is why a grep for `secmaster_registration_requests_total` over the source finds
+nothing; grep the OTLP spelling. Measured at 2026-09-21T16:05:00Z: `count_over_time(...[120d])` and `[365d]` return
+the SAME 1,768 samples across 3 series tagged by collector (FinnhubCollector 1,484, FredCollector 248, OfrCollector
+36) -- so retention exceeds 90 d and nothing predates 120 d -- with a first sample at 2026-06-06T12:11:58Z, 73 s after
+the last deactivation write in the population above, and a LAST sample at 2026-06-12T22:50:58Z. An instant query
+returns NOTHING. The cause is that `MetricWarmupHostedService` zero-initialises `AliasEnsureOutcomes` (`:51`) and
+`RegistrationRejected` (`:57`) and does NOT list `RegistrationRequests`, so an unwarmed cumulative counter is simply
+absent until the running process registers something -- both warmed counters read 0 at that instant, which is the same
+fact made visible. THE FIX IS TO ADD IT TO THAT SERVICE, in the pattern its own docstring (`:9-18`) describes -- but
+it is not a free line: `collector` is this counter's ONLY tag, and the same file's docstring (`:20-23`) refuses to
+fabricate collector values for the rejection counter because the requesting caller is not a bounded set. Seeding this
+one therefore needs a declared collector roster or a tagless seed, and that choice is the work.
+
+WHAT SURVIVES THAT CORRECTION IS THE POINT OF THIS PARAGRAPH: even warmed, `RegistrationRequests` increments
+IDENTICALLY for a registration that inserts and one that early-returns on a corpse, so it cannot report this defect at
+any value. The only counter on the early-return branch at all is `SourceMappingFrequencyCorrected`
+(`SecMasterMeter.cs:425`), which fires only when the frequency actually CHANGED, and which has zero samples over
+`[365d]` -- unwarmed AND never incremented. The log line on the branch is `Information`
+(`RegistrationService.cs:330`), below prod's Warning floor (SecMaster D-6). And per-mapping attribution is impossible
+ON A METRIC by design: `SecMasterMeter.cs:423` says "Never tag source_id (unbounded)" and CLAUDE.md §OBSERVABILITY
+caps a metric tag at under 100 distinct values, while `source_id` has 7,301 (read 2026-09-21T15:44Z). It survives only
+on the LOG lines, which is why it does not close this gap: the `Information` of this branch, below the floor, and the
+`Error` of the post-filter failure above.
+
+A CONTROL MUST BE AIMED AT THE ACT UNDER CLAIM, AND THIS ENTRY IS ITS OWN WORKED EXAMPLE. Round 1 read
+"172,772 samples on `rejected` and `alias_ensure`, 0 on `registration_requests`" as evidence that the third counter
+was never wired. It is not: those 172,772 are a PER-SERIES sample count, and the two counters carrying them are
+zero-initialised at process start while the third is not -- a warmed counter compared against an unwarmed one, with
+the difference read as absence of instrumentation. The same round grepped the Prometheus spelling of a dotted
+instrument name and read the empty result as "zero emitter anywhere in the repo". Both failed toward the reassuring
+answer. The aimed control is the one above: query the metric over a window longer than its last activity and look for
+SAMPLES, and grep the source for the spelling the SOURCE uses.
+
+RE-CHECK, four parts; each can CONTRADICT the claim rather than confirm it by construction.
+(a) the population and its bound. The sub-select carries the FULL predicate the bound claims -- same collector, same
+`source_id` -- because "some live primary" is a weaker statement than the one this entry makes and would stay true
+while the bound had already failed --
+`sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_secmaster -c "SELECT d.collector, d.source_id, d.updated_at, i.is_active AS instr_active, (SELECT count(*) FROM source_mappings a WHERE a.instrument_id = d.instrument_id AND a.is_active AND a.is_primary AND a.collector = 'FredCollector' AND a.source_id = d.source_id) AS live_fred_primary_same_id FROM source_mappings d JOIN instruments i ON i.id = d.instrument_id WHERE NOT d.is_active ORDER BY d.updated_at;"`
+STILL BROKEN, HARM BOUNDED = 14 rows, every `updated_at` on 2026-06-06 and every `live_fred_primary_same_id` = 1
+(today, single distinct value). STILL BROKEN, HARM GROWING = any row at 0 -- that series is now dark AND cannot be
+re-registered -- or any `updated_at` after 2026-06-06, meaning a second deactivation happened or a writer now touches
+the flag; re-derive the writer set before reusing this entry's. FIXED OR MOOT = 0 rows.
+(b) the blindness itself. Anchor on the METHOD NAME, never on the signature text: an anchor like
+`(string collector` prints nothing when a parameter is renamed, at rc 1, which maps to NO stated outcome and is the
+fail-toward-success shape this entry is about --
+`grep -n -A5 'GetSourceMappingByCollectorIdAsync' SecMaster/src/Data/Repositories/InstrumentRepository.cs`
+STILL BLIND = the `FirstOrDefaultAsync` predicate names only `m.Collector` and `m.SourceId`. CHANGED = an `IsActive`
+term appears -- then run (c) in the same breath, because the filter ALONE converts this defect into a 23505 and, per
+the absorber above, into a `DbUpdateException` the RPC's catch-all returns as a failed response on an Error span.
+EMPTY = the method was renamed or deleted; this entry's code half is stale and must be re-derived before any of it
+is quoted.
+(c) whether the collision is still masked --
+`sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_secmaster -c "SELECT indexdef FROM pg_indexes WHERE indexname='idx_source_mappings_collector_source';"`
+MASKED = no `WHERE` clause (today). SCOPED = `WHERE (is_active = true)`, which is candidate fix 3 and closes the
+23505 half of the AWAITING-DECISION entry too.
+(d) the forward exposure, re-scoped to the axis that would actually matter. The earlier form filtered
+`collector <> 'FredCollector'`, which cannot tell a corpse-mint from a live-collector block -- 100% of what it counts
+is `SentinelCollector`. This one excludes that dead name, so a non-zero result IS a live collector losing a key --
+`sudo nerdctl exec timescaledb psql -U ai_inference -d atlas_secmaster -c "SELECT count(*) FROM (SELECT m.instrument_id FROM source_mappings m WHERE m.is_active GROUP BY 1 HAVING count(*) FILTER (WHERE m.collector='FredCollector') > 0 AND count(*) FILTER (WHERE m.collector NOT IN ('FredCollector','SentinelCollector')) > 0) x;"`
+0 = no instrument pairs a live FredCollector mapping with a live third-party one, so a reactivation cannot strip a
+live collector (today). >0 = that many instruments are one quarantine-then-reactivation away from a permanently-dead
+key for a collector that is still writing; fix before the next pass runs.
 
 **D-17's `ClearOutOfScopeUsAuthorityStamps` names its rows by id as read at 2026-09-17T12:52:35Z, and production keeps
 writing out-of-scope stamps until that migration deploys; a row written in between stays.** Measured 2026-09-17,

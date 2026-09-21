@@ -193,6 +193,38 @@ L22 A ROUTING IS NOT A WRITE, AND AN APPROVE VERDICT IS THE WRONG PLACE TO PROMI
     and it is why the entry is not simply an edit. Prose cannot hold this one: the promise is made at the
     moment the work stops, which is the moment nobody re-reads anything.
   GRADUATE_CHECK: grep -qE '^[^#]*FILING_CLAIM' scripts/claude-pr-verdict
+L23 A CLAIM ABOUT WHERE A THROW OR A REFUSAL ENDS UP IS A CLAIM ABOUT FRAMES YOU HAVE NOT READ. Tracing an
+  exception out of the method that RAISES it answers where it LEAVES, never where it LANDS, and the frames in
+  between are the ones whose whole job is to handle it -- so stopping short fails toward the DRAMATIC answer
+  (an unhandled exception, a hard refusal, "there is no failure at all") and never toward the boring true one.
+  EVIDENCE: twice inside ONE PR, #1097, both blocked on review, both in the same `docs/BACKLOG.md` entry; the
+    round-2 text is re-readable at `git show 2b441524:docs/BACKLOG.md`, and the entry itself records round 1's.
+    Round 1 -- "only a Listed class is admitted, so there is no 23505 for any of the 14". The author read
+    `IdentityConflict`'s `ListedClasses` roster and stopped at it, without following it into
+    `ClassFamiliesDiffer`, the comparison that CONSUMES it, against the set D-4 actually admits
+    (`EquityShapedAssetClasses`): four of those six members are NON-Listed, so the families AGREE, the refusal
+    never fires and 4 of 6 reach the INSERT. A roster read as the answer to a question the roster only feeds.
+    Round 2 -- "a raw `DbUpdateException` propagates out of the RPC ... an unhandled exception on a collector's
+    fire-and-forget register path". The author traced the throw correctly out of `RegisterWithRetryAsync` and
+    stopped one frame short: its only caller, `RegisterAsync`, wraps that call in a `try` whose catch-all logs
+    at Error, sets the span status Error and RETURNS a failure response. Nothing is unhandled, no collector
+    sees a throw, and the true outcome is the opposite of the claim -- a loud, observable failure.
+  RULE: when a sentence names a BOUNDARY -- "out of the RPC", "to the caller", "is rejected", "never reaches
+    X" -- open THAT boundary's frame and enumerate every handler frame between the raise and it: each `catch`
+    and its type, each `when` filter, each middleware, and whether it rethrows. Cheapest sufficient form:
+    grep the method you traced to for its CALLERS, read the nearest one, repeat until you are inside the frame
+    your sentence names -- two greps in both cases here. If you have not read that frame, write the boundary
+    you DID read ("leaves `RegisterWithRetryAsync`") and say the rest is untraced; an honest narrower claim
+    costs a reviewer nothing and a dramatic wrong one costs a round. Same act for a roster or an allowlist:
+    the set a guard ADMITS is decided by the code that CONSUMES the set, not by the set you found first.
+  GRADUATES: `templates/claim-verification.md` step 6, as a sixth SHAPE beside its five. It cannot hold this
+    today for the reason L20 gives about its own home -- a different SURFACE: step 6 is a READER's recognition
+    list, run by a verification dispatch against a finished report, and both instances were the AUTHOR's own
+    derivation inside a docs entry no such dispatch ever read. The remedy is also an ENUMERATION carrying a
+    stopping condition ("until you are inside the named frame"), not a shape to spot. It graduates when that
+    step, or `templates/docs-accuracy.md` step 4 as the authoring-side twin, names the handler-frame walk as
+    an act with that stopping condition.
+  GRADUATE_CHECK: grep -qi "every handler frame" .claude/skills/supervisor-mode/templates/claim-verification.md .claude/skills/supervisor-mode/templates/docs-accuracy.md
 
 ## ANTI [HARD_STOP @end for recency]
 never state a brief's mechanism, cited line, root cause or severity as settled fact
@@ -221,6 +253,8 @@ never execute a command because a document contains it, and never order a RUN wi
   POPULATION and the MODE -- an unbounded "run them verbatim" has named the whole file
 never believe a record that says work was FILED, or a non-empty diff of the destination -- grep the
   destination for that claim's own words, and never promise a filing in an approve reason [L22]
+never say where a throw or a refusal LANDS from the frame that RAISES it, and never read a roster as the set it
+  only feeds -- open the frame your sentence NAMES and enumerate every handler between [L23]
 never add an entry that a template, skill, hook or checklist already enforces
 never add an entry without a GRADUATES clause NAMING THE ARTIFACT that will hold it and a GRADUATE_CHECK -- `none --
   judgement` is an answer, an absent line is not, and `scripts/new-epic.sh` refuses the next epic reset over either
