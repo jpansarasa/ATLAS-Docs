@@ -68,7 +68,8 @@ via `deploy.resources.reservations.devices`, image digest-pinned.
 INFERENCE_TOPOLOGY [canonical home for what is INSTALLED — `CLAUDE.md` §INFERENCE keeps the rules and
 points here; what is PERMITTED is a different question, answered in `LlmBenchmark/MEASUREMENT_SPACE.md`]
 
-All CPU inference runs **llama.cpp** (`ghcr.io/ggml-org/llama.cpp:server`); the GPU runs
+All CPU inference runs **llama.cpp** (one digest-pinned server build shared by all three runners,
+`llama_cpp_image` in `deployment/ansible/group_vars/all.yml`); the GPU runs
 **vLLM**. No ollama container or engine exists. GGUF blobs are read-only bind-mounts from the
 frozen ollama-format content store — digest-pinned; re-provisioning the store without updating
 digests would silently serve stale weights (deploy `/health`+`/props` checks are the guard).
@@ -255,7 +256,9 @@ See `deployment/README.md` for the full reference. The essentials:
 - **Restart semantics**: FULL (default) restarts the whole stack when the template or an image
   changed — and resurrects manually-stopped services (notably alert-service). SCOPED
   (`-e "scoped_restart=true scoped_services='…'"`) recreates only the named main-compose
-  services. A freshness gate asserts every running service's image == local `:latest`.
+  services. The play ENDS with a freshness gate: it fails the deploy when a running compose
+  container does not run the rootfs its compose `image:` ref names now, or when it cannot tell
+  (rootfs only -- a config-only rebuild reads fresh; `deployment/ansible/scripts/freshness-gate.sh`).
 - **Hot-reload tags**: `dashboards`/`alerting` (Grafana auto-provisions, Prometheus SIGHUP),
   `patterns` (ThresholdEngine hot-reload API), `sentinel-prompts`/`cpu-cod-prompts` (rsync repo
   -> `/opt/ai-inference/prompts/`, overwrites host edits; sentinel watches the mount — no

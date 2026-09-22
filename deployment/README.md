@@ -161,9 +161,13 @@ unreferenced prompt is DELETED, not parked.
 | Tag | Scope |
 |-----|-------|
 | `vllm-server` | Recreate the `vllm-server` compose service (`compose rm -sf` + `up -d`), wait for `/health`, then a real 1-token completion smoke. Intentionally NOT `always` (see TAG_GATING_AUDIT.md). |
-| `llama-server` (alias: `dsl-poc`) | Pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-server`, wait on `/health`, fetch `/props` for model-identity check |
-| `llama-cpu-rag` (alias: `secmaster`) | Remove retired `ollama-cpu-gen` if present, pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-cpu-rag`, wait on `/health`, fetch `/props` for model-identity check |
-| `llama-cpu-embed` (alias: `models`) | Verify bge-m3 GGUF blob exists, remove retired `ollama-cpu-embed` if present, pull `ghcr.io/ggml-org/llama.cpp:server`, `compose up -d llama-cpu-embed`, wait on `/health`, fetch `/props`, 1024-dim `/v1/embeddings` smoke test |
+| `llama-server` (alias: `dsl-poc`) | `compose up -d llama-server`, wait on `/health`, fetch `/props` for model-identity check |
+| `llama-cpu-rag` (alias: `secmaster`) | Remove retired `ollama-cpu-gen` if present, `compose up -d llama-cpu-rag`, wait on `/health`, fetch `/props` for model-identity check |
+| `llama-cpu-embed` (alias: `models`) | Verify bge-m3 GGUF blob exists, remove retired `ollama-cpu-embed` if present, `compose up -d llama-cpu-embed`, wait on `/health`, fetch `/props`, 1024-dim `/v1/embeddings` smoke test |
+
+No runner block pulls. The three llama.cpp runners share ONE digest pin, `llama_cpp_image`, pulled (only when
+absent) with `vllm_image` by the `[always]` task before any restart path; re-pin it to upgrade. The floating `:server` tag
+each block used to pull is how a secmaster run stranded llama-server on 2026-09-20.
 
 ### Maintenance / supervisor / one-off
 

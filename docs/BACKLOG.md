@@ -42,10 +42,12 @@ Defects with a measurement that makes them re-checkable.
 | D | 2026-09-20 | OPEN | Test 5's sibling double-trap sweep word-splits its file list; a spaced or globbed path is silently skipped |
 | C | 2026-09-20 | OPEN | Test 6's three population counts are FLOORS, not rosters; tight today, and the first compose file added makes a narrowed glob silent |
 | A | 2026-09-21 | OPEN | D-19 passes 16 exchange spellings / 339 active rows through; 2 (FRED 175, Crypto 4) are deliberate non-venues, 14 / 160 await a reviewer's venue call |
+| B | 2026-09-22 | OPEN | llama-server runs a superseded llama.cpp rootfs, so the freshness gate refuses EVERY deploy until a one-time scoped recreate runs: an engine update held for a human decision |
 | B | 2026-09-21 | OPEN | D-19 changed the embedding's venue prose without a template bump: 7,165 active rows keep "listed on CT" until touched |
 | A | 2026-09-21 | OPEN | 6 `.SG` rows carry a wrong-venue FIGI, 5 of them ANOTHER COMPANY's; the suffix is now null (bleeding stopped) but no row is repaired, and 194 `.SG` + 95 `.MC` + 87 `.SI` rows have no venue at all |
 | B | 2026-09-21 | OPEN | 5 of the 6 SecMaster migration test classes drive SQL CONSTANTS, never `Up`/`Down`: emptying `Up()` leaves each green |
 | B | 2026-09-21 | OPEN | D-19's Down CAS is CODE-granular, not WRITE-granular: 20 of 42 map entries resolve to US (93.3% of the population), so a later write of a DIFFERENT US spelling is invisible to it and to SkippedRestoresSql |
+| D | 2026-09-22 | OPEN | Four bare `nerdctl inspect` sites outside the freshness gate get whichever object resolves first; one decides a `stop && rm` of vllm-server |
 | D | 2026-09-21 | OPEN | Frozen attach-candidate lists hold 2,457 records (742 instruments) whose exchange the D-19 heal rewrites and re-embeds; the only guard is a 24 h clock over two FIXED timestamps, comparing no content |
 | D | 2026-09-21 | OPEN | D-19 falsifier fixtures span 4 of 13 venue tokens, 1 of 14 `idx`, 1 of 2 ticker shapes: the `idx` mutant crosses both bars (153 of 2,551, 12:30:11Z) at `controls_passed 11 of 11` |
 | D | 2026-09-21 | OPEN | The D-19 falsifier SELECT spells the US venue vocabulary THREE times and guards ONE: 6 of 20 registry US spellings classify FALSE under Title Case (0 as stored, which cannot expose it), the direction the entry forbids (exposure 0 today) |
@@ -170,6 +172,62 @@ Defects with a measurement that makes them re-checkable.
 | E | 2026-09-16 | OPEN | Two SecMaster comments still call a Finnhub 403 transient (permanent, arrives as NULL) |
 | E | 2026-09-16 | OPEN | SentinelCollector card is 5.3x over its D-entry gate and its line count hides it |
 | E | 2026-09-16 | AWAITING-DECISION | Six deployed directories have no card and sit outside the SERVICES roster (HARD_STOP gap) |
+
+**llama-server runs a superseded llama.cpp rootfs, so the freshness gate refuses EVERY deploy until it is
+recreated.** CAUSE, fixed in the PR that filed this: the three llama.cpp runners shared the floating
+`ghcr.io/ggml-org/llama.cpp:server` tag, and each runner's deploy.yml block pulled it and recreated only its own
+container. MEASURED 2026-09-22, read-only (`nerdctl image inspect`, `nerdctl container inspect`, `ctr snapshots
+info`): the 2026-09-20 `--tags secmaster` run recreated secmaster (14:30:11Z), llama-cpu-rag (14:30:30Z) and
+llama-cpu-embed (14:30:43Z). The rag block's pull moved the tag to build b11058 (image config created
+2026-09-20T04:42:50Z) before 14:30:30Z, when llama-cpu-rag was created on the new rootfs; the tag's UpdatedAt,
+14:30:42Z, is the embed block's no-op pull. Both runners run ChainID `sha256:a8da01d790dc…`. llama-server was
+created 2026-09-16T11:00:37Z and runs `sha256:ff072f88e23c…`.
+FIXED IN THAT PR: `llama_cpp_image` in `deployment/ansible/group_vars/all.yml` digest-pins b11058 (index
+`sha256:7149802e…`, the build both siblings run), no runner block pulls, and the gate is the play's last task, so
+a run that moves an image is refused by THAT run.
+STILL OPEN: the gate is `[always]` and names `llama-server: STALE` on every deploy until llama-server is
+recreated. ONE-TIME REMEDY, checked with `--list-tasks` and NOT run, because recreating llama-server moves its
+engine forward to b11058, an inference-engine update held for a human decision:
+`ansible-playbook playbooks/deploy.yml --tags llama-server --skip-tags build,dsl-poc -e "scoped_restart=true
+scoped_services=llama-server"`. The scoped restart recreates only llama-server, onto the build its siblings run,
+and nothing in that run pulls a moving tag, so the next gate run is silent. It holds before and after the PR merges:
+before, the local `:server` tag IS b11058; after, the `[always]` pre-pull registers the pinned digest first (ghcr
+served `sha256:7149802e…` at 2026-09-22T05:41Z).
+The pin is not the newest build. At 2026-09-22T05:41Z upstream `:server` was b11065 (index `sha256:9dc0a0f4…`,
+config 2026-09-21T04:45:37Z, 3 of 5 diffIDs differ from b11058). ENGINE_POLICY
+(`LlmBenchmark/MEASUREMENT_SPACE.md`) makes the latest release the default; that bump is a one-variable re-pin,
+and a full run applies it to all three runners.
+RE-CHECK: `sudo bash deployment/ansible/scripts/freshness-gate.sh /opt/ai-inference/compose.yaml` names
+`llama-server: STALE`. Closed when it passes.
+
+**Four bare `nerdctl inspect` sites outside the freshness gate each get whichever object resolves first.** On
+nerdctl 1.7.7 a bare `inspect <name>` returns the IMAGE when an image of that name exists, and the container only
+otherwise. MEASURED 2026-09-22 over the 31 compose services: 23 resolve to the image, 8 to the container. Found by
+`grep -rnI inspect deployment scripts .claude`, then each hit read. The freshness gate was the fifth site and is
+fixed. Not fixed here, because none is on the gate's path:
+  - `deployment/ansible/playbooks/deploy.yml` task "Remove legacy standalone vllm-server container": `nerdctl
+    inspect vllm-server` means the CONTAINER, and resolves to it only because no image is named `vllm-server`
+    (the image is `vllm/vllm-openai@sha256:…`). If one ever were, the image would carry no compose label, and
+    the else branch runs `nerdctl stop vllm-server && nerdctl rm vllm-server` on every unscoped deploy. One-word
+    fix: `nerdctl container inspect`.
+  - `deployment/artifacts/compose.yaml.j2` (the `SecMaster__TimeoutSeconds` comment) says the value is "visible
+    in `nerdctl inspect sentinel-collector`". That resolves to the IMAGE, which lacks it, and so does
+    `nerdctl container inspect`, whose Config holds only AttachStdin, Hostname and Labels. Only `nerdctl
+    container inspect --mode=native` `.Spec.process.env` shows `SecMaster__TimeoutSeconds=180`. The comment
+    renders into `/opt/ai-inference/compose.yaml`, so correcting it changes the rendered file. Land it with a
+    deploy that restarts the stack anyway.
+  - `deployment/artifacts/monitoring/alerts/sentinel.yml` (`autofix_hint` of the candidate-surface-filter alert)
+    says to confirm "the deployed sentinel-collector image is the intended build (nerdctl inspect .Created)".
+    Bare, that is the `:latest` image's BUILD time, and it says nothing about what the running container runs
+    (CLAUDE.md VERIFY_TRAP). The answer is `deployment/ansible/scripts/freshness-gate.sh`.
+  - `deployment/artifacts/scripts/autofix.sh` allows `Bash(sudo nerdctl inspect:*)`, pinned by
+    `deployment/tests/autofix/run.sh`. That prefix admits the bare form and `--type container|image`, and NOT
+    `nerdctl container inspect` or `nerdctl image inspect`, the spellings CLAUDE.md prescribes.
+  - No action: `deployment/artifacts/vllm-rollback.md` quotes a 2026-06-11 `sudo nerdctl inspect vllm-server`,
+    which resolved the container then and does now. `.claude/skills/supervisor-mode/templates/deploy.md` already
+    uses `--type image` and warns against the bare form.
+RE-CHECK: re-run the grep. For each name, `sudo nerdctl inspect <name> | jq '.[0] | has("RepoTags")'` is `true`
+exactly when it resolves to an image.
 
 **The parallel-compile gap check decides "starts a container" on `nerdctl` alone, so a docker-first verification
 script would read `container-less` and be exempted rather than audited.** The predicate is
@@ -2201,7 +2259,7 @@ fail. That is exposure, not an observed loss. This is the SECOND occurrence: the
 recreated the same two containers (PRACTICE NOTES, "Scoped-deploy collateral"). That `compose up -d` recreates an
 UNCHANGED service does not rest on those two runs: the playbook records it for nerdctl 1.7.7, the version running here,
 at `deployment/ansible/playbooks/deploy.yml:1217-1218` ("recreates unconditionally here") and
-`deployment/ansible/playbooks/deploy.yml:1509-1510` ("recreates every transitive dep unconditionally (no config-hash
+`deployment/ansible/playbooks/deploy.yml:1513-1514` ("recreates every transitive dep unconditionally (no config-hash
 skip)", the cascade incident). The two runs agree with it. Class B, not D: the harm is a shared dependency restarted
 without notice, with its failures landing in other services' traces.
 Re-check: `grep -nE 'tags: \[([^]]*, )?secmaster(,|\])' deployment/ansible/playbooks/deploy.yml` lists both
@@ -4594,7 +4652,7 @@ both reproductions while rc stays 0, which is the `judge a sweep by its COUNT or
 `CLAUDE.md` §TOOL_UPKEEP, now measured on a second tool.
 
 **A third blind spot is already recorded and is the reason this one matters**: bare label navigation.
-`deployment/ansible/group_vars/all.yml:191`, `deployment/artifacts/compose.yaml.j2:254`,
+`deployment/ansible/group_vars/all.yml:205`, `deployment/artifacts/compose.yaml.j2:257`,
 `LlmBenchmark/scripts/run_model.py:78`, `SentinelCollector/AGENT_README.md` D-29 and
 `SentinelCollector/tests/SentinelCollector.UnitTests/Configuration/ExtractionModelCoordinateTests.cs:390`
 all navigate to `CLAUDE.md TRACK LATEST, ROLL BACK ON FAULT` with NO section sign, from files that are not
@@ -7388,7 +7446,7 @@ explains the difference. Both `llama-cpu-*` blocks carry the `secmaster` tag, an
 llama-cpu-embed"; it recurred 2026-09-16). What still holds: before a scoped deploy, grep `deploy.yml` for blocks
 tagged with that tag; after it, list what actually restarted and record it WITH the run. That `compose up -d`
 recreates even an unchanged service is recorded in the playbook for nerdctl 1.7.7
-(`deployment/ansible/playbooks/deploy.yml:1217-1218` and `deployment/ansible/playbooks/deploy.yml:1509-1510`, the
+(`deployment/ansible/playbooks/deploy.yml:1217-1218` and `deployment/ansible/playbooks/deploy.yml:1513-1514`, the
 cascade incident), and both runs agree with it.
 Re-check: `sudo nerdctl container inspect <svc> --format '{{.Created}}'` per service — `container` is
 load-bearing (CLAUDE.md VERIFY_TRAP: bare `inspect` resolves the IMAGE and hands back the BUILD time).

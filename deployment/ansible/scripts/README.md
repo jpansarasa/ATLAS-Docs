@@ -6,6 +6,7 @@ Shell helpers invoked from Ansible playbooks. These are NOT meant for direct day
 
 | Script | Invoked from | Purpose |
 |---|---|---|
+| `freshness-gate.sh` | `deploy.yml` (`[always]`, at the END of the play: its known-bad control, the gate, then a report task that prints its output) | Refuses the deploy when a running compose container does not run the rootfs its compose image ref resolves to now, or when it cannot tell. Refusals are named STALE or UNVERIFIABLE; not-running services are skipped and listed. Read-only, so it is safe to run live: `sudo bash deployment/ansible/scripts/freshness-gate.sh /opt/ai-inference/compose.yaml`. Controls: `deployment/tests/freshness-gate/run.sh`. |
 | `validate-rendered-template.sh` | `test-templating.yml` | Validates a rendered `compose.yaml` for syntactic correctness + minimum required keys before the deploy step swaps it in. Usage: `validate-rendered-template.sh <path-to-rendered-yaml>`. Exits non-zero on validation failure so the playbook halts. |
 | `zfs-tune-snapshots.sh` | manual (one-shot host setup) | Tunes ZFS auto-snapshot retention on ATLAS datasets to a 49-snapshot policy (frequent/hourly/daily/weekly/monthly). Read the header for the exact policy before running. Idempotent — safe to re-run. |
 

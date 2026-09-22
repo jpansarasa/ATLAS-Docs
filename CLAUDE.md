@@ -116,9 +116,12 @@ grafana alerting: `--tags alerting --skip-tags always` THEN `sudo nerdctl restar
   startup-loaded AND grafana lives in the separate OTEL stack, so no ansible task restarts it.
   Dashboards differ — they auto-reload (updateIntervalSeconds: 30), no restart.
 inventory: deployment/ansible/inventory/hosts.yml # ansible.cfg default; run from deployment/ansible/
-VERIFY_TRAP: `nerdctl inspect <svc>` RETURNS THE IMAGE, NOT THE CONTAINER # every service shares a name between the
-  two and bare inspect resolves the image first, yielding a plausible .Created that is the BUILD time -> a deploy
-  "verified" that way compared the fresh image to itself. Use `nerdctl container inspect`.
+VERIFY_TRAP: `nerdctl inspect <svc>` RETURNS THE IMAGE, NOT THE CONTAINER # 23 of 31 services share a name between
+  the two (2026-09-22) and bare inspect resolves the image first, yielding a plausible .Created that is the BUILD
+  time -> a deploy "verified" that way compared the fresh image to itself. Use `nerdctl container inspect`.
+  WHICH image a container runs is on NEITHER object (no .ImageID on nerdctl 1.7.7) -> run the read-only freshness
+  gate: `sudo bash deployment/ansible/scripts/freshness-gate.sh /opt/ai-inference/compose.yaml`
+  # it compares the ROOTFS only: a rebuild that changed only config (ENV/CMD/LABEL) reads FRESH
 AUTOFIX [runner ARMED, deployer DISARMED — check `systemctl is-enabled`, never assume]: autofix-runner NEVER
   deploys (it opens a PR and STOPS) and it looks idle when it is not; autofix-watcher is the ONLY deploying
   half, its timer is `disabled`, and deploy.yml re-enforces that on every --tags autofix|alert-service run, so
