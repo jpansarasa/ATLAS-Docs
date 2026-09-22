@@ -108,6 +108,10 @@ Defects with a measurement that makes them re-checkable.
 | B | 2026-09-22 | OPEN | D-36 tier 2 reads an ADR and its home listing as different securities: the ONE consensus false clear of 86, one split clear, and AMKBY/Maersk A (round 3) |
 | B | 2026-09-22 | OPEN | D-36's two share alerts take thresholds from a 40-row-per-window replay; re-derive from 7d of live counters |
 | C | 2026-09-22 | OPEN | D-36 cannot see 236 of 22,650 weekly instrument-bearing v2 rows (no value), nor SecMaster dedup's subject_entity match on a cleared row |
+| C | 2026-09-22 | OPEN | A post-model TRANSIENT failure re-runs the GPU extraction up to MaxRetries times, then parks the article: the retry branch never asks D-27's spend ledger (20 extra extractions, 4 parked on 2026-09-22) |
+| C | 2026-09-22 | OPEN | A stalled Gemini resolver now holds an extraction worker 30s per eligible observation: p90 article 10 calls (5 min), max >= 100; no per-article budget |
+| B | 2026-09-22 | OPEN | The OCE filter that failed the Gemini leg still sits on 4 fail-soft sites unreachable in the deployed configuration, each one config value from live |
+| C | 2026-09-22 | OPEN | A SecMaster promote timeout pins the ResolutionWorker to its oldest row (attempts cap bypassed), and a timed-out v2 row is an untagged NoResolution; neither live (0 calls >= 60s in 7d) |
 | B | 2026-09-17 | AWAITING-DECISION | Test databases on the shared timescaledb: 9 fixed-name orphans, per-worktree leaks on kill, each holds a TimescaleDB worker slot |
 | B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
 | B | 2026-09-17 | OPEN | backfill_unresolved_rate_high never detected a fault: constant on main, crossed by growth on D-17 |
@@ -1271,7 +1275,11 @@ ordering after the MeterProvider subscribes (the D-34 priming has the same gap, 
 of a deploy, before extraction has run: `count(sentinel_cove_check_total)` must be 20 (12 tier-1 series + D-36's 8
 `check="attachment"` ones, whose EXISTENCE SentinelCoveAttachmentCheckSilent requires) and
 `count(sentinel_resolution_worker_processed_total{outcome=~"resolved|cove_rejected"})` 2; an empty result means the
-priming is landing too early or is gone.
+priming is landing too early or is gone. The same gap covers `SentinelMeter.PrimeGeminiResolverTimeoutSeries` [2026-09-22]:
+`GeminiResolverTimeoutFailSoftTests` pins its content, and nothing pins its Program.cs line. SentinelGeminiResolverTimingOut
+reads it with `increase()`, so after a deploy `count(sentinel_gemini_resolver_timeouts_total)` must be 1. So does
+`SentinelMeter.PrimeSecMasterTimeoutSeries` [2026-09-22]: `SecMasterClientTests` pins its content, SentinelSecMasterTimingOut
+reads it with `increase()`, and after a deploy `count(sentinel_secmaster_timeouts_total)` must be 1.
 
 **D-35'S VALUE LEG PASSES A SUBUNIT PRICE STORED IN THE MAIN UNIT: "515p" AS 515 GBP.** [2026-09-22] The value check
 admits the raw's own digits whatever the unit, and derives cents, pence and paise as the main unit; so a raw naming a
@@ -1517,6 +1525,90 @@ SELECT-only); 0 lacked a quote and 1 was provenance-keyed (exempt, D-32). (2) Se
 alias. Re-check (2) after deploy: `SELECT count(*) FROM sentinel.extracted_observations WHERE resolution_method =
 'cove_about_other' AND subject_entity IS NOT NULL` over 7 days, then sample whether those subjects are the refuted
 instrument's aliases.
+
+**A POST-MODEL TRANSIENT FAILURE RE-RUNS THE GPU EXTRACTION UP TO MaxRetries TIMES, THEN PARKS THE ARTICLE.**
+[2026-09-22] In `ExtractionProcessor.ProcessSingleArticleAsync`'s article catch only `DependencyOutage.IsCircuitOpen`
+reaches D-27's `ArticleExtractionSpend` gate. Every other `isTransient` failure (TimeoutException, a
+TaskCanceledException over a TimeoutException, an HttpRequestException with no status, 5xx, 429 or 408) is requeued
+with `RetryCount++` whatever the article has already spent, and at `MaxRetries` (3) it writes `ProcessingError` with
+`ProcessedAt` null. D-27 verbatim: INTENT "A dependency being ABSENT is no verdict on the ARTICLE: such a failure takes
+neither the permanent branch nor a retry-budget slot"; PRECOND "Requeue is free ONLY pre-spend". Its DETAIL scopes
+"which failures are outages" to `IsCircuitOpen`, and D-32's comment at `DeterministicResolver.ResolveAsync` accepts the
+transient re-extraction for SecMaster transport failures at "~11 documents a month". So this contradicts D-27's INTENT and
+PRECOND while staying inside the scope its GUARD chose. Widening the gate is a D-27 amendment for a human, not an edit.
+MEASURED 2026-09-22 (Tempo search by `span.raw_content_id`, SELECT-only): 11 articles hit the gemini-resolver client's
+30s timeout after the model call. Every failed attempt carries exactly one `/v1/completions` HTTP span before the
+timeout ended it, so that is 20 extra GPU extractions: 4 articles x 3 retries, parked with "The request was canceled due to
+the configured HttpClient.Timeout of 30 seconds elapsing." (178397, 178412, 178414, 178415), plus 7 articles that
+completed after 1-2 retries. Over the 30 days of `sentinel.raw_content` collected 2026-08-23..09-22T14:00Z (25,642 rows),
+13 rows retried (23 retry attempts), 9 then completed and 4 parked, and all 4 parked are that incident's. The population
+cannot contain a row reset by `POST /admin/reprocess`, which zeroes `retry_count`. The fix that filed this entry makes
+the Gemini timeout and four SecMaster fail-soft timeouts a miss. Two post-spend TRANSIENT sources are still known:
+`DslParserClient` rethrows its own TaskCanceledException from `/parse_json` and `/verify` (both called after the vLLM
+call), and D-32's Rule 0 rethrows SecMaster transport failures. RECOVERY for the 4 parked rows: `POST /admin/reprocess`
+with their ids once the fix is deployed. RE-CHECK: `SELECT count(*) FILTER (WHERE retry_count > 0), count(*) FILTER
+(WHERE retry_count >= 3 AND processed_at IS NULL AND processing_error IS NOT NULL) FROM sentinel.raw_content WHERE
+collected_at > now() - interval '30 days'`.
+
+**A STALLED GEMINI RESOLVER NOW HOLDS AN EXTRACTION WORKER 30s PER ELIGIBLE OBSERVATION.** [2026-09-22] This is the
+cost of making a resolver timeout a miss. Before, the first timeout ended the attempt (and bought a GPU re-extraction,
+entry above). Now `V2ExtractionPipeline` resolves an article's observations one after another, and each Rule 2.5 call
+waits out the client's 30s. The client has no breaker, by design (`DependencyInjection.cs`: "the MCP itself rate-limits
++ caches"). MEASURED from Tempo: of the 2,478 article attempts with at least one `GeminiResolver.Resolve` span between
+2026-09-15T13:13Z and 09-22T12:48Z, the calls per attempt were p50 3, p90 10 and p99 28, with a max of at least 100 (the
+search API returns at most 100 spans per span set, and one trace hit that cap). During a stall that holds a worker for
+1.5, 5 or 14 minutes, and 50+ at the max. It is visible to SentinelGeminiResolverTimingOut and to
+`sentinel_extraction_queue_depth` and `sentinel_extraction_frontier_lag_seconds`. Nothing bounds it. The options, none
+chosen: a per-article Gemini time budget, or a client breaker opening on consecutive timeouts. A breaker is safe here
+because the client's catch absorbs a BrokenCircuitException as a miss, so D-27's circuit-open branch never sees it.
+RE-CHECK: count GeminiResolver.Resolve spans per trace over Tempo's 7 days.
+
+**THE OCE FILTER THAT FAILED THE GEMINI LEG STILL SITS ON 4 FAIL-SOFT SITES THAT ARE UNREACHABLE IN THE DEPLOYED
+CONFIGURATION.** [2026-09-22] Each of these catches is fail-soft by intent, but `when (ex is not OperationCanceledException)`
+lets an HttpClient timeout, which is a TaskCanceledException, escape it:
+`ToolAugmentedChatClient`'s tool-dispatch catch, `ChainOfDensity.ExtractEpistemicMarkersAsync`'s fallback to the
+text path, `ExtractionProcessor.RunV2ShadowAsync`, and `ReExtractBackgroundService`'s loop guard. The first two are
+registered only under `Extraction:Backend=VllmServer`, which is the appsettings DEFAULT while prod runs `VllmJson`, and
+the second also needs `UseToolAugmentedEpistemicMarkers=true`. The shadow runs only on the v1 path, and prod's
+`UseV2Pipeline=true` sends every `V2EnabledSources` source to v2 before it is reached. The loop guard is reached only
+under `ReExtract:Mode=re-extract` (the appsettings default mode; prod sets `resolve-only`), where
+`ReExtractResolutionAdapter`'s ticker leg calls `SecMasterClient.ResolveAsync` under a catch for HttpRequestException
+alone and `ProcessRowAsync` does not wrap the adapter, so a SecMaster timeout would end the worker. Prod's resolve-only
+leg wraps the adapter in a catch-all. Found by the sweep in the fix that filed this entry: 32 bare-filter sites in
+`SentinelCollector/src`, 6 fixed and pinned, these 4 filed, and 22 out of the class because they rethrow, are reached by
+no own-timeout OCE (the client beneath swallows it), or guard DB or gRPC work. The INVERSE shape was seen but
+not measured: `SecMasterClient.SearchInstrumentsAsync`, `TrafilaturaClient.ExtractArticleAsync` and
+`NtfyDigestNotifier` catch the CALLER's cancellation as well. FIX when a path goes live: the
+`|| !cancellationToken.IsCancellationRequested` clause, with a test that drives HttpClient's real timeout.
+RE-CHECK: `grep -rn "is not OperationCanceledException)" SentinelCollector/src --include=*.cs`.
+
+**A SECMASTER TIMEOUT IS NOW A QUIET MISS: A PROMOTE TIMEOUT PINS THE RESOLUTION WORKER TO ITS OLDEST ROW, AND A
+TIMED-OUT v2 ROW IS AN UNTAGGED NoResolution.** [2026-09-22] The cost of making a SecMaster client timeout
+(`SecMaster__TimeoutSeconds`, 180 in prod) a miss instead of a failed article or a stopped host. What sees it is
+SentinelSecMasterTimingOut over `sentinel_secmaster_timeouts_total`; neither residue is fixed.
+(1) HEAD OF QUEUE. `ResolutionWorker.ResolveOneAsync` counts a promote timeout (`secMaster.ResolveAsync`) and rethrows;
+the loop guard aborts the whole batch and retries after `PollIntervalSeconds` (15). `GetPendingResolutionsAsync` orders
+by `ExtractedAt`, and `IncrementResolutionAttempts` runs only on the null-instrument branch the exception skips, so
+`MaxResolutionAttempts` (5) never applies: while that symbol's promote hangs, the same oldest row is looked up on
+Finnhub and promoted again every ~195s and every row behind it waits. SentinelResolutionWorkerErrors cannot see it,
+because no per-row outcome is recorded. NOT LIVE, measured 2026-09-22T13:43Z: `max(sentinel_resolution_worker_queue_depth)`
+is 0, and `sentinel_resolution_worker_processed_total` rose by 0 over 7 days. An unresolved v2 row is NoResolution unless
+D-27's `dependency_unavailable` leaves it Pending. None of Tempo's 458 sentinel-collector -> secmaster spans of 20s or more over
+those 7 days was a promote (`/api/semantic/resolve`). Options, none chosen: count the attempt before the promote call,
+or catch the timeout in `ResolveOneAsync` as the row's `error` outcome.
+(2) UNTAGGED NoResolution. A timeout on the hybrid, exact-candidate, by-symbol, register or confirm leg leaves the v2
+row NoResolution, under the same method as a real miss, and the ResolutionWorker never selects it. D-27's INTENT comment
+at `V2ExtractionPipeline` keeps a row "the resolver could not even ASK about" Pending, but its guard scopes that to an
+open breaker, and a hang never opens the SecMaster breaker: it counts HttpRequestException, 5xx and 408, not a timeout.
+Widening `dependency_unavailable` to a timeout is a D-27 amendment for a human. The row IS revisited, though not soon
+and not on the same cascade: the ReExtract resolve-only sweep (prod `Cohort=all`, `MinRowAgeDays=7`) re-resolves a
+never-held row once, 7 or more days later, with no Gemini leg. Over the 7 days to 2026-09-22T13:43Z,
+`sentinel_reextract_rows_processed_total` rose 194 `recovered` against 39,175 `still_null` (`increase()`: anything
+counted after a restart's last scrape is lost, so both are floors). The AlphaVantage sweep adds 25 lookups a day, spread
+over every NoResolution description. NOT LIVE: none of the ~291k sentinel-collector -> secmaster calls in Tempo's 7 days
+reached 60s (max 50.04s).
+RE-CHECK: `sum(increase(sentinel_secmaster_timeouts_total[7d]))` after deploy. Above 0 means at least one of the two
+has happened; the Error spans at the timeout's duration name the endpoint, and `/api/semantic/resolve` is (1).
 
 **D-18 RECLASSIFIES 82 MISLABELLED ROWS BY AUTHORITY, WHICH COMPLETES T3 ITEM 3 AS WRITTEN; NOT YET DEPLOYED. 19 ROWS
 NO AUTHORITY SETTLES REMAIN MISLABELLED.** Mechanism, authority and every id: `SecMaster/AGENT_README.md` D-18 and the
