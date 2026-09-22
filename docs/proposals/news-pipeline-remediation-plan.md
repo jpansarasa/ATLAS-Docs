@@ -55,7 +55,7 @@ producer emits.
   `context`, `source_words`; `source_text` becomes `NUM.raw`, not a slot. The schema
   `SentinelCollector/src/cod-prompts/cod_json_schema_v1.json:57-79` is
   `additionalProperties: false` over exactly `source_text|value|unit|context`, all four required. `[M]`
-- Consumer `SentinelCollector/src/Extraction/DslToMergedExtractionAdapter.cs:257-264` reads
+- Consumer `SentinelCollector/src/Extraction/DslToMergedExtractionAdapter.cs:267-274` reads
   `description` → `label` → **`num.Raw`**, plus `period_start`, `period_end`, `source_entity`. None of
   those five slot names is emitted by any producer on either path today. The `?? num.Raw` fallback at
   `:259` is what silently substitutes the bare numeral. `[M]`
@@ -204,7 +204,7 @@ This is the single most important correction, because of what follows from it (2
 **2.2 The proposed acceptance metric cannot fail today.** `sentinelcollector_macro_observations_written_total`
 reads **586 over 24h** `[M]` while the numeric path's DB rows are **zero for 37 days**. There is exactly
 one increment site — `MacroObservationRouter.cs:338` — and the counter is declared untagged and is
-documented as such (`SentinelMeter.cs:693-697`: *"Bounded — no tags, scalar counters only"*). Both
+documented as such (`SentinelMeter.cs:719-723`: *"Bounded — no tags, scalar counters only"*). Both
 producers pass through it. `[M]` **An alert or acceptance check written against that counter would be
 green right now.** No step in §4 may use it unlabelled.
 

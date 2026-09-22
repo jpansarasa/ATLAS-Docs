@@ -693,7 +693,7 @@ SecMaster's, or it will push `secmaster_rag_degraded_total{reason="timeout"}` an
 SentinelCollector**. Its existing `LlamaServerClient` points at `llama-server` — the `--parallel 1`
 DSL rollback runner — and DI comments warn repeatedly against occupying that slot. Copy the
 established pattern: dedicated named `HttpClient` + `AddSharedCircuitBreaker`, as
-`DependencyInjection.cs:608-643` already does for the sector-tagger.
+`DependencyInjection.cs:611-646` already does for the sector-tagger.
 
 **Output: llama.cpp `json_schema`**, an `enum` over the taxonomy plus an explicit `"abstain"`,
 `temperature 0.0`, `n_predict 24`. Never free-text parsed — the mechanism is proven at
@@ -768,7 +768,7 @@ alarming"). So fail-open is only acceptable with:
    `ALERTS` series, never `alert_rule_test` + `exp_alerts`.
 
 **Precedent that this is not paranoia — and the finding worth acting on independently of this
-spec:** `sentinel_candidate_surface_filtered_total` (`SentinelMeter.cs:1029-1030`, tags
+spec:** `sentinel_candidate_surface_filtered_total` (`SentinelMeter.cs:1055-1056`, tags
 `reason`+`mode`) is **metered but entirely unwatched**. Re-verified 2026-08-06: `grep -rn
 "candidate_surface_filtered" deployment/` returns **zero files**, across 13 alert files, 22
 dashboards, the provisioning/alerting tree **and** the live `/opt/ai-inference/monitoring/` mount
@@ -1035,7 +1035,7 @@ volume itself goes to zero. A test for only the first direction would pass on a 
 *Incidental defect found while specifying this — SINCE FIXED, re-derived 2026-09-20:* the
 counter's own XML doc listed a stale reason set, omitting the four largest live reasons
 (`market_jargon`, `truncated_span`, `multiline_fragment`, `bare_corporate_suffix`) and keeping a
-`garbled_fragment` that never fires. `CandidateSurfaceFiltered` (`SentinelMeter.cs:1197-1218`) now
+`garbled_fragment` that never fires. `CandidateSurfaceFiltered` (`SentinelMeter.cs:1223-1244`) now
 names all thirteen, and says why `garbled_fragment` stays listed: the enum bounds the tag, not the
 observed set. Nothing to fix here. (The line range this paragraph used to cite in that file never
 pointed at this counter at all — it landed on an unrelated orphan-FK counter, and read GREEN for as

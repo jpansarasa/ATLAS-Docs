@@ -229,6 +229,15 @@ Distributed: GPU handles CoD emission + CoVe verification; CPU handles
 classifier + embeddings. Loop-guard added. Recall gate 0.79 (n=80).
 PRs #640 #642 #643 #644 #645 #646.
 
+> **Correction, 2026-09-21 (the entry above is kept as written).** "GPU handles
+> CoD emission + CoVe verification" was true of the tagged commit for about three
+> hours: #647 (5eca7f60, merged 2026-06-09 20:33 -0400, after the tag at 17:25)
+> deleted the GPU `SemanticVerifier` as dead spend, and nothing replaced it. From
+> then until SentinelCollector D-35 the v2 path's only source check was the
+> deterministic copy-slot verifier; no value check existed and the async symbol
+> check could not pass on a v2 article. CoVE tier 1 is D-35; tier 2 (semantic)
+> is not built.
+
 ## Docs consolidation 2026-06-11 (`docs/consolidation` branch)
 
 `docs/` re-curated to "current documentation + active plans" (index:

@@ -84,6 +84,11 @@ Defects with a measurement that makes them re-checkable.
 | B | 2026-09-17 | OPEN | SecMaster D-16 drops Gemini fred_series answers for the 16 FRED ids D-18 leaves Equity (10 in 7d) |
 | B | 2026-09-20 | OPEN | 7 active catalog rows have a blank name; 71 attach-pool slots were labelled with "-" for a name |
 | B | 2026-09-20 | OPEN | selfseed_class_skip (D-34) has no alert: the 7-day production rate is unmeasured |
+| A | 2026-09-21 | OPEN | The CoD prompt has no unit for a non-enum currency, so the model writes USD: 1,072 of D-35's 1,268 weekly unit rejections are rupees |
+| B | 2026-09-21 | OPEN | D-35 rejects COMPUTED values by design (fractions, conversions, midpoints): 2,270 v2 facts/week dropped; no tier vouches for the honest share |
+| B | 2026-09-21 | OPEN | Two more CoVe symbol gates still ground on context_summary, null on 5,155 of 5,155 v2 articles: the re-extract sweep's and quarantine-hallucinated's |
+| C | 2026-09-21 | OPEN | 0.66% of v2 rows carry a SubjectEntity the article never spells; no tier-1 check covers it (measured over raw HTML) |
+| B | 2026-09-21 | OPEN | D-35's zero-init is registered on ApplicationStarted and nothing pins the registration; the silence alerts depend on it |
 | B | 2026-09-17 | AWAITING-DECISION | Test databases on the shared timescaledb: 9 fixed-name orphans, per-worktree leaks on kill, each holds a TimescaleDB worker slot |
 | B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
 | B | 2026-09-17 | OPEN | backfill_unresolved_rate_high never detected a fault: constant on main, crossed by growth on D-17 |
@@ -720,7 +725,7 @@ WHAT BOUNDS THE HARM TODAY. (1) NO SERIES IS DARK, in the STRONG form: for each 
 (re-derived 2026-09-21T16:26Z; re-check (a) is that predicate, not a weaker "some live primary"). `ResolveBatch` still
 resolves all 14. (2) THE BLOCKED KEYS BELONG TO A COLLECTOR NAME NOTHING WRITES ANY MORE: both Sentinel self-seed
 sites send `Collector: "GeminiFallback"` (`SentinelCollector/src/Services/DeterministicResolver.cs:1080`,
-`SentinelCollector/src/Workers/ExtractionProcessor.cs:1770`), no `"SentinelCollector"` literal is sent as a collector
+`SentinelCollector/src/Workers/ExtractionProcessor.cs:1752`), no `"SentinelCollector"` literal is sent as a collector
 anywhere under any `src/`, and the newest `SentinelCollector` mapping was created 2026-05-16 -- so the false-success
 path cannot currently be ENTERED for these 14.
 
@@ -1141,6 +1146,56 @@ same over `sentinel_gemini_fallback_calls_total`, both anchored to an instant fr
 on a build carrying D-34. Close by replaying that 7-day distribution at 1-5m resolution and either wiring a rule with a
 `for:` taken from the distribution, or recording that the rate is 0 and no rule is warranted.
 
+**THE CoD PROMPT HAS NO UNIT FOR A NON-ENUM CURRENCY, SO THE MODEL WRITES USD: 1,087 OF D-35'S 1,284 WEEKLY UNIT
+REJECTIONS ARE RUPEES.** [2026-09-21] `cod_json_schema_v1.json` enumerates USD, EUR, GBP, JPY, CNY and OTHER; the prompt
+never says a currency outside the five is OTHER, and the model answers "Rs 2,714 crore" with `unit: USD`. D-35's unit half
+now DROPS those rows (a value stored as 27.1 billion USD is off by ~83x), so the cost moved from wrong facts to lost
+facts. Measured through the final `CoveValueCheck` over the 56,170 v2 rows extracted 2026-09-14..21: 1,284 unit
+rejections, 1,087 of them naming rupees (the rest A$, C$, S$, CAD, CHF, £); every one of 40 unit rejections adjudicated
+against its source text was a wrong currency. The fix is one prompt sentence, and the prompt is a scored coordinate
+(D-29/D-30): it ships through a re-score, not a deploy. Re-check after deploy:
+`sum(increase(sentinel_cove_check_total{check="value",outcome="fail",field="unit"}[7d]))`, instant from `date -u`.
+
+**D-35'S VALUE CHECK STILL DROPS ~110 CORRECT FACTS A WEEK, IN CLASSES TOO SMALL TO HAVE BEEN DERIVED YET.** [2026-09-21]
+The value leg drops only what it measures wrong, and a drop reaches every consumer as a missing fact (D-35). Adjudicated
+against source text, 8 of 60 randomly sampled value-leg drops of the final rule were correct facts (Wilson 95% 6.9%-24.2%)
+-- ~110 of the 826 a week, 57-200 -- against ~965 a week before round 2. The eight: a zero said in words ("no growth"),
+"a hundred trillion" whose article is outside the copy slot, a compound number word ("twenty-four thousand six hundred"),
+a 50/50 split read as 0.5, a typo in the article ("$1.1 ,illion"), a table value whose FIRST occurrence in the article is a
+different cell (the text quote, and so the check, anchors on the first), a decimal comma before a percent ("4,959%"), and
+highway chainage ("Km 154+500"). Development samples also found spoken ranges written with a comma ("maybe 50, 60
+vessels") and "1/100th of 1%". Each is derivable; none is common. Re-check: re-run the adjudication on a fresh random
+sample of `{check="value",outcome="fail",field="value"}` drops (Tempo `cove.rejected` events carry raw, value and unit).
+
+**TWO MORE CoVe SYMBOL GATES STILL GROUND ON context_summary, WHICH IS NULL ON EVERY v2 ARTICLE.** [2026-09-21] D-35
+moved the ResolutionWorker and AlphaVantage-sweep gates onto the article; two gates reading the same pair were left
+alone on purpose, because each is governed elsewhere. (1) The re-extract sweep's resolve-only cascade
+(`ReExtractResolutionAdapter`, fed `RawContent.ContextSummary` from `ReExtractBackgroundService`) -- D-21, D-28 and D-31
+constrain what it may attach relative to live, so widening its grounding needs its own decision. (2) `POST
+/admin/review/quarantine-hallucinated` (`AdminEndpoints.cs`) quarantines an Approved row whose symbol is absent from
+`text_quote` or `context_summary`, so on a v2 row it would quarantine every symbol the one number's sentence does not
+spell. Measured: 5,155 of 5,155 raw_content rows processed 2026-09-14..21 that hold a v2 observation have
+`context_summary IS NULL` (SELECT-only). Re-check: the same count; close each gate by grounding it through
+`CoveSymbolGate` or by recording why it must not.
+
+**0.66% OF v2 ROWS CARRY A SubjectEntity THE ARTICLE NEVER SPELLS, AND NO TIER-1 CHECK COVERS IT.** [2026-09-21] D-15
+grounds `source_entity` against the DOCUMENT's declared ENTs, not against the article, and the adapter does not consume
+the verifier's ENT byte verdicts. Measured over the raw HTML files (tag-stripped, entity-decoded, case-insensitive;
+boilerplate makes this a SUPERSET of the normalized text, so it UNDER-counts) for the 56,170 v2 rows of 2026-09-14..21:
+369 subjects absent (0.66%), 179 of them Resolved. The sample is dominated by legal-name expansions of entities the
+article names ("Crocs, Inc.", "JPMorgan Chase & Co.", "CrowdStrike Holdings, Inc.") that resolve correctly, so a
+verbatim gate would mostly drop right attributions -- it was not shipped with D-35. Re-check by re-running the
+measurement; decide on the Resolved subset whether the expansions come from the prompt's prepass grounding.
+
+**D-35'S ZERO-INIT IS REGISTERED ON ApplicationStarted AND NOTHING PINS THE REGISTRATION.** [2026-09-21] The three tier-1
+silence alerts read `sentinel_cove_check_total` and the two async outcome counters with `increase()`, which cannot see a
+series born at 1; `SentinelMeter.PrimeCoveCheckSeries` exports all 12 tier-1 series and 4 input series at zero.
+`CoveCheckZeroInitTests` pins the method's content and CANNOT see the Program.cs line that registers it, nor its
+ordering after the MeterProvider subscribes (the D-34 priming has the same gap, entry above). Re-check within minutes
+of a deploy, before extraction has run: `count(sentinel_cove_check_total)` must be 12 and
+`count(sentinel_resolution_worker_processed_total{outcome=~"resolved|cove_rejected"})` 2; an empty result means the
+priming is landing too early or is gone.
+
 **D-18 RECLASSIFIES 82 MISLABELLED ROWS BY AUTHORITY, WHICH COMPLETES T3 ITEM 3 AS WRITTEN; NOT YET DEPLOYED. 19 ROWS
 NO AUTHORITY SETTLES REMAIN MISLABELLED.** Mechanism, authority and every id: `SecMaster/AGENT_README.md` D-18 and the
 header of `SecMaster/src/Data/Migrations/20260917124624_ReclassifyFredSeriesLabelledEquity.cs`. Measured 2026-09-17 on
@@ -1216,7 +1271,7 @@ sit on `US` (the macro-owner entry under MEASUREMENT DEBT), a careful human labe
 article that named no series; 16 of the gold's 22 open anchors are the same class (a series the article DESCRIBES
 without NAMING), and closing them needs the rule the prompt currently states twice, differently.
 
-`source_entity` AND `subject_entity` ARE THE SAME FIELD ON THIS PATH. `DslToMergedExtractionAdapter.cs:399` sets
+`source_entity` AND `subject_entity` ARE THE SAME FIELD ON THIS PATH. `DslToMergedExtractionAdapter.cs:457` sets
 `perRowSubject = sourceEntity` whenever the slot is non-blank; of 20,640 rows since 2026-09-01 where BOTH columns
 are non-blank, ZERO differ. So a country in `source_entity` IS the string `DeterministicResolver` Rule 2 queries.
 Re-check, and silence on the second column is the pass:
@@ -1225,7 +1280,7 @@ sentinel.extracted_observations WHERE extracted_at >= TIMESTAMPTZ '2026-09-01' A
 coalesce(trim(source_entity),'')<>'' AND coalesce(trim(subject_entity),'')<>'';`
 
 DOWNSTREAM. A country ENT is excluded from the Rule 1 shortlist by `NonInstrumentEntTypes`
-(`DslToMergedExtractionAdapter.cs:108-125`, `"country"` at `:115`), so the row falls to Rule 2, which hands the RAW
+(`DslToMergedExtractionAdapter.cs:110-127`, `"country"` at `:115`), so the row falls to Rule 2, which hands the RAW
 `SubjectEntity` to hybrid resolve and consults NO surface filter. D-1 already counts that leg -- 7,184
 instrument-attaching rows carrying a `gpe_country` subject, 3,060 landing on `U` (Unity Software) -- over ONE
 31-day window (`extracted_at` [2026-07-15, 2026-08-15)) and as a FLOOR (exact-match sets only); both caveats are
@@ -1260,7 +1315,7 @@ Fixing the prompt stops the anchor being produced; it does not stop the catalog 
 that reaches hybrid resolve with a country string still lands here. Re-check, `atlas_secmaster`:
 `SELECT symbol, name FROM instruments WHERE name IN ('Turkey','China','UK','Germany','France','Spain','Italy','US');`
 
-BLANK IS NOT SAFE EITHER. A blank slot falls back to the DOCUMENT-LEDE ENT (`DslToMergedExtractionAdapter.cs:399-401`):
+BLANK IS NOT SAFE EITHER. A blank slot falls back to the DOCUMENT-LEDE ENT (`DslToMergedExtractionAdapter.cs:457-459`):
 on the five blank rows at 10:46Z that lede was `China` (x3), `Wall Street Breakfast` and `John Healey` -- a country, a
 PUBLICATION and a PERSON, all excluded from ownership by the prompt (`cod_json_v1.txt:65-66`) -- yet four LATER blank
 rows attached correctly to `LITE` off a single-company article. Blanking is safe when the document has ONE subject
@@ -1528,7 +1583,7 @@ a CORRECT pick (30,575 of 30,575 rows) and a wrong substitution AFTER it (the Ru
 filter at any position can reach them.
 TWO CANDIDATE SEAMS, not chosen -- measure before picking. Seam A: hoist `Classify` to `ResolveAsync` entry
 (`_surfaceFilter` is already injected; one production caller, `V2ExtractionPipeline.cs:99`), which puts every
-caveat-(2) false positive on the resolution path. Seam B: `DslToMergedExtractionAdapter.cs:499`, where `SubjectEntity`
+caveat-(2) false positive on the resolution path. Seam B: `DslToMergedExtractionAdapter.cs:557`, where `SubjectEntity`
 is born, which cleans SecMaster, Gemini, `source_entity` and the matrix in one edit (the D-15 precedent) but cannot
 reach caveat (3). Whichever wins, land a counter for rows attaching on a subject the filter would reject; today that
 number exists only by replaying the classifier over the DB in SQL. Positioning re-verified unchanged 2026-09-16
@@ -1577,7 +1632,7 @@ Re-check: the `grep -rl` above must return 0 files.
 
 **The publish gate, and why a plausible symbol does not survive it.** The gate is
 `o.InstrumentId.HasValue && o.ResolutionConfidence >= 0.8f && o.Certainty is Definite or Expected`
-(`SentinelCollector/src/Workers/ExtractionProcessor.cs:908/:918/:934` v1, `:2321/:2331/:2348` v2). **`Symbol` is not in the predicate**, so
+(`SentinelCollector/src/Workers/ExtractionProcessor.cs:890/:918/:934` v1, `:2321/:2331/:2348` v2). **`Symbol` is not in the predicate**, so
 a row carrying a plausible symbol and no instrument is dropped without a trace on the symbol axis. Nor is
 `"InstrumentId": null` inside `candidate_symbols_json` the defect: **0 of 3,650,818** candidates all-time carry a
 non-null value there, including every candidate on every row that published successfully. That field is the
@@ -2292,7 +2347,7 @@ and non-DSL rows on 48,519 of 48,634 (99.8%). The last `extracted_at` on any pub
 all (last `published_at` 2026-02-07; KNOWN DEFECTS, below), so there is no publish-side effect to find.
 THE LEAD, and one grep already kills its naive form: `SentinelCollector/src/cod-prompts/cod_json_schema_v1.json`
 contains no `period` field (`"additionalProperties": false` on the item schemas and the envelope), yet
-`SentinelCollector/src/Services/V2ExtractionPipeline.cs:271` DOES assign `Period = extraction.Period`, so "the v2
+`SentinelCollector/src/Services/V2ExtractionPipeline.cs:272` DOES assign `Period = extraction.Period`, so "the v2
 adapter forgot to map the field" is false. What settles it is a CODE READ, not another query: read
 `V2ExtractionPipeline.cs` and `GpuJsonExtractionService.cs` against the v1 site `Workers/ExtractionProcessor.cs:750`
 (the only other `Period =` site in the service) and establish what fills `extraction.Period` on the CoD path. NOBODY
@@ -2465,7 +2520,7 @@ evidence of the failure", NOT proven equivalence. `period_accuracy` moved -0.056
 597-record confirmation.
 
 **DEFECT, pre-existing and now the ONLY leg outside D-27's gate: the qualitative dispatch path still orphans on a
-dependency outage.** `TryDispatchQualitativeAsync`'s extract-stage catch (`SentinelCollector/src/Workers/ExtractionProcessor.cs:2897`)
+dependency outage.** `TryDispatchQualitativeAsync`'s extract-stage catch (`SentinelCollector/src/Workers/ExtractionProcessor.cs:2801`)
 calls `MarkRawContentProcessedAsync(..., ex.Message, ...)` for EVERY exception, so a `BrokenCircuitException` writes
 `processing_error` and the row leaves the queue with nothing re-driving it — the original D-27 failure mode, on this
 one leg. It is not reachable by the gate BY CONSTRUCTION: the gate lives in the article catch, and this catch runs
@@ -2545,15 +2600,15 @@ about the resolver). For any row re-extracted before 2026-09-16 read `OriginalRe
 `OriginalInstrumentId` alongside the live columns, always.
 A SECOND circular column: `extracted_observations.resolution_confidence` holds the resolver OUTCOME's value
 (`DeterministicResolver.cs:446-450`), not what Rule 1 received; the input is visible only in
-`sentinel_resolver_rule1_input_confidence` (`SentinelMeter.cs:1757`, from #963). Every observation of it sits at
+`sentinel_resolver_rule1_input_confidence` (`SentinelMeter.cs:1783`, from #963). Every observation of it sits at
 exactly 0.850 = `DslPreselectionConfidence`, a hardcoded constant, so the `< 0.7` gate can never trip: an absent
-`below_threshold` series on `sentinel_resolver_rule1_decision_total` (`SentinelMeter.cs:1738`) is a property of the
+`below_threshold` series on `sentinel_resolver_rule1_decision_total` (`SentinelMeter.cs:1764`) is a property of the
 constant, not evidence about the data, and `bucket{le="0.7"}` reads 0 indefinitely.
 Not to be re-derived: the `ExtractionSchemaV2 required[]` hypothesis was DISPROVEN by probing vLLM with the shipped
 schema, which emitted `resolution_confidence` non-null 5/5.
 
 **A third histogram still carries the SDK default buckets a [0,1] value cannot use.**
-`sentinel_chunk_extraction_dedup_ratio` (`SentinelCollector/src/Telemetry/SentinelMeter.cs:299`, unit `{ratio}`) has
+`sentinel_chunk_extraction_dedup_ratio` (`SentinelCollector/src/Telemetry/SentinelMeter.cs:325`, unit `{ratio}`) has
 no `AddView`, so it keeps the SDK boundaries `[0, 5, 10, 25, ...]` and every observation of a `1 - post/pre` fraction
 would land in `le=5.0` — the identical collapse #963 fixed on `sentinel_dsl_adapter_resolution_confidence` and
 `sentinel_resolver_rule1_input_confidence`. Nothing is misled TODAY: measured 2026-08-15 UTC, the metric has NO series
@@ -2901,7 +2956,7 @@ byte-identical list; .NET's options binder APPENDS to an existing `List<T>`, so 
 The floor whose purpose is "never judge on a thin draw" sits at its own minimum and passes with ZERO real engines
 answering; the guard's own code is correct, the denominator is inflated outside it by configuration. A SECOND inflation
 route into D-23, needing no SearXNG involvement. Inert today: `IssuerProbePinVerifier` is registered
-(`SentinelCollector/src/DependencyInjection.cs:108`) but no consumer reads a probe verdict; it goes live the moment the probe is wired.
+(`SentinelCollector/src/DependencyInjection.cs:111`) but no consumer reads a probe verdict; it goes live the moment the probe is wired.
 Fix: drop the property initialiser or clear the list before binding -- never raise `MinRespondingPinnedEngines`.
 Re-check: a unit test that binds the shipped `appsettings.json` section and asserts `options.Engines.Count == 2` goes
 RED today; no test asserts it. Recorded from the PR #947 review 2026-08-15; re-verified on main 2026-08-23 and

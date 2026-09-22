@@ -49,7 +49,7 @@ they will collide on merge. Verified 2026-08-26:
 | story | region of `ExtractionProcessor.cs` | also touches |
 |---|---|---|
 | S2 | `RunV2ProductionAsync` `:1746` + its XML doc `:1741-1745` | -- |
-| S3 | v1 `new ExtractedObservation` block `:687` | `V2ExtractionPipeline.cs:260`, `ReExtractBackgroundService.cs:485` and `:631`, the entity class, the adapter |
+| S3 | v1 `new ExtractedObservation` block `:687` | `V2ExtractionPipeline.cs:261`, `ReExtractBackgroundService.cs:485` and `:631`, the entity class, the adapter |
 
 **How to handle it: do NOT sequence the agents.** The edits are ~1,050 lines apart and touch
 different members, so this is a textual collision, not a semantic one -- git merges it cleanly in
@@ -253,7 +253,7 @@ destroys the before/after reading that makes the fix provable.
 
 **The defect, verbatim for the brief:**
 
-> `CreateSectorEvent` has exactly one production call site, `ExtractionProcessor.cs:941`, inside
+> `CreateSectorEvent` has exactly one production call site, `ExtractionProcessor.cs:923`, inside
 > `ProcessSingleArticleAsync`. The v2 branch returns at `:614`, before reaching it.
 > `RunV2ProductionAsync` (`:1850`) never calls it. Every August source with published rows is in
 > `V2EnabledSources`, so 100% of published extraction has taken the v2 path since `81da1ed4`
@@ -372,7 +372,7 @@ that way compared the fresh image to itself).
 CoD already produces the atom the design asked for. The schema cannot hold it:
 
 - `DslAst.cs:90` -- `DslClaim(ClaimKind, Subject, SubjectRefs, ClaimText, Slots, SourceSpan, Line)`
-- `DslToMergedExtractionAdapter.cs:640` -- passes `ClaimKind` into `DslClaimInput`
+- `DslToMergedExtractionAdapter.cs:735` -- passes `ClaimKind` into `DslClaimInput`
 - **no further consumer.** `ExtractedObservation` has no ClaimKind and no Polarity column
 - `matrix_cells.polarity` already exists and is nullable -- the consumer is waiting
 

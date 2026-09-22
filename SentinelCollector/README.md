@@ -82,11 +82,12 @@ Schema is owned by EF Core migrations under `src/Data/Migrations/`. Database mig
 - **Content Normalization**: HTML/PDF → markdown via `markitdown-mcp` + `trafilatura` pre-wash
 - **GPU vLLM JSON-CoD Extraction** (live): JSON-schema-constrained CoD against the GPU `vllm-server` (Gemma 4 31B QAT w4a16, `response_format=json_schema`); the JSON document is lifted to the same `DocumentAst` via `dsl-parser-mcp` `/parse_json`, so the verifier + adapter + downstream consumers are unchanged (`Extraction__Backend=VllmJson`)
 - **CPU llama-server DSL Extraction** (rollback): Grammar-constrained CoD against `llama-server` on CPU; parsed + verified by `dsl-parser-mcp` (`Extraction__Backend=LlamaServerDsl`)
+- **CoVE tier 1 (live, D-35)**: every NUM fact on the adapter-backed paths must pass the copy-slot byte check AND store a value that is the copy-verified raw's stated quantity or a rendering of it (`CoveValueCheck`, which drops only what it measures wrong: 93% of its drops, measured) or it is dropped before it is a row; the v2 path refuses to start on a backend without tier 1; the async resolution legs attach a symbol only if the article names it (`CoveSymbolGate`). Proven by `sentinel_cove_check_total` (passes and failures), the `Cove.Tier1` / `Cove.SymbolCheck` spans, the `SentinelCove*CheckSilent` alerts and `SentinelCoveValueRejectShareHigh`. Tier 2 (semantic) is not built
 - **CoVe + Chain of Density (legacy V1/V2 paths)**: `LlamaServer` / `VllmServer` backends remain in `ExtractionOptions` and still drive shadow runs; production `IMergedExtractionService` binding routes to the `VllmJson` GPU JSON-CoD path
 - **Tool-Augmented CoVe / Epistemic Markers** (opt-in): `Extraction__UseToolAugmented*` flags drive a sandbox-manager-backed code-execution loop
 - **Entity Resolution Pre-pass**: spaCy NER sidecar → SecMaster `/api/resolve-entities` grounding for the V2 pipeline
 - **SecMaster Resolution Cascade**: `ResolutionWorker` (Finnhub → SecMaster), nightly AlphaVantage sweep, optional Gemini fallback
-- **Hallucinated-symbol Quarantine**: Operator endpoint walks Approved rows and quarantines `Symbol` values absent from `text_quote` + `context_summary`
+- **Hallucinated-symbol Quarantine**: Operator endpoint walks Approved rows and quarantines `Symbol` values absent from `text_quote` + `context_summary` (context_summary is null on every v2 article -- see docs/BACKLOG.md before running it on v2 rows)
 - **AutoApprove Backfill**: Replays `AutoApprovePolicy` against the historical Pending backlog
 - **Re-extract Background Service**: Optional one-shot recovery for legacy rows; supports `re-extract` and `resolve-only` modes with live-queue backpressure
 - **Review UI**: Server-rendered HTML queue at `/ui/review` (approve/reject/skip + inline corrections)
@@ -102,7 +103,7 @@ Selected env vars (full list in `src/Configuration/*Options.cs`). Double-undersc
 |----------|-------------|---------|
 | `ConnectionStrings__AtlasDb` | PostgreSQL connection string | **Required** |
 | `Kestrel__HttpPort` / `Kestrel__GrpcPort` | Bound listen ports | `8080` / `5001` |
-| `Extraction__Backend` | `LlamaServer` \| `VllmServer` \| `LlamaServerDsl` \| `VllmJson` | `VllmServer` (code default); production sets `VllmJson` (GPU JSON-CoD, live). `LlamaServerDsl` = CPU DSL rollback path |
+| `Extraction__Backend` | `LlamaServer` \| `VllmServer` \| `LlamaServerDsl` \| `VllmJson` | `VllmServer` (code default -- refused at boot while the v2 path is on, since only `VllmJson` and `LlamaServerDsl` run CoVE tier 1, D-35); production sets `VllmJson` (GPU JSON-CoD, live). `LlamaServerDsl` = CPU DSL rollback path |
 | `Extraction__Model` | LLM model id (passed verbatim to backend) | `google/gemma-4-31B-it-qat-w4a16-ct` (code + prod; compose templates it from `vllm_base_model`) |
 | `Extraction__LlamaServerEndpoint` | llama.cpp server endpoint | `http://llama-server:8080` |
 | `Extraction__VllmEndpoint` | vLLM endpoint (legacy V1/V2 path) | `http://vllm-server:8000` |
@@ -234,7 +235,7 @@ SentinelCollector/
 │   ├── HealthChecks/     # DatabaseHealthCheck, LlmHealthCheck
 │   ├── Publishers/       # EventPublisher (writes to events table for gRPC stream)
 │   ├── Semantic/         # EntityResolver, ClaimVerifier, SectorTagger, MatrixCellEnrichmentPublisher
-│   ├── Services/         # HTTP clients (LlamaServer/Vllm/Markitdown/Trafilatura/SpacyNer/SecMaster/Finnhub/AlphaVantage/Gemini), digest, normaliser, DSL extraction, CoVe verifier
+│   ├── Services/         # HTTP clients (LlamaServer/Vllm/Markitdown/Trafilatura/SpacyNer/SecMaster/Finnhub/AlphaVantage/Gemini), digest, normaliser, DSL extraction, CoVE symbol check
 │   ├── Telemetry/        # SentinelActivitySource, SentinelMeter
 │   ├── Workers/          # EdgeSync, Extraction, Searxng + RSS schedulers, Resolution, ReExtract, Validation, Digest, AlphaVantageSweep, MacroSignalIdentityCatalogRefresh
 │   ├── prompts/          # Default prompt templates baked into the source tree (production uses host mount)

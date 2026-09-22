@@ -37,7 +37,7 @@ Extraction__UseV2Pipeline=true        # flipped 2026-05-16 (PR #340)
 81da1ed4 2026-05-16 ops(sentinel): ... broaden V2 sources to all (#341)
 ```
 
-- `CreateSectorEvent` has exactly ONE production call site: `ExtractionProcessor.cs:941`
+- `CreateSectorEvent` has exactly ONE production call site: `ExtractionProcessor.cs:923`
 - that site is inside `ProcessSingleArticleAsync`, AFTER the v2 early return at `:614`
 - `RunV2ProductionAsync` (`:1850`) never calls it
 - every August source with published rows is in `V2EnabledSources`:
@@ -67,7 +67,7 @@ adversarial claim-check; both errors below were the supervisor's):
 
 - `AtlasSectorCode` **is** a persisted column, added by migration
   `20260509234900_AddAtlasSectorCodeToObservation` on 2026-05-09 and populated even on the
-  v2 path (`V2ExtractionPipeline.cs:295`). The original claim came from a column enumeration
+  v2 path (`V2ExtractionPipeline.cs:296`). The original claim came from a column enumeration
   piped through `head -40` against a 47-column table -- a truncated probe read as complete.
   **Consequence: the loss is directly recoverable.** 4,324 rows since the 81da1ed4 cutover
   satisfy the sector gate as the code writes it. That is the backlog of lost sector events and
@@ -198,7 +198,7 @@ honestly is what lets it be ranked against R1 and R3 rather than assumed to outr
 ### 2.3 The atom exists and is thrown away (R3)
 
 - `DslAst.cs:90` -- `DslClaim(ClaimKind, Subject, SubjectRefs, ClaimText, Slots, ...)`
-- `DslToMergedExtractionAdapter.cs:640` -- passes `ClaimKind` into `DslClaimInput`
+- `DslToMergedExtractionAdapter.cs:735` -- passes `ClaimKind` into `DslClaimInput`
 - **no further consumer.** `ExtractedObservation` has no ClaimKind and no Polarity column
 
 CoD already distils what the design asked for. The schema cannot hold it.
