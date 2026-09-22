@@ -52,7 +52,7 @@ Defects with a measurement that makes them re-checkable.
 | D | 2026-09-21 | OPEN | D-19 falsifier fixtures span 4 of 13 venue tokens, 1 of 14 `idx`, 1 of 2 ticker shapes: the `idx` mutant crosses both bars (153 of 2,551, 12:30:11Z) at `controls_passed 11 of 11` |
 | D | 2026-09-21 | OPEN | The D-19 falsifier SELECT spells the US venue vocabulary THREE times and guards ONE: 6 of 20 registry US spellings classify FALSE under Title Case (0 as stored, which cannot expose it), the direction the entry forbids (exposure 0 today) |
 | D | 2026-09-21 | OPEN | 7 test/selftest harnesses under `scripts/` are run by no workflow; 2 sit inside `scripts/tests/`, which CI triggers on and sweeps with a pytest that collects only `test_*.py` |
-| A | 2026-09-21 | OPEN | GIGO broken a THIRD time: the pipe-paste is cleaned at SecMaster while its SOURCE, gemini_client.py:264's prose schema, still hands the model a literal pipe enumeration; 2 live rows echo it verbatim |
+| A | 2026-09-21 | OPEN | GIGO broken a THIRD time: the pipe-paste is cleaned at SecMaster while its SOURCE, gemini_client.py:270's prose schema, still hands the model a literal pipe enumeration; 2 live rows echo it verbatim |
 | E | 2026-09-21 | OPEN | "ALL read ListingVenueRegistry" is wider than the sweep: 4 of the 6 venue-vocabulary copies are unguarded (the FILE grep counts 4 FILES; D-19's falsifier SELECT alone holds 3 of the 6 copies, 2 of them unguarded), one already wrong on 541 rows today |
 | B | 2026-09-21 | OPEN | Deactivating a source mapping is a ONE-WAY DOOR: 14 dead keys, no writer revives one, and the register lookup reads the corpse as a hit and answers SUCCESS |
 | B | 2026-09-21 | OPEN | `RegistrationService.cs:402`'s inactive-instrument branch is UNREACHABLE, and so is the `:443` message arm reading the same flag: the subject comes from an `IsActive`-filtered read |
@@ -377,7 +377,7 @@ that it can.
 UNFILED.** `CLAUDE.md` GIGO is a HARD_STOP -- "clean at the SOURCE where garbage is BORN; never gate each
 destination" -- and it names two prior breaks, both destination gates (#818 FRED series-search, #823 paid resolver).
 This is the third, and it is in the PR that quotes the rule. Measured 2026-09-21.
-`gemini-resolver-mcp/gemini_resolver/gemini_client.py:264` hands the model a PROSE schema whose exchange value is a
+`gemini-resolver-mcp/gemini_resolver/gemini_client.py:270` hands the model a PROSE schema whose exchange value is a
 literal pipe enumeration -- `"exchange": "NYSE | NASDAQ | AMEX | OTC | FRED | null"` -- so `|` is simultaneously the
 type-alternation separator and a character of the example value, and the model cannot tell "choose one of these" from
 "the value is this string". Two live `atlas_secmaster` rows hold the echo, both `discovery_source =
@@ -3841,6 +3841,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 
 | impact | measured | status | entry |
 |---|---|---|---|
+| B | 2026-09-22 | OPEN | gemini-resolver connect fallbacks are counted but unalerted: an unanswering address family is otherwise invisible |
 | B | 2026-09-20 | OPEN | 50 of 53 live `AddHostedService<T>` registrations are UNPINNED: the line that makes the component RUN can be deleted with every suite green |
 | D | 2026-09-20 | OPEN | The hosted-service pin gate cannot see 5 live factory-overload registrations, and Reports has NO keyable registration at all |
 | D | 2026-09-20 | OPEN | A mutation harness that rewrites ONE `.py` path scores a FALSE SURVIVOR: CPython keys bytecode on (mtime-second, size), and `mutation-check.py` already holds an equal-length pair |
@@ -3920,6 +3921,24 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | E | 2026-09-06 | OPEN | colibri cannot produce an admissible scorecard (DO-NOT-BUILD, permanent): seed refused |
 | E | 2026-09-06 | OPEN | Precision ladder on gemma-3-27b: Q6_K LOSES to Q4_K_M, and vLLM has no rung above 4-bit |
 
+
+### gemini-resolver connect fallbacks are counted but unalerted: an unanswering address family is otherwise invisible [2026-09-22]
+`gemini_resolver/connect.py` bounds the connect to ONE deadline across every DNS address and races the families
+250ms apart, so a family whose path stops answering now costs a stagger per new connection instead of 8 x 25s.
+That removes the only trace such an outage left. Before the bound, the resolver's journal showed NO call completing
+for 200.0s after 12:17:37.853Z on 2026-09-22 while 11 started, and the first 11 calls after that point completed,
+FIFO-paired, 201.9-210.8s after they started. That journal is not in Loki: `list_loki_label_values service_name`
+over 24h to 12:49Z returned six values, none of them the resolver. The only new signals are
+`gemini_resolver_connect_fallbacks_total{first_family}` and one WARNING per hour in the journal. No rule, recording
+rule or dashboard reads the counter.
+Why no rule yet: the counter's healthy baseline is unmeasured. It should be near 0, because a fallback needs the
+first-ranked address to miss a 250ms window against a ~20ms RTT. But nobody has counted it.
+To close: after the resolver restarts on this code, take the 7d distribution of
+`sum by (first_family) (increase(gemini_resolver_connect_fallbacks_total[30m]))` at 1-5m, pick threshold and `for:`
+from it, then add an info-severity rule to `deployment/artifacts/monitoring/alerts/gemini-resolver.yml` with a promtool
+firing case on burst-shaped input, and delete this entry in that PR.
+Re-check: `grep -cE '^\s*expr:.*gemini_resolver_connect_fallbacks' deployment/artifacts/monitoring/alerts/gemini-resolver.yml`
+returns 0 while this entry is open.
 
 ### 50 of 53 hosted-service registrations are unpinned: deleting the line that makes a component run keeps every suite green [2026-09-20]
 A component's logic can be correct, tested and green while the single `AddHostedService<T>()` line that makes

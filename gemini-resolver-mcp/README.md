@@ -247,6 +247,7 @@ gemini-resolver-mcp/
 │   ├── __main__.py          # python -m gemini_resolver entrypoint
 │   ├── server.py            # FastAPI app, config, rolling stats
 │   ├── gemini_client.py     # google-genai wrapper + prompt + JSON extractor
+│   ├── connect.py           # bounded connect: one deadline across every DNS address (RFC 8305)
 │   ├── cache.py             # SQLite (sqlitedict) result cache, 30d TTL
 │   └── ledger.py            # SQLite durable rolling-24h call ledger behind the daily cap
 ├── tests/
@@ -258,6 +259,7 @@ gemini-resolver-mcp/
 │   ├── test_cap_persistence.py # the cap survives a restart and a clock step; fail-closed on an
 │   │                           # unaccountable ledger, re-arming only on transient contention
 │   ├── test_metrics.py      # /metrics and /health cannot desync
+│   ├── test_connect_bound.py # a dead address family cannot multiply the connect timeout
 │   └── test_billing_waste.py # one subject = one paid call; no re-bill after abandon/truncate
 ├── gemini-resolver-mcp.service  # systemd unit
 └── pyproject.toml
