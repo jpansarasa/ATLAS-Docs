@@ -86,19 +86,24 @@ Defects with a measurement that makes them re-checkable.
 | B | 2026-09-17 | OPEN | SecMaster D-16 drops Gemini fred_series answers for the 16 FRED ids D-18 leaves Equity (10 in 7d) |
 | B | 2026-09-20 | OPEN | 7 active catalog rows have a blank name; 71 attach-pool slots were labelled with "-" for a name |
 | B | 2026-09-20 | OPEN | selfseed_class_skip (D-34) has no alert: the 7-day production rate is unmeasured |
-| A | 2026-09-21 | OPEN | The CoD prompt has no unit for a non-enum currency, so the model writes USD: 1,072 of D-35's 1,268 weekly unit rejections are rupees |
-| B | 2026-09-21 | OPEN | D-35 rejects COMPUTED values by design (fractions, conversions, midpoints): 2,270 v2 facts/week dropped; no tier vouches for the honest share |
+| A | 2026-09-21 | OPEN | The CoD prompt has no unit for a non-enum currency, so the model writes USD: 1,087 of D-35's 1,284 weekly unit rejections are rupees |
+| B | 2026-09-21 | OPEN | D-35's value check still drops ~110 correct facts a week (57-200), in classes too small to have been derived yet |
 | B | 2026-09-21 | OPEN | Two more CoVe symbol gates still ground on context_summary, null on 5,155 of 5,155 v2 articles: the re-extract sweep's and quarantine-hallucinated's |
 | C | 2026-09-21 | OPEN | 0.66% of v2 rows carry a SubjectEntity the article never spells; no tier-1 check covers it (measured over raw HTML) |
 | B | 2026-09-21 | OPEN | D-35's zero-init is registered on ApplicationStarted and nothing pins the registration; the silence alerts depend on it |
-| A | 2026-09-22 | AWAITING-DECISION | D-36 tier 2 KEEPS a figure about what a fund or future tracks when the verdict is tracks_underlying (~187/day) and CLEARS it when the verdict is about_other (~2.2/day, census); the policy is the user's call. 2 of 9 kept proxy verdicts were consensus-WRONG |
+| A | 2026-09-22 | OPEN | D-35's value leg passes a SUBUNIT price stored in the main unit ("515p" as 515 GBP): 18 of 70 subunit-priced rows in 7 days |
+| B | 2026-09-22 | OPEN | D-35's value-check ERROR path: no alert below the 40% reject share, one Warning per block on a systematic throw, and a 27+-digit overflow counted as an error |
+| B | 2026-09-22 | OPEN | D-35's symbol check reads a raw file whose path is set but missing (an outage, never a prune) as a rejection; 0 of 51,822 set paths missing today |
+| A | 2026-09-22 | AWAITING-DECISION | D-36 tier 2 KEEPS a figure about what a fund or future tracks when the verdict is tracks_underlying (~187/day) and CLEARS it when the verdict is about_other (~2.2/day on the census labels, ~2.8/day by round 4's second labeller); the policy is the user's call. 2 of 9 kept proxy verdicts were consensus-WRONG |
+| A | 2026-09-22 | AWAITING-DECISION | D-36 has no §7.3 HUMAN spot-check (design: agreement >= 85% on n=50); every label on it is a model's. An 18-row sheet of the first cut's hard cases waits on the user |
 | A | 2026-09-22 | AWAITING-DECISION | D-36 clears CORRECT figures when its window cuts off the article's own naming of the subject: POWW 13 of 13 clears correct (one letter, one event) |
+| A | 2026-09-22 | OPEN | D-36 tier 2's RECALL is unmeasured: every clear of the census is labelled, 30 of its 10,038 kept rows were drawn at random (1 wrong, 1 ambiguous) |
 | B | 2026-09-22 | OPEN | text_quote anchors on the raw's first ORDINAL occurrence: fragment-first ("5%" inside "0.45%") on 298 of 14,997 eligible rows (2.0%) |
 | C | 2026-09-22 | OPEN | D-36's FigureAnchor counts a number inside a time or date ("42" in "06:42") as a sentence stating the figure: 42 of 14,592 rows (0.29%); ':' and '/' cannot simply become number-internal |
 | B | 2026-09-22 | OPEN | D-36 reads a renamed company as another company (MSTR "Strategy Inc" vs "MicroStrategy Inc"; IPAX vs LUNR): 2 correct clears of 5,042 (census) |
 | C | 2026-09-22 | OPEN | SentinelCoveAttachmentCheckAbsent forgets tier 2 after 7 days absent; drop its lookback leg once tier 2 has been deployed a week |
 | A | 2026-09-22 | OPEN | SecMaster catalog names that identify nothing -- 80 series codes named by their own code, 41 places (DX "Japan", KC "Colombia"), 7 blank -- leave ~16 eligible rows a day unjudged by D-36; loose names (NAQ.DEX "Nasdaq", 18/day) still pass wrong figures |
-| A | 2026-09-22 | OPEN | Resolver symbol collisions D-36 clears daily: WTI on Colgate (CL, ~52 eligible rows a day), Saudi Arabia on Spire (SR), Indian banks on BSE, Porsche on Deere (DE), foreign inflation on MICH |
+| A | 2026-09-22 | OPEN | Resolver symbol collisions D-36 clears daily: crude on Colgate (CL, 286 of 286 clears wrong), Japan on AT&T (T), Saudi Arabia on Spire (SR), Indian banks on BSE, Porsche on Deere (DE); 1-2 letter symbols are wrong on 54.8% of judged rows. Tier 2 can only strip them; 4,926 labelled wrong clears are a resolver-regression gold set once each names its right instrument |
 | B | 2026-09-22 | OPEN | Attachments ReExtract writes after extraction get no D-36 check: ~57 a day, ~6.6 of them wrong, reach the digest, dedup and the auto-approver |
 | B | 2026-09-22 | OPEN | D-36 tier 2 reads an ADR and its home listing as different securities: the ONE consensus false clear of 86, one split clear, and AMKBY/Maersk A (round 3) |
 | B | 2026-09-22 | OPEN | D-36's two share alerts take thresholds from a 40-row-per-window replay; re-derive from 7d of live counters |
@@ -1268,6 +1273,39 @@ of a deploy, before extraction has run: `count(sentinel_cove_check_total)` must 
 `count(sentinel_resolution_worker_processed_total{outcome=~"resolved|cove_rejected"})` 2; an empty result means the
 priming is landing too early or is gone.
 
+**D-35'S VALUE LEG PASSES A SUBUNIT PRICE STORED IN THE MAIN UNIT: "515p" AS 515 GBP.** [2026-09-22] The value check
+admits the raw's own digits whatever the unit, and derives cents, pence and paise as the main unit; so a raw naming a
+subunit passes BOTH scaled (5.15 GBP, right) and unscaled (515 GBP, 100x wrong). #1103's review estimated ~12 a week.
+Measured (SELECT-only) over every row extracted 2026-09-15T00:00Z..09-22T00:00Z, all pipelines, whose unit is GBP, USD
+or EUR and whose `num_raw` is a number followed by p, pence, cent(s) or paise: 70 rows, 52 scaled, 18 stored the raw's
+digits unscaled -- 14 pence as GBP (Diageo's 1,734p target as 1,734 GBP, NBP gas at 200.10 pence as 200.1 GBP), 2
+"5 cents" as 5 USD, 2 "$2.16 cents" whose raw is itself contradictory. The fix: a raw that names a subunit next to a
+main-currency unit does not admit its unscaled digits -- a D-35 rule change, so it ships with a replay of the value
+check over the week, not as an edit. Re-check: the same SELECT, comparing `value` to the raw's digits.
+
+**D-35'S VALUE-CHECK ERROR PATH IS WATCHED ONLY THROUGH THE 40% REJECT SHARE.** [2026-09-22] #1103's review residue
+(S2, S8, S9), filed together because each is the case where `CoveValueCheck` THROWS on a block (`value/error`: the
+block is dropped, the span goes Error). (1) No rule reads `error` alone: SentinelCoveValueRejectShareHigh counts it
+with `fail`, so a defect throwing on, say, 15% of blocks beside the healthy ~4% of fails reads 19% and pages nobody.
+(2) The adapter logs one Warning per thrown block, so the same systematic throw is also a log flood; demoting it waits
+on (1) -- a visible signal is not demoted without a wired alert (CLAUDE.md OBSERVABILITY). (3) The review found a raw of
+27+ digits overflows `decimal` in the check's arithmetic outside `TryMidpoint`'s OverflowException catch, so an
+unrepresentable number reads as the check failing to run rather than as a fail; not reproduced here. Measured:
+`sum(increase(sentinel_cove_check_total{check="value",outcome="error"}[8h]))` = 0 against ~4,240 checked facts at
+2026-09-22T12:12Z, the series first exported by D-35's deploy that day. Close by an error-share rule whose threshold
+comes from 7 days of that series, then decide the Warning.
+
+**D-35'S SYMBOL CHECK READS A RAW FILE THAT IS MISSING WHILE ITS PATH IS SET AS A REJECTION.** [2026-09-22] #1103's
+review residue S1. `ExtractionProcessor.LoadNormalizedContentAsync` returns empty text for a set path whose file is
+gone, and `CoveSymbolGate.CheckAsync` then grounds on the quote alone and, on a v2 row, rejects: the row lands
+NoResolution, which D-9 never approves. The gate's comment calls that a pruned file, but the pruner deletes the file
+and then NULLS the path (`RawContentRepository.NullFilePathWithChildrenOlderThanAsync`), so a set path with no file
+is an outage -- an unmounted volume, a restore -- or a crash between those two statements: an absent dependency,
+which D-27 says is no verdict. Measured 2026-09-22: 0 of the 51,822 `sentinel.raw_content` rows with a
+`raw_file_path` point at a missing file (SELECT-only, each path stat'ed on the host), so today's exposure is zero and
+this is a latent misclassification. The fix is to read that case as `unavailable` (the row stays Pending and retries;
+the pruner nulling the path at RawRetentionDays bounds the retry). Re-check: the same SELECT and stat.
+
 **D-36 TIER 2 KEEPS A FIGURE ABOUT WHAT A FUND OR FUTURE TRACKS WHEN ITS VERDICT SAYS SO; WHETHER TO CLEAR IT IS THE USER'S CALL.** [2026-09-22]
 AWAITING-DECISION. The attachment check has a verdict for a commodity, index, currency or market figure held on the
 fund, ETF, trust or future that tracks it (`tracks_underlying`); by default it is KEPT and counted as `proxy`, because
@@ -1276,11 +1314,57 @@ of verdicts, ~117 rows a day; under the round-3 anchor rule (a proxy verdict on 
 1,008 of the 15,080 eligible rows of 2026-09-17T00:12Z..09-22T09:15Z, ~187 a day (census, SentinelCollector/DECISIONS.md
 §D-36). THE DEFAULT HOLDS AT THE VERDICT, NOT THE FIGURE: a fund-tracks figure the model calls `about_other` is cleared
 like any other -- 12 of that window's 5,042 clears, from 10 articles (~2.2 a day: INDY 7, THYP 2, VOE, XLY, SOXX), so
-"proxies are kept" is true of the verdict only. On the 200 labelled rows the check said it 9 times: 2 consensus proxies, 2 consensus
+"proxies are kept" is true of the verdict only. Round 4's blind second labeller puts it at 15 (~2.8 a day, INDY 10): it
+reads three INDY Nifty target and stop-loss clears (942559, 942560, 942573) as figures about the index INDY tracks,
+where the census labelled them ambiguous (a target on the series, not a reading of it) -- a split, so the decision
+sees 12 to 15 a day's worth, and whether a target ON the tracked index counts as fund-tracks is part of the policy
+call. Labels: /opt/ai-inference/training-data/cove-tier2-census-20260922/census-labels.jsonl (`label` P, or
+`labels.r4-reviewer-blind` P). On the 200 labelled rows the check said it 9 times: 2 consensus proxies, 2 consensus
 WRONG (a bitcoin-ETF category allocation held on BITB, Dow futures held on the DJIA index), 5 labeller splits -- so
 clearing proxies would remove 2 wrong attachments and 2 wanted ones per 200. The decision and 6 worked rows are on the
-spot-check sheet. Close by the user's answer; flipping is one line in `CoveAttachmentGate.Disposition` plus its series
+spot-check sheet (next entry). Close by the user's answer; flipping is one line in `CoveAttachmentGate.Disposition` plus its series
 in `CoveChecks.Series` (both pinned). Re-check: `sum(increase(sentinel_cove_check_total{check="attachment",outcome="proxy"}[7d]))`.
+
+**D-36 HAS NO §7.3 HUMAN SPOT-CHECK; EVERY LABEL ON TIER 2 IS A MODEL'S.** [2026-09-22] AWAITING-DECISION. The design's
+acceptance line for the semantic tier, verbatim in SentinelCollector/DECISIONS.md §D-36: "Claim verifier agrees with
+human spot-check on ≥85% of n=50 sample." None of #1105's four review rounds did one: the 200-row measurement used two
+HF models, and every one of the census's 5,042 clear labels and round 4's 352 blind labels came from review agents
+reading the article -- the persisted label file below carries no human label. What exists for the user is an 18-row
+sheet of the FIRST cut's hard cases (the clears in question, the proxy decision with 6 worked rows, misses and splits),
+written before the name rule -- its DX "Japan" row is now refused unjudged and its ~117-a-day proxy rate is the
+round-1 replay's, the census reads ~187 -- so it is judgement on the hard cases, not the n=50 the design asks for.
+The supervisor reports offering the user 10 examples on 2026-09-22; that offer is recorded nowhere in the repo. What
+the design's check needs: 50 rows drawn from the census file (clears and keeps, so agreement covers both directions),
+the user's right/wrong per row, and agreement with the shipped disposition, >= 85% on the point estimate (a 50-row
+Wilson lower bound at 85% is ~73%). Close when D-36 records that agreement, or records the user's waiver. Data:
+/opt/ai-inference/training-data/cove-tier2-census-20260922/ -- `census-labels.jsonl` to draw from,
+`tier2-spotcheck-sheet-2026-09-22.md` the sheet as written.
+
+**D-36 TIER 2'S RECALL IS UNMEASURED: EVERY CLEAR IS LABELLED, ALMOST NO KEPT ROW IS.** [2026-09-22] MEASUREMENT DEBT.
+D-36's precision is a census (4,926 of 5,042 clears wrong attachments), but how many wrong attachments it KEEPS -- and
+publishes to ThresholdEngine, the digest and the matrix -- has no estimate on the population it runs on. The census
+window (15,080 eligible rows, 2026-09-17T00:12Z..09-22T09:15Z) kept 10,038: `pass` 8,191, `proxy` 1,008,
+`value_mismatch` 524, `unanchored_figure` 163, `unidentifying_name` 86, `insufficient` 66. 364 of them carry a label,
+and only 30 were drawn at RANDOM from these kept rows (round 4's blind control, `pass` rows only): 28 correct, 1 wrong
+(Reliance Industries' bonds held on Reliance Worldwide, RLLWF), 1 ambiguous (an option premium held on the stock,
+SDGR) -- 1 or 2 of 30 (Wilson upper bound 16.7% / 21.3%). The other 334 were labelled because some rule cleared them,
+or in earlier rounds' draws under earlier rules, so they cannot give this rule's rate. Two signals from OTHER
+populations: round 2's draw A, 3 of 40 random kept rows wrong
+(7.5%, Wilson 2.6-19.9) under b303cfc8's rule; and the 2026-09-21 two-model validation, 57 of 150 uniform eligible
+rows consensus-wrong (38.0%, Wilson 30.6-46.0; 27 split) over 2026-09-15..22 -- a window that includes the DX/U
+volume the census excludes, so its gap to the census's 33.6% clear share sits inside its own interval and is not a
+recall measurement. Scale: each 1% of the kept `pass` rows is ~82 rows, ~15 a day, of wrong attachments published.
+PROPOSED MEASUREMENT (spend is the user's call; he is open to HF spend "if it improves outcomes"): a stratified draw
+of kept rows by keep reason -- e.g. `pass` 400, `proxy` 150, `value_mismatch` 100, 50 each of the three small strata
+-- labelled by two families at deepinfra (the standing pair, `.claude/skills/supervisor-mode/SKILL.md`
+ORACLE_ROUTING, whose BUDGET block governs: bill printed before the first call, fail-closed cap, pre-flight probe,
+proven on 2 known rows) from the same wider window D-36's two-model measurement used, recall population-weighted
+over the strata. COST, from that measurement's own ledger ($1.089 for 200 rows by both models): DeepSeek $0.00123 and
+Qwen $0.00417 a row, $0.0054 a row for the pair -- so 1,000 rows is ~$5.40, OVER a $5 cap, and the 800 above ~$4.32
+fits it. Data: /opt/ai-inference/training-data/cove-tier2-census-20260922/census-labels.jsonl -- kept rows are
+`outcome` other than `about_other`; the random 30 are those whose `r4_groups` holds `control`; the earlier validation's
+150 rows are `tier2val-150-2026-09-21.jsonl` beside it. Close when D-36 carries a population-weighted recall with its
+interval, or the user declines the spend.
 
 **SECMASTER CATALOG NAMES THAT IDENTIFY NOTHING: D-36 NOW REFUSES TO JUDGE THEM, THE SOURCE FIX IS SECMASTER'S.**
 [2026-09-22] Tier 2 compares a figure against the held instrument's `instruments.name`. On a name that identifies
@@ -1318,6 +1402,23 @@ rows a day since 2026-09-17 (SELECT-only): CL 52.0, BSE 19.4, SR 16.4, DE 13.6, 
 attachment may have been available. Re-check after deploy: `SELECT "OriginalSymbol", count(*) FROM
 sentinel.extracted_observations WHERE resolution_method = 'cove_about_other' AND extracted_at > now() - interval '7
 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 15`.
+ON THE CENSUS (every eligible row 2026-09-17T00:12Z..09-22T09:15Z, every clear labelled; data below): CL 286 clears
+of 287 eligible rows, all 286 wrong attachments, 253 naming crude, oil, WTI, Brent or a barrel in the description or
+quote (~53 a day); T (AT&T) 83 of 83 cleared, all wrong, from 37 articles, 50 naming Japan or a Japanese company in the
+stored text (trading houses -- Sumitomo, Mitsubishi, Mitsui, Itochu, Marubeni --, Japanese banks' returns, the Topix);
+SI (Shoulder Innovations) 111 of 112; BSE 132 of 140; SR 92 of 95; DE 64 of 68; MICH 59 of 68. SHORT SYMBOLS carry
+the class: over the 14,994 judged rows, the share cleared as a wrong attachment is 54.8% when the held symbol is 1-2
+letters (1,117 of 2,038), 36.1% at 3 letters, 30.0% at 4 and 15.6% for longer, dotted or numeric symbols. That is the
+measured correlation; the resolver path that attaches a 1-2 letter ticker the prose never names as one is untraced.
+THE SIGNAL IS LOST, NOT CORRECTED: a clear leaves the fact NoResolution, so a WTI price cleared off Colgate reaches
+neither Colgate nor any crude series. The fix is at the SOURCE, the resolver, and the census is its free gold set: the
+4,926 clears labelled W (not the 89 A, 15 C and 12 P), each with its article, figure, quote and refuted instrument, are
+a resolver-regression corpus once each carries its CORRECT answer -- an instrument proposed by an HF labeller and
+verified against SecMaster by id, or "none" where the figure describes nothing catalogued (a correct NoResolution is a
+passing case too: the resolver must still not pick CL). Cost basis, D-36's own ledger: $0.00123 a row for DeepSeek
+alone, $0.0054 with the Qwen cross-check (~$6 or ~$27 over 4,926 rows). Data:
+/opt/ai-inference/training-data/cove-tier2-census-20260922/census-labels.jsonl, `outcome` `about_other` with `label`
+`W`; `symbol` and `instrument_name` are the refuted instrument.
 
 **ATTACHMENTS REEXTRACT WRITES AFTER EXTRACTION GET NO D-36 CHECK.** [2026-09-22] Tier 2 judges attachments at
 extraction; the ReExtract sweep (resolve-only, live) writes new ones later -- 397 eligible rows in the 7 days to
@@ -1399,7 +1500,10 @@ in production for 7 consecutive days.
 
 **D-36'S TWO SHARE ALERTS TAKE THEIR THRESHOLDS FROM A 40-ROW-PER-WINDOW REPLAY.** [2026-09-22] MEASUREMENT DEBT.
 `SentinelCoveAttachmentClearShareHigh` (> 70%) was set over 28 six-hour windows of 40 replayed rows each: min 10%, p50
-40%, max 60%, where 40 rows alone carry ~7.7pp of sampling noise. `SentinelCoveAttachmentCheckErrors` (> 20%) borrows the
+40%, max 60%, where 40 rows alone carry ~7.7pp of sampling noise. The shipped rule on the D-36 census (every eligible row
+2026-09-17..22, this rule's own quantity, [6h] at 5m, the 200 floor) reads 34.0% overall and min 19.3% / p50 35.9% /
+max 58.4% over 1,161 windows, so 70% holds on the population too; the census is a replay, so the live re-derivation
+below is still owed. `SentinelCoveAttachmentCheckErrors` (> 20%) borrows the
 news-signal classifier's error distribution (max 2.3% over 30d). Neither counter has live history. Re-derive after 7 days
 of production on D-36, instant from `date -u`, 5m resolution:
 `max_over_time((sum(increase(sentinel_cove_check_total{check="attachment",outcome="about_other"}[6h])) / sum(increase(sentinel_cove_check_total{check="attachment",outcome!~"error|unidentifying_name|unanchored_figure"}[6h])))[7d:5m])`
