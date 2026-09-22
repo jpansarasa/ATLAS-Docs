@@ -204,7 +204,7 @@ This is the single most important correction, because of what follows from it (2
 **2.2 The proposed acceptance metric cannot fail today.** `sentinelcollector_macro_observations_written_total`
 reads **586 over 24h** `[M]` while the numeric path's DB rows are **zero for 37 days**. There is exactly
 one increment site — `MacroObservationRouter.cs:338` — and the counter is declared untagged and is
-documented as such (`SentinelMeter.cs:719-723`: *"Bounded — no tags, scalar counters only"*). Both
+documented as such (`SentinelMeter.cs:741-745`: *"Bounded — no tags, scalar counters only"*). Both
 producers pass through it. `[M]` **An alert or acceptance check written against that counter would be
 green right now.** No step in §4 may use it unlabelled.
 

@@ -155,7 +155,7 @@ A SecMaster migration cannot reach `atlas_data`; there is no FK between the data
 Two facts bound the risk:
 
 - **All 348 attached rows are terminal** — 338 `Approved`/`Resolved`, 10 `AutoClosed`/`NoResolution`, **zero Pending**. The review UI's actionable query (`Pending AND InstrumentId!=null AND ResolutionState==Resolved`) selects none of them, so the human queue is untouched.
-- **`OriginalInstrumentId` HAS a production reader, and the safety comes from a MEASUREMENT, not from an absence.** It is written at `ExtractedObservation.cs:311/470/519` — the only three `OriginalInstrumentId = InstrumentId;` writes in the service — and it is **READ at `:515`**, four lines above the third write, by `SnapshotOriginalResolutionIfAbsent`'s presence probe:
+- **`OriginalInstrumentId` HAS a production reader, and the safety comes from a MEASUREMENT, not from an absence.** It is written at `ExtractedObservation.cs:312/471/535` — the only three `OriginalInstrumentId = InstrumentId;` writes in the service — and it is **READ at `:531`**, four lines above the third write, by `SnapshotOriginalResolutionIfAbsent`'s presence probe:
 
   ```csharp
   if (OriginalSymbol != null || OriginalInstrumentId != null || OriginalResolutionMethod != null)

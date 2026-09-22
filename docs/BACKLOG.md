@@ -89,6 +89,18 @@ Defects with a measurement that makes them re-checkable.
 | B | 2026-09-21 | OPEN | Two more CoVe symbol gates still ground on context_summary, null on 5,155 of 5,155 v2 articles: the re-extract sweep's and quarantine-hallucinated's |
 | C | 2026-09-21 | OPEN | 0.66% of v2 rows carry a SubjectEntity the article never spells; no tier-1 check covers it (measured over raw HTML) |
 | B | 2026-09-21 | OPEN | D-35's zero-init is registered on ApplicationStarted and nothing pins the registration; the silence alerts depend on it |
+| A | 2026-09-22 | AWAITING-DECISION | D-36 tier 2 KEEPS a figure about what a fund or future tracks when the verdict is tracks_underlying (~187/day) and CLEARS it when the verdict is about_other (~2.2/day, census); the policy is the user's call. 2 of 9 kept proxy verdicts were consensus-WRONG |
+| A | 2026-09-22 | AWAITING-DECISION | D-36 clears CORRECT figures when its window cuts off the article's own naming of the subject: POWW 13 of 13 clears correct (one letter, one event) |
+| B | 2026-09-22 | OPEN | text_quote anchors on the raw's first ORDINAL occurrence: fragment-first ("5%" inside "0.45%") on 298 of 14,997 eligible rows (2.0%) |
+| C | 2026-09-22 | OPEN | D-36's FigureAnchor counts a number inside a time or date ("42" in "06:42") as a sentence stating the figure: 42 of 14,592 rows (0.29%); ':' and '/' cannot simply become number-internal |
+| B | 2026-09-22 | OPEN | D-36 reads a renamed company as another company (MSTR "Strategy Inc" vs "MicroStrategy Inc"; IPAX vs LUNR): 2 correct clears of 5,042 (census) |
+| C | 2026-09-22 | OPEN | SentinelCoveAttachmentCheckAbsent forgets tier 2 after 7 days absent; drop its lookback leg once tier 2 has been deployed a week |
+| A | 2026-09-22 | OPEN | SecMaster catalog names that identify nothing -- 80 series codes named by their own code, 41 places (DX "Japan", KC "Colombia"), 7 blank -- leave ~16 eligible rows a day unjudged by D-36; loose names (NAQ.DEX "Nasdaq", 18/day) still pass wrong figures |
+| A | 2026-09-22 | OPEN | Resolver symbol collisions D-36 clears daily: WTI on Colgate (CL, ~52 eligible rows a day), Saudi Arabia on Spire (SR), Indian banks on BSE, Porsche on Deere (DE), foreign inflation on MICH |
+| B | 2026-09-22 | OPEN | Attachments ReExtract writes after extraction get no D-36 check: ~57 a day, ~6.6 of them wrong, reach the digest, dedup and the auto-approver |
+| B | 2026-09-22 | OPEN | D-36 tier 2 reads an ADR and its home listing as different securities: the ONE consensus false clear of 86, one split clear, and AMKBY/Maersk A (round 3) |
+| B | 2026-09-22 | OPEN | D-36's two share alerts take thresholds from a 40-row-per-window replay; re-derive from 7d of live counters |
+| C | 2026-09-22 | OPEN | D-36 cannot see 236 of 22,650 weekly instrument-bearing v2 rows (no value), nor SecMaster dedup's subject_entity match on a cleared row |
 | B | 2026-09-17 | AWAITING-DECISION | Test databases on the shared timescaledb: 9 fixed-name orphans, per-worktree leaks on kill, each holds a TimescaleDB worker slot |
 | B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
 | B | 2026-09-17 | OPEN | backfill_unresolved_rate_high never detected a fault: constant on main, crossed by growth on D-17 |
@@ -1189,12 +1201,160 @@ measurement; decide on the Resolved subset whether the expansions come from the 
 
 **D-35'S ZERO-INIT IS REGISTERED ON ApplicationStarted AND NOTHING PINS THE REGISTRATION.** [2026-09-21] The three tier-1
 silence alerts read `sentinel_cove_check_total` and the two async outcome counters with `increase()`, which cannot see a
-series born at 1; `SentinelMeter.PrimeCoveCheckSeries` exports all 12 tier-1 series and 4 input series at zero.
+series born at 1; `SentinelMeter.PrimeCoveCheckSeries` exports all 12 tier-1 series, D-36's 8 tier-2 series and 4
+input series at zero.
 `CoveCheckZeroInitTests` pins the method's content and CANNOT see the Program.cs line that registers it, nor its
 ordering after the MeterProvider subscribes (the D-34 priming has the same gap, entry above). Re-check within minutes
-of a deploy, before extraction has run: `count(sentinel_cove_check_total)` must be 12 and
+of a deploy, before extraction has run: `count(sentinel_cove_check_total)` must be 20 (12 tier-1 series + D-36's 8
+`check="attachment"` ones, whose EXISTENCE SentinelCoveAttachmentCheckSilent requires) and
 `count(sentinel_resolution_worker_processed_total{outcome=~"resolved|cove_rejected"})` 2; an empty result means the
 priming is landing too early or is gone.
+
+**D-36 TIER 2 KEEPS A FIGURE ABOUT WHAT A FUND OR FUTURE TRACKS WHEN ITS VERDICT SAYS SO; WHETHER TO CLEAR IT IS THE USER'S CALL.** [2026-09-22]
+AWAITING-DECISION. The attachment check has a verdict for a commodity, index, currency or market figure held on the
+fund, ETF, trust or future that tracks it (`tracks_underlying`); by default it is KEPT and counted as `proxy`, because
+clearing is final and the attachment may be wanted (D-36). Replayed on 1,120 publishable rows of 2026-09-15..22: 5.9%
+of verdicts, ~117 rows a day; under the round-3 anchor rule (a proxy verdict on ANY stating sentence keeps the row)
+1,008 of the 15,080 eligible rows of 2026-09-17T00:12Z..09-22T09:15Z, ~187 a day (census, SentinelCollector/DECISIONS.md
+§D-36). THE DEFAULT HOLDS AT THE VERDICT, NOT THE FIGURE: a fund-tracks figure the model calls `about_other` is cleared
+like any other -- 12 of that window's 5,042 clears, from 10 articles (~2.2 a day: INDY 7, THYP 2, VOE, XLY, SOXX), so
+"proxies are kept" is true of the verdict only. On the 200 labelled rows the check said it 9 times: 2 consensus proxies, 2 consensus
+WRONG (a bitcoin-ETF category allocation held on BITB, Dow futures held on the DJIA index), 5 labeller splits -- so
+clearing proxies would remove 2 wrong attachments and 2 wanted ones per 200. The decision and 6 worked rows are on the
+spot-check sheet. Close by the user's answer; flipping is one line in `CoveAttachmentGate.Disposition` plus its series
+in `CoveChecks.Series` (both pinned). Re-check: `sum(increase(sentinel_cove_check_total{check="attachment",outcome="proxy"}[7d]))`.
+
+**SECMASTER CATALOG NAMES THAT IDENTIFY NOTHING: D-36 NOW REFUSES TO JUDGE THEM, THE SOURCE FIX IS SECMASTER'S.**
+[2026-09-22] Tier 2 compares a figure against the held instrument's `instruments.name`. On a name that identifies
+nothing every correct figure read "about another entity" and was cleared, for good: the review measured DX (named
+"Japan") 72 of 82 held-out rows cleared, 68 of them correct US Dollar Index futures figures, and GASDESW (named
+"GASDESW") 15 of 18 correct diesel prices. D-36 now makes no comparison on such a name (`CatalogNameCheck`; kept,
+counted `unidentifying_name`). THE TRADE BY CLASS, re-derived on today's population (census of the 109 rows the rule
+refused 2026-09-17..22, judged without it, SentinelCollector/DECISIONS.md §D-36): on SERIES codes 16 of 29 would-be
+clears were CORRECT (~3.0 a day kept from destruction) against 11 wrong kept (~2.1 a day); on LISTED self-seeds
+(Equity/ETF) 0 of 11 correct and 10 wrong -- the rule shielded only wrong attachments there, so D-36 no longer applies
+its symbol leg to them. Round 1's "~13.8 avoided against ~2.0 given up" was the DX era and is retired. Measured over all 29,127
+instruments (SELECT-only): 259 names are the symbol verbatim (255 `entity_resolution:gemini` and 4 openfigi self-seeds
+wrote the code as the name), 41 are a bare place (40 GeminiFallback rows minted from a country surface, all
+is_active=false, and .LON "UK"), 7 are blank (see the blank-name entry above). Since 2026-09-17 the refusal hits ~20
+eligible rows a day on 26 instruments (DFEDTARL 6.6/day, GASDESW 3.0/day), and DX and KC attach nothing (0 rows
+since 2026-09-16). THE FIX IS AT THE SOURCE: the self-seed must write the series title or the company name, and the
+place-named rows need their real names. DX's and KC's are NOT this entry's to change: their identity -- the ICE
+futures row against the equity tickers of the same symbol -- is leg C of `docs/proposals/delete-wrong-mappings.md`,
+parked on the user's decision; renaming either first would move the catalog under that decision. NAMES THAT MISLEAD
+WITHOUT BEING EMPTY are not caught and pass wrong figures as `about_instrument`: NAQ.DEX is named "Nasdaq" (18.4
+eligible rows a day since 09-17, and the review's random 170 held 3 Nasdaq INDEX figures kept on it), and FMCC held
+Freddie Mac's PMMS mortgage-rate survey (0.6/day). Re-check: `SELECT count(*) FILTER (WHERE btrim(name) = btrim(symbol)),
+count(*) FILTER (WHERE btrim(name) = '') FROM instruments` in atlas_secmaster (259 and 7), the place count by
+`CatalogNameCheck`'s list, and after deploy `sum(increase(sentinel_cove_check_total{check="attachment",
+outcome="unidentifying_name"}[7d]))` (~110 expected: ~16 a day on series codes and the place).
+
+**RESOLVER SYMBOL COLLISIONS THAT D-36 CLEARS EVERY DAY.** [2026-09-22] Tier 2 removes these correctly, so no wrong
+figure reaches a consumer, but each is a wrong attachment born upstream at a rate that makes it a source defect, not
+residue. On the round-2 replay (400 uniform + 145 rows on the most-cleared instruments, one model labeller): WTI crude
+held on Colgate-Palmolive (CL; 20 of 20 cleared, all wrong -- the futures root collides with the equity ticker), "U.S."
+held on Unity (U, 24/24), Saudi Arabia on Spire (SR, 17/17), Indian banks on BSE Ltd (18/20), Porsche on Deere (DE,
+17/17), foreign inflation on MICH (17/17), Madrid on the Spain ETF (EWP), Coca-Cola on its bottler (COKE). Eligible
+rows a day since 2026-09-17 (SELECT-only): CL 52.0, BSE 19.4, SR 16.4, DE 13.6, MICH 12.6; U attaches nothing since
+2026-09-16. Consequence while unfixed: every one costs a verdict call and leaves a NoResolution fact where a correct
+attachment may have been available. Re-check after deploy: `SELECT "OriginalSymbol", count(*) FROM
+sentinel.extracted_observations WHERE resolution_method = 'cove_about_other' AND extracted_at > now() - interval '7
+days' GROUP BY 1 ORDER BY 2 DESC LIMIT 15`.
+
+**ATTACHMENTS REEXTRACT WRITES AFTER EXTRACTION GET NO D-36 CHECK.** [2026-09-22] Tier 2 judges attachments at
+extraction; the ReExtract sweep (resolve-only, live) writes new ones later -- 397 eligible rows in the 7 days to
+2026-09-22T07:00Z (~57 a day; its daily count 09-09..09-21 median 82, range 8-150), 132 recovered and 265 replaced. On
+60 of them the check said `about_other` 7 times and all 7 were wrong (CAD/USD holding tariff figures, SP500 a strategy's
+edge, BTC a Capital B purchase, GC Dakota Gold's margin): ~6.6 wrong attachments a day (3.3-12.6) reach the digest,
+SecMaster's dedup and the auto-approver unchecked. They never reach ThresholdEngine or the sector roll-up: the only
+publish seams are in `ExtractionProcessor`. Not gated in the D-36 fix round, deliberately: the candidate has to be
+judged BEFORE `ApplyReExtraction`, so that a refusal reads as D-31's retain-on-miss rather than a clear of the held
+instrument, which means a refused-candidate outcome in ReExtract's taxonomy and in SentinelReExtractGroundingNothing,
+and an article read the resolve-only leg does not make today -- on a population whose tier-2 precision rests on these
+7 rows. Re-check: the 7-day count of rows with `re_extracted_at` in the window, an instrument, a value and a quote,
+whose instrument differs from `"OriginalInstrumentId"` or has none.
+
+**D-36 TIER 2 READS AN ADR AND ITS HOME LISTING AS DIFFERENT SECURITIES.** [2026-09-22] The one consensus false clear
+of 86 was a NOK 125 put strike on TGS held on TGSGY, TGS NOPEC's depositary receipt; a split clear was Carl Zeiss
+Meditec's -4.22% (ETR:AFXG) held on CZMWY, its unsponsored ADR; review round 3's tail held one more, Maersk's
+A-share move (CSE:MAERSKa) cleared from AMKBY, its B-share ADR (adjudicated ambiguous). The prompt's "an attribute of this instrument or its
+issuing company" does not tell the model a receipt shares its issuer. A sentence would, and the prompt is measured
+(`CoveAttachmentGateTests` and `CoveTier2PrecisionTests` pin it byte for byte), so the fix ships through a re-measurement
+on a fresh labelled sample, not an edit. Re-check: `cove.cleared` events whose `cove.instrument` contains "ADR".
+
+**D-36 CLEARS CORRECT FIGURES WHEN ITS WINDOW CUTS OFF THE ARTICLE'S OWN NAMING OF THE SUBJECT.** [2026-09-22]
+AWAITING-DECISION. Review round 3's census of POWW (all 51 eligible rows 2026-09-17..22) found 13 clears and all 13
+CORRECT -- ONE EVENT, never a rate: one SRK Capital semi-annual letter, published whole (raw_content 177236) and as an
+excerpt (177363), whose heading "Outdoor Holding Company (POWW)" sits just before the 1,000-character evidence window,
+while the paragraph the figures come from says "GunBroker" and "the company"; the model reads them as another
+company's. They are 13 of the 15 correct clears in the census of all 5,042 clears of 2026-09-17..22.
+The verdict here measures the model's knowledge of brand ownership, not the attachment. Candidate guard, measured
+and NOT shipped: refuse a clear when the article tags the held ticker in a ticker context ("(POWW)", "NASDAQ:POWW")
+outside every window the model saw -- on 1,360 labelled clears (strata, tail, census) it refuses 13 correct, 4 wrong
+and 2 ambiguous, and the whole correct side is that ONE letter, so it is the user's call, not a fix-round edit; the
+alternative is a window that always carries the article's naming of the ticker (a prompt change: re-measure).
+Re-check: after deploy, `cove.cleared` events whose article span names the cleared symbol in parentheses; the census
+query is `SELECT count(*) FROM sentinel.extracted_observations WHERE resolution_method = 'cove_about_other' AND
+"OriginalSymbol" = 'POWW'` against POWW's eligible rows.
+
+**TEXT_QUOTE ANCHORS ON THE RAW'S FIRST ORDINAL OCCURRENCE, WHICH CAN BE THE TAIL OF ANOTHER NUMBER.** [2026-09-22]
+`DslToMergedExtractionAdapter.BuildNumTextQuote` snaps the persisted quote around the first `IndexOf(raw)`, so raw
+"5%" lands inside "0.45%", "2 cents" inside "22 cents", "7%" inside "1.07%": 298 of the 14,997 eligible rows of
+2026-09-17T00:12Z..09-22T08:18Z (2.0%) carry a quote in which the raw stands only as a fragment. D-36 no longer
+reads the quote to judge (it anchors on the raw itself, `FigureAnchor`), but the quote is D-35's value-check sentence
+and every `text_quote` reader's (digest, review UI, keyword consumers). The fix is at the source: anchor on the
+first STANDALONE occurrence -- a D-35 input change, so it ships with a replay of the value check over the affected
+rows, not inside a D-36 round. Re-check: count eligible rows whose `metadata->>'num_raw'` occurs in `text_quote` only
+as a fragment (the rule is `FigureAnchor.StandaloneAt`).
+
+**D-36'S FIGUREANCHOR COUNTS A NUMBER INSIDE A TIME OR A DATE AS A STATEMENT OF THE FIGURE.** [2026-09-22]
+`FigureAnchor.StandaloneAt` refuses a raw that another digit, or a '.' or ',' and a digit, continues -- but ':' and
+'/' end a number there, so "42" in "06:42", "10" in "10/11" and "7" in "7:00 AM" each count as a sentence stating the
+figure. Measured by a port of `StandaloneAt` and the sentence snap over the 14,592 eligible rows of
+2026-09-17T00:12Z..09-22T09:15Z whose article review round 3 cached, calling an occurrence a fragment when a digit
+stands on the far side of the ':' or '/': 42 rows (0.29%) count at least one. On 32 no count crosses a threshold, on 9
+the fragments push the figure past the cap of 8 (news-bullet pages stamped "09/19 06:42"), on 1 they are its only
+statements. Of the 25 the round-3 reviewer's replay can re-decide, 17 keep their outcome, 2 keep under a different
+verdict, 4 cannot be decided (more than 30 sentences), 1 would be judged and cleared (Prince Harry's age, held on CMG)
+and 1 would lose its clear -- so the defect errs toward keeping. THE FIX IS NOT "':' and '/' are number-internal":
+that 1 row is "Rs 1,24,664/8 grams", a gold price per 8 grams, which states its figure, as "(0.81/0.85)" (a ratio of
+DHR's beta) and "2028/2029" (a range) state theirs in rows the same rule would rewrite. It has to recognise the TIME
+(h:mm) and short-DATE (m/d) shapes, and it moves the prompt's sentence set, so it ships with a replay. Re-check: count
+eligible rows whose `metadata->>'num_raw'` stands in the article between a digit and ':' or '/' followed by a digit.
+
+**D-36 READS A RENAMED COMPANY AS ANOTHER COMPANY.** [2026-09-22] Review round 3 found one correct clear: "MicroStrategy
+Inc (MSTR) +14.54%" held on MSTR, which the catalog names Strategy Inc. The census of all 5,042 clears of
+2026-09-17..22 found one more of the class: Intuitive Machines' revenue cleared from IPAX, the catalog's ticker for
+Intuitive Machines Inc, where the article says LUNR. The verdict compares the article's name and ticker against the
+catalog's, and a rename the model does not know reads as a different company. Small (2 of 5,042) and bounded by how
+many catalog rows lag a rename; the source fix is SecMaster keeping former names as
+aliases the gate can show. Re-check: `cove.cleared` events whose `cove.instrument` differs from a former name in the
+article.
+
+**SentinelCoveAttachmentCheckAbsent FORGETS TIER 2 AFTER 7 DAYS ABSENT.** [2026-09-22] The rule pages when the
+attachment series vanish after tier 2 was deployed; it knows tier 2 WAS deployed only through
+`last_over_time(...[7d])`, so after a week of absence it resolves. The leg exists only so a monitoring deploy that
+ships the rule ahead of the image stays silent. The step: once tier 2 has run in production for 7 days, drop the
+lookback leg in a follow-up PR (absence then pages for as long as it lasts) and move its promtool group from
+"forgotten after 7 days" to "still paging". Re-check: `count(sentinel_cove_check_total{check="attachment"})` is 8
+in production for 7 consecutive days.
+
+**D-36'S TWO SHARE ALERTS TAKE THEIR THRESHOLDS FROM A 40-ROW-PER-WINDOW REPLAY.** [2026-09-22] MEASUREMENT DEBT.
+`SentinelCoveAttachmentClearShareHigh` (> 70%) was set over 28 six-hour windows of 40 replayed rows each: min 10%, p50
+40%, max 60%, where 40 rows alone carry ~7.7pp of sampling noise. `SentinelCoveAttachmentCheckErrors` (> 20%) borrows the
+news-signal classifier's error distribution (max 2.3% over 30d). Neither counter has live history. Re-derive after 7 days
+of production on D-36, instant from `date -u`, 5m resolution:
+`max_over_time((sum(increase(sentinel_cove_check_total{check="attachment",outcome="about_other"}[6h])) / sum(increase(sentinel_cove_check_total{check="attachment",outcome!~"error|unidentifying_name|unanchored_figure"}[6h])))[7d:5m])`
+and the same for `outcome="error"` over [1h]; move each threshold to the distribution or record why not.
+
+**D-36 CANNOT SEE TWO THINGS A WRONG ATTACHMENT STILL REACHES.** [2026-09-22] (1) Rows resolved onto an instrument with
+NO value are not judged (the check is about a figure): 236 of 22,650 instrument-bearing v2 rows 2026-09-15..22 (1.0%,
+SELECT-only); 0 lacked a quote and 1 was provenance-keyed (exempt, D-32). (2) SecMaster's dedup reader matches
+`"Symbol"` OR `subject_entity` (`SentinelObservationSourceProvider`); a clear empties the symbol, but the model's
+`subject_entity` stays as written, so a cleared row whose subject names the refuted company still joins that company's
+alias. Re-check (2) after deploy: `SELECT count(*) FROM sentinel.extracted_observations WHERE resolution_method =
+'cove_about_other' AND subject_entity IS NOT NULL` over 7 days, then sample whether those subjects are the refuted
+instrument's aliases.
 
 **D-18 RECLASSIFIES 82 MISLABELLED ROWS BY AUTHORITY, WHICH COMPLETES T3 ITEM 3 AS WRITTEN; NOT YET DEPLOYED. 19 ROWS
 NO AUTHORITY SETTLES REMAIN MISLABELLED.** Mechanism, authority and every id: `SecMaster/AGENT_README.md` D-18 and the
@@ -1679,7 +1839,7 @@ sentinel.extracted_observations WHERE instrument_id IS NULL AND extracted_at >= 
 Read the second axis precisely: `ApplyReExtraction()` snapshots the `Original*` columns only when all three are
 still null (preserving the EARLIEST snapshot; guarded by `ReExtractBackgroundServiceTests.cs`
 `should_preserve_earliest_audit_snapshot_on_second_re_extract`), but `Quarantine()`
-(`SentinelCollector/src/Entities/ExtractedObservation.cs:308`) and `QuarantineInPlace()` (`:464`) assign them
+(`SentinelCollector/src/Entities/ExtractedObservation.cs:309`) and `QuarantineInPlace()` (`:465`) assign them
 UNCONDITIONALLY, so `"OriginalInstrumentId" IS NOT NULL` means "held an instrument at the LATEST quarantine, or at
 the first re-extract if never quarantined after it" -- NOT "at extraction". CONFOUND, not cause -- the April trigger
 remains unestablished.
@@ -1689,7 +1849,7 @@ remains unestablished.
 2026-08-19) -- it hit BDIY too, and BDIY recovered. 272 of the 275 Challenger rows had ALREADY published before being
 quarantined, so it is retroactive on already-sent data, not a forward block. Its origin is INFERRED -- do not repeat
 this search expecting to close it: `ExtractedObservation.Quarantine()` (`:308`) has no production call site in git
-history, and `QuarantineInPlace()` (`:475`) is called only from `SentinelCollector/src/Endpoints/AdminEndpoints.cs:1589`,
+history, and `QuarantineInPlace()` (`:475`) is called only from `SentinelCollector/src/Endpoints/AdminEndpoints.cs:1585`,
 added 2026-05-15, three weeks AFTER the event (re-checked 2026-09-16). Likely a manual script or interactive session.
 Re-check: `SELECT "OriginalSymbol", count(*), count(published_at) FROM sentinel.extracted_observations WHERE
 "QuarantinedAt"='2026-04-24 00:18:52.867997+00' GROUP BY 1 ORDER BY 2 DESC;`
@@ -1720,7 +1880,7 @@ different integers is this note working; a re-check changing a RATIO is a real f
 (3) THREE THINGS ARE CALLED "Symbol": the COLUMN `"Symbol"` (the resolved catalog symbol, NULL until resolution
 succeeds); the KEY `"Symbol"` inside `candidate_symbols_json` (an LLM-minted slug such as `Challenger_Gray_Christmas`,
 usually absent from SecMaster); and the AXIS. `"OriginalSymbol"` is NOT a fallback identity for the column: it is
-written only by `Quarantine()` (`SentinelCollector/src/Entities/ExtractedObservation.cs:310`), `ApplyReExtraction()`
+written only by `Quarantine()` (`SentinelCollector/src/Entities/ExtractedObservation.cs:311`), `ApplyReExtraction()`
 (`:394`) and `QuarantineInPlace()` (`:480`), each as `OriginalSymbol = Symbol` -- a PRE-REMEDIATION AUDIT SNAPSHOT,
 so keying on it selects rows that were quarantined or re-extracted, NOT "the feed". Rows with neither column
 populated are reachable only through the candidate or the description, and only with `LEFT JOIN LATERAL
@@ -2347,7 +2507,7 @@ and non-DSL rows on 48,519 of 48,634 (99.8%). The last `extracted_at` on any pub
 all (last `published_at` 2026-02-07; KNOWN DEFECTS, below), so there is no publish-side effect to find.
 THE LEAD, and one grep already kills its naive form: `SentinelCollector/src/cod-prompts/cod_json_schema_v1.json`
 contains no `period` field (`"additionalProperties": false` on the item schemas and the envelope), yet
-`SentinelCollector/src/Services/V2ExtractionPipeline.cs:272` DOES assign `Period = extraction.Period`, so "the v2
+`SentinelCollector/src/Services/V2ExtractionPipeline.cs:271` DOES assign `Period = extraction.Period`, so "the v2
 adapter forgot to map the field" is false. What settles it is a CODE READ, not another query: read
 `V2ExtractionPipeline.cs` and `GpuJsonExtractionService.cs` against the v1 site `Workers/ExtractionProcessor.cs:750`
 (the only other `Period =` site in the service) and establish what fills `extraction.Period` on the CoD path. NOBODY
@@ -2520,7 +2680,7 @@ evidence of the failure", NOT proven equivalence. `period_accuracy` moved -0.056
 597-record confirmation.
 
 **DEFECT, pre-existing and now the ONLY leg outside D-27's gate: the qualitative dispatch path still orphans on a
-dependency outage.** `TryDispatchQualitativeAsync`'s extract-stage catch (`SentinelCollector/src/Workers/ExtractionProcessor.cs:2801`)
+dependency outage.** `TryDispatchQualitativeAsync`'s extract-stage catch (`SentinelCollector/src/Workers/ExtractionProcessor.cs:2811`)
 calls `MarkRawContentProcessedAsync(..., ex.Message, ...)` for EVERY exception, so a `BrokenCircuitException` writes
 `processing_error` and the row leaves the queue with nothing re-driving it — the original D-27 failure mode, on this
 one leg. It is not reachable by the gate BY CONSTRUCTION: the gate lives in the article catch, and this catch runs
@@ -2600,15 +2760,15 @@ about the resolver). For any row re-extracted before 2026-09-16 read `OriginalRe
 `OriginalInstrumentId` alongside the live columns, always.
 A SECOND circular column: `extracted_observations.resolution_confidence` holds the resolver OUTCOME's value
 (`DeterministicResolver.cs:446-450`), not what Rule 1 received; the input is visible only in
-`sentinel_resolver_rule1_input_confidence` (`SentinelMeter.cs:1783`, from #963). Every observation of it sits at
+`sentinel_resolver_rule1_input_confidence` (`SentinelMeter.cs:1805`, from #963). Every observation of it sits at
 exactly 0.850 = `DslPreselectionConfidence`, a hardcoded constant, so the `< 0.7` gate can never trip: an absent
-`below_threshold` series on `sentinel_resolver_rule1_decision_total` (`SentinelMeter.cs:1764`) is a property of the
+`below_threshold` series on `sentinel_resolver_rule1_decision_total` (`SentinelMeter.cs:1786`) is a property of the
 constant, not evidence about the data, and `bucket{le="0.7"}` reads 0 indefinitely.
 Not to be re-derived: the `ExtractionSchemaV2 required[]` hypothesis was DISPROVEN by probing vLLM with the shipped
 schema, which emitted `resolution_confidence` non-null 5/5.
 
 **A third histogram still carries the SDK default buckets a [0,1] value cannot use.**
-`sentinel_chunk_extraction_dedup_ratio` (`SentinelCollector/src/Telemetry/SentinelMeter.cs:325`, unit `{ratio}`) has
+`sentinel_chunk_extraction_dedup_ratio` (`SentinelCollector/src/Telemetry/SentinelMeter.cs:347`, unit `{ratio}`) has
 no `AddView`, so it keeps the SDK boundaries `[0, 5, 10, 25, ...]` and every observation of a `1 - post/pre` fraction
 would land in `le=5.0` — the identical collapse #963 fixed on `sentinel_dsl_adapter_resolution_confidence` and
 `sentinel_resolver_rule1_input_confidence`. Nothing is misled TODAY: measured 2026-08-15 UTC, the metric has NO series
@@ -2956,7 +3116,7 @@ byte-identical list; .NET's options binder APPENDS to an existing `List<T>`, so 
 The floor whose purpose is "never judge on a thin draw" sits at its own minimum and passes with ZERO real engines
 answering; the guard's own code is correct, the denominator is inflated outside it by configuration. A SECOND inflation
 route into D-23, needing no SearXNG involvement. Inert today: `IssuerProbePinVerifier` is registered
-(`SentinelCollector/src/DependencyInjection.cs:111`) but no consumer reads a probe verdict; it goes live the moment the probe is wired.
+(`SentinelCollector/src/DependencyInjection.cs:119`) but no consumer reads a probe verdict; it goes live the moment the probe is wired.
 Fix: drop the property initialiser or clear the list before binding -- never raise `MinRespondingPinnedEngines`.
 Re-check: a unit test that binds the shipped `appsettings.json` section and asserts `options.Engines.Count == 2` goes
 RED today; no test asserts it. Recorded from the PR #947 review 2026-08-15; re-verified on main 2026-08-23 and

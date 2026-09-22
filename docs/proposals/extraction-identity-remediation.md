@@ -67,7 +67,7 @@ adversarial claim-check; both errors below were the supervisor's):
 
 - `AtlasSectorCode` **is** a persisted column, added by migration
   `20260509234900_AddAtlasSectorCodeToObservation` on 2026-05-09 and populated even on the
-  v2 path (`V2ExtractionPipeline.cs:296`). The original claim came from a column enumeration
+  v2 path (`V2ExtractionPipeline.cs:295`). The original claim came from a column enumeration
   piped through `head -40` against a 47-column table -- a truncated probe read as complete.
   **Consequence: the loss is directly recoverable.** 4,324 rows since the 81da1ed4 cutover
   satisfy the sector gate as the code writes it. That is the backlog of lost sector events and
