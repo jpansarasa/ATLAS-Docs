@@ -104,6 +104,11 @@ compose-service tag [SCOPED — the default]:
     carry ONLY the build task -> this form runs zero tag-scoped tasks. Build first (CONTAINER_BUILD).
 non-service tag [dashboards | patterns | alerting | monitoring | sentinel-prompts | ...]: --tags {tag}
   --skip-tags always # only that tag's own tasks
+  alert rules ship with `alerting` (copy + Prometheus HUP, and a RESTART of prometheus or alertmanager whose
+    in-container config has drifted from the host copy), never `monitoring` # `monitoring` selects exactly
+    `otel` + `alerting`, so it also RESTARTS the whole OTEL stack (prometheus, grafana, loki, tempo, the
+    collector, the exporters) whenever compose.otel.yaml or otel.service changed, and rebuilds and recreates
+    the ups/gpu exporters whenever ITS OWN copy changed something under monitoring/
   a PR touching CODE AND a dashboard needs BOTH deploys # NO dashboard task carries a service tag, so the
     scoped form ships the service and silently leaves the panel on the metric the PR retired (measured
     2026-09-20 on #1073, two dashboards) -> deployment/README.md §TAG_MECHANICS

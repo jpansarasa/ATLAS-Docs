@@ -42,12 +42,12 @@ Defects with a measurement that makes them re-checkable.
 | D | 2026-09-20 | OPEN | Test 5's sibling double-trap sweep word-splits its file list; a spaced or globbed path is silently skipped |
 | C | 2026-09-20 | OPEN | Test 6's three population counts are FLOORS, not rosters; tight today, and the first compose file added makes a narrowed glob silent |
 | A | 2026-09-21 | OPEN | D-19 passes 16 exchange spellings / 339 active rows through; 2 (FRED 175, Crypto 4) are deliberate non-venues, 14 / 160 await a reviewer's venue call |
-| B | 2026-09-22 | OPEN | llama-server runs a superseded llama.cpp rootfs, so the freshness gate refuses EVERY deploy until a one-time scoped recreate runs: an engine update held for a human decision |
 | B | 2026-09-21 | OPEN | D-19 changed the embedding's venue prose without a template bump: 7,165 active rows keep "listed on CT" until touched |
 | A | 2026-09-21 | OPEN | 6 `.SG` rows carry a wrong-venue FIGI, 5 of them ANOTHER COMPANY's; the suffix is now null (bleeding stopped) but no row is repaired, and 194 `.SG` + 95 `.MC` + 87 `.SI` rows have no venue at all |
 | B | 2026-09-21 | OPEN | 5 of the 6 SecMaster migration test classes drive SQL CONSTANTS, never `Up`/`Down`: emptying `Up()` leaves each green |
 | B | 2026-09-21 | OPEN | D-19's Down CAS is CODE-granular, not WRITE-granular: 20 of 42 map entries resolve to US (93.3% of the population), so a later write of a DIFFERENT US spelling is invisible to it and to SkippedRestoresSql |
 | D | 2026-09-22 | OPEN | Four bare `nerdctl inspect` sites outside the freshness gate get whichever object resolves first; one decides a `stop && rm` of vllm-server |
+| B | 2026-09-22 | OPEN | `--tags alerting` and `--tags dashboards` copy the ups/gpu exporters' build source but never rebuild them, and a later `monitoring` run then reads the copy unchanged and skips the rebuild too; not live today |
 | D | 2026-09-21 | OPEN | Frozen attach-candidate lists hold 2,457 records (742 instruments) whose exchange the D-19 heal rewrites and re-embeds; the only guard is a 24 h clock over two FIXED timestamps, comparing no content |
 | D | 2026-09-21 | OPEN | D-19 falsifier fixtures span 4 of 13 venue tokens, 1 of 14 `idx`, 1 of 2 ticker shapes: the `idx` mutant crosses both bars (153 of 2,551, 12:30:11Z) at `controls_passed 11 of 11` |
 | D | 2026-09-21 | OPEN | The D-19 falsifier SELECT spells the US venue vocabulary THREE times and guards ONE: 6 of 20 registry US spellings classify FALSE under Title Case (0 as stored, which cannot expose it), the direction the entry forbids (exposure 0 today) |
@@ -111,7 +111,7 @@ Defects with a measurement that makes them re-checkable.
 | C | 2026-09-22 | OPEN | A post-model TRANSIENT failure re-runs the GPU extraction up to MaxRetries times, then parks the article: the retry branch never asks D-27's spend ledger (20 extra extractions, 4 parked on 2026-09-22) |
 | C | 2026-09-22 | OPEN | A stalled Gemini resolver now holds an extraction worker 30s per eligible observation: p90 article 10 calls (5 min), max >= 100; no per-article budget |
 | B | 2026-09-22 | OPEN | The OCE filter that failed the Gemini leg still sits on 4 fail-soft sites unreachable in the deployed configuration, each one config value from live |
-| C | 2026-09-22 | OPEN | A SecMaster promote timeout pins the ResolutionWorker to its oldest row (attempts cap bypassed), and a timed-out v2 row is an untagged NoResolution; neither live (0 calls >= 60s in 7d) |
+| C | 2026-09-22 | OPEN | A SecMaster promote timeout pins the ResolutionWorker to its oldest row (attempts cap bypassed), a timed-out v2 row is an untagged NoResolution, and a hang can hold one v2 observation for 4 + N x 180s (code-derived); none live (0 calls >= 60s in 7d) |
 | B | 2026-09-17 | AWAITING-DECISION | Test databases on the shared timescaledb: 9 fixed-name orphans, per-worktree leaks on kill, each holds a TimescaleDB worker slot |
 | B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
 | B | 2026-09-17 | OPEN | backfill_unresolved_rate_high never detected a fault: constant on main, crossed by growth on D-17 |
@@ -182,33 +182,6 @@ Defects with a measurement that makes them re-checkable.
 | E | 2026-09-16 | OPEN | SentinelCollector card is 5.3x over its D-entry gate and its line count hides it |
 | E | 2026-09-16 | AWAITING-DECISION | Six deployed directories have no card and sit outside the SERVICES roster (HARD_STOP gap) |
 
-**llama-server runs a superseded llama.cpp rootfs, so the freshness gate refuses EVERY deploy until it is
-recreated.** CAUSE, fixed in the PR that filed this: the three llama.cpp runners shared the floating
-`ghcr.io/ggml-org/llama.cpp:server` tag, and each runner's deploy.yml block pulled it and recreated only its own
-container. MEASURED 2026-09-22, read-only (`nerdctl image inspect`, `nerdctl container inspect`, `ctr snapshots
-info`): the 2026-09-20 `--tags secmaster` run recreated secmaster (14:30:11Z), llama-cpu-rag (14:30:30Z) and
-llama-cpu-embed (14:30:43Z). The rag block's pull moved the tag to build b11058 (image config created
-2026-09-20T04:42:50Z) before 14:30:30Z, when llama-cpu-rag was created on the new rootfs; the tag's UpdatedAt,
-14:30:42Z, is the embed block's no-op pull. Both runners run ChainID `sha256:a8da01d790dc…`. llama-server was
-created 2026-09-16T11:00:37Z and runs `sha256:ff072f88e23c…`.
-FIXED IN THAT PR: `llama_cpp_image` in `deployment/ansible/group_vars/all.yml` digest-pins b11058 (index
-`sha256:7149802e…`, the build both siblings run), no runner block pulls, and the gate is the play's last task, so
-a run that moves an image is refused by THAT run.
-STILL OPEN: the gate is `[always]` and names `llama-server: STALE` on every deploy until llama-server is
-recreated. ONE-TIME REMEDY, checked with `--list-tasks` and NOT run, because recreating llama-server moves its
-engine forward to b11058, an inference-engine update held for a human decision:
-`ansible-playbook playbooks/deploy.yml --tags llama-server --skip-tags build,dsl-poc -e "scoped_restart=true
-scoped_services=llama-server"`. The scoped restart recreates only llama-server, onto the build its siblings run,
-and nothing in that run pulls a moving tag, so the next gate run is silent. It holds before and after the PR merges:
-before, the local `:server` tag IS b11058; after, the `[always]` pre-pull registers the pinned digest first (ghcr
-served `sha256:7149802e…` at 2026-09-22T05:41Z).
-The pin is not the newest build. At 2026-09-22T05:41Z upstream `:server` was b11065 (index `sha256:9dc0a0f4…`,
-config 2026-09-21T04:45:37Z, 3 of 5 diffIDs differ from b11058). ENGINE_POLICY
-(`LlmBenchmark/MEASUREMENT_SPACE.md`) makes the latest release the default; that bump is a one-variable re-pin,
-and a full run applies it to all three runners.
-RE-CHECK: `sudo bash deployment/ansible/scripts/freshness-gate.sh /opt/ai-inference/compose.yaml` names
-`llama-server: STALE`. Closed when it passes.
-
 **Four bare `nerdctl inspect` sites outside the freshness gate each get whichever object resolves first.** On
 nerdctl 1.7.7 a bare `inspect <name>` returns the IMAGE when an image of that name exists, and the container only
 otherwise. MEASURED 2026-09-22 over the 31 compose services: 23 resolve to the image, 8 to the container. Found by
@@ -237,6 +210,26 @@ fixed. Not fixed here, because none is on the gate's path:
     uses `--type image` and warns against the bare form.
 RE-CHECK: re-run the grep. For each name, `sudo nerdctl inspect <name> | jq '.[0] | has("RepoTags")'` is `true`
 exactly when it resolves to an image.
+
+**`--tags alerting` and `--tags dashboards` copy the exporters' build source but never rebuild them, and a later
+`monitoring` run then skips the rebuild too.** In `deployment/ansible/playbooks/deploy.yml`, "Deploy monitoring
+directory" carries `monitoring`, `dashboards`, `alerting` and `otel`; "Rebuild OTEL exporters built from the monitoring
+directory" and "Recreate OTEL exporters onto the rebuilt images" carry only `monitoring` and `otel`, and both are gated
+on `monitoring_dir.changed`: whether THAT run's copy changed a file. ups-exporter and gpu-exporter build from
+`{{ deployment_base }}/monitoring/{ups,gpu}-exporter` (`deployment/artifacts/compose.otel.yaml.j2`). So an exporter
+source edit shipped by an `alerting` or `dashboards` run lands on disk unbuilt, and the next `monitoring` or `otel` run
+copies nothing new, reads `changed: false` and skips both tasks: the exporters serve the old image until some other
+file under monitoring/ changes in a run that selects the rebuild. MEASURED 2026-09-22 with `--list-tasks` from
+`deployment/ansible/`: `--tags alerting --skip-tags always` and `--tags dashboards --skip-tags always` each select the
+copy and neither exporter task; `--tags monitoring --skip-tags always` selects all three. NOT LIVE: `sudo nerdctl image
+inspect` dates `otel-ups-exporter:latest` and `otel-gpu-exporter:latest` 2026-09-04T22:34Z, later than the newest
+exporter source file on the host (`ups-exporter.py`, 2026-07-31T20:10Z) and the last commit touching either source
+(b3972b84). The copy task's own comment records the `otel` half of this tag-group mismatch biting once. Fix
+direction: gate both tasks on a comparison every run can make, as the prometheus.yml and alertmanager.yml checksums
+beside them are, not on `.changed`.
+RE-CHECK, from `deployment/ansible/` (prints 0 while this is open):
+`ansible-playbook playbooks/deploy.yml --tags alerting --skip-tags always --list-tasks | grep -c 'Rebuild OTEL exporters'`
+Then compare the two images' `.Created` with the newest mtime under `/opt/ai-inference/monitoring/{ups,gpu}-exporter/`.
 
 **The parallel-compile gap check decides "starts a container" on `nerdctl` alone, so a docker-first verification
 script would read `container-less` and be exempted rather than audited.** The predicate is
@@ -1582,10 +1575,11 @@ not measured: `SecMasterClient.SearchInstrumentsAsync`, `TrafilaturaClient.Extra
 `|| !cancellationToken.IsCancellationRequested` clause, with a test that drives HttpClient's real timeout.
 RE-CHECK: `grep -rn "is not OperationCanceledException)" SentinelCollector/src --include=*.cs`.
 
-**A SECMASTER TIMEOUT IS NOW A QUIET MISS: A PROMOTE TIMEOUT PINS THE RESOLUTION WORKER TO ITS OLDEST ROW, AND A
-TIMED-OUT v2 ROW IS AN UNTAGGED NoResolution.** [2026-09-22] The cost of making a SecMaster client timeout
+**A SECMASTER TIMEOUT IS NOW A QUIET MISS: A PROMOTE TIMEOUT PINS THE RESOLUTION WORKER TO ITS OLDEST ROW, A
+TIMED-OUT v2 ROW IS AN UNTAGGED NoResolution, AND A HANG CAN HOLD ONE v2 OBSERVATION FOR ~5 TIMEOUTS.** [2026-09-22]
+The cost of making a SecMaster client timeout
 (`SecMaster__TimeoutSeconds`, 180 in prod) a miss instead of a failed article or a stopped host. What sees it is
-SentinelSecMasterTimingOut over `sentinel_secmaster_timeouts_total`; neither residue is fixed.
+SentinelSecMasterTimingOut over `sentinel_secmaster_timeouts_total`; none of the three residues is fixed.
 (1) HEAD OF QUEUE. `ResolutionWorker.ResolveOneAsync` counts a promote timeout (`secMaster.ResolveAsync`) and rethrows;
 the loop guard aborts the whole batch and retries after `PollIntervalSeconds` (15). `GetPendingResolutionsAsync` orders
 by `ExtractedAt`, and `IncrementResolutionAttempts` runs only on the null-instrument branch the exception skips, so
@@ -1607,8 +1601,23 @@ never-held row once, 7 or more days later, with no Gemini leg. Over the 7 days t
 counted after a restart's last scrape is lost, so both are floors). The AlphaVantage sweep adds 25 lookups a day, spread
 over every NoResolution description. NOT LIVE: none of the ~291k sentinel-collector -> secmaster calls in Tempo's 7 days
 reached 60s (max 50.04s).
-RE-CHECK: `sum(increase(sentinel_secmaster_timeouts_total[7d]))` after deploy. Above 0 means at least one of the two
-has happened; the Error spans at the timeout's duration name the endpoint, and `/api/semantic/resolve` is (1).
+(3) THROUGHPUT. During a SecMaster hang, `DeterministicResolver.ResolveCoreAsync` (Live) waits out the full 180s on
+each SecMaster call it makes, one after another, and a timeout never opens the breaker ((2)), so nothing cuts the
+chain short: Rule 2's subject hybrid call, Rule 2b's subject + description hybrid call (non-empty Description), and,
+when Rule 2.5's Gemini call (a different service) returns a symbol, the by-symbol lookup and then the confirm call
+(prod sets `GeminiAutoRegisterNewInstruments=true`; a timed-out confirm refuses the self-seed, so register is not
+reached); then the exact-candidate leg's by-symbol lookup, once per id-less candidate carrying a symbol. That is 4 + N
+timeouts, ~5 (15 min) with one candidate, and `V2ExtractionPipeline` resolves an article's observations one after
+another. DERIVED FROM CODE, NOT MEASURED: the #1108 reviewer read it off the code and it is re-read here at
+`90e1ebbe`; no hang has happened to measure (the NOT LIVE figures above).
+ACCEPTED RESIDUE, left unfixed on #1108's review: `ResolutionWorker.ResolveOneAsync`'s
+`catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)` around the promote is what keeps a
+shutdown's cancellation out of `sentinel_secmaster_timeouts_total`, and no test drives the caller's cancellation
+through it: the one `ResolutionWorkerTests` case reading `SecMasterTimeoutCapture` asserts the timeout direction only.
+Losing the filter costs at most one spurious count per shutdown, and SentinelSecMasterTimingOut needs 3 in 30m.
+RE-CHECK: `sum(increase(sentinel_secmaster_timeouts_total[7d]))` after deploy. Above 0 means (1) or (2) has happened;
+the Error spans at the timeout's duration name the endpoint, and `/api/semantic/resolve` is (1). For (3), count those
+spans per trace.
 
 **D-18 RECLASSIFIES 82 MISLABELLED ROWS BY AUTHORITY, WHICH COMPLETES T3 ITEM 3 AS WRITTEN; NOT YET DEPLOYED. 19 ROWS
 NO AUTHORITY SETTLES REMAIN MISLABELLED.** Mechanism, authority and every id: `SecMaster/AGENT_README.md` D-18 and the
@@ -5252,7 +5261,7 @@ returns 0 while this is open. Match the `expr:` line, not the name: a comment na
 
 ### Alert rules and their metrics ship on different schedules; rule-first pages a healthy system [2026-09-16]
 **Alert rules and the metrics they read ship on different schedules, and rule-first pages a healthy system.**
-`FinnhubCollectorQuoteCollectionStalled` carries an `absent()` leg and ships via `--tags monitoring`, while the gauge
+`FinnhubCollectorQuoteCollectionStalled` carries an `absent()` leg and ships via `--tags alerting`, while the gauge
 it watches ships inside the container image. Deploy the rule first and `absent()` is true from the moment
 Prometheus loads it, so a healthy collector pages 15 minutes later; deploy the image first and the worst case is a
 few minutes of an unwatched gauge. Sequenced image-first BY HAND for this PR, which is exactly the kind of
@@ -6827,7 +6836,7 @@ set keeps evaluating. NOT theoretical: the 2026-08-17 deploy shipped THREE rules
 failed one, all three had to be verified against the Prometheus API BY HAND before the deploy could be called done.
 A silently-failed reload leaves a service believed to be watched and watched by nothing — the exact state the 16-day
 stall was found in. Fix: a post-reload assertion task that greps `/api/v1/rules` for the rule names the run just
-copied. Re-check, after any `--tags monitoring` run — every rule in `deployment/artifacts/monitoring/alerts/*.yml`
+copied. Re-check, after any `--tags alerting` run — every rule in `deployment/artifacts/monitoring/alerts/*.yml`
 must appear:
 `sudo nerdctl exec prometheus wget -qO- http://localhost:9090/api/v1/rules | python3 -c "import json,sys; print(sorted(r['name'] for g in json.load(sys.stdin)['data']['groups'] for r in g['rules']))"`
 It must be `nerdctl exec`: prometheus publishes NO host port, so a host-side `curl localhost:9090` exits 7 and reads
@@ -6839,8 +6848,8 @@ continuously.** `FinnhubCollectorQuoteSymbolCoverageDropped` is `count(finnhub_q
 (`deployment/artifacts/monitoring/alerts/collectors-deadman.yml:145`) and the same number is pinned as
 `ProdActiveQuoteSeries` in `FinnhubCollector/tests/Workers/QuoteCollectionWorkerTests.cs:160`. The hardcoding is
 deliberate — a self-referential form goes blind to a one-a-week drip — but the cost is unpriced: after ONE
-legitimate deactivation the rule fires every 30m forever until someone edits both files AND redeploys monitoring
-(`--tags monitoring --skip-tags always`, which does not reload Grafana or assert the rules landed — see the
+legitimate deactivation the rule fires every 30m forever until someone edits both files AND redeploys the rule
+(`--tags alerting --skip-tags always`, which does not reload Grafana or assert the rules landed — see the
 Prometheus-reload entry above). A permanently-firing alert is a muted alert, which returns coverage to zero by the
 same route the 16-day stall took. Cheapest de-risk: source the number from one place both consumers read, so
 re-pinning is a single edit. Re-check:
