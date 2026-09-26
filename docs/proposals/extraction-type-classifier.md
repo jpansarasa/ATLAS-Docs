@@ -768,7 +768,7 @@ alarming"). So fail-open is only acceptable with:
    `ALERTS` series, never `alert_rule_test` + `exp_alerts`.
 
 **Precedent that this is not paranoia — and the finding worth acting on independently of this
-spec:** `sentinel_candidate_surface_filtered_total` (`SentinelMeter.cs:1077-1078`, tags
+spec:** `sentinel_candidate_surface_filtered_total` (`SentinelMeter.cs:1086-1087`, tags
 `reason`+`mode`) is **metered but entirely unwatched**. Re-verified 2026-08-06: `grep -rn
 "candidate_surface_filtered" deployment/` returns **zero files**, across 13 alert files, 22
 dashboards, the provisioning/alerting tree **and** the live `/opt/ai-inference/monitoring/` mount
@@ -1035,7 +1035,7 @@ volume itself goes to zero. A test for only the first direction would pass on a 
 *Incidental defect found while specifying this — SINCE FIXED, re-derived 2026-09-20:* the
 counter's own XML doc listed a stale reason set, omitting the four largest live reasons
 (`market_jargon`, `truncated_span`, `multiline_fragment`, `bare_corporate_suffix`) and keeping a
-`garbled_fragment` that never fires. `CandidateSurfaceFiltered` (`SentinelMeter.cs:1245-1266`) now
+`garbled_fragment` that never fires. `CandidateSurfaceFiltered` (`SentinelMeter.cs:1254-1275`) now
 names all thirteen, and says why `garbled_fragment` stays listed: the enum bounds the tag, not the
 observed set. Nothing to fix here. (The line range this paragraph used to cite in that file never
 pointed at this counter at all — it landed on an unrelated orphan-FK counter, and read GREEN for as

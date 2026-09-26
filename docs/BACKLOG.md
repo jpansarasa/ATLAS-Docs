@@ -114,6 +114,8 @@ Defects with a measurement that makes them re-checkable.
 | C | 2026-09-22 | OPEN | A post-model TRANSIENT failure re-runs the GPU extraction up to MaxRetries times, then parks the article: the retry branch never asks D-27's spend ledger (20 extra extractions, 4 parked on 2026-09-22) |
 | C | 2026-09-22 | OPEN | A stalled Gemini resolver now holds an extraction worker 30s per eligible observation: p90 article 10 calls (5 min), max >= 100; no per-article budget |
 | B | 2026-09-22 | OPEN | The OCE filter that failed the Gemini leg still sits on 4 fail-soft sites unreachable in the deployed configuration, each one config value from live |
+| B | 2026-09-22 | OPEN | The AlphaVantage sweep has had no lookup answered since at least 2026-09-16: the shared key's answered quota is spent before 04:00Z, the collector returns a no-bestMatches body as "no match", and its own 25/day cap is per-request |
+| C | 2026-09-26 | OPEN | ResolutionWorker guards its 5 database writes with `catch (HttpRequestException)`, which SaveChanges never throws: a refused write aborts the whole batch at the loop guard |
 | C | 2026-09-22 | OPEN | A SecMaster promote timeout pins the ResolutionWorker to its oldest row (attempts cap bypassed), a timed-out v2 row is an untagged NoResolution, and a hang can hold one v2 observation for 4 + N x 180s (code-derived); none live (0 calls >= 60s in 7d) |
 | B | 2026-09-17 | AWAITING-DECISION | Test databases on the shared timescaledb: 9 fixed-name orphans, per-worktree leaks on kill, each holds a TimescaleDB worker slot |
 | B | 2026-09-17 | OPEN | SecMaster EmbeddingCache keys on lower-cased text: "NASDAQ" can search with "Nasdaq"'s vector |
@@ -1299,8 +1301,8 @@ measurement; decide on the Resolved subset whether the expansions come from the 
 
 **D-35'S ZERO-INIT IS REGISTERED ON ApplicationStarted AND NOTHING PINS THE REGISTRATION.** [2026-09-21] The three tier-1
 silence alerts read `sentinel_cove_check_total` and the two async outcome counters with `increase()`, which cannot see a
-series born at 1; `SentinelMeter.PrimeCoveCheckSeries` exports all 12 tier-1 series, D-36's 8 tier-2 series and 4
-input series at zero.
+series born at 1; `SentinelMeter.PrimeCoveCheckSeries` exports all 12 tier-1 series, D-36's 8 tier-2 series and the
+ResolutionWorker's 2 input series at zero; the AlphaVantage sweep's 2 come from `PrimeAlphaVantageSweepSeries` (below).
 `CoveCheckZeroInitTests` pins the method's content and CANNOT see the Program.cs line that registers it, nor its
 ordering after the MeterProvider subscribes (the D-34 priming has the same gap, entry above). Re-check within minutes
 of a deploy, before extraction has run: `count(sentinel_cove_check_total)` must be 20 (12 tier-1 series + D-36's 8
@@ -1310,7 +1312,11 @@ priming is landing too early or is gone. The same gap covers `SentinelMeter.Prim
 `GeminiResolverTimeoutFailSoftTests` pins its content, and nothing pins its Program.cs line. SentinelGeminiResolverTimingOut
 reads it with `increase()`, so after a deploy `count(sentinel_gemini_resolver_timeouts_total)` must be 1. So does
 `SentinelMeter.PrimeSecMasterTimeoutSeries` [2026-09-22]: `SecMasterClientTests` pins its content, SentinelSecMasterTimingOut
-reads it with `increase()`, and after a deploy `count(sentinel_secmaster_timeouts_total)` must be 1.
+reads it with `increase()`, and after a deploy `count(sentinel_secmaster_timeouts_total)` must be 1. So does
+`SentinelMeter.PrimeAlphaVantageSweepSeries` [2026-09-26, D-37]: `AlphaVantageSweepZeroInitTests` pins its content,
+every SentinelAlphaVantageSweep* observer but BudgetExhausted reads it with `increase()`, and
+after a deploy, before the 04:00Z sweep, `count(sentinel_av_sweep_processed_total)` must be 6 and
+`count(sentinel_av_sweep_runs_total)` must be 3.
 
 **D-35'S VALUE LEG PASSES A SUBUNIT PRICE STORED IN THE MAIN UNIT: "515p" AS 515 GBP.** [2026-09-22] The value check
 admits the raw's own digits whatever the unit, and derives cents, pence and paise as the main unit; so a raw naming a
@@ -1636,9 +1642,10 @@ Widening `dependency_unavailable` to a timeout is a D-27 amendment for a human. 
 and not on the same cascade: the ReExtract resolve-only sweep (prod `Cohort=all`, `MinRowAgeDays=7`) re-resolves a
 never-held row once, 7 or more days later, with no Gemini leg. Over the 7 days to 2026-09-22T13:43Z,
 `sentinel_reextract_rows_processed_total` rose 194 `recovered` against 39,175 `still_null` (`increase()`: anything
-counted after a restart's last scrape is lost, so both are floors). The AlphaVantage sweep adds 25 lookups a day, spread
-over every NoResolution description. NOT LIVE: none of the ~291k sentinel-collector -> secmaster calls in Tempo's 7 days
-reached 60s (max 50.04s).
+counted after a restart's last scrape is lost, so both are floors). The AlphaVantage sweep adds at most 25 lookups a
+night, on the subjects of the rows extracted in the 24h before it fires (D-37), so a timed-out row is offered to it at most once,
+the first night after, and no lookup it has made since at least 2026-09-16 has been answered (the AlphaVantage quota
+entry below). NOT LIVE: none of the ~291k sentinel-collector -> secmaster calls in Tempo's 7 days reached 60s (max 50.04s).
 (3) THROUGHPUT. During a SecMaster hang, `DeterministicResolver.ResolveCoreAsync` (Live) waits out the full 180s on
 each SecMaster call it makes, one after another, and a timeout never opens the breaker ((2)), so nothing cuts the
 chain short: Rule 2's subject hybrid call, Rule 2b's subject + description hybrid call (non-empty Description), and,
@@ -1656,6 +1663,56 @@ Losing the filter costs at most one spurious count per shutdown, and SentinelSec
 RE-CHECK: `sum(increase(sentinel_secmaster_timeouts_total[7d]))` after deploy. Above 0 means (1) or (2) has happened;
 the Error spans at the timeout's duration name the endpoint, and `/api/semantic/resolve` is (1). For (3), count those
 spans per trace.
+
+**THE ALPHAVANTAGE SWEEP HAS HAD NO LOOKUP ANSWERED SINCE AT LEAST 2026-09-16: THE SHARED KEY'S ANSWERED QUOTA IS SPENT
+BEFORE 04:00Z, AND ALPHAVANTAGECOLLECTOR RETURNS A BODY WITHOUT bestMatches AS "NO MATCH".** [2026-09-22] D-37 fixed WHAT
+the sweep asks; this is whether anything answers. Measured 2026-09-22T15:05Z, no call made to AlphaVantage.
+(1) ONE KEY. The sweep's `/api/discover` runs SYMBOL_SEARCH on AlphaVantageCollector's key, the key its commodity
+collection and SecMaster's discovery traffic (traces rooted in sentinel-collector `ProcessRawContent`) also spend.
+`sum by (function) (increase(alphavantage_api_requests_total[30d]))`: SYMBOL_SEARCH 18,931, the five commodity
+functions 206; SYMBOL_SEARCH ran 136-1,109 a day.
+(2) ANSWERED CALLS. An alphavantage-collector `SearchSymbol` span carries `span.results_count` only when AV's body held
+`bestMatches`. Tempo, 2026-09-16..22, hourly search: 11-22 answered traces a day, the first at 06:14-07:09Z and drifting
+later across the week, none before 06:00Z on any of the 7 days; the sweep's 25 lookups at 04:00Z got 0 answered on each of
+2026-09-16..21 (150). The drift and the daily cap fit a ROLLING quota -- inferred from timing; no body was read.
+(3) READ AS NO MATCH. `AlphaVantageApiClient.HasApiError` flags "Error Message" and "Note" only; any other body without
+`bestMatches` returns [] and `/api/discover` answers 200 with 0 results, which the sweep counts `no_resolution`.
+`alphavantage_api_errors_total{function="SYMBOL_SEARCH"}` over 30d: `rate_note` 0, `cancelled` 3,278, no `api_error`.
+So SentinelAlphaVantageSweepBudgetExhausted, which reads `aborted`, cannot see a spent quota, and
+SentinelAlphaVantageSweepFedNothing fires from deploy.
+(4) THE COLLECTOR'S OWN CAP DOES NOT HOLD. `AlphaVantageApiClient` keeps `_dailyRequestCount` (DailyLimit 25) and its
+token bucket in INSTANCE fields, and the typed client is transient (`AddHttpClient<IAlphaVantageApiClient,
+AlphaVantageApiClient>()`), so every request starts a fresh count: 1,109 SYMBOL_SEARCH calls in one day against a limit
+of 25. Claims (2) contradicts, left as they are: "resets at UTC midnight" in `AlphaVantageSweepOptions.CronExpression`'s
+doc, `AlphaVantageSweepScheduler` and AlphaVantageCollector/README.md; "in-memory quota (25/day, resets on restart)" in
+docs/ARCHITECTURE.md; "'aborted' on any day means the 25/day free-tier budget was hit" in the Sentinel Resolution
+dashboard's sweep panel.
+Options for (1)-(4), none chosen -- they span AlphaVantageCollector and SecMaster: map a body without `bestMatches` to 429
+so the sweep aborts instead of counting no_resolution; a process-wide counter; reserve part of the key for the sweep or
+move it into the answered window; keep SecMaster discovery off terms the sweep's filter would refuse.
+(5) NO BURN ALERT BEFORE DEPLETION (CLAUDE.md INTENT_FIDELITY, scarce-resource boundary). The sweep's OWN spend is gated
+(D-37 pool + surface filter) and capped fail-closed (BatchSize 25 a night); the KEY is not. The only rules on it read
+the sweep AFTER the quota is gone (FedNothing) or the collector going silent for 4d (AlphaVantageCollectorScheduledCollectionMissed).
+`sum by (function) (increase(alphavantage_api_requests_total[7d]))` at 2026-09-26T01:26Z: SYMBOL_SEARCH 3,758, the four
+commodity functions 46 -- against the collector's configured DailyLimit of 25. A burn rule belongs with the process-wide cap in AlphaVantageCollector.
+RE-CHECK: SentinelAlphaVantageSweepFedNothing still firing = still true. Tempo, the sweep's hour: alphavantage-collector
+`{name="SearchSymbol" && span.results_count >= 0}` against all `SearchSymbol` spans.
+
+**RESOLUTIONWORKER GUARDS ITS DATABASE WRITES WITH A CATCH SAVECHANGES NEVER REACHES.** [2026-09-26] Five
+`observationRepo.UpdateAsync` calls in `ResolutionWorker.ResolveOneAsync` (the try blocks ending at the
+`catch (HttpRequestException ex)` lines 275, 340, 408, 495 and 523 at the commit adding this entry) catch the one exception
+a database write does not raise. A `DbUpdateException` (constraint, concurrency) leaves `ResolveOneAsync`, passes
+`ProcessBatchAsync`'s per-row loop, and lands in `ExecuteAsync`'s loop guard, which logs Warning, marks the
+`ResolutionBatch` span Error and retries next poll: the rest of the batch is not processed, and because the drain is
+oldest-first, a row whose write is refused every time would be re-read first on every cycle. The AlphaVantage sweep had
+the same two sites and now catches `DbUpdateException` per row (D-37 branch). `ObservationRepository.UpdateAsync` now
+detaches a refused entity, which protects the LATER rows on the SAME context -- the sweep's batch. For ResolutionWorker
+it is inert today: the refused write already ends the batch and the scoped context is discarded with it; it matters
+only once this catch is fixed and the loop moves on. ReExtract is unaffected either way (a fresh scope per row). LATENT: Loki
+`{service_name="sentinel-collector"}` over the 7d to 2026-09-26T02:45Z (49,980 lines scanned) carries 0 lines matching
+"ResolutionWorker batch failed" and 0 matching "DbUpdateException". Re-check with the same two line filters. Found by count: `awk` over every `*Repo*.UpdateAsync(` call
+in SentinelCollector/src with a `catch (` within 3 lines -- 17 sites, of which these 5 carry the wrong type (the sweep's
+2 fixed; ExtractionProcessor's 3 and ReExtractBackgroundService's 5 catch `Exception`).
 
 **D-18 RECLASSIFIES 82 MISLABELLED ROWS BY AUTHORITY, WHICH COMPLETES T3 ITEM 3 AS WRITTEN; NOT YET DEPLOYED. 19 ROWS
 NO AUTHORITY SETTLES REMAIN MISLABELLED.** Mechanism, authority and every id: `SecMaster/AGENT_README.md` D-18 and the
@@ -2624,7 +2681,7 @@ backfills them. Three traps for anyone re-measuring the sweep:
 
 **`SentinelExtractionDead` inhibits every sentinel warning if it fires** (`equal: ['service']`), including the
 collapse alert. 0 inhibited to date, but the coupling is undocumented anywhere else.
-Re-verified 2026-09-16: `SentinelExtractionDead` is severity critical (`sentinel.yml:55-66`); `alertmanager.yml:91`
+Re-verified 2026-09-16: `SentinelExtractionDead` is severity critical (`sentinel.yml:55-66`); `alertmanager.yml:95`
 inhibits critical -> warning on `equal: ['service']`.
 
 **request-log regression-guard gap (#886).** The DiagnosticContext re-registration in AlertService, SecMaster and
@@ -3061,15 +3118,15 @@ about the resolver). For any row re-extracted before 2026-09-16 read `OriginalRe
 `OriginalInstrumentId` alongside the live columns, always.
 A SECOND circular column: `extracted_observations.resolution_confidence` holds the resolver OUTCOME's value
 (`DeterministicResolver.cs:446-450`), not what Rule 1 received; the input is visible only in
-`sentinel_resolver_rule1_input_confidence` (`SentinelMeter.cs:1805`, from #963). Every observation of it sits at
+`sentinel_resolver_rule1_input_confidence` (`SentinelMeter.cs:1814`, from #963). Every observation of it sits at
 exactly 0.850 = `DslPreselectionConfidence`, a hardcoded constant, so the `< 0.7` gate can never trip: an absent
-`below_threshold` series on `sentinel_resolver_rule1_decision_total` (`SentinelMeter.cs:1786`) is a property of the
+`below_threshold` series on `sentinel_resolver_rule1_decision_total` (`SentinelMeter.cs:1795`) is a property of the
 constant, not evidence about the data, and `bucket{le="0.7"}` reads 0 indefinitely.
 Not to be re-derived: the `ExtractionSchemaV2 required[]` hypothesis was DISPROVEN by probing vLLM with the shipped
 schema, which emitted `resolution_confidence` non-null 5/5.
 
 **A third histogram still carries the SDK default buckets a [0,1] value cannot use.**
-`sentinel_chunk_extraction_dedup_ratio` (`SentinelCollector/src/Telemetry/SentinelMeter.cs:347`, unit `{ratio}`) has
+`sentinel_chunk_extraction_dedup_ratio` (`SentinelCollector/src/Telemetry/SentinelMeter.cs:349`, unit `{ratio}`) has
 no `AddView`, so it keeps the SDK boundaries `[0, 5, 10, 25, ...]` and every observation of a `1 - post/pre` fraction
 would land in `le=5.0` — the identical collapse #963 fixed on `sentinel_dsl_adapter_resolution_confidence` and
 `sentinel_resolver_rule1_input_confidence`. Nothing is misled TODAY: measured 2026-08-15 UTC, the metric has NO series
