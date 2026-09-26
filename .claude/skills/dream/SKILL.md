@@ -263,6 +263,31 @@ writes, without exception, and review mode is the one place in this system
 where a write is allowed to happen at all. Every function this mode calls
 lives in `dream.dream_apply`; do not reimplement any of its logic inline.
 
+### Run it through `dream.review` -- never step by step
+
+The snapshot and every write it backs MUST share one process:
+`snapshot_or_refuse` arms a per-process flag on a single-use stamp, so a
+snapshot taken in one `python -` call leaves every write in the next refused,
+and the stamp cannot be re-armed. Executing the steps below as separate shell
+calls hit this twice on the live store. `dream/review.py` composes the whole
+session -- lock, run id, snapshot, auto-apply, approved applies, provenance,
+rejections, report marks, index-hook check, summary and lock release -- in
+one call:
+
+1. `dream/.venv/bin/python -m dream.review list` -- the pending queue,
+   read-only, each finding tagged `AUTO` or `PROPOSAL-ONLY`.
+2. Read each finding's full block in `DREAM_REPORT.md`, verify by hand any
+   claim about git or the world (a `text_*` recheck reads only the target),
+   and ask the operator.
+3. `dream/.venv/bin/python -m dream.review apply --approve N ... --reject 'N=reason' ...`
+   -- once, with every decision. Exit 0 all executed, 1 some finding refused
+   (named in the summary, still pending), 2 nothing ran (the refusal is on
+   stderr: an unexecutable decision, a held lock, a refused snapshot).
+   Undecided findings stay pending.
+
+The sections below are what that runner does and why; they are the contract
+it is held to, not a procedure to re-type.
+
 ### Setup
 
 1. Acquire `dream.paths.LOCKFILE` before touching anything: create it with
