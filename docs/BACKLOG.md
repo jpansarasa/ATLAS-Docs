@@ -46,6 +46,8 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-21 | OPEN | 6 `.SG` rows carry a wrong-venue FIGI, 5 of them ANOTHER COMPANY's; the suffix is now null (bleeding stopped) but no row is repaired, and 194 `.SG` + 95 `.MC` + 87 `.SI` rows have no venue at all |
 | B | 2026-09-21 | OPEN | 5 of the 6 SecMaster migration test classes drive SQL CONSTANTS, never `Up`/`Down`: emptying `Up()` leaves each green |
 | B | 2026-09-21 | OPEN | D-19's Down CAS is CODE-granular, not WRITE-granular: 20 of 42 map entries resolve to US (93.3% of the population), so a later write of a DIFFERENT US spelling is invisible to it and to SkippedRestoresSql |
+| D | 2026-09-26 | OPEN | The deploy skill's ROLLBACK restore runs `compose up --force-recreate`, a flag nerdctl 1.7.7 `compose up` does not have; the one documented image rollback cannot run |
+| D | 2026-09-26 | OPEN | `NasdaqCollector/.devcontainer/build.sh` builds `NasdaqCollector/src/Containerfile`, which does not exist (the file is `NasdaqCollector/Containerfile`) |
 | D | 2026-09-26 | OPEN | nerdctl 1.7.7 `network rm` (the last step of every `compose down`) dies when an UNRELATED `run --rm` container exits mid-scan; fixed for devcontainer teardown only, 5 other `compose down` callers unexamined |
 | D | 2026-09-22 | OPEN | Four bare `nerdctl inspect` sites outside the freshness gate get whichever object resolves first; one decides a `stop && rm` of vllm-server |
 | B | 2026-09-22 | OPEN | `--tags alerting` and `--tags dashboards` copy the ups/gpu exporters' build source but never rebuild them, and a later `monitoring` run then reads the copy unchanged and skips the rebuild too; not live today |
@@ -182,6 +184,24 @@ Defects with a measurement that makes them re-checkable.
 | E | 2026-09-16 | OPEN | Two SecMaster comments still call a Finnhub 403 transient (permanent, arrives as NULL) |
 | E | 2026-09-16 | OPEN | SentinelCollector card is 5.3x over its D-entry gate and its line count hides it |
 | E | 2026-09-16 | AWAITING-DECISION | Six deployed directories have no card and sit outside the SERVICES roster (HARD_STOP gap) |
+
+**The deploy skill's ROLLBACK restore cannot run: `compose up --force-recreate` does not exist on nerdctl 1.7.7.**
+First occurrence, 2026-09-26. `.claude/skills/deploy/SKILL.md` §ROLLBACK restores with `sudo nerdctl compose -f
+/opt/ai-inference/compose.yaml up -d --force-recreate <svcs>`. `sudo nerdctl compose up --help | grep -c
+force-recreate` -> 0; the flag exists only on `compose create`. The same spelling is in the disabled
+`deployment/artifacts/scripts/autofix-watcher.sh`. deploy.yml already knows the gap ("nerdctl 1.7.7 has no
+--force-recreate"). Consequence: on a failed post-deploy smoke, the retag half runs and the recreate errors out,
+leaving the container on the bad image while `:latest` says good. That is exactly the "rollback INCOMPLETE" state
+the skill tells the operator to escalate. The fix belongs with docs/proposals/local-registry-image-promotion.md,
+which replaces this rollback. Until then, the working restore is the scoped deploy form after the retag.
+Re-check: the grep above, after any nerdctl upgrade.
+
+**`NasdaqCollector/.devcontainer/build.sh` points at a Containerfile that does not exist.** First occurrence,
+2026-09-26. It sets `CONTAINERFILE="NasdaqCollector/src/Containerfile"`, but `ls NasdaqCollector/src/Containerfile`
+-> no such file, and the tracked file is `NasdaqCollector/Containerfile`, which deploy.yml's build task uses. So
+the script fails, and the tag it would have written is only ever produced by ansible. Low impact while
+nasdaq-collector has no compose service. Re-check: `ls $(sed -n 's/^CONTAINERFILE="\(.*\)"/\1/p'
+NasdaqCollector/.devcontainer/build.sh)` from the repo root.
 
 **nerdctl 1.7.7's `network rm` -- the last step of every `compose down` -- dies when an UNRELATED `run --rm`
 container exits during its in-use scan.** First occurrence, 2026-09-26. It walks every container's task to decide
