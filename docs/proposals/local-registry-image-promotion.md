@@ -533,13 +533,18 @@ is not superseded: it still holds #1091, and the drift metric now makes that hol
    Then `adopt-images.sh` (not `promote.sh`) sets every `latest` to its `adopted-*` tag and writes release
    `deploy/...` #1. It restarts nothing, because the rootfs is identical by construction, and it could not
    safely restart: compose still names `docker.io/library/<svc>:latest` until step 3, so a restart would run the
-   undeployed migrator. It refuses once any `deploy/*` release exists (WHAT CHANGES). Finally,
-   `nerdctl pull` every `127.0.0.1:5000/<image>:latest`, so the local cache is warm. From here on, a rollback to
+   undeployed migrator. It refuses once any `deploy/*` release exists (WHAT CHANGES). It also
+   `nerdctl pull`s every `127.0.0.1:5000/<image>:latest`, so the local cache is warm -- as built, BEFORE the
+   release, so the release records a finished adoption and a failed pull leaves a re-runnable state instead of
+   a release that forbids the re-run. From here on, a rollback to
    an `adopted-*` tag is an ordinary `promote.sh` with the full restart (PROMOTE stage 1, AC11).
    - The migrator is adopted from the rootfs it last RAN (`:autofix-prev`), never its undeployed `:latest`.
-     **LOAD-BEARING:** adopting `:latest` would deploy the undeployed migrator at cutover.
+     **LOAD-BEARING:** adopting `:latest` would deploy the undeployed migrator at cutover. Re-derived by the
+     dry run on 2026-09-26: the exited container's rootfs matches `:autofix-prev` and not `:latest`.
    - No matching image means STOP and ask a human. Never guess.
-   - For secmaster, `base` falls before `6a77daf3`, so drift reads 2: AC5's positive control.
+   - For secmaster, `base` (`6894b78cd647`) falls before `6a77daf3`: AC5's positive control. Drift over the
+     `images.yml` inputs reads **6**, since `.md` stays an input (four of the six are docs commits); the 2 of
+     THE PROBLEM 3 is the `.md`-excluded count, #1091 and #1114. AC5's `>= 2` holds either way.
 3. **One PR: template + ensure-present extension + atlas.service `Wants/After` + freshness-gate check.**
    **LOAD-BEARING:** step 2's warm cache must exist before this render lands. Otherwise a boot or a bare
    `--tags` meets 22 refs that are missing locally and depends on the registry. Deploy it with ONE scoped
@@ -648,8 +653,10 @@ Still unverified -- each needs a container started or the registry deployed:
   this plan). The push guard is not involved, because no `git push` runs.
 - Storage: the 22 `:latest` images are 13.2 GiB unpacked. The compressed, deduplicated size in the registry,
   plus churn, is unmeasured against 697G.
-- The migrator's ChainID match with `:autofix-prev`, and the 22-of-25 drift count, come from revision 1 and
-  were not re-run. The secmaster commits WERE re-run for this revision.
+- The 22-of-25 drift count comes from revision 1 and was not re-run. The secmaster commits WERE re-run for this
+  revision, and the migrator's ChainID match with `:autofix-prev` was re-derived at step 2 (SEQUENCING step 2).
+- Whether a real `nerdctl push` of each adopted image lands the digest its local `RepoDigests` names (M3
+  measured it for a fresh build, not for these older images): `adopt-images.sh` refuses, exit 3, if it does not.
 - No image has ever been measured LOST: containerd keeps no deletion history. The durability case rests on
   exposure (ext4, 94% full, unsnapshotted), not on an observed loss.
 
