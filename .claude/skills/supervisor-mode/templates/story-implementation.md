@@ -114,12 +114,12 @@ name and the `--context {Svc}DbContext` rule to
   plainly that none applied — the absence is data.
 
 ## Reporting back (final reply, <=200 words)
+- FIRST: anything blocked / needed from supervisor, or "nothing blocked"
 - Branch + final commit hash, and the attested tree hash = `HEAD^{tree}`
 - Files touched (paths, <=20 lines)
 - Build status: errors / warnings / tests pass
 - Surface list + dispositions; self-attack list (attacked / broke / did not break)
 - Deviations from spec + rationale
-- Anything blocked / needed from supervisor
 
 ## Reference docs
 - {epic plan file path} (Story {N.M.K})

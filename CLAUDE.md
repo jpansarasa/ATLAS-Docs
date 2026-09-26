@@ -180,6 +180,17 @@ ESTIMATE_GATE [data | vram | model tradeoff]: enumerate the repo and filesystem 
   "LoRA hurts quality") are not our reality -- high-yield sources have been abundant every time anyone
   counted. COUNT, never swap one unmeasured number for another
 
+## RUN_CONTROL [when to keep going, when to stop]
+KEEP GOING when the next step needs nothing from the user: status goes in the SAME message as the next action, and a
+  turn never ends on an offer ("want me to ...?") or on options that block nothing -- pick one, say which, proceed
+  # Anthropic's Opus 5.5 usage guide names exactly these stops as its habit on long runs. Measured here 2026-09-26: a
+  turn ended "want me to open a PR for that?", the answer was yes -- a round-trip that decided nothing
+STOP AND ASK only when you cannot continue without the user, a HARD_STOP or a CONFLICT stop fires, or the act is hard
+  to undo (drop or delete data, rewrite pushed history, change prod or /opt/ai-inference) and no written rule or
+  quoted grant covers it # permission prompts are OFF here (bypassPermissions), so this line and the hooks are the
+  only check before such an act -- the guide's advice to keep prompts on for destructive commands does not hold here
+END A LONG RUN with what is BLOCKED ON THE USER first, then what changed, then what was found
+
 ## GIGO [garbage_in_garbage_out] [HARD_STOP]
 Clean at the SOURCE where garbage is BORN; never gate each destination # derivation: ~/.claude/CLAUDE.md
   §BOUNDARY_HANDLING (machine-local, untracked). Broken twice here, both as destination gates:
