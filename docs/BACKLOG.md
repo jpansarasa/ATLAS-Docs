@@ -4106,7 +4106,7 @@ in 3 of them EVERY summary line reads `0 Warning(s)` while the log carries `warn
 AlphaVantageCollector 10, FinnhubCollector 10. In AlphaVantageCollector the summary is log line 28 and the ten
 warnings are lines 34-45, after the test step's `Determining projects to restore...`. The other 6 logs print a
 non-zero summary, but it is still below their NU1903 line count (FredCollector 60 lines against `10 Warning(s)` twice).
-WHO READS IT: no script. `git grep -I 'Warning(s)'` over the whole tree returns nothing, and neither
+WHO READS IT: no script. `git grep -n -I 'Warning(s)' -- ':!*.md'` over the whole tree returns nothing, and neither
 `mark-tests-passed.sh` nor `git-push-guard.sh` looks at warnings, so a run with warnings still writes the marker.
 The "0 errors AND 0 warnings" rule is prose that an agent checks by eye: CLAUDE.md GIT_PUSH, both dispatch
 templates (`implementation-fix.md` step 6, `story-implementation.md`), `README.md`, and the prompt that
@@ -4114,7 +4114,7 @@ templates (`implementation-fix.md` step 6, `story-implementation.md`), `README.m
 Only 7 of the 52 tracked `.csproj` set `TreatWarningsAsErrors`: the six under `Reports/src/`, where a warning fails
 the build, and `backtest/SignalReplay`, which exempts NU1902 and NU1903 with `WarningsNotAsErrors`. No test project
 sets it, and the test projects are where these NU1903 lines came from.
-Re-check: `git grep -n -I 'Warning(s)'` (a hit means a script now keys on the line); and for the gap itself, run
+Re-check: `git grep -n -I 'Warning(s)' -- ':!*.md'` (a hit means a script now keys on the line); and for the gap itself, run
 `bash SecMaster/.devcontainer/compile.sh > log 2>&1` in a scratch worktree at `d90c3b26`, then compare
 `grep -c 'warning NU1903' log` against `grep -E '^ +[0-9]+ Warning\(s\)' log`. That checkout is before #1114, so
 the vulnerable pins are still there.
