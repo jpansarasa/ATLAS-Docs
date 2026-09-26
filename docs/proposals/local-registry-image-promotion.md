@@ -1,6 +1,8 @@
 # Separating image BUILD from image DEPLOY: sha12 tags in a loopback registry, `latest` moved by one promote script
 
-Status: PROPOSAL -- not approved. Merging this document approves nothing (docs/README.md §Curation policy).
+Status: APPROVED TO BUILD 2026-09-26 by the user, verbatim in the supervisor session: "build the registry plan".
+Design choices, also verbatim: "Move the tags, deploy latest. Should work for both new deployments and rollbacks"
+and "use GitHub releases for the move log". Steps land in SEQUENCING order (docs/README.md §Curation policy).
 Author measurements: 2026-09-26, mercury, origin/main `10398312`. Revision 3 (same day) rewrites the plan to the
 design the user chose; its review round 1 added GC fail-closed, adopted-* rollback, the failed-move alert and
 the build/deploy instruction supersessions; round 2 added tag-keyed image identity (`{tag, sha12, digest}`), the
@@ -70,14 +72,22 @@ afterwards. None of them PREVENTS it. The user accepted that trade for one-comma
 
 ### Registry
 
-- **Unit.** A new `atlas-registry.service` runs `nerdctl run --rm -p 127.0.0.1:5000:5000
+- **Unit.** A new `atlas-registry.service` (step 0: `deployment/artifacts/atlas-registry.service.j2`) runs
+  `nerdctl run --rm --network host -e REGISTRY_HTTP_ADDR=127.0.0.1:5000
   -v /opt/ai-inference/containers/registry:/var/lib/registry registry@sha256:<pinned>`, with
-  `After=zfs-mount.service`.
+  `After=zfs-mount.service` and an `ExecStartPre=mountpoint -q` refusal (no `.mount` unit exists to order on).
   - It is NOT a compose service. nerdctl 1.7.7 discards `depends_on`, so compose could not start it first.
-  - Port 5000 is free (`ss -ltn`, 0 listeners), and it binds loopback only.
+  - Port 5000 is free (`ss -ltn`, 0 listeners). **Host network, not `-p 127.0.0.1:5000:5000`** (revision 3 said
+    the port map): a CNI port map is a DNAT to the container IP, which every bridged container can reach
+    directly -- measured on a throwaway, a bridge container read `/v2/` at `<container-ip>:5000`. Bound to
+    127.0.0.1 on the host network, only the host's loopback reaches it (step0-measure.md M6, below).
 - **Plain HTTP for that one host only.** Add `/etc/containerd/certs.d/127.0.0.1:5000/hosts.toml`. Never set a
   global `insecure_registry = true`: `/etc/nerdctl/nerdctl.toml` has `false`, and flipping it would relax TLS
-  for docker.io too.
+  for docker.io too. Measured: nerdctl already speaks HTTP to 127.0.0.1 with NO hosts.toml, but a hosts.toml,
+  when present, is authoritative (one naming `https://` broke the pull), so the file pins the scheme explicitly.
+- **Every DIGEST read sends an `Accept` header** naming the OCI and docker v2 manifest types. registry 2.8.3
+  answers a bare HEAD with 200 and the digest of an on-the-fly schema1 conversion (measured: `8509e6cc...` bare
+  vs `c7219fdc...`, the pushed and pulled digest, with Accept). FRESHNESS and promote.sh stages 1 and 4 depend on it.
 - **Deletes.** `REGISTRY_STORAGE_DELETE_ENABLED=true`, so GC can run (step 5).
 
 ### IMAGE IDENTITY and the overwrite refusal
@@ -361,6 +371,11 @@ Limit, unchanged from today: the rootfs check cannot see a change that touched o
 - **Exposure is alerted BEFORE a boot needs the image.** The timer exports
   `atlas_image_latest_present{image,where="local"|"registry"}`, both P2. Local 0 means the next boot depends on
   the registry. Registry 0 means the durable copy is gone while recovery is still a push.
+  - As built at step 0 (`registry-metrics.sh`, alerts `monitoring/alerts/registry.yml`): the `registry` half has
+    one series per LOCAL `127.0.0.1:5000/<image>:latest` ref -- exactly the images whose recovery is still a
+    push -- so it is empty, and its alert inert, until step 2 warms the cache. An unreachable registry omits the
+    series (unknown, not 0) and sets `atlas_registry_up 0`, alerted on its own; a write timestamp catches a dead
+    timer. The `local` half, enumerated from `images.yml`, lands with step 6's timer.
 - **No blocking `ExecStartPre=`.** It would turn one missing image into 30 stopped containers, and it adds to D
   in the StartLimit criterion (`atlas.service`).
 - **deploy.yml keeps its pattern.** The existing "ensure digest-pinned engine images" task (`deploy.yml:1410`,
@@ -374,7 +389,7 @@ First-party images in scope: the **22** that `deploy.yml` builds from the repo A
 
 | file / system | change |
 |---|---|
-| NEW `deployment/artifacts/atlas-registry.service` + deploy.yml task | the registry unit (THE DESIGN §Registry) |
+| NEW `deployment/artifacts/atlas-registry.service.j2` + deploy.yml task | the registry unit (THE DESIGN §Registry); a template because it renders the `registry_image` pin |
 | NEW `/etc/containerd/certs.d/127.0.0.1:5000/hosts.toml` (ansible) | plain HTTP for that one host |
 | `deployment/artifacts/atlas.service` | `Wants=` + `After=atlas-registry.service` |
 | NEW `deployment/images.yml` | containerfile, target, context, input paths and compose service(s) per image |
@@ -587,16 +602,22 @@ store on ext4 `/var`. After step 7 there is no rollback to the old model, only f
 
 ## WHAT COULD NOT BE VERIFIED
 
-Everything below needs a container started or the registry deployed, and this brief forbids both.
-- nerdctl 1.7.7 push and pull against a loopback HTTP registry through `hosts.toml`. The binary holds a
-  plain-HTTP fallback and a `localhost` special-case, but `127.0.0.1:5000` is untested.
-- **The tag move by manifest GET/PUT.** Whether registry:2 accepts the PUT of the exact bytes and then reports
-  the SAME digest for `latest` (a single-platform image; no rewrite expected). AC6 and AC7 would expose a
-  mismatch.
-- Whether a `nerdctl pull` of `:latest`, after the move, re-points the local tag when every blob is already
-  present. AC4's `MOVED-NOT-DEPLOYED` control would expose a no-op pull.
-- Whether local `RepoDigests` for a tag pulled from the registry equals the registry's `Docker-Content-Digest`.
-  FRESHNESS rests on this.
+MEASURED at step 0, against a throwaway registry:2 on a non-5000 loopback port. Command and output for each:
+`/tmp/sentinel-remediation/registry/step0-measure.md` (host-local, not durable):
+- nerdctl 1.7.7 push and pull against a loopback HTTP registry -> **works**: a push, and a pull-by-digest that
+  fetched manifest, config and layer over the network, both over plain HTTP, with the hosts.toml and also
+  without one; a hosts.toml naming `https://` breaks it (M1, M2).
+- The tag move by manifest GET/PUT -> **keeps the digest**: the PUT of the exact bytes with their Content-Type
+  returns 201 and HEAD `latest` then reports the source digest, in both directions (M4).
+- A `nerdctl pull` of `:latest` after the move -> **re-points the local tag** with every blob already present;
+  before that pull the local tag keeps the old digest, so MOVED-NOT-DEPLOYED is an observable state (M5).
+- Local `RepoDigests` vs the registry's `Docker-Content-Digest` -> **equal**, and equal to the digest the push
+  printed, ONLY when the HEAD sends an `Accept` header (M3; THE DESIGN §Registry).
+- NEW, for step 1: buildkit built a context whose file matched an earlier context's size, mtime and mode
+  (different path, different bytes) into the EARLIER bytes, `--no-cache` included (M8). Archive extracts carry
+  the commit time as mtime, so different commits normally differ; not verified against a real archive.
+
+Still unverified -- each needs a container started or the registry deployed:
 - Whether `nerdctl compose up -d` aborts EVERY service, or only one, when one pull fails with the registry down
   (BOOT PATH).
 - **The AC7 time bounds (5 min rollback, 10 min round trip) are TARGETS, not measurements.** No scoped-restart

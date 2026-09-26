@@ -176,6 +176,7 @@ each block used to pull is how a secmaster run stranded llama-server on 2026-09-
 | `autofix` (alias: `alert-service`) | Deploy `autofix.sh`, `autofix-runner.sh`, `autofix-watcher.sh`; install + enable `autofix-runner.{service,timer}`; install `autofix-watcher.{service,timer}` but enforce them **disabled** (auto-deploy is disarmed — see below); assert `/etc/autofix/claude.env` exists with the long-lived Claude OAuth token |
 | `merged-pr-watcher` (alias: `alert-service`) | Deploy `merged-pr-watcher.sh` + units. Timer is intentionally NOT enabled by the playbook — operator enables manually after first dry-run review. |
 | `quality-check` (alias: `maintenance`) | Deploy `atlas-sentinel-quality-check.{service,timer}` (weekly Sentinel sampling Monday 09:23) |
+| `registry` | Loopback image registry `atlas-registry.service` (registry:2 pinned by digest in `registry_image`, host network on `127.0.0.1:5000`, storage on ZFS `nvme-fast/containers`), its containerd `certs.d` hosts.toml, and the `atlas-registry-metrics.timer` exposure textfile. Its own tag and no `[always]` task, so deploy it as `--tags registry --skip-tags always`. Inert until images are adopted: nothing reads it yet (docs/proposals/local-registry-image-promotion.md) |
 | `buildkit-prune` (alias: `maintenance`) | Deploy `buildkit-prune.{service,timer}` for periodic BuildKit cache trim |
 | `snapshot` | ZFS pre-deploy snapshot block. Tagged `[always, snapshot]`, so the scoped deploy form still snapshots; `--skip-tags always` (the dashboards/patterns/alerting form) skips it. Opt out with `-e create_snapshot=false` or `--skip-tags snapshot`. |
 | `atlas-systemd` / `orphan-cleanup` | Disable + remove the pre-2026-04-17 orphan `ai-inference.service`; drop the legacy `financial_news` bootstrap DB |
@@ -287,6 +288,7 @@ Source of truth is `ansible/group_vars/all.yml` (`ports_external`, `ports_mcp`, 
 | 3102–3108 | MCP servers (markitdown 3102, fred 3103, threshold 3104, finnhub 3105, ofr 3106, secmaster 3107, whisper 3108) |
 | 5001 | gRPC events between collectors and ThresholdEngine (internal only) |
 | 5091 | SentinelCollector review UI (host-mapped for browser access) |
+| 5000 | Loopback image registry (`atlas-registry.service`, host unit; bound to 127.0.0.1 only) |
 | 5432 | TimescaleDB (host-mapped for dev/psql) |
 | 8000 | vllm-server OpenAI-compatible API |
 | 8080 | Default internal HTTP for every .NET service (and the llama-server container port) |
