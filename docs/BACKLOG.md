@@ -46,6 +46,7 @@ Defects with a measurement that makes them re-checkable.
 | A | 2026-09-21 | OPEN | 6 `.SG` rows carry a wrong-venue FIGI, 5 of them ANOTHER COMPANY's; the suffix is now null (bleeding stopped) but no row is repaired, and 194 `.SG` + 95 `.MC` + 87 `.SI` rows have no venue at all |
 | B | 2026-09-21 | OPEN | 5 of the 6 SecMaster migration test classes drive SQL CONSTANTS, never `Up`/`Down`: emptying `Up()` leaves each green |
 | B | 2026-09-21 | OPEN | D-19's Down CAS is CODE-granular, not WRITE-granular: 20 of 42 map entries resolve to US (93.3% of the population), so a later write of a DIFFERENT US spelling is invisible to it and to SkippedRestoresSql |
+| D | 2026-09-26 | OPEN | nerdctl 1.7.7 `network rm` (the last step of every `compose down`) dies when an UNRELATED `run --rm` container exits mid-scan; fixed for devcontainer teardown only, 5 other `compose down` callers unexamined |
 | D | 2026-09-22 | OPEN | Four bare `nerdctl inspect` sites outside the freshness gate get whichever object resolves first; one decides a `stop && rm` of vllm-server |
 | B | 2026-09-22 | OPEN | `--tags alerting` and `--tags dashboards` copy the ups/gpu exporters' build source but never rebuild them, and a later `monitoring` run then reads the copy unchanged and skips the rebuild too; not live today |
 | D | 2026-09-21 | OPEN | Frozen attach-candidate lists hold 2,457 records (742 instruments) whose exchange the D-19 heal rewrites and re-embeds; the only guard is a 24 h clock over two FIXED timestamps, comparing no content |
@@ -181,6 +182,23 @@ Defects with a measurement that makes them re-checkable.
 | E | 2026-09-16 | OPEN | Two SecMaster comments still call a Finnhub 403 transient (permanent, arrives as NULL) |
 | E | 2026-09-16 | OPEN | SentinelCollector card is 5.3x over its D-entry gate and its line count hides it |
 | E | 2026-09-16 | AWAITING-DECISION | Six deployed directories have no card and sit outside the SERVICES roster (HARD_STOP gap) |
+
+**nerdctl 1.7.7's `network rm` -- the last step of every `compose down` -- dies when an UNRELATED `run --rm`
+container exits during its in-use scan.** First occurrence, 2026-09-26. It walks every container's task to decide
+whether the network is in use and aborts `level=fatal msg="task <id> not found: not found"`, the id being the
+FOREIGN container that vanished. Measured against two concurrent `sudo nerdctl run --rm busybox:latest true` loops:
+`network create` + `network rm` of an UNUSED scratch network failed 4 of 15 (0 of 15 idle); `compose down` of the
+Sentinel devcontainer project failed 10 of 15 (0 of 8 idle), removing both containers every time and leaving the
+project network. The devcontainer teardown is fixed -- `devcontainer_disown` in `scripts/devcontainer-owner.sh`
+retries, then warns on stderr and keeps the run's own exit status, pinned by `scripts/test-devcontainer-owner.sh`
+4b2. NOT EXAMINED, the other callers of `compose down`: `deployment/artifacts/atlas.service` and
+`deployment/artifacts/otel.service` (both `ExecStop`), deploy.yml's "Stop sentinel-edge devcontainer" task, and
+`LlmBenchmark/run-benchmarks.sh` / `run-top5-benchmark.sh`. What a failed `ExecStop` does to a `systemctl restart
+atlas` is unmeasured. The churn that arms it is ordinary here: agents' `nerdctl run --rm` checks (amtool, promtool)
+started one every ~0.44s (journal, 2026-09-26T02:29:22-23Z) around the failed teardown this was first seen in.
+Re-check, scratch network only: in one shell loop `sudo nerdctl run --rm busybox:latest true`; in another run 15x
+`sudo nerdctl network create probe-net; sudo nerdctl network rm probe-net` and count the `task ... not found`
+failures. Any non-zero count means it is still live; a nerdctl upgrade is what should trigger the re-check.
 
 **Four bare `nerdctl inspect` sites outside the freshness gate each get whichever object resolves first.** On
 nerdctl 1.7.7 a bare `inspect <name>` returns the IMAGE when an image of that name exists, and the container only
@@ -3944,6 +3962,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 |---|---|---|---|
 | B | 2026-09-22 | OPEN | gemini-resolver connect fallbacks are counted but unalerted: an unanswering address family is otherwise invisible |
 | B | 2026-09-20 | OPEN | 50 of 53 live `AddHostedService<T>` registrations are UNPINNED: the line that makes the component RUN can be deleted with every suite green |
+| D | 2026-09-26 | OPEN | dotnet's `0 Warning(s)` summary can print while the test step's restore prints NU1903: 3 of 9 compile.sh logs read 0 over 10-22 warnings; the "0 warnings" push rule is read off that line and no script checks it |
 | D | 2026-09-20 | OPEN | The hosted-service pin gate cannot see 5 live factory-overload registrations, and Reports has NO keyable registration at all |
 | D | 2026-09-20 | OPEN | A mutation harness that rewrites ONE `.py` path scores a FALSE SURVIVOR: CPython keys bytecode on (mtime-second, size), and `mutation-check.py` already holds an equal-length pair |
 | D | 2026-09-20 | OPEN | The pin sweep's zero-test rule binds the CONTROL run only; a MUTATED run that ran nothing files UNPINNED quoting the control's count |
@@ -4013,6 +4032,7 @@ Harnesses, golds and scorecards whose blind spots are known and unfixed.
 | D | 2026-08-27 | OPEN | Golden corpus: its controls mutate the FIXTURE, none mutates the publisher SUT |
 | D | 2026-08-17 | OPEN | A test class missing [Collection(StalenessGaugeCollection.Name)] re-opens a data race |
 | D | 2026-08-15 | OPEN | 2,138 assertions that no suite-level count can see |
+| E | 2026-09-26 | OPEN | 7 of the 9 `SentinelMeter.cs:NNN` citations in tracked files land on the wrong line (+37 to +225), all in bounds, so the sweep counts them as resolved |
 | E | 2026-09-16 | OPEN | Alertmanager's warning-route repeat_interval does not pace a Grafana-managed alert |
 | E | 2026-09-16 | OPEN | 3 memory citations cannot land, all of one irreparable class |
 | E | 2026-09-16 | OPEN | ThresholdEngine builds a channel per event type that has neither a reader NOR a writer |
@@ -4077,6 +4097,27 @@ NEW registration, one whose statement or recorded verdict CHANGED, one that VANI
 over 50 findings is how a check gets switched off (#1083). Closing this entry means pinning registrations and
 re-freezing, which moves rows from UNPINNED to PINNED; the debt is the UNPINNED count, never the check's silence.
 The check is ADVISORY — branch protection 403s on this plan, so it reports and cannot block.
+
+### dotnet's `0 Warning(s)` summary can print while NU1903 warnings sit in the same log [2026-09-26]
+`compile.sh` runs `dotnet build` (which prints the `Build succeeded.` / `N Warning(s)` summary) and then `dotnet
+test`, whose own restore prints `warning NU1903` lines and no summary at all. So the summary covers the BUILD step
+only. Measured on the 9 `compile.sh` logs of the pre-#1114 baseline (tree `585cea84`, head `d90c3b26`, 2026-09-26):
+in 3 of them EVERY summary line reads `0 Warning(s)` while the log carries `warning NU1903` lines -- SecMaster 22,
+AlphaVantageCollector 10, FinnhubCollector 10. In AlphaVantageCollector the summary is log line 28 and the ten
+warnings are lines 34-45, after the test step's `Determining projects to restore...`. The other 6 logs print a
+non-zero summary, but it is still below their NU1903 line count (FredCollector 60 lines against `10 Warning(s)` twice).
+WHO READS IT: no script. `git grep -I 'Warning(s)'` over the whole tree returns nothing, and neither
+`mark-tests-passed.sh` nor `git-push-guard.sh` looks at warnings, so a run with warnings still writes the marker.
+The "0 errors AND 0 warnings" rule is prose that an agent checks by eye: CLAUDE.md GIT_PUSH, both dispatch
+templates (`implementation-fix.md` step 6, `story-implementation.md`), `README.md`, and the prompt that
+`deployment/artifacts/scripts/autofix.sh` gives its fixing agent. Anyone who checks the summary line reads success.
+Only 7 of the 52 tracked `.csproj` set `TreatWarningsAsErrors`: the six under `Reports/src/`, where a warning fails
+the build, and `backtest/SignalReplay`, which exempts NU1902 and NU1903 with `WarningsNotAsErrors`. No test project
+sets it, and the test projects are where these NU1903 lines came from.
+Re-check: `git grep -n -I 'Warning(s)'` (a hit means a script now keys on the line); and for the gap itself, run
+`bash SecMaster/.devcontainer/compile.sh > log 2>&1` in a scratch worktree at `d90c3b26`, then compare
+`grep -c 'warning NU1903' log` against `grep -E '^ +[0-9]+ Warning\(s\)' log`. That checkout is before #1114, so
+the vulnerable pins are still there.
 
 ### 14 of 176 deletion units in the attach-scorer PR are DELETABLE line-by-line and 6 more constructs are, and its first table read a parse failure as a pin [2026-09-21]
 Same class as the hosted-service entry above, in Python rather than C#. **The first measurement of this PR
@@ -6429,6 +6470,28 @@ without its channel is what the next agent reasons about wrongly, and PR #975's 
 reads as "no third channel" rather than "the third is inert".
 Re-check: the grep must still return only the `Dispose` hit; more means the class has grown a real channel path.
 
+### 7 of the 9 `SentinelMeter.cs` line citations land on the wrong line, and the sweep counts all 7 as resolved [2026-09-26]
+Measured at `0382936d` (`SentinelCollector/src/Telemetry/SentinelMeter.cs`, 2,226 lines). `git grep -n -I -o -E
+'SentinelMeter\.cs.?:[0-9]+(-[0-9]+)?'` over the tracked tree finds 9 citations. Only 2 land on what they name:
+`SentinelCollector/DECISIONS.md` `PrimeCoveCheckSeries` at 124, and `docs/BACKLOG.md` `sentinel_chunk_extraction_dedup_ratio`
+at 347. The 7 wrong ones, with the line each cites and where the named thing is now:
+  - `docs/BACKLOG.md`, the "Rule 1's outcome is ERASED downstream" entry: `sentinel_resolver_rule1_input_confidence` cites 1805, is at 1877;
+    `sentinel_resolver_rule1_decision_total` cites 1786, is at 1858.
+  - `docs/proposals/extraction-type-classifier.md`: `sentinel_candidate_surface_filtered_total` cites 1077-1078, is at
+    1302; `CandidateSurfaceFiltered` cites 1245-1266, is declared at 1301.
+  - `docs/proposals/news-pipeline-remediation-plan.md`: the quoted comment "Bounded — no tags, scalar counters only"
+    cites 741-745, is at 859-860.
+  - `SentinelCollector/DECISIONS.md`, two GUARD citations: `SentinelMeter.ReResolveRowsTotal` cites 1433, is at 1505;
+    `SentinelMeter.PrimeSelfSeedClassSkipSeries` cites 695, is at 732.
+The brief that found this named the first five. The last two are the same predicate run over the whole tree.
+`python3 scripts/verify-citations.py` on the three docs files reports each one with its landing text and counts it
+as checked, not "cannot land", because every line is in bounds. That is the class of the entry "`verify-citations.py`
+reports GREEN on a citation that has drifted onto the WRONG line".
+FILED, NOT FIXED: open PR #1115 changes `SentinelMeter.cs`, so any repair made now would drift again when it merges.
+Repair them AFTER #1115 lands, against that head, as a set.
+Re-check: the `git grep` above, then open each landing line and look for the named symbol. Neither the citation
+count nor the sweep's rc changes when these are fixed or when more of them drift.
+
 ### Nine real-but-wrong citations stand in `SentinelCollector/AGENT_README.md`, all GREEN [2026-09-05]
 **Nine real-but-wrong citations stand in `SentinelCollector/AGENT_README.md`, all GREEN, none of them any PR's
 debt.** The live instance of the drift class above, found by hand in review of PR #1004 and deliberately NOT
@@ -6550,6 +6613,7 @@ Work decided and not yet scheduled, with the decision that deferred it.
 | A | 2026-09-16 | AWAITING-DECISION | Extraction__GuardsEnabled=false -- awaiting an owner decision |
 | A | 2026-09-16 | OPEN | The staleness stamp measures a successful FETCH, not an advancing quote (design call) |
 | A | 2026-09-04 | OPEN | Labeller quality at n=5 through production's CoD prompt+schema, 2026-09-04 |
+| B | 2026-09-26 | OPEN | No central package management: the NU1903 pins are restated per file (Cryptography.Xml in 9 csproj, SQLitePCLRaw.lib.e_sqlite3 in 3), which is how they rotted unevenly |
 | B | 2026-09-20 | AWAITING-DECISION | Tracked-secret inventory, complete: what publishing this repo would expose |
 | B | 2026-09-16 | OPEN | Alert-continuity acceptance (sentinel-resolution-signal) re-measured: still NOT met |
 | B | 2026-09-16 | OPEN | The stamps table's single-writer invariant is one negative test plus convention |
@@ -6634,6 +6698,24 @@ earnings/analyst-action first.
 Re-check: the artifacts live only in `/tmp` (non-durable -- expect them gone). Re-running is ~$1.32 /
 32 requests (5 substrate articles x 3 labellers) after the ZZZ pre-flight below; until then these
 figures ARE the record.
+
+**No central package management: every security pin is restated per `.csproj`, so the next advisory rots them
+unevenly again.** #1114 cleared every NU1903 by bumping each copy by hand. Its closed entry named
+`Directory.Packages.props` as the durable fix and the per-file bump as the cheap one, and only the cheap one
+shipped. Measured 2026-09-26 at `0382936d`: `git grep -n 'PackageReference Include="System.Security.Cryptography.Xml"'
+-- '*.csproj'` finds 9 copies, all `10.0.10`. One is PRODUCTION, `MacroSubstrate/src/MacroSubstrate/MacroSubstrate.csproj`;
+two are Reports `src` projects, and six are SecMaster/Finnhub/AlphaVantage test projects. The same grep for
+`SQLitePCLRaw.lib.e_sqlite3` finds 3 copies at `2.1.12` (MacroSubstrate, Reports and SecMaster unit tests). No
+`Directory.Packages.props` or `Directory.Build.props` is tracked anywhere. Before #1114, 7 of the 9 Xml pins sat at
+`10.0.8` and 2 at `10.0.10` -- that split is the failure this entry is about.
+Consequence: the next Xml or SQLite advisory is 9 or 3 separate edits, and one missed file keeps the vulnerable
+version resolved in that project. The fix is `Directory.Packages.props` at the repo root holding both versions (with
+`CentralPackageTransitivePinningEnabled`, since both are transitive pins), and each copy reduced to a version-less
+`PackageReference`. The pins sit in 5 services (AlphaVantageCollector, FinnhubCollector, MacroSubstrate, Reports,
+SecMaster), but a ROOT file turns central management on for every one of the 52 tracked `.csproj` beneath it. So
+every versioned `PackageReference` moves into it, or a project opts out, and every service's `compile.sh` has to pass.
+Re-check: the two `git grep`s above (the counts are the copies still to collapse), plus
+`git ls-files | grep -E 'Directory\.Packages\.props$'` (empty = still open).
 
 **Tracked-secret inventory, complete -- what publishing this repo would expose. AWAITING A DECISION THAT HAS NOT
 BEEN MADE (open-sourcing).** Measured 2026-09-20 at `c13a49b6` (= `origin/main`), 2,964 tracked files. This entry
