@@ -6552,7 +6552,6 @@ Work decided and not yet scheduled, with the decision that deferred it.
 | A | 2026-09-04 | OPEN | Labeller quality at n=5 through production's CoD prompt+schema, 2026-09-04 |
 | B | 2026-09-20 | AWAITING-DECISION | Tracked-secret inventory, complete: what publishing this repo would expose |
 | B | 2026-09-16 | OPEN | Alert-continuity acceptance (sentinel-resolution-signal) re-measured: still NOT met |
-| B | 2026-09-16 | OPEN | Dependency debt: the Cryptography.Xml 10.0.8 pin is now the NU1903 exposure (7 csproj) |
 | B | 2026-09-16 | OPEN | The stamps table's single-writer invariant is one negative test plus convention |
 | B | 2026-09-16 | OPEN | A failed Prometheus reload is a GREEN deploy with the old ruleset still evaluating |
 | B | 2026-09-16 | OPEN | The coverage rule's 18 is pinned in two files plus a deploy, and the rule is one-sided |
@@ -6795,22 +6794,6 @@ Criterion still unmet.
 
 Disposition per alert (entry-or-retire) is unchosen. This is measurement debt, not a defect in any one
 rule.
-
-**Dependency debt — the 10.0.8 pin WAS the NU1903 fix and has become the NU1903 exposure.** Seven `.csproj` pin
-`System.Security.Cryptography.Xml` 10.0.8, against which five HIGH advisories stand, all range `[10.0.0, 10.0.9]`
-(GHSA-g8r8-53c2-pm3f, GHSA-8q5v-6pqq-x66h, GHSA-23rf-6693-g89p, GHSA-cvvh-rhrc-wg4q, GHSA-mmjf-rqrv-855v). Fixed
-version **10.0.10** is already in-tree (`Reports.Hosting`, `Reports.Substrate`), so the bump target is known-good.
-Only ONE of the seven is production: `MacroSubstrate/src/MacroSubstrate/MacroSubstrate.csproj`, pinned by #604
-(`869d9054`), NOT by #703 (`eb81d03b`, which pinned the six SecMaster / FinnhubCollector / AlphaVantageCollector
-test projects) -- a fix scoped to #703's files misses exactly the production project. There is **no
-`Directory.Packages.props`**: the version is restated per file, which is why it rotted unevenly. Central package
-management is the durable fix; bumping seven files is the cheap one. Test-only and unchanged:
-`SQLitePCLRaw.lib.e_sqlite3` 2.1.11 (GHSA-2m69-gcr7-jv3q, HIGH, range `(, 2.1.11]` -- upper bound INCLUSIVE;
-transitive, SQLite is the unit-test provider, prod is TimescaleDB).
-Measured 2026-08-15; re-verified 2026-09-16 (7 files at 10.0.8, 2 at 10.0.10, no `Directory.Packages.props`).
-Re-check: `grep -rn Cryptography.Xml --include=*.csproj .`, and for the advisory set
-`curl -s --compressed https://api.nuget.org/v3/vulnerabilities/index.json` then the base+update pages
-(`--compressed` is required; without it the response is gzip and unreadable).
 
 **The stamps table's single-writer invariant is one negative test plus convention.** `finnhub_quote_collection_stamps`
 is the staleness ORIGIN and D-2 INV stamps-single-writer requires the collection loop to be its only writer -- but
