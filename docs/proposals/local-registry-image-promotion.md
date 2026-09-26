@@ -95,7 +95,10 @@ afterwards. None of them PREVENTS it. The user accepted that trade for one-comma
 - **Tag = `{image}:{sha12}`.** sha12 is `git log -1 --format=%H -- <inputs>` at the build commit, cut to 12
   characters. The width is fixed, because `%h` grows with the repo.
 - **Build context comes from the COMMIT**, via `git archive <sha> -- <inputs>`. A dirty INPUT exits 2 and names
-  the path. Every image is labelled `org.opencontainers.image.revision=<full sha>`. That label is how the drift
+  the path. Every extracted file is then restamped with a per-run mtime (the second, the pid as nanoseconds):
+  buildkit re-sends a context file only when its path, size, mode or mtime differs from the last context it
+  received, `--no-cache` included, and the archive's mtime is the commit time, so two same-second commits with
+  a same-size edit built the older bytes under the newer sha12 (measured on buildkit 0.15.2, step-1 review). Every image is labelled `org.opencontainers.image.revision=<full sha>`. That label is how the drift
   timer and `promote.sh` learn which commit a digest came from.
 - **Skip.** If HEAD `/v2/<image>/manifests/<sha12>` returns 200, `build-image.sh` prints
   `exists, skipped <digest>` and exits 0. It does not build at all, so the normal path never produces
@@ -107,7 +110,13 @@ afterwards. None of them PREVENTS it. The user accepted that trade for one-comma
   - before the push, HEAD on the new tag must return 404, or the script exits 3 naming the tag;
   - the check-then-push runs under `flock /run/lock/atlas-image.lock`, the lock `promote.sh` also takes, so two
     builds cannot race for one N;
-  - after the push, HEAD must return the digest the push printed, or the script exits 3.
+  - after the push, HEAD must return the local image's digest (`RepoDigests`, read before the push:
+    nerdctl 1.7.7 prints no single summary digest), or the script exits 3.
+  - **A tag name is spent once anything has held it** (round-3 review S2). Every name, a plain `{sha12}`
+    included, is chosen under the lock and must also be absent from every spool file and every `deploy/*`
+    release as `from.tag` or `to.tag`, and N counts those names too. So a tag GC deleted never returns with
+    new bytes under a name a release recorded with other bytes. A release listing that fails or times out,
+    or a record that does not parse, exits 6: an unreadable record cannot prove a name unused.
 
   `{sha12}-rN` is promoted like any other tag, and its label still names the same commit.
 - **`images.yml` build fields are NOT inputs.** A row's `containerfile`, `target` and `context` change what is
@@ -153,6 +162,10 @@ afterwards. None of them PREVENTS it. The user accepted that trade for one-comma
   | finbert-sidecar | FinBertSidecar/ |
 
   `.md` stays an input, because runtime content is `.md` here (`SentinelCollector/src/prompts/*.md`).
+  These are ROOTS. `images.yml` carries the exact COPY sources, which are narrower for 9 images (the four
+  collectors copy only `CalendarService/src/Core/`, the three dotnet MCPs copy sub-trees, finbert-sidecar and
+  whisper-service copy files), and AC3 refuses an input wider than what the build copies, since it would move
+  the sha12 on commits the image never sees.
 
 ### PROMOTE: one command for deploy and rollback
 
@@ -548,7 +561,8 @@ is not superseded: it still holds #1091, and the drift metric now makes that hol
    - every `from` and `to` digest in every `promote-spool/*.json`, `pending` included, whatever its age: a
      spooled or interrupted move has no release yet, and stage 2 writes the `pending` file BEFORE the move, so
      a crash between stages 4 and 7 still leaves both digests named;
-   - the 2 newest other tags per image;
+   - the 2 newest other tags per image. "Newest" is the `org.opencontainers.image.created` label
+     `build-image.sh` stamps (UTC, to the second), ties broken by tag name descending (round-3 review S5);
    - every `adopted-*` tag until phase-done.
 
    **GC FAILS CLOSED.** It exits non-zero and deletes NOTHING if the release listing fails, times out, or
@@ -577,7 +591,7 @@ is not superseded: it still holds #1091, and the drift metric now makes that hol
 |---|---|---|---|---|
 | AC1 | `promote.sh secmaster <T>`, where T = the `from.tag` stage 2 resolves for `latest` (an `adopted-*` tag after cutover, a sha12 tag later): a no-op move, which keeps #1091 held; container ID before and after; freshness gate | promote.sh exits 0, the container ID CHANGED (the deploy ran), the registry and local `latest` digests are unchanged, the rootfs is unchanged, and exactly one new `deploy/*` release shows `from == to` (tag and digest) | ID unchanged (the deploy never ran: red-team finding 9), any digest changed, or exit != 0 | aimed at the restart: in `deployment/tests/promote/`, the same no-op promote with the stage-5 ansible call stubbed to exit 0 WITHOUT recreating the container -> promote.sh exits non-zero, prints `NOT-RESTARTED <svc>`, and the release records `outcome: failed`. A restart that silently did nothing therefore cannot pass |
 | AC2 | `build-image.sh secmaster` twice at one sha; then `--rebuild` at the same sha | 2nd run: `exists, skipped <digest>`, no build, no push. `--rebuild`: pushes `<sha12>-r1`, and the `<sha12>` digest is unchanged | the 2nd run builds, or `--rebuild` writes over `<sha12>` | pre-create `<sha12>-r1` with other bytes in the test registry: `--rebuild` writes `-r2` and never `-r1`. Dirty an input: exit 2 naming it. Change the row's `target` with no input change: the skip is refused, exit 2 naming `target` |
-| AC3 | `test_image_manifest.py` over the 22 rows | every COPY/ADD source is covered, and every row names a compose service that `compose config --services` lists | an uncovered source or an unknown service | known-bad fixture `COPY Undeclared/ x/` -> the test names `Undeclared/` |
+| AC3 | `test_image_manifest.py` over the 22 rows | every COPY/ADD source is covered, and every row names exactly the services the compose TEMPLATE runs as `<image>:latest` (read from `compose.yaml.j2` so CI needs no nerdctl) | an uncovered source or an unknown service | known-bad fixture `COPY Undeclared/ x/` -> the test names `Undeclared/` |
 | AC4 | freshness gate after step 3 | `passed -- N`, where N = `compose ps -q \| wc -l` taken in the SAME run (30 on 2026-09-26), AND the rendered compose (`test-templating.yml`) names `127.0.0.1:5000/<image>:latest` on all 22 lines and `docker.io/library` on none | any STALE, UNVERIFIABLE or MOVED-NOT-DEPLOYED, or passed < N | a fixture where the registry `latest` digest != the local RepoDigest -> `MOVED-NOT-DEPLOYED <image>`, named |
 | AC5 | `atlas_image_latest_behind_commits` and `atlas_git_origin_main_fetch_age_seconds`, 10 min after the timer's first run | 22 series, AND `{image="secmaster"} >= 2` while #1091 is held, AND age < 900 | != 22 series, OR secmaster == 0 while #1091 is held, OR age >= 900 | (a) `absent()` alerts on both series (0 series exist today); (b) a test copy with an unreachable remote: age grows, and the fetch-age alert fires by name |
 | AC6 | **move log + bypass detection.** Promote calendar-service once; then, in a separate step, move `latest` by hand with a raw manifest PUT (bypassing the script) and do NOT restart | after the scripted move, `atlas_image_latest_released{image="calendar-service"} == 1` and `running_matches_latest == 1`. After the hand move, within one timer period, BOTH read 0 and the gate prints `MOVED-NOT-DEPLOYED calendar-service` | either series stays 1 after the hand move | this row IS the control: the scripted move reading 1 separates a working detector from one that always reads 0. Restore by `promote.sh` to the prior tag -> both read 1 |
