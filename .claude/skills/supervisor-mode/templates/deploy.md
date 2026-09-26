@@ -6,8 +6,8 @@ mercury IS this host — never ssh, never ansible against a remote. Pairs with t
 (the COMPLETION_GATE checklist); this carries the moves and the traps.
 
 ```
-DEPLOY — {what}, merged to main as `{sha}`. User has authorised this deploy{, including <named
-side effect>}.
+DEPLOY — {what}, merged to main as `{sha}`. User authorised this deploy, quoted: "{their words,
+verbatim}" ({ntfy id | session turn | standing grant}){, including <named side effect>}.
 
 DESIGN INTENT: none — mechanical deployment of already-reviewed, already-merged work.
 supersedes: none

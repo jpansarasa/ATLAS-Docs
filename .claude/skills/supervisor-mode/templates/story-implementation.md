@@ -129,6 +129,12 @@ name and the `--context {Svc}DbContext` rule to
 ## Stop conditions
 - Hit a blocker the supervisor must resolve -> stop and report.
 - Build fails after a reasonable fix attempt -> stop and report.
+- Brief impossible as written because something it NEEDS is ABSENT (a
+  file, tool, credential or access) -> stop and report WHICH. Never reach
+  the deliverable by another route, and never hand back knowingly
+  incomplete work without naming the gap. A detail that is merely WRONG
+  (a path, line, pattern or count) is the MECHANISMS standing rule below:
+  correct it on evidence and continue.
 - Spec ambiguous in a way that materially changes the result ->
   pick the lower-risk option, document the choice, continue.
 
